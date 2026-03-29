@@ -1,0 +1,25 @@
+[project]
+name = "bric-budget"
+version = "0.1.0"
+description = "Personal budget tracker"
+authors = [
+    {name = "ManuLabricole",email = "emmanuel.barriol@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.12,<4.0"
+dependencies = [
+    "django (>=6.0.3,<7.0.0)",
+    "psycopg2-binary (>=2.9.11,<3.0.0)",
+    "python-decouple (>=3.8,<4.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.15.8"
+djlint = "^1.36.4"
+commitizen = "^4.13.9"
+
