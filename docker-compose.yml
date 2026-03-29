@@ -1,0 +1,36 @@
+services:
+
+  db:
+    image: postgres:16
+    # Le container s'appelle "bricbudget-db" pour qu'il soit facile à identifier
+    container_name: bricbudget-db
+    restart: unless-stopped
+
+    # Variables d'environnement lues depuis .env au niveau du docker-compose
+    # Ces valeurs doivent correspondre exactement à celles dans .env
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+
+    ports:
+      # Expose PostgreSQL sur localhost:5432 pour que Django (sur le Mac) puisse s'y connecter
+      # Format : "port_du_mac:port_du_container"
+      # 5433 sur le Mac → 5432 dans le container (évite conflit avec PostgreSQL Homebrew)
+      - "5433:5432"
+
+    volumes:
+      # Persistance des données : même si le container est supprimé, les données restent
+      # Docker gère ce volume nommé automatiquement
+      - postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      # Vérifie que PostgreSQL est prêt à accepter des connexions
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+# Déclaration du volume nommé — Docker le crée et le gère sur ton Mac
+volumes:
+  postgres_data:
