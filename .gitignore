@@ -1,0 +1,58 @@
+# ─── Fichier .gitignore pour BudgetTracker ─────────────────────────────
+
+# --- Claude & documentation ---
+.claude/
+assets/private/
+
+# ─── Environnement Python ───────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# ─── Django ─────────────────────────────────────────────────────
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+staticfiles/
+mediafiles/
+
+# ─── Variables d'environnement (JAMAIS dans Git) ────────────────
+.env
+.env.local
+.env.prod
+.env.*.local
+# .env.example est OK — il est dans Git (sans secrets)
+
+# ─── Données personnelles (JAMAIS dans Git) ─────────────────────
+assets/data/raw/
+assets/data/processed/
+assets/data/*.db
+assets/data/*.csv
+
+# ─── Docker ─────────────────────────────────────────────────────
+# Les volumes Docker sont en dehors du repo, pas besoin d'ignorer
+
+# ─── macOS ──────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# ─── IDEs ───────────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# ─── Pre-commit cache ───────────────────────────────────────────
+.pre-commit-cache/
+
+# ─── Coverage & tests ───────────────────────────────────────────
+.coverage
+htmlcov/
+.pytest_cache/
