@@ -1,5 +1,5 @@
-# Project Charter — PocketFlow (BudgetTracker)
-> Version 2.0 — 2026-03-27
+# Project Charter — BricBudget
+> Version 2.1 — 2026-03-30
 > Rythme : ~3h le samedi matin. Parfois +1h en semaine si motivation.
 >
 > Ce document = le "pourquoi" : vision, principes, stack, décisions d'architecture.
@@ -11,7 +11,7 @@
 
 Remplacer Finary pour tout ce qui n'est pas France/EUR : un système de gestion de budget et de patrimoine personnel, multi-pays, multi-devises, auto-hébergé, avec une architecture extensible pour ajouter n'importe quel compte en créant un seul parseur.
 
-**Finary = France / EUR. PocketFlow = tout le reste (CH, UK, et au-delà).**
+**Finary = France / EUR. BricBudget = tout le reste (CH, UK, et au-delà).**
 
 ---
 
@@ -30,7 +30,7 @@ Remplacer Finary pour tout ce qui n'est pas France/EUR : un système de gestion 
 
 | Couche | Outil | Raison |
 |--------|-------|--------|
-| Framework web | **Django 5.x** | ORM, admin, auth, migrations — tout inclus |
+| Framework web | **Django 6.x** | ORM, admin, auth, migrations — tout inclus |
 | UI dynamique | **HTMX 2.x** | Zéro JavaScript custom, état côté serveur |
 | CSS | **Tailwind CSS 3.x** | Classes utilitaires, dark mode natif |
 | Base de données | **PostgreSQL 16** | Robuste, JSON natif, fenêtres SQL |
@@ -85,8 +85,8 @@ Remplacer Finary pour tout ce qui n'est pas France/EUR : un système de gestion 
 ## DevOps
 
 ```
-.env.local      → Dev local (DEBUG=True, DB locale)
-.env.prod       → Production Mac Mini (DEBUG=False, secrets réels)
+.env            → Dev local (DEBUG=True, DB locale) — jamais dans Git
+.env.prod       → Production Mac Mini (DEBUG=False, secrets réels) — jamais dans Git
 .env.example    → Template versionné dans Git (sans secrets)
 ```
 
