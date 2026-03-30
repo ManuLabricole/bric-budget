@@ -97,6 +97,7 @@ run:
 	@printf "  $(DIM)─────────────────────────────────────────$(RESET)\n"
 	@printf "  🐘 PostgreSQL   $(DIM)localhost:5433$(RESET)\n"
 	@printf "  🌐 Django       $(DIM)http://localhost:8000$(RESET)\n"
+	@printf "  🔐 Admin        $(DIM)http://localhost:8000/admin$(RESET)\n"
 	@printf "  $(DIM)─────────────────────────────────────────$(RESET)\n\n"
 	@$(MANAGE) runserver
 
@@ -114,5 +115,44 @@ shell:
 	@printf "  🐚 $(CYAN)Ouverture du shell Django...$(RESET)\n\n"
 	@$(MANAGE) shell
 
+create-superuser:
+	@printf "  👤 $(CYAN)Création du superuser depuis .env...$(RESET)\n"
+	@$(MANAGE) create_user --superuser
+	@printf "  $(DIM)→ connecte-toi sur http://localhost:8000/admin$(RESET)\n"
+
 # =============================================================================
-.PHONY: help status up down logs run migrate makemigrations shell
+# 💾 Sauvegarde / Restauration PostgreSQL
+# =============================================================================
+# pg_dump : outil standard PostgreSQL qui exporte toute la DB en SQL
+# On l'exécute DANS le container Docker (docker exec) car pg_dump doit être
+# sur la même machine que PostgreSQL. Le fichier résultant est copié sur le Mac.
+
+BACKUP_DIR := backups
+BACKUP_FILE := $(BACKUP_DIR)/bricbudget_$(shell date +%Y%m%d_%H%M%S).sql
+
+backup:
+	@mkdir -p $(BACKUP_DIR)
+	@printf "  💾 $(CYAN)Sauvegarde PostgreSQL...$(RESET)\n"
+	@docker exec bricbudget-db pg_dump \
+		--username=$(shell grep DB_USER .env | cut -d= -f2) \
+		--dbname=$(shell grep DB_NAME .env | cut -d= -f2) \
+		--clean \
+		--if-exists \
+		> $(BACKUP_FILE)
+	@printf "  ✅ $(GREEN)Sauvegarde créée :$(RESET) $(BACKUP_FILE)\n"
+
+# Usage : make restore FILE=backups/bricbudget_20260405_103000.sql
+restore:
+	@if [ -z "$(FILE)" ]; then \
+		printf "  ❌ $(RED)Précise le fichier : make restore FILE=backups/nom_du_fichier.sql$(RESET)\n"; \
+		exit 1; \
+	fi
+	@printf "  ⚠️  $(YELLOW)Restauration depuis $(FILE)... (la DB actuelle sera écrasée)$(RESET)\n"
+	@docker exec -i bricbudget-db psql \
+		--username=$(shell grep DB_USER .env | cut -d= -f2) \
+		--dbname=$(shell grep DB_NAME .env | cut -d= -f2) \
+		< $(FILE)
+	@printf "  ✅ $(GREEN)Restauration terminée$(RESET)\n"
+
+# =============================================================================
+.PHONY: help status up down logs run migrate makemigrations shell superuser backup restore

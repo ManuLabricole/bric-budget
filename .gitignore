@@ -33,6 +33,9 @@ assets/data/processed/
 assets/data/*.db
 assets/data/*.csv
 
+# ─── Sauvegardes DB (données personnelles, JAMAIS dans Git) ─────
+backups/
+
 # ─── Docker ─────────────────────────────────────────────────────
 # Les volumes Docker sont en dehors du repo, pas besoin d'ignorer
 
