@@ -77,8 +77,23 @@ Remplacer Finary pour tout ce qui n'est pas France/EUR : un système de gestion 
 
 ### Architecture "connecteur"
 - `BaseConnector.parse(filepath) → List[TransactionDict]`
-- Chaque source = 1 fichier `parser.py` indépendant
+- Chaque source = 1 fichier `parser.py` indépendant dans `src/connectors/<source>/`
 - Service d'import commun : déduplication SHA1, insertion, snapshot solde, ImportLog
+- `connectors/` est un **package Python pur** — pas une app Django, pas de modèles, pas de migrations
+
+### Architecture des apps Django
+Deux apps Django, une dépendance unidirectionnelle :
+
+| App | Responsabilité | Modèles | Dépend de |
+|-----|---------------|---------|-----------|
+| `users/` | Auth — login email, profil utilisateur | CustomUser, Profile | — |
+| `accounts/` | Infrastructure bancaire | Bank, Account, AccountAccess, Card, AccountSpecification, BalanceSnapshot, ExchangeRate | `users/` |
+| `transactions/` | Flux financier quotidien | Transaction, Category, SubCategory, CategorizationRule, ImportLog, BudgetTarget, BudgetResult | `accounts/` |
+| `connectors/` | Parseurs CSV/Excel (Python pur) | — | — |
+
+Chaîne unidirectionnelle : `users → accounts → transactions`. Jamais de dépendance remontante.
+`AccountAccess` (lien User ↔ Account) vit dans `accounts/` — si elle était dans `users/`, elle créerait une dépendance circulaire.
+Phase 5+ : app `investments/` ajoutée pour les positions boursières (logique distincte).
 
 ---
 
