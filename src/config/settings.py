@@ -38,9 +38,19 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    # nos apps (à ajouter plus tard)
-    # "core",
+    # --- Nos apps métier ---
+    # Ordre important : users/ en premier car accounts/ en dépend
+    "users",
+    "accounts",
+    "transactions",
 ]
+
+# --- Modèle utilisateur custom ---
+# CRITIQUE : doit être défini AVANT la première migration.
+# Remplace django.contrib.auth.User par notre CustomUser (login par email).
+# Toujours référencer via settings.AUTH_USER_MODEL dans les ForeignKey,
+# jamais via "from django.contrib.auth.models import User" directement.
+AUTH_USER_MODEL = "users.CustomUser"
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
