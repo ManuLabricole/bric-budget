@@ -1,97 +1,127 @@
 erDiagram
 
-    %% AUTH AND USERS
+    %% ==========================================================================
+    %% USERS — App users/
+    %% Login par email. Profile = préférences UI séparées de l'auth.
+    %% ==========================================================================
 
-    User {
-        int id PK
-        string username
-        string email
+    CustomUser {
+        bigint id PK
+        string email UK
         string password_hash
+        string first_name
+        string last_name
         boolean is_active
-        string created_at
+        boolean is_staff
+        boolean is_superuser
+        datetime last_login
+        datetime date_joined
     }
 
-    %% BANKS
+    Profile {
+        bigint id PK
+        bigint user_id FK
+        string langue
+        string devise_affichage
+    }
+
+    %% ==========================================================================
+    %% ACCOUNTS — App accounts/
+    %% Infrastructure bancaire. AccountAccess SUPPRIMÉ (YAGNI — app 2 users).
+    %% Qui utilise quoi = Card.user, pas une table de permissions.
+    %% ==========================================================================
 
     Bank {
-        int id PK
-        string nom
-        string slug
-        string pays
-        string devise_principale
-        boolean actif
+        bigint id PK
+        string name UK
+        string slug UK
+        string country
+        string default_currency
+        boolean is_active
     }
-
-    %% ACCOUNT - generic base table
-    %% Each account is linked to a Bank.
-    %% The precise type is in a specialized table.
 
     Account {
-        int id PK
-        int bank_id FK
-        string nom
-        string slug
-        string type
-        string devise
-        string classe_actif
-        boolean actif
-        string created_at
+        bigint id PK
+        bigint bank_id FK
+        string name
+        string slug UK
+        string account_type
+        string currency
+        boolean is_active
+        datetime created_at
     }
 
-    %% ACCOUNT - Specialized table Phase 0-3
-    %% CompteCourant: daily bank account (Yuh CHF, CIC EUR)
-    %% Future: SavingsAccount, InvestmentAccount, Pilier3a, LibrePassage, AssuranceVie
+    %% Table spécialisée Phase 0A — comptes courants (Yuh, CIC C/C)
+    %% Patron : 1 Account → 1 table spécialisée (OneToOne)
+    %% Phase 4+ : CompteEpargne, ComptePrevoyance3a, CompteLibrePassage
+    %% Phase 5+ : CompteInvestissement
 
     CompteCourant {
-        int id PK
-        int account_id FK
+        bigint account_id PK_FK
         string iban
         string bic
     }
 
-    %% ACCESS - who can see which account
-    %% Max 2 users per account (enforced at app level)
-
-    AccountAccess {
-        int id PK
-        int account_id FK
-        int user_id FK
-        string role
-        string created_at
-    }
-
-    %% CARDS
-    %% 1 card = 1 user + 1 account
-    %% type=credit planned but developed in future phase
-
     Card {
-        int id PK
-        int account_id FK
-        int user_id FK
-        string numero_masque
-        string label
-        string type
-        boolean actif
+        bigint id PK
+        bigint account_id FK
+        bigint user_id FK
+        string last_four
+        string card_type
+        boolean is_active
     }
-
-    %% BALANCE SNAPSHOTS
 
     BalanceSnapshot {
-        int id PK
-        int account_id FK
-        string date_snapshot
-        float solde
-        string devise
-        float solde_chf
+        bigint id PK
+        bigint account_id FK
+        date date
+        decimal solde
+        string currency
+        decimal solde_chf
         string source
     }
 
-    %% CATEGORIES - extensible without migration
+    ExchangeRate {
+        bigint id PK
+        date date
+        string from_currency
+        string to_currency
+        decimal rate
+    }
+
+    %% ==========================================================================
+    %% TRANSACTIONS — App transactions/
+    %% ==========================================================================
+
+    Transaction {
+        bigint id PK
+        bigint account_id FK
+        bigint card_id FK
+        bigint category_id FK
+        bigint subcategory_id FK
+        bigint rule_id FK
+        date date_transaction
+        date date_valeur
+        decimal montant
+        string devise
+        decimal montant_chf
+        decimal taux_change_utilise
+        string description_brute
+        string description_nette
+        string localite
+        boolean pointe
+        string source_categorisation
+        decimal confiance_score
+        string import_hash
+        string import_fichier
+        datetime created_at
+        datetime updated_at
+    }
 
     Category {
-        int id PK
+        bigint id PK
         string nom
-        string slug
+        string slug UK
         string emoji
         string couleur_hex
         string nature
@@ -100,96 +130,31 @@ erDiagram
     }
 
     SubCategory {
-        int id PK
-        int category_id FK
+        bigint id PK
+        bigint category_id FK
         string nom
         string slug
         string emoji
         boolean actif
     }
 
-    %% TRANSACTIONS - core of the system
-
-    Transaction {
-        int id PK
-        int account_id FK
-        int card_id FK
-        int category_id FK
-        int subcategory_id FK
-        int rule_id FK
-        string date_transaction
-        string date_valeur
-        float montant
-        string devise
-        float montant_chf
-        float taux_change_utilise
-        string description_brute
-        string description_nette
-        string localite
-        boolean pointe
-        string source_categorisation
-        float confiance_score
-        string import_hash
-        string import_fichier
-        string created_at
-        string updated_at
-    }
-
-    %% CATEGORIZATION RULES
-
     CategorizationRule {
-        int id PK
-        int category_id FK
-        int subcategory_id FK
+        bigint id PK
+        bigint category_id FK
+        bigint subcategory_id FK
         string keyword
         string champ_cible
         boolean sensible_casse
         int priorite
         int nb_applications
         boolean validee_manuellement
-        string created_at
+        datetime created_at
     }
-
-    %% BUDGET AND TARGETS
-
-    BudgetTarget {
-        int id PK
-        int category_id FK
-        int subcategory_id FK
-        string periode
-        float montant_cible
-        string recurrence
-        boolean actif
-    }
-
-    BudgetResult {
-        int id PK
-        int target_id FK
-        string periode
-        float montant_realise
-        float ecart
-        boolean objectif_atteint
-        string statut
-        string calcule_le
-    }
-
-    %% EXCHANGE RATES
-
-    ExchangeRate {
-        int id PK
-        string date_taux
-        string devise_source
-        string devise_cible
-        float taux
-        string source
-    }
-
-    %% IMPORT LOG
 
     ImportLog {
-        int id PK
-        int account_id FK
-        int user_id FK
+        bigint id PK
+        bigint account_id FK
+        bigint user_id FK
         string nom_fichier
         string hash_fichier
         string statut
@@ -198,88 +163,74 @@ erDiagram
         int nb_doublons
         int nb_erreurs
         string detail_erreurs
-        string importe_le
+        datetime importe_le
     }
 
-    %% INVESTMENTS - Phase 4-5
-
-    Instrument {
-        int id PK
-        string ticker
-        string nom
-        string type
-        string devise_cotation
-        string isin
+    BudgetTarget {
+        bigint id PK
+        bigint category_id FK
+        bigint subcategory_id FK
+        string periode
+        decimal montant_cible
+        string recurrence
+        boolean actif
     }
 
-    InvestmentPosition {
-        int id PK
-        int account_id FK
-        int instrument_id FK
-        float quantite_totale
-        float prix_moyen_achat
-        float valeur_actuelle
-        float plus_value_latente
-        float performance_pct
-        string date_derniere_maj
+    BudgetResult {
+        bigint id PK
+        bigint target_id FK
+        string periode
+        decimal montant_realise
+        decimal ecart
+        boolean objectif_atteint
+        string statut
+        datetime calcule_le
     }
 
-    InvestmentTransaction {
-        int id PK
-        int account_id FK
-        int instrument_id FK
-        string date_transaction
-        string type_ordre
-        float quantite
-        float prix_unitaire
-        float frais
-        float montant_total
-        string devise
-        float montant_chf
-        string import_hash
-    }
+    %% ==========================================================================
+    %% PHASE 4+ — Patrimoine (pas encore implémenté)
+    %% ==========================================================================
 
-    PriceHistory {
-        int id PK
-        int instrument_id FK
-        string date_cotation
-        float prix_cloture
-        string devise
-        string source
-    }
+    %% CompteEpargne { account_id PK_FK, taux_interet_annuel, plafond_legal }
+    %% ComptePrevoyance { account_id PK_FK, type_prevoyance, frais_gestion_annuel_pct }
+    %% CompteInvestissement { account_id PK_FK, type_etf }
 
-    %% RELATIONS - Phases 0-3
+    %% ==========================================================================
+    %% PHASE 5+ — Investissements (pas encore implémenté)
+    %% ==========================================================================
 
-    Bank ||--o{ Account : "heberge"
-    Account ||--o| CompteCourant : "specialise en"
-    Account ||--o{ AccountAccess : "accessible par"
-    Account ||--o{ Card : "emet"
-    Account ||--o{ BalanceSnapshot : "historique"
+    %% Instrument { id PK, ticker, nom, type, devise_cotation, isin }
+    %% InvestmentPosition { id PK, account_id FK, instrument_id FK, ... }
+    %% InvestmentTransaction { id PK, account_id FK, instrument_id FK, ... }
+    %% PriceHistory { id PK, instrument_id FK, date, prix_cloture, devise }
+
+    %% ==========================================================================
+    %% RELATIONS
+    %% ==========================================================================
+
+    %% Users
+    CustomUser ||--|| Profile : "a un"
+
+    %% Banks & Accounts
+    Bank ||--o{ Account : "héberge"
+    Account ||--o| CompteCourant : "spécialisé en"
+    Account ||--o{ Card : "émet"
+    Account ||--o{ BalanceSnapshot : "historique solde"
+    Account ||--o{ ImportLog : "tracé par"
     Account ||--o{ Transaction : "contient"
-    Account ||--o{ ImportLog : "trace par"
 
-    User ||--o{ AccountAccess : "acces"
-    User ||--o{ Card : "possede"
-    User ||--o{ ImportLog : "effectue"
+    %% Cards → Users (qui utilise quelle carte)
+    CustomUser ||--o{ Card : "titulaire"
+    CustomUser ||--o{ ImportLog : "importe"
 
+    %% Transactions
     Card ||--o{ Transaction : "source"
-
     Category ||--o{ SubCategory : "contient"
     Category ||--o{ Transaction : "classifie"
     Category ||--o{ CategorizationRule : "cible"
     Category ||--o{ BudgetTarget : "cible"
-
     SubCategory ||--o{ Transaction : "affine"
     SubCategory ||--o{ CategorizationRule : "affine"
     SubCategory ||--o{ BudgetTarget : "affine"
-
-    CategorizationRule ||--o{ Transaction : "categorise"
-    BudgetTarget ||--o{ BudgetResult : "evalue par"
-
-    %% RELATIONS - Phases 4-5
-
-    Account ||--o{ InvestmentPosition : "detient"
-    Account ||--o{ InvestmentTransaction : "contient"
-    Instrument ||--o{ InvestmentPosition : "dans"
-    Instrument ||--o{ InvestmentTransaction : "concerne"
-    Instrument ||--o{ PriceHistory : "cotation"
+    CategorizationRule ||--o{ Transaction : "catégorise"
+    BudgetTarget ||--o{ BudgetResult : "évalué par"
