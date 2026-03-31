@@ -1,0 +1,3 @@
+# connectors/ — Pure Python package, no Django models.
+# One sub-package per data source: yuh/, cic/, finpension/...
+# Each exposes a parser that returns a normalized list of TransactionDict.
