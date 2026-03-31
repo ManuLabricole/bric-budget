@@ -1,21 +1,54 @@
 # .pre-commit-config.yaml — runs before every git commit
 #
-# Install hooks:  poetry run pre-commit install
-# Run manually:   poetry run pre-commit run --all-files
+# Install hooks:
+#   poetry run pre-commit install                        ← pre-commit + pre-push stages
+#   poetry run pre-commit install --hook-type commit-msg ← commit-msg stage (commitizen)
+#
+# Run manually:
+#   poetry run pre-commit run --all-files
 #
 # How it works:
-#   pre-commit intercepts `git commit`, runs the hooks below,
+#   pre-commit intercepts `git commit`, runs the hooks below in order,
 #   and blocks the commit if any hook fails or modifies files.
-#   If ruff auto-fixes something, the commit is blocked so you
-#   can review the fix and re-stage before committing.
+#   If ruff auto-fixes something, the commit is blocked so you can
+#   review the fix and re-stage before committing.
 
 repos:
+  # ---------------------------------------------------------------------------
+  # Ruff — linter + formatter (replaces flake8, black, isort)
+  # ---------------------------------------------------------------------------
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.11.4   # keep in sync with pyproject.toml ruff version
     hooks:
       # 1. Lint — catches unused imports, undefined names, style issues
       - id: ruff
-        args: [--fix]   # auto-fix what can be fixed
+        args: [--fix]
 
       # 2. Format — enforces consistent style (replaces Black)
       - id: ruff-format
+
+  # ---------------------------------------------------------------------------
+  # djLint — Django template linter + formatter
+  # No templates yet (Phase 1B) — hook passes silently until then.
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/Riverside-Healthcare/djLint
+    rev: v1.36.4   # keep in sync with pyproject.toml djlint version
+    hooks:
+      # Reformat templates (indentation, spacing)
+      - id: djlint-reformat-django
+
+      # Lint templates (missing closing tags, bad attributes...)
+      - id: djlint-django
+
+  # ---------------------------------------------------------------------------
+  # Commitizen — enforces Conventional Commits message format
+  # Runs at commit-msg stage (after you type your message).
+  # Valid:   feat(accounts): add Card model
+  # Invalid: "added card" → blocked
+  # Install: poetry run pre-commit install --hook-type commit-msg
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.13.9   # keep in sync with pyproject.toml commitizen version
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]

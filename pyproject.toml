@@ -60,6 +60,26 @@ exclude = [
     "src/*/migrations/*.py",
 ]
 
+# =============================================================================
+# Commitizen — conventional commits enforcer
+# Docs: https://commitizen-tools.github.io/commitizen/
+# =============================================================================
+
+[tool.commitizen]
+# Commit message schema: <type>(<scope>): <subject>
+# Types allowed:
+#   feat     — new feature
+#   fix      — bug fix
+#   refactor — code change that is neither feat nor fix
+#   chore    — build, tooling, dependencies
+#   docs     — documentation only
+#   test     — adding or updating tests
+#   style    — formatting, no logic change
+name = "cz_conventional_commits"
+version = "0.1.0"
+version_files = ["pyproject.toml:version"]
+tag_format = "v$version"
+
 [tool.ruff.lint.isort]
 # Tell isort that these are our first-party packages
 # so imports are grouped correctly: stdlib → third-party → first-party
