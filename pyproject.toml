@@ -26,3 +26,42 @@ ruff = "^0.15.8"
 djlint = "^1.36.4"
 commitizen = "^4.13.9"
 
+
+# =============================================================================
+# Ruff — linter + formatter (replaces flake8, black, isort)
+# Docs: https://docs.astral.sh/ruff/
+# =============================================================================
+
+[tool.ruff]
+# Where to look for Python files
+src = ["src"]
+
+# Max line length — 88 is Black's default, widely accepted
+line-length = 88
+
+# Target Python version
+target-version = "py313"
+
+[tool.ruff.lint]
+# Rule sets enabled:
+#   E/W  = pycodestyle (basic style)
+#   F    = pyflakes (unused imports, undefined names...)
+#   I    = isort (import ordering)
+#   DJ   = flake8-django (Django-specific: model field checks, admin...)
+select = ["E", "W", "F", "I", "DJ"]
+
+# Rules we intentionally ignore:
+ignore = [
+    "E501",  # line too long — handled by the formatter, not the linter
+]
+
+# Files to never lint (migrations are auto-generated, no point fixing them)
+exclude = [
+    "src/*/migrations/*.py",
+]
+
+[tool.ruff.lint.isort]
+# Tell isort that these are our first-party packages
+# so imports are grouped correctly: stdlib → third-party → first-party
+known-first-party = ["accounts", "transactions", "users", "connectors", "config"]
+
