@@ -1,19 +1,19 @@
 """
-users/admin.py — Interface admin pour CustomUser et Profile
+users/admin.py — Django admin registration for CustomUser and Profile
 
-Pourquoi hériter de UserAdmin et pas ModelAdmin ?
+Why inherit from UserAdmin instead of ModelAdmin?
 -------------------------------------------------
-django.contrib.auth.admin.UserAdmin sait que c'est un utilisateur :
-- affiche le password comme "••••••••" avec un lien "changer"
-- structure le formulaire en sections (fieldsets)
-- gère la confirmation de mot de passe à la création (password1 + password2)
+django.contrib.auth.admin.UserAdmin knows it's dealing with a user model:
+- displays the password as "••••••••" with a "change" link
+- structures the form into sections (fieldsets)
+- handles password confirmation on creation (password1 + password2)
 
-Avec ModelAdmin, le hash du password s'afficherait comme un champ texte brut.
+With plain ModelAdmin, the password hash would render as a raw text field.
 """
 
 from django.contrib import admin
 from django.contrib.auth.admin import (
-    UserAdmin,  # la classe de base Django pour les Users
+    UserAdmin,  # Django's base class for user models
 )
 
 from .models import CustomUser, Profile
@@ -22,8 +22,8 @@ from .models import CustomUser, Profile
 @admin.register(CustomUser)
 class CustomUserAdmin(UserAdmin):
     """
-    On hérite de UserAdmin pour garder toute la logique password/permissions.
-    On redéfinit uniquement ce qui référençait "username" — notre champ supprimé.
+    Inherits from UserAdmin to keep all password/permission logic.
+    We only redefine the parts that referenced "username" — our removed field.
     """
 
     list_display = ("email", "first_name", "last_name", "is_staff", "is_active")
@@ -31,11 +31,11 @@ class CustomUserAdmin(UserAdmin):
     search_fields = ("email", "first_name", "last_name")
     ordering = ("email",)
 
-    # fieldsets = sections du formulaire d'ÉDITION d'un utilisateur existant
-    # UserAdmin par défaut met "username" dans la 1ère section — on le remplace par "email"
+    # fieldsets = sections of the EDIT form for an existing user
+    # UserAdmin default puts "username" in the first section — we replace it with "email"
     fieldsets = (
         (None, {"fields": ("email", "password")}),
-        ("Informations personnelles", {"fields": ("first_name", "last_name")}),
+        ("Personal information", {"fields": ("first_name", "last_name")}),
         (
             "Permissions",
             {
@@ -46,7 +46,7 @@ class CustomUserAdmin(UserAdmin):
                     "groups",
                     "user_permissions",
                 ),
-                "classes": ("collapse",),  # section repliée par défaut
+                "classes": ("collapse",),  # section collapsed by default
             },
         ),
         (
@@ -58,7 +58,7 @@ class CustomUserAdmin(UserAdmin):
         ),
     )
 
-    # add_fieldsets = sections du formulaire de CRÉATION (password1 + password2 pour confirmation)
+    # add_fieldsets = sections of the CREATE form (password1 + password2 for confirmation)
     add_fieldsets = (
         (
             None,
@@ -80,9 +80,9 @@ class CustomUserAdmin(UserAdmin):
 
 @admin.register(Profile)
 class ProfileAdmin(admin.ModelAdmin):
-    """Profile est un modèle standard — ModelAdmin suffit."""
+    """Profile is a standard model — ModelAdmin is sufficient."""
 
-    list_display = ("user", "langue", "devise_affichage")
+    list_display = ("user", "language", "display_currency")
     search_fields = (
         "user__email",
-    )  # __ = traversée de FK : Profile → CustomUser → email
+    )  # __ = FK traversal: Profile → CustomUser → email

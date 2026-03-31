@@ -12,7 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 
-from decouple import config  # lit les variables depuis .env.local
+from decouple import config  # reads variables from .env.local
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -38,18 +38,18 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    # --- Nos apps métier ---
-    # Ordre important : users/ en premier car accounts/ en dépend
+    # --- Business apps ---
+    # Order matters: users/ first because accounts/ depends on it
     "users",
     "accounts",
     "transactions",
 ]
 
-# --- Modèle utilisateur custom ---
-# CRITIQUE : doit être défini AVANT la première migration.
-# Remplace django.contrib.auth.User par notre CustomUser (login par email).
-# Toujours référencer via settings.AUTH_USER_MODEL dans les ForeignKey,
-# jamais via "from django.contrib.auth.models import User" directement.
+# --- Custom user model ---
+# CRITICAL: must be set BEFORE the first migration.
+# Replaces django.contrib.auth.User with our CustomUser (email-based login).
+# Always reference via settings.AUTH_USER_MODEL in ForeignKey fields,
+# never via "from django.contrib.auth.models import User" directly.
 AUTH_USER_MODEL = "users.CustomUser"
 
 MIDDLEWARE = [
@@ -67,9 +67,9 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        # DIRS: nos templates dans src/templates/
+        # DIRS: our templates live in src/templates/
         "DIRS": [BASE_DIR / "templates"],
-        # APP_DIRS: True = Django cherche les templates dans <app>/templates/ automatiquement
+        # APP_DIRS: True = Django automatically looks for templates in <app>/templates/
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -84,7 +84,7 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 
 
-# --- Base de données PostgreSQL ---
+# --- PostgreSQL database ---
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
@@ -123,8 +123,8 @@ LANGUAGE_CODE = "en-us"
 
 TIME_ZONE = "Europe/Zurich"
 
-# USE_I18N = False désactive la détection de langue du navigateur.
-# L'admin Django reste en anglais (langue par défaut de Django).
+# USE_I18N = False disables browser language detection.
+# The Django admin stays in English (Django's default language).
 USE_I18N = False
 
 USE_TZ = True
@@ -136,6 +136,6 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 
-# Type de clé primaire auto-générée pour tous les modèles qui n'en spécifient pas une
-# BigAutoField = entier 64 bits → pratiquement illimité, bonne pratique moderne
+# Default auto-generated primary key type for all models that don't specify one
+# BigAutoField = 64-bit integer → effectively unlimited, modern best practice
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

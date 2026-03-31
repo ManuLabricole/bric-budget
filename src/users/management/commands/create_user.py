@@ -1,25 +1,25 @@
 """
 users/management/commands/create_user.py
 
-Commande Django custom : crée un utilisateur depuis les variables .env.
+Custom Django management command: creates a user from .env variables.
 
-Pourquoi une commande custom ?
--------------------------------
-`manage.py createsuperuser` est interactif — il pose des questions à chaque fois.
-Inutilisable dans un script ou après un reset DB.
-Cette commande lit les credentials depuis .env et crée l'utilisateur en une ligne.
+Why a custom command?
+----------------------
+`manage.py createsuperuser` is interactive — it asks questions every time.
+Unusable in a script or after a DB reset.
+This command reads credentials from .env and creates the user in one line.
 
-Usage :
-    python manage.py create_user                   # crée un user normal
-    python manage.py create_user --superuser       # crée un superuser
+Usage:
+    python manage.py create_user                   # creates a regular user
+    python manage.py create_user --superuser       # creates a superuser
 
-Variables .env requises :
-    SUPERUSER_EMAIL=ton@email.com
-    SUPERUSER_PASSWORD=ton_mot_de_passe
+Required .env variables:
+    SUPERUSER_EMAIL=your@email.com
+    SUPERUSER_PASSWORD=your_password
 
-Pattern Django — toute commande custom hérite de BaseCommand et implémente :
-    - add_arguments() : déclare les arguments CLI (optionnels)
-    - handle()        : le code qui s'exécute quand on lance la commande
+Django pattern — every custom command inherits from BaseCommand and implements:
+    - add_arguments(): declares CLI arguments (optional)
+    - handle():        the code that runs when the command is invoked
 """
 
 from decouple import config
@@ -28,49 +28,49 @@ from django.core.management.base import BaseCommand
 
 
 class Command(BaseCommand):
-    # Description affichée par `python manage.py help create_user`
-    help = "Crée un utilisateur (ou superuser) depuis les variables d'environnement .env"
+    # Description shown by `python manage.py help create_user`
+    help = "Creates a user (or superuser) from environment variables in .env"
 
     def add_arguments(self, parser):
         """
-        Déclare les arguments optionnels de la commande.
-        `parser` est un ArgumentParser Python standard.
+        Declares optional command arguments.
+        `parser` is a standard Python ArgumentParser.
         """
         parser.add_argument(
             "--superuser",
-            action="store_true",   # flag booléen : présent = True, absent = False
-            help="Crée un superuser (accès à l'admin Django) au lieu d'un user normal",
+            action="store_true",   # boolean flag: present = True, absent = False
+            help="Creates a superuser (Django admin access) instead of a regular user",
         )
 
     def handle(self, *args, **options):
         """
-        Logique principale de la commande.
-        `options` contient les arguments parsés — ici options["superuser"].
+        Main command logic.
+        `options` contains the parsed arguments — here options["superuser"].
         """
-        # get_user_model() retourne notre CustomUser — jamais importer User directement
+        # get_user_model() returns our CustomUser — never import User directly
         User = get_user_model()
 
-        # Lecture depuis .env via python-decouple
-        # Si la variable manque dans .env, decouple lève une UndefinedValueError claire
+        # Read from .env via python-decouple
+        # If a variable is missing from .env, decouple raises a clear UndefinedValueError
         email = config("SUPERUSER_EMAIL")
         password = config("SUPERUSER_PASSWORD")
 
-        # Vérifie si l'utilisateur existe déjà — évite une erreur d'unicité sur l'email
+        # Check if the user already exists — avoids a unique constraint error on email
         if User.objects.filter(email=email).exists():
             self.stdout.write(
-                self.style.WARNING(f"⚠️  L'utilisateur {email} existe déjà — rien à faire.")
+                self.style.WARNING(f"User {email} already exists — nothing to do.")
             )
             return
 
         if options["superuser"]:
-            # create_superuser : is_staff=True + is_superuser=True + password hashé
+            # create_superuser: is_staff=True + is_superuser=True + hashed password
             User.objects.create_superuser(email=email, password=password)
             self.stdout.write(
-                self.style.SUCCESS(f"✅ Superuser créé : {email}")
+                self.style.SUCCESS(f"Superuser created: {email}")
             )
         else:
-            # create_user : utilisateur normal, pas d'accès à l'admin Django
+            # create_user: regular user, no Django admin access
             User.objects.create_user(email=email, password=password)
             self.stdout.write(
-                self.style.SUCCESS(f"✅ Utilisateur créé : {email}")
+                self.style.SUCCESS(f"User created: {email}")
             )

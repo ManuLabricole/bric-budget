@@ -1,15 +1,14 @@
 """
-users/models.py — Modèle utilisateur custom de BricBudget
+users/models.py — Custom user model for BricBudget
 
-Pourquoi ce fichier existe ?
------------------------------
-Django fournit un modèle User par défaut dans django.contrib.auth.
-Ce modèle utilise `username` comme identifiant principal.
-On veut se connecter par email — donc on doit remplacer ce modèle par le nôtre.
+Why does this file exist?
+--------------------------
+Django ships with a default User model that uses `username` as the primary
+identifier. We want email-based login, so we replace it with our own model.
 
-RÈGLE ABSOLUE Django : ce modèle doit exister AVANT la première migration.
-Si on change d'avis après avoir migré, il faut tout supprimer et recommencer.
-C'est pourquoi AUTH_USER_MODEL est défini dès le départ dans settings.py.
+ABSOLUTE DJANGO RULE: this model must exist BEFORE the first migration.
+Changing it after the first migration requires deleting everything and
+starting over. That's why AUTH_USER_MODEL is set from day one in settings.py.
 """
 
 from django.contrib.auth.models import AbstractUser, BaseUserManager
@@ -18,33 +17,33 @@ from django.db import models
 
 class CustomUserManager(BaseUserManager):
     """
-    Manager custom pour CustomUser.
+    Custom manager for CustomUser.
 
-    Pourquoi ce Manager ?
+    Why a custom manager?
     ----------------------
-    Le UserManager par défaut de Django appelle create_user(username, email, password).
-    On a supprimé username — donc Django plante avec "missing argument: username".
-    Ce Manager remplace la signature pour utiliser email comme seul identifiant.
+    Django's default UserManager calls create_user(username, email, password).
+    We removed username — so Django would crash with "missing argument: username".
+    This manager replaces that signature, using email as the only identifier.
 
-    Un Manager, c'est l'objet qui gère les requêtes DB pour un modèle.
-    Quand tu écris User.objects.create_user(...), c'est ce Manager qui est appelé.
+    A manager is the object that handles DB queries for a model.
+    When you write User.objects.create_user(...), this manager is called.
     """
 
     def create_user(self, email, password=None, **extra_fields):
-        """Crée un utilisateur normal (is_staff=False, is_superuser=False)."""
+        """Creates a regular user (is_staff=False, is_superuser=False)."""
         if not email:
-            raise ValueError("L'adresse email est obligatoire")
-        # normalize_email met le domaine en minuscules : Foo@GMAIL.COM → Foo@gmail.com
+            raise ValueError("Email address is required")
+        # normalize_email lowercases the domain: Foo@GMAIL.COM → Foo@gmail.com
         email = self.normalize_email(email)
         user = self.model(email=email, **extra_fields)
-        # set_password hashe le mot de passe — jamais stocker en clair
+        # set_password hashes the password — never store in plain text
         user.set_password(password)
         user.save(using=self._db)
         return user
 
     def create_superuser(self, email, password=None, **extra_fields):
-        """Crée un superuser (accès complet à l'admin Django)."""
-        # setdefault : met la valeur seulement si la clé n'est pas déjà dans extra_fields
+        """Creates a superuser (full access to the Django admin)."""
+        # setdefault: only sets the value if the key is not already in extra_fields
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
         extra_fields.setdefault("is_active", True)
@@ -53,92 +52,87 @@ class CustomUserManager(BaseUserManager):
 
 class CustomUser(AbstractUser):
     """
-    Modèle utilisateur de BricBudget.
+    BricBudget user model.
 
-    On hérite de AbstractUser (pas AbstractBaseUser) pour une raison simple :
-    AbstractUser garde tout le travail déjà fait par Django (password hashé,
-    permissions, groupes, is_active, is_staff, date_joined, last_login...).
-    On se contente de changer l'identifiant principal : username → email.
+    We inherit from AbstractUser (not AbstractBaseUser) for a simple reason:
+    AbstractUser keeps all the work Django has already done (hashed passwords,
+    permissions, groups, is_active, is_staff, date_joined, last_login...).
+    We only change the primary identifier: username → email.
 
-    AbstractBaseUser serait pour repartir de zéro — overkill ici.
+    AbstractBaseUser would mean starting from scratch — overkill here.
     """
 
-    # Branche notre Manager custom — remplace le UserManager par défaut de Django
+    # Wire our custom manager — replaces Django's default UserManager
     objects = CustomUserManager()
 
-    # On supprime le champ username hérité de AbstractUser.
-    # None = le champ n'existe pas dans notre modèle, même pas comme colonne en DB.
+    # Remove the username field inherited from AbstractUser.
+    # None = the field does not exist on our model, not even as a DB column.
     username = None
 
-    # L'email devient le champ principal — il doit être unique (pas deux comptes avec le même email).
-    email = models.EmailField(
-        unique=True,
-        verbose_name="adresse email",
-    )
+    # email becomes the primary field — must be unique (no two accounts with the same email)
+    email = models.EmailField(unique=True)
 
-    # USERNAME_FIELD dit à Django quel champ utiliser pour l'authentification.
-    # C'est ce que Django vérifie quand quelqu'un tape son identifiant à la connexion.
-    # Par défaut c'est "username" — on le remplace par "email".
+    # USERNAME_FIELD tells Django which field to use for authentication.
+    # This is what Django checks when someone types their login identifier.
+    # Default is "username" — we replace it with "email".
     USERNAME_FIELD = "email"
 
-    # REQUIRED_FIELDS = champs demandés par "createsuperuser" EN PLUS de USERNAME_FIELD.
-    # On vide la liste car AbstractUser y met ["email"] par défaut,
-    # mais email est maintenant le USERNAME_FIELD — le laisser ici ferait une erreur.
+    # REQUIRED_FIELDS = fields prompted by "createsuperuser" IN ADDITION to USERNAME_FIELD.
+    # We clear the list because AbstractUser puts ["email"] there by default,
+    # but email is now the USERNAME_FIELD — leaving it here would cause an error.
     REQUIRED_FIELDS = []
 
     class Meta:
-        verbose_name = "utilisateur"
-        verbose_name_plural = "utilisateurs"
+        verbose_name = "user"
+        verbose_name_plural = "users"
 
     def __str__(self):
-        # Représentation lisible dans l'admin et les logs
         return self.email
 
 
 class Profile(models.Model):
     """
-    Profil étendu lié à CustomUser — relation OneToOne.
+    Extended profile linked to CustomUser — OneToOne relationship.
 
-    Pourquoi séparer User et Profile ?
-    -----------------------------------
-    CustomUser gère l'authentification (email, password, sessions).
-    Profile stocke les préférences métier de l'app (langue, devise d'affichage...).
+    Why separate User and Profile?
+    --------------------------------
+    CustomUser handles authentication (email, password, sessions).
+    Profile stores app-level user preferences (language, display currency...).
 
-    OneToOne = exactement 1 Profile par User, exactement 1 User par Profile.
-    C'est comme une extension de la table User sans modifier CustomUser.
+    OneToOne = exactly 1 Profile per User, exactly 1 User per Profile.
+    It's like extending the User table without modifying CustomUser.
 
-    on_delete=CASCADE : si on supprime le User, son Profile est supprimé aussi.
+    on_delete=CASCADE: deleting the User also deletes their Profile.
     """
 
-    # settings.AUTH_USER_MODEL est la bonne façon de référencer notre CustomUser.
-    # Ne JAMAIS écrire : from django.contrib.auth.models import User
-    # Ne JAMAIS écrire : ForeignKey("auth.User", ...)
-    # Toujours : settings.AUTH_USER_MODEL — ça fonctionne même si on change le modèle User plus tard.
+    # settings.AUTH_USER_MODEL is the correct way to reference our CustomUser.
+    # NEVER write: from django.contrib.auth.models import User
+    # NEVER write: ForeignKey("auth.User", ...)
+    # Always use: settings.AUTH_USER_MODEL — works even if the User model changes later.
     from django.conf import settings
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="profile",  # permet d'écrire user.profile depuis n'importe où dans le code
+        related_name="profile",  # allows writing user.profile anywhere in the code
     )
 
-    # Langue préférée de l'interface — Emmanuel = fr, Carys = en (GB)
-    langue = models.CharField(
+    # Preferred interface language — Emmanuel = fr, Carys = en
+    language = models.CharField(
         max_length=10,
         default="fr",
-        verbose_name="langue de l'interface",
+        help_text="BCP 47 language tag: fr, en, de...",
     )
 
-    # Devise d'affichage principale — CHF pour Emmanuel, GBP pour Carys
-    devise_affichage = models.CharField(
+    # Primary display currency — CHF for Emmanuel, GBP for Carys
+    display_currency = models.CharField(
         max_length=3,
         default="CHF",
-        verbose_name="devise d'affichage",
-        help_text="Code ISO 4217 : CHF, EUR, GBP...",
+        help_text="ISO 4217 currency code: CHF, EUR, GBP...",
     )
 
     class Meta:
-        verbose_name = "profil"
-        verbose_name_plural = "profils"
+        verbose_name = "profile"
+        verbose_name_plural = "profiles"
 
     def __str__(self):
-        return f"Profil de {self.user.email}"
+        return f"Profile({self.user.email})"
