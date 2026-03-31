@@ -2,7 +2,7 @@ erDiagram
 
     %% ==========================================================================
     %% USERS — App users/
-    %% Login par email. Profile = préférences UI séparées de l'auth.
+    %% Email-based login. Profile = UI preferences separate from auth.
     %% ==========================================================================
 
     CustomUser {
@@ -21,14 +21,14 @@ erDiagram
     Profile {
         bigint id PK
         bigint user_id FK
-        string langue
-        string devise_affichage
+        string language
+        string display_currency
     }
 
     %% ==========================================================================
     %% ACCOUNTS — App accounts/
-    %% Infrastructure bancaire. AccountAccess SUPPRIMÉ (YAGNI — app 2 users).
-    %% Qui utilise quoi = Card.user, pas une table de permissions.
+    %% Banking infrastructure. AccountAccess REMOVED (YAGNI — 2-user app).
+    %% Who uses what = Card.user, not a permissions table.
     %% ==========================================================================
 
     Bank {
@@ -37,6 +37,7 @@ erDiagram
         string slug UK
         string country
         string default_currency
+        string icon
         boolean is_active
     }
 
@@ -51,12 +52,12 @@ erDiagram
         datetime created_at
     }
 
-    %% Table spécialisée Phase 0A — comptes courants (Yuh, CIC C/C)
-    %% Patron : 1 Account → 1 table spécialisée (OneToOne)
-    %% Phase 4+ : CompteEpargne, ComptePrevoyance3a, CompteLibrePassage
-    %% Phase 5+ : CompteInvestissement
+    %% Specialised table Phase 0A — checking accounts (Yuh, CIC C/C)
+    %% Pattern: 1 Account → 1 specialised table (OneToOne, primary_key=True)
+    %% Phase 4+: SavingsAccount, PensionAccount
+    %% Phase 5+: InvestmentAccount
 
-    CompteCourant {
+    CheckingAccount {
         bigint account_id PK_FK
         string iban
         string bic
@@ -64,7 +65,7 @@ erDiagram
 
     Card {
         bigint id PK
-        bigint account_id FK
+        bigint checking_account_id FK
         bigint user_id FK
         string last_four
         string card_type
@@ -75,9 +76,9 @@ erDiagram
         bigint id PK
         bigint account_id FK
         date date
-        decimal solde
+        decimal balance
         string currency
-        decimal solde_chf
+        decimal balance_chf
         string source
     }
 
@@ -93,49 +94,25 @@ erDiagram
     %% TRANSACTIONS — App transactions/
     %% ==========================================================================
 
-    Transaction {
-        bigint id PK
-        bigint account_id FK
-        bigint card_id FK
-        bigint category_id FK
-        bigint subcategory_id FK
-        bigint rule_id FK
-        date date_transaction
-        date date_valeur
-        decimal montant
-        string devise
-        decimal montant_chf
-        decimal taux_change_utilise
-        string description_brute
-        string description_nette
-        string localite
-        boolean pointe
-        string source_categorisation
-        decimal confiance_score
-        string import_hash
-        string import_fichier
-        datetime created_at
-        datetime updated_at
-    }
-
     Category {
         bigint id PK
-        string nom
+        string name UK
         string slug UK
-        string emoji
-        string couleur_hex
-        string nature
-        int ordre_affichage
-        boolean actif
+        string icon
+        string colour_hex
+        int order
+        boolean is_system
+        boolean is_active
     }
 
     SubCategory {
         bigint id PK
         bigint category_id FK
-        string nom
-        string slug
-        string emoji
-        boolean actif
+        string name
+        string slug UK
+        string icon
+        string default_nature
+        boolean is_active
     }
 
     CategorizationRule {
@@ -143,94 +120,102 @@ erDiagram
         bigint category_id FK
         bigint subcategory_id FK
         string keyword
-        string champ_cible
-        boolean sensible_casse
-        int priorite
-        int nb_applications
-        boolean validee_manuellement
-        datetime created_at
+        string target_field
+        int priority
+        boolean is_active
+    }
+
+    Transaction {
+        bigint id PK
+        bigint account_id FK
+        bigint card_id FK
+        bigint category_id FK
+        bigint subcategory_id FK
+        bigint categorization_rule_id FK
+        bigint paired_transaction_id FK
+        date date
+        decimal amount
+        string currency
+        decimal amount_chf
+        string description_raw
+        string merchant_name
+        string note
+        string nature
+        string categorization_source
+        boolean is_reconciled
+        boolean is_ignored
+        boolean is_recurring
+        boolean is_internal_transfer
+        string import_hash UK
     }
 
     ImportLog {
         bigint id PK
         bigint account_id FK
-        bigint user_id FK
-        string nom_fichier
-        string hash_fichier
-        string statut
-        int nb_transactions_total
-        int nb_nouvelles
-        int nb_doublons
-        int nb_erreurs
-        string detail_erreurs
-        datetime importe_le
+        bigint imported_by_id FK
+        string filename
+        string file_hash UK
+        datetime imported_at
+        string status
+        int count_created
+        int count_skipped
+        int count_errors
+        string error_detail
     }
 
     BudgetTarget {
         bigint id PK
         bigint category_id FK
-        bigint subcategory_id FK
-        string periode
-        decimal montant_cible
-        string recurrence
-        boolean actif
+        date period
+        decimal amount
     }
 
-    BudgetResult {
-        bigint id PK
-        bigint target_id FK
-        string periode
-        decimal montant_realise
-        decimal ecart
-        boolean objectif_atteint
-        string statut
-        datetime calcule_le
-    }
+    %% BudgetResult: computed live from transactions — no table needed.
+    %% Transaction.objects.filter(category=c, date__year=y, date__month=m).aggregate(Sum('amount_chf'))
 
     %% ==========================================================================
-    %% PHASE 4+ — Patrimoine (pas encore implémenté)
+    %% PHASE 4+ — Net worth (not yet implemented)
     %% ==========================================================================
 
-    %% CompteEpargne { account_id PK_FK, taux_interet_annuel, plafond_legal }
-    %% ComptePrevoyance { account_id PK_FK, type_prevoyance, frais_gestion_annuel_pct }
-    %% CompteInvestissement { account_id PK_FK, type_etf }
+    %% SavingsAccount  { account_id PK_FK, interest_rate, legal_ceiling }
+    %% PensionAccount  { account_id PK_FK, pension_type, management_fee }
 
     %% ==========================================================================
-    %% PHASE 5+ — Investissements (pas encore implémenté)
+    %% PHASE 5+ — Investments (not yet implemented)
     %% ==========================================================================
 
-    %% Instrument { id PK, ticker, nom, type, devise_cotation, isin }
-    %% InvestmentPosition { id PK, account_id FK, instrument_id FK, ... }
+    %% InvestmentAccount     { account_id PK_FK, etf_type }
+    %% Instrument            { id PK, ticker, name, type, currency, isin }
+    %% InvestmentPosition    { id PK, account_id FK, instrument_id FK, ... }
     %% InvestmentTransaction { id PK, account_id FK, instrument_id FK, ... }
-    %% PriceHistory { id PK, instrument_id FK, date, prix_cloture, devise }
+    %% PriceHistory          { id PK, instrument_id FK, date, close_price, currency }
 
     %% ==========================================================================
     %% RELATIONS
     %% ==========================================================================
 
     %% Users
-    CustomUser ||--|| Profile : "a un"
+    CustomUser ||--|| Profile : "has one"
 
     %% Banks & Accounts
-    Bank ||--o{ Account : "héberge"
-    Account ||--o| CompteCourant : "spécialisé en"
-    Account ||--o{ Card : "émet"
-    Account ||--o{ BalanceSnapshot : "historique solde"
-    Account ||--o{ ImportLog : "tracé par"
-    Account ||--o{ Transaction : "contient"
+    Bank ||--o{ Account : "hosts"
+    Account ||--o| CheckingAccount : "specialised as"
+    CheckingAccount ||--o{ Card : "has"
+    Account ||--o{ BalanceSnapshot : "balance history"
+    Account ||--o{ ImportLog : "tracked by"
+    Account ||--o{ Transaction : "contains"
 
-    %% Cards → Users (qui utilise quelle carte)
-    CustomUser ||--o{ Card : "titulaire"
-    CustomUser ||--o{ ImportLog : "importe"
+    %% Cards & Users
+    CustomUser ||--o{ Card : "cardholder"
+    CustomUser ||--o{ ImportLog : "imports"
 
     %% Transactions
-    Card ||--o{ Transaction : "source"
-    Category ||--o{ SubCategory : "contient"
-    Category ||--o{ Transaction : "classifie"
-    Category ||--o{ CategorizationRule : "cible"
-    Category ||--o{ BudgetTarget : "cible"
-    SubCategory ||--o{ Transaction : "affine"
-    SubCategory ||--o{ CategorizationRule : "affine"
-    SubCategory ||--o{ BudgetTarget : "affine"
-    CategorizationRule ||--o{ Transaction : "catégorise"
-    BudgetTarget ||--o{ BudgetResult : "évalué par"
+    Card |o--o{ Transaction : "source"
+    Category ||--o{ SubCategory : "contains"
+    Category ||--o{ Transaction : "classifies"
+    Category ||--o{ CategorizationRule : "target"
+    Category ||--o{ BudgetTarget : "target"
+    SubCategory |o--o{ Transaction : "refines"
+    SubCategory ||--o{ CategorizationRule : "refines"
+    CategorizationRule |o--o{ Transaction : "categorizes"
+    Transaction ||--o| Transaction : "internal transfer link"
