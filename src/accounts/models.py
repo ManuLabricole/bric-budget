@@ -9,10 +9,10 @@ Model dependency order (follow this when reading or extending):
 
 from django.db import models
 
-
 # =============================================================================
 # Bank — A financial institution
 # =============================================================================
+
 
 class Bank(models.Model):
     """
@@ -57,6 +57,7 @@ class Bank(models.Model):
 # Account — Generic bank account (base table)
 # =============================================================================
 
+
 class Account(models.Model):
     """
     Generic model representing any bank account.
@@ -75,17 +76,17 @@ class Account(models.Model):
 
     class AccountType(models.TextChoices):
         # Phase 0A — implemented now
-        CURRENT     = "current",     "Checking account"
+        CURRENT = "current", "Checking account"
         # Phase 4 — specialised tables to be created later
-        SAVINGS     = "savings",     "Savings account"
-        PENSION_3A  = "pension_3a",  "3rd pillar (3a)"
-        PENSION_LP  = "pension_lp",  "Vested benefits (LP)"
+        SAVINGS = "savings", "Savings account"
+        PENSION_3A = "pension_3a", "3rd pillar (3a)"
+        PENSION_LP = "pension_lp", "Vested benefits (LP)"
         # Phase 5
-        INVESTMENT  = "investment",  "Investment account"
+        INVESTMENT = "investment", "Investment account"
 
     bank = models.ForeignKey(
         Bank,
-        on_delete=models.PROTECT,   # PROTECT: prevents deleting a bank that has accounts
+        on_delete=models.PROTECT,  # PROTECT: prevents deleting a bank that has accounts
         related_name="accounts",
     )
 
@@ -102,7 +103,9 @@ class Account(models.Model):
 
     is_active = models.BooleanField(default=True)
 
-    created_at = models.DateTimeField(auto_now_add=True)  # set automatically on creation
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )  # set automatically on creation
 
     class Meta:
         verbose_name = "account"
@@ -116,6 +119,7 @@ class Account(models.Model):
 # =============================================================================
 # CheckingAccount — Account specialisation for current/checking accounts
 # =============================================================================
+
 
 class CheckingAccount(models.Model):
     """
@@ -139,7 +143,7 @@ class CheckingAccount(models.Model):
     # Removes a redundant column and makes the one-to-one relationship explicit.
     account = models.OneToOneField(
         Account,
-        on_delete=models.CASCADE,   # CASCADE: deleting the Account also deletes this
+        on_delete=models.CASCADE,  # CASCADE: deleting the Account also deletes this
         primary_key=True,
         related_name="checking_account",
     )
@@ -163,6 +167,7 @@ class CheckingAccount(models.Model):
 # Card — A payment card linked to a CheckingAccount
 # =============================================================================
 
+
 class Card(models.Model):
     """
     A debit or credit card belonging to a user, linked to a CheckingAccount.
@@ -184,14 +189,14 @@ class Card(models.Model):
 
     checking_account = models.ForeignKey(
         CheckingAccount,
-        on_delete=models.CASCADE,   # CASCADE: deleting the CheckingAccount removes its cards
+        on_delete=models.CASCADE,  # CASCADE: deleting the CheckingAccount removes its cards
         related_name="cards",
     )
 
     # The cardholder — one card belongs to exactly one user
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.PROTECT,   # PROTECT: don't delete a user who still has cards
+        on_delete=models.PROTECT,  # PROTECT: don't delete a user who still has cards
         related_name="cards",
     )
 
@@ -200,7 +205,7 @@ class Card(models.Model):
     last_four = models.CharField(max_length=4)
 
     class CardType(models.TextChoices):
-        DEBIT  = "debit",  "Debit"
+        DEBIT = "debit", "Debit"
         CREDIT = "credit", "Credit"
 
     card_type = models.CharField(
@@ -223,6 +228,7 @@ class Card(models.Model):
 # =============================================================================
 # BalanceSnapshot — Account balance at a point in time
 # =============================================================================
+
 
 class BalanceSnapshot(models.Model):
     """
@@ -285,6 +291,7 @@ class BalanceSnapshot(models.Model):
 # =============================================================================
 # ExchangeRate — Currency exchange rate on a given date
 # =============================================================================
+
 
 class ExchangeRate(models.Model):
     """
