@@ -16,8 +16,12 @@ Including another URLconf
 """
 
 from django.contrib import admin
-from django.urls import path
+from django.urls import include, path
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    # Django's built-in auth views: login, logout, password_change, password_reset...
+    # Convention: Django looks for templates in registration/ (e.g. registration/login.html)
+    # We only use login + logout for now — the rest comes in Phase 1B.
+    path("", include("django.contrib.auth.urls")),
 ]

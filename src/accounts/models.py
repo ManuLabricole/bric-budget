@@ -91,7 +91,6 @@ class Account(models.Model):
     )
 
     name = models.CharField(max_length=200)
-    slug = models.SlugField(max_length=200, unique=True)
 
     account_type = models.CharField(
         max_length=20,
