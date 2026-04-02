@@ -120,6 +120,16 @@ create-superuser:
 	@$(MANAGE) create_user --superuser
 	@printf "  $(DIM)→ connecte-toi sur http://localhost:8000/admin$(RESET)\n"
 
+seed:
+	@printf "  🌱 $(CYAN)Seed des données initiales...$(RESET)\n"
+	@$(MANAGE) seed_initial
+	@printf "  $(DIM)→ banques, comptes, cartes, catégories créés$(RESET)\n"
+
+reset-seed:
+	@printf "  🗑️  $(RED)Suppression des données seedées...$(RESET)\n"
+	@$(MANAGE) reset_seed --yes
+	@printf "  $(DIM)→ relance make seed pour repeupler$(RESET)\n"
+
 # =============================================================================
 # 💾 Sauvegarde / Restauration PostgreSQL
 # =============================================================================
@@ -155,4 +165,4 @@ restore:
 	@printf "  ✅ $(GREEN)Restauration terminée$(RESET)\n"
 
 # =============================================================================
-.PHONY: help status up down logs run migrate makemigrations shell superuser backup restore
+.PHONY: help status up down logs run migrate makemigrations shell create-superuser seed reset-seed backup restore
