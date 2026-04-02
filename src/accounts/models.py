@@ -163,6 +163,57 @@ class CheckingAccount(models.Model):
 
 
 # =============================================================================
+# SavingsAccount — Account specialisation for savings accounts (Livret A, LDDS...)
+# =============================================================================
+
+
+class SavingsAccount(models.Model):
+    """
+    Fields specific to savings accounts (CIC Livret A, CIC LDDS, Finpension...).
+
+    Follows the exact same pattern as CheckingAccount: OneToOne → Account.
+    No IBAN here — savings accounts don't participate in SEPA transfers.
+    The account is identified by bank + name, not by a banking standard number.
+
+    account_reference: optional free-text reference (CIC internal account number,
+    Finpension contract number, etc.). Useful for display and future connectors,
+    but never used as a lookup key — the Account FK is the real identifier.
+
+    interest_rate: Annual Percentage Yield (APY) as a percentage.
+    Example: 3.00 for the LDDS (3%), 0.50 for Livret A (0.5%).
+    Stored as Decimal for precision (floating point would give 2.9999... rounding errors).
+    blank=True + default=0: some savings accounts have no fixed rate (e.g. pension funds).
+    """
+
+    account = models.OneToOneField(
+        Account,
+        on_delete=models.CASCADE,  # CASCADE: deleting the Account also deletes this
+        primary_key=True,
+        related_name="savings_account",
+    )
+
+    # APY in % — e.g. 3.00 means 3% per year
+    # max_digits=5, decimal_places=2: supports rates from 0.00% to 999.99%
+    interest_rate = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        blank=True,
+    )
+
+    # Free-text reference — CIC account number, Finpension contract number, etc.
+    # Not used as a lookup key — purely informational.
+    account_reference = models.CharField(max_length=100, blank=True, default="")
+
+    class Meta:
+        verbose_name = "savings account"
+        verbose_name_plural = "savings accounts"
+
+    def __str__(self):
+        return f"SavingsAccount — {self.account.name} ({self.interest_rate}% APY)"
+
+
+# =============================================================================
 # Card — A payment card linked to a CheckingAccount
 # =============================================================================
 

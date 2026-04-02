@@ -17,7 +17,15 @@ Registration order follows the model dependency chain:
 
 from django.contrib import admin
 
-from .models import Account, BalanceSnapshot, Bank, Card, CheckingAccount, ExchangeRate
+from .models import (
+    Account,
+    BalanceSnapshot,
+    Bank,
+    Card,
+    CheckingAccount,
+    ExchangeRate,
+    SavingsAccount,
+)
 
 # =============================================================================
 # Bank
@@ -57,6 +65,17 @@ class CheckingAccountAdmin(admin.ModelAdmin):
     # account__name: FK traversal — shows the linked Account's name in the list
     list_display = ("account", "iban", "bic")
     search_fields = ("account__name", "iban")
+
+
+# =============================================================================
+# SavingsAccount
+# =============================================================================
+
+
+@admin.register(SavingsAccount)
+class SavingsAccountAdmin(admin.ModelAdmin):
+    list_display = ("account", "interest_rate", "account_reference")
+    search_fields = ("account__name", "account_reference")
 
 
 # =============================================================================
