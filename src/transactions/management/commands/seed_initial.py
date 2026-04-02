@@ -1,5 +1,5 @@
 """
-config/management/commands/seed_initial.py
+transactions/management/commands/seed_initial.py
 
 Populates the database with reference data needed before any CSV import.
 

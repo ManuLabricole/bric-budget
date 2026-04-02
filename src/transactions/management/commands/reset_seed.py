@@ -1,5 +1,5 @@
 """
-config/management/commands/reset_seed.py
+transactions/management/commands/reset_seed.py
 
 Deletes all data created by seed_initial.
 
