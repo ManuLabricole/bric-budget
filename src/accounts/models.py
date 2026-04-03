@@ -72,12 +72,12 @@ class Account(models.Model):
 
     The `account_type` field is a discriminator: it tells which specialised
     table holds the details for this account.
-    Example: account_type="current" → look up CheckingAccount(account=this)
+    Example: account_type="checking" → look up CheckingAccount(account=this)
     """
 
     class AccountType(models.TextChoices):
         # Phase 0A — implemented now
-        CURRENT = "current", "Checking account"
+        CHECKING = "checking", "Checking account"
         # Phase 4 — specialised tables to be created later
         SAVINGS = "savings", "Savings account"
         PENSION_3A = "pension_3a", "3rd pillar (3a)"

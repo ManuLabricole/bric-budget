@@ -29,15 +29,19 @@ class TransactionDict(TypedDict):
     All parsers must produce this exact shape — the import service
     depends on it to create Transaction model instances.
 
-    Fields marked Optional can be None if the source doesn't provide them.
+    Fields with | None can be None if the source doesn't provide them.
     """
-    date:             str        # ISO 8601: "2026-03-17"
-    amount:           float      # negative = debit, positive = credit
-    currency:         str        # ISO 4217: "CHF", "EUR"...
-    description_raw:  str        # raw text from the bank, never modified
-    merchant_name:    str        # cleaned name pre-filled from description_raw
-    card_last_four:   str | None # e.g. "4521" — None if not a card transaction
-    import_hash:      str        # SHA1 of the raw row — used for deduplication
+
+    date: str  # ISO 8601 date: "2026-03-17"
+    time: str | None  # "HH:MM:SS" if available (UBS yes, Yuh/CIC no)
+    amount: float  # negative = debit (money out), positive = credit (money in)
+    currency: str  # ISO 4217: "CHF", "EUR", "GBP"...
+    description_raw: (
+        str  # raw text from the bank — never modified, used for audit + rules
+    )
+    merchant_name: str  # cleaned display name pre-filled from description_raw
+    card_last_four: str | None  # "4521" for card transactions, None otherwise
+    import_hash: str  # SHA1 of key fields — used for deduplication across imports
 
 
 class BaseConnector(ABC):

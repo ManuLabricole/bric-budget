@@ -204,6 +204,7 @@ class CategorizationRule(models.Model):
 # Transaction — A single financial movement on an account
 # =============================================================================
 
+
 class Transaction(models.Model):
     """
     A single financial movement: debit or credit on an account.
@@ -239,8 +240,8 @@ class Transaction(models.Model):
     # --- Account & card ---
 
     account = models.ForeignKey(
-        "accounts.Account",         # string reference — avoids cross-app circular imports
-        on_delete=models.PROTECT,   # PROTECT: don't silently lose transactions if account deleted
+        "accounts.Account",  # string reference — avoids cross-app circular imports
+        on_delete=models.PROTECT,  # PROTECT: don't silently lose transactions if account deleted
         related_name="transactions",
     )
 
@@ -284,10 +285,10 @@ class Transaction(models.Model):
     )
 
     class CategorizationSource(models.TextChoices):
-        DEFAULT = "default", "Default (Unknown)"   # no rule matched
-        RULE    = "rule",    "Rule applied"         # auto-matched by a CategorizationRule
-        AI      = "ai",      "AI categorized"       # Claude API fallback (Phase 6)
-        MANUAL  = "manual",  "Manual"               # user picked the category themselves
+        DEFAULT = "default", "Default (Unknown)"  # no rule matched
+        RULE = "rule", "Rule applied"  # auto-matched by a CategorizationRule
+        AI = "ai", "AI categorized"  # Claude API fallback (Phase 6)
+        MANUAL = "manual", "Manual"  # user picked the category themselves
 
     categorization_source = models.CharField(
         max_length=10,
@@ -309,6 +310,12 @@ class Transaction(models.Model):
 
     date = models.DateField()
 
+    # Time of the transaction — provided by some banks (UBS: "12:36:26"), absent in others
+    # (Yuh, CIC). null=True because most banks don't export the time.
+    # Useful for creating precise categorization rules and debugging duplicate transactions
+    # on the same day with the same amount.
+    time = models.TimeField(null=True, blank=True)
+
     # Negative = debit (money out), positive = credit (money in)
     amount = models.DecimalField(max_digits=14, decimal_places=2)
 
@@ -317,7 +324,9 @@ class Transaction(models.Model):
 
     # Amount converted to CHF via ExchangeRate — for consolidated charts.
     # null until the exchange rate for this date is loaded.
-    amount_chf = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    amount_chf = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True
+    )
 
     # --- Description ---
 
@@ -378,6 +387,7 @@ class Transaction(models.Model):
 # ImportLog — Record of a single CSV/file import session
 # =============================================================================
 
+
 class ImportLog(models.Model):
     """
     One row per import session — created every time a file is uploaded.
@@ -390,9 +400,9 @@ class ImportLog(models.Model):
     """
 
     class Status(models.TextChoices):
-        SUCCESS  = "success",  "Success"
-        PARTIAL  = "partial",  "Partial (some errors)"
-        FAILED   = "failed",   "Failed"
+        SUCCESS = "success", "Success"
+        PARTIAL = "partial", "Partial (some errors)"
+        FAILED = "failed", "Failed"
 
     account = models.ForeignKey(
         "accounts.Account",
@@ -422,9 +432,11 @@ class ImportLog(models.Model):
     )
 
     # Import stats — stored as plain integers for easy filtering
-    count_created  = models.PositiveIntegerField(default=0)  # new transactions inserted
-    count_skipped  = models.PositiveIntegerField(default=0)  # duplicates (hash already exists)
-    count_errors   = models.PositiveIntegerField(default=0)  # rows that failed to parse
+    count_created = models.PositiveIntegerField(default=0)  # new transactions inserted
+    count_skipped = models.PositiveIntegerField(
+        default=0
+    )  # duplicates (hash already exists)
+    count_errors = models.PositiveIntegerField(default=0)  # rows that failed to parse
 
     # Optional error detail for debugging — populated when status != SUCCESS
     error_detail = models.TextField(blank=True, default="")
@@ -441,6 +453,7 @@ class ImportLog(models.Model):
 # =============================================================================
 # BudgetTarget — Monthly spending target per category
 # =============================================================================
+
 
 class BudgetTarget(models.Model):
     """
@@ -460,7 +473,7 @@ class BudgetTarget(models.Model):
 
     category = models.ForeignKey(
         Category,
-        on_delete=models.CASCADE,   # CASCADE: deleting a category removes its targets
+        on_delete=models.CASCADE,  # CASCADE: deleting a category removes its targets
         related_name="budget_targets",
     )
 

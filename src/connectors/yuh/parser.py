@@ -1,51 +1,303 @@
 """
-connectors/yuh/parser.py — Yuh CSV parser (Phase 1A).
+connectors/yuh/parser.py — Yuh CSV parser.
 
-CSV format (semicolon-separated, UTF-8 BOM):
-    DATE ; ACTIVITY TYPE ; ACTIVITY NAME ; DEBIT ; DEBIT CURRENCY ;
-    CREDIT ; CREDIT CURRENCY ; CARD NUMBER ; LOCALITY ; RECIPIENT ;
-    SENDER ; FEES/COMMISSION ; BUY/SELL ; QUANTITY ; ASSET ; PRICE PER UNIT
+File format
+-----------
+Encoding  : UTF-8 with BOM (open with "utf-8-sig" to strip BOM automatically)
+Delimiter : semicolon (;)
+Header    : 1 row
+Columns   : DATE ; ACTIVITY TYPE ; ACTIVITY NAME ; DEBIT ; DEBIT CURRENCY ;
+            CREDIT ; CREDIT CURRENCY ; CARD NUMBER ; LOCALITY ; RECIPIENT ;
+            SENDER ; FEES/COMMISSION ; BUY/SELL ; QUANTITY ; ASSET ; PRICE PER UNIT
 
-Row filtering:
-    KEEP:   CARD_TRANSACTION_OUT, PAYMENT_TRANSACTION_IN, PAYMENT_TRANSACTION_OUT
-    IGNORE: REWARD_RECEIVED, BANK_AUTO_ORDER_EXECUTED, BANK_ORDER_EXECUTED
+Quirks
+------
+- Text values are triple-quoted: [[[Transfert de ANTEIS SA]]]  → strip all quotes
+- No IBAN or account number anywhere in the file
+- No time column (date only, format DD/MM/YYYY)
+- Balance not in file — only available in filename (see extract_balance)
+- CARD NUMBER format: "**** 1150"  → last_four = "1150"
 
-Balance extraction:
-    Filename format: "Activités_2026_03_17 - 33,344.CSV"
-    Pattern: everything after " - " and before ".CSV", strip commas → float
+Row filtering
+-------------
+SKIP (not real budget transactions):
+    REWARD_RECEIVED   Yuh cashback points — no CHF amount, pollutes the transaction list
+
+KEEP everything else:
+    CARD_TRANSACTION_OUT      card payment (debit)
+    PAYMENT_TRANSACTION_IN    incoming transfer (credit)
+    PAYMENT_TRANSACTION_OUT   outgoing transfer (debit)
+    BANK_AUTO_ORDER_EXECUTED  automatic FX conversion — real money movement, keep
+    BANK_ORDER_EXECUTED       manual FX order — real money movement, keep
+    SAVINGS_PLAN_*            savings plan movements — keep
+    Any future activity type  → kept by default (blacklist = future-proof)
+
+Balance extraction
+------------------
+Filename format: "Activités_2026_03_17 - 33,344.CSV"
+The balance is the number between " - " and ".CSV", with commas removed.
+Example: "Activités_2026_03_17 - 33,344.CSV" → 33344.0
+
+Account detection
+-----------------
+Yuh files have no identifier. Detection works by recognising the unique column
+signature of Yuh exports. If a single Yuh checking account exists in the DB,
+we assign it. Error if 0 or more than 1.
 """
 
+import csv
+import hashlib
+import re
 from pathlib import Path
 
 from connectors.base import BaseConnector, TransactionDict
 
 
 class YuhConnector(BaseConnector):
-    """
-    Parses Yuh CSV exports into normalized TransactionDicts.
-    Implemented in Phase 1A.
-    """
+    """Parses Yuh CSV exports into normalized TransactionDicts."""
 
-    # Activity types to keep — everything else is ignored
-    KEPT_ACTIVITY_TYPES = {
-        "CARD_TRANSACTION_OUT",
-        "PAYMENT_TRANSACTION_IN",
-        "PAYMENT_TRANSACTION_OUT",
+    # Yuh CSV column header signature — used for format detection
+    # These 16 columns in this exact order = definitely a Yuh file
+    COLUMN_SIGNATURE = [
+        "DATE",
+        "ACTIVITY TYPE",
+        "ACTIVITY NAME",
+        "DEBIT",
+        "DEBIT CURRENCY",
+        "CREDIT",
+        "CREDIT CURRENCY",
+        "CARD NUMBER",
+        "LOCALITY",
+        "RECIPIENT",
+        "SENDER",
+        "FEES/COMMISSION",
+        "BUY/SELL",
+        "QUANTITY",
+        "ASSET",
+        "PRICE PER UNIT",
+    ]
+
+    # Activity types to SKIP — everything else is imported.
+    # Blacklist is safer than whitelist: future Yuh activity types are kept by default.
+    # Only REWARD_RECEIVED is excluded because it has no CHF amount (cashback points only).
+    SKIPPED_ACTIVITY_TYPES = {
+        "REWARD_RECEIVED",
     }
 
+    # =========================================================================
+    # Public API
+    # =========================================================================
+
     def parse(self, filepath: Path) -> list[TransactionDict]:
-        # TODO Phase 1A: implement CSV parsing
-        # Steps:
-        #   1. Open file with UTF-8-sig encoding (strips BOM automatically)
-        #   2. csv.DictReader with delimiter=";"
-        #   3. Skip rows where ACTIVITY TYPE not in KEPT_ACTIVITY_TYPES
-        #   4. Build amount: -DEBIT if debit row, +CREDIT if credit row
-        #   5. merchant_name: clean ACTIVITY NAME (strip codes, capitalise)
-        #   6. card_last_four: last 4 chars of CARD NUMBER if present
-        #   7. import_hash: SHA1(date + activity_type + amount + description_raw)
-        raise NotImplementedError("YuhConnector.parse() — implemented in Phase 1A")
+        """
+        Parse a Yuh CSV file and return a list of normalized transactions.
+
+        Only rows whose ACTIVITY TYPE is in KEPT_ACTIVITY_TYPES are included.
+        Each row that raises an exception is skipped with a printed warning
+        so one bad row never aborts the whole import.
+        """
+        transactions = []
+        skipped = 0
+
+        with open(filepath, encoding="utf-8-sig") as f:
+            # utf-8-sig: strips the BOM character automatically
+            # Without it, the first column header would be "﻿DATE" instead of "DATE"
+            reader = csv.DictReader(f, delimiter=";")
+
+            for line_number, row in enumerate(
+                reader, start=2
+            ):  # start=2: line 1 = header
+                activity_type = row.get("ACTIVITY TYPE", "").strip()
+
+                # Skip only REWARD_RECEIVED — everything else is a real money movement
+                if activity_type in self.SKIPPED_ACTIVITY_TYPES:
+                    skipped += 1
+                    continue
+
+                try:
+                    transactions.append(self._parse_row(row))
+                except Exception as e:
+                    # Never abort on a bad row — log and continue
+                    print(
+                        f"  [Yuh] WARNING line {line_number}: {e} — row skipped: {row}"
+                    )
+                    skipped += 1
+
+        print(
+            f"  [Yuh] Parsed {len(transactions)} transactions, {skipped} rows skipped"
+        )
+        return transactions
 
     def extract_balance(self, filepath: Path) -> float | None:
-        # TODO Phase 1A: implement balance extraction from filename
-        # Pattern: "Activités_2026_03_17 - 33,344.CSV" → 33344.0
-        raise NotImplementedError("YuhConnector.extract_balance() — implemented in Phase 1A")
+        """
+        Extract the account balance from the filename.
+
+        Pattern: "Activités_2026_03_17 - 33,344.CSV"
+        → everything after " - " and before ".CSV", commas stripped → 33344.0
+
+        Returns None if the filename doesn't match the pattern.
+        """
+        # re.search: find the pattern anywhere in the string (not just at start)
+        # Pattern breakdown:
+        #   " - "        literal separator between date and balance
+        #   ([\d,]+)     capture group: digits and commas (the balance number)
+        #   (?:\.CSV)?$  optional ".CSV" extension (case handled below)
+        match = re.search(r" - ([\d,]+)(?:\.csv)?$", filepath.name, re.IGNORECASE)
+        if not match:
+            return None
+
+        # Remove commas used as thousands separators: "33,344" → "33344"
+        balance_str = match.group(1).replace(",", "")
+        try:
+            return float(balance_str)
+        except ValueError:
+            return None
+
+    @classmethod
+    def matches_file(cls, filepath: Path) -> bool:
+        """
+        Return True if this file looks like a Yuh CSV export.
+
+        Called by ConnectorRegistry to auto-select the right parser.
+        Reads only the first line — fast, no full parse needed.
+        """
+        if filepath.suffix.lower() != ".csv":
+            return False
+        try:
+            with open(filepath, encoding="utf-8-sig") as f:
+                first_line = f.readline().strip()
+            # Split on semicolons and compare to our known signature
+            columns = [col.strip() for col in first_line.split(";")]
+            return columns == cls.COLUMN_SIGNATURE
+        except Exception:
+            return False
+
+    # =========================================================================
+    # Private helpers
+    # =========================================================================
+
+    def _parse_row(self, row: dict) -> TransactionDict:
+        """
+        Convert one CSV row dict into a TransactionDict.
+
+        Called for each row that passed the KEPT_ACTIVITY_TYPES filter.
+        Raises ValueError if a required field is missing or malformed.
+        """
+        date_str = self._parse_date(row["DATE"].strip())
+        amount, currency = self._parse_amount(row)
+        description_raw = self._strip_quotes(row["ACTIVITY NAME"].strip())
+        merchant_name = self._clean_merchant(description_raw, row)
+        card_last_four = self._parse_card(row.get("CARD NUMBER", "").strip())
+
+        # import_hash: SHA1 of the fields that uniquely identify a transaction.
+        # Using date + activity_type + amount + description_raw — this combination
+        # should be unique per transaction even if the same merchant appears twice
+        # on the same day (different amounts or descriptions).
+        # SHA1 is enough here — we don't need cryptographic strength, just a fast
+        # consistent fingerprint for deduplication.
+        raw = f"{date_str}|{row['ACTIVITY TYPE']}|{amount}|{description_raw}"
+        import_hash = hashlib.sha1(raw.encode()).hexdigest()
+
+        return TransactionDict(
+            date=date_str,
+            time=None,  # Yuh doesn't export transaction time
+            amount=amount,
+            currency=currency,
+            description_raw=description_raw,
+            merchant_name=merchant_name,
+            card_last_four=card_last_four,
+            import_hash=import_hash,
+        )
+
+    def _parse_date(self, raw: str) -> str:
+        """
+        Convert DD/MM/YYYY → ISO 8601 "YYYY-MM-DD".
+
+        Example: "23/10/2025" → "2025-10-23"
+        Raises ValueError if format doesn't match.
+        """
+        parts = raw.split("/")
+        if len(parts) != 3:
+            raise ValueError(f"Unexpected date format: '{raw}'")
+        day, month, year = parts
+        return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+
+    def _parse_amount(self, row: dict) -> tuple[float, str]:
+        """
+        Extract (amount, currency) from the DEBIT/CREDIT columns.
+
+        Yuh uses two separate columns:
+            DEBIT  + DEBIT CURRENCY  → negative amount (money out)
+            CREDIT + CREDIT CURRENCY → positive amount (money in)
+
+        One of the two pairs is always empty. We check DEBIT first.
+        Raises ValueError if both are empty or the value can't be parsed.
+        """
+        debit = row.get("DEBIT", "").strip()
+        debit_currency = row.get("DEBIT CURRENCY", "").strip()
+        credit = row.get("CREDIT", "").strip()
+        credit_currency = row.get("CREDIT CURRENCY", "").strip()
+
+        if debit:
+            # Debit amounts are already negative in the file (e.g. "-196.20")
+            return float(debit), debit_currency
+        elif credit:
+            return float(credit), credit_currency
+        else:
+            raise ValueError("Both DEBIT and CREDIT are empty")
+
+    def _strip_quotes(self, text: str) -> str:
+        """
+        Remove Yuh's triple-quote wrapping from text values.
+
+        Yuh wraps most text fields in triple double-quotes (3 x "):
+            e.g. [3x"]Transfert de ANTEIS SA[3x"] → 'Transfert de ANTEIS SA'
+        strip('"') removes all leading/trailing double-quote characters.
+        """
+        return text.strip('"').strip()
+
+    def _clean_merchant(self, description: str, row: dict) -> str:
+        """
+        Derive a clean merchant name from the raw description.
+
+        Strategy:
+        1. For CARD_TRANSACTION_OUT: use RECIPIENT field if available (already clean)
+        2. For transfers: use RECIPIENT or SENDER field if available
+        3. Fallback: use the description itself, title-cased
+
+        This gives the best pre-fill for the merchant_name field in the UI.
+        The user can always edit it manually.
+        """
+        activity_type = row.get("ACTIVITY TYPE", "").strip()
+
+        if activity_type == "CARD_TRANSACTION_OUT":
+            recipient = self._strip_quotes(row.get("RECIPIENT", "").strip())
+            if recipient:
+                return recipient.title()
+
+        if activity_type == "PAYMENT_TRANSACTION_OUT":
+            recipient = self._strip_quotes(row.get("RECIPIENT", "").strip())
+            if recipient:
+                return recipient.title()
+
+        if activity_type == "PAYMENT_TRANSACTION_IN":
+            sender = self._strip_quotes(row.get("SENDER", "").strip())
+            if sender:
+                return sender.title()
+
+        # Fallback: title-case the raw description
+        # title() capitalises first letter of each word: "ANTEIS SA" → "Anteis Sa"
+        return description.title()
+
+    def _parse_card(self, raw: str) -> str | None:
+        """
+        Extract the last 4 digits from Yuh's masked card number.
+
+        Format: "**** 1150" → "1150"
+        Returns None if the field is empty (non-card transactions).
+        """
+        if not raw:
+            return None
+        # Take the last 4 characters after stripping whitespace
+        digits = raw.strip().split()[-1] if " " in raw else raw[-4:]
+        return digits if digits.isdigit() else None

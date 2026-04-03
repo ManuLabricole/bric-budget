@@ -248,7 +248,7 @@ class Command(BaseCommand):
                 "key": "yuh_cc",
                 "bank_slug": "yuh",
                 "name": "Yuh C/C",
-                "account_type": Account.AccountType.CURRENT,
+                "account_type": Account.AccountType.CHECKING,
                 "currency": "CHF",
                 "subtype": "checking",
                 "iban": "CH00 0000 0000 0000 0000 Y",
@@ -259,7 +259,7 @@ class Command(BaseCommand):
                 "key": "ubs_cc",
                 "bank_slug": "ubs",
                 "name": "UBS C/C",
-                "account_type": Account.AccountType.CURRENT,
+                "account_type": Account.AccountType.CHECKING,
                 "currency": "CHF",
                 "subtype": "checking",
                 "iban": "CH00 0000 0000 0000 0000 U",
@@ -280,7 +280,7 @@ class Command(BaseCommand):
                 "key": "cic_cc",
                 "bank_slug": "cic",
                 "name": "CIC C/C",
-                "account_type": Account.AccountType.CURRENT,
+                "account_type": Account.AccountType.CHECKING,
                 "currency": "EUR",
                 "subtype": "checking",
                 "iban": "FR00 0000 0000 0000 0000 C",
@@ -301,7 +301,7 @@ class Command(BaseCommand):
                 "key": "boursorama_cc",
                 "bank_slug": "boursorama",
                 "name": "Boursorama C/C",
-                "account_type": Account.AccountType.CURRENT,
+                "account_type": Account.AccountType.CHECKING,
                 "currency": "EUR",
                 "subtype": "checking",
                 "iban": "FR00 0000 0000 0000 0000 B",
@@ -385,7 +385,8 @@ class Command(BaseCommand):
         If SUPERUSER_EMAIL is not in the DB (create-superuser not run yet),
         the command warns and skips card creation entirely.
 
-        last_four values are fake placeholders (0001–0004).
+        last_four: real values extracted from CSV exports where known (Yuh: 1150, 8803).
+        UBS and CIC still use placeholders until their card formats are analysed.
         """
         User = get_user_model()
 
@@ -427,25 +428,46 @@ class Command(BaseCommand):
         cic_ca = CheckingAccount.objects.get(account=accounts["cic_cc"])
 
         # Each tuple: (user, CheckingAccount, last_four, card_type)
+        # last_four values: real digits extracted from bank CSV exports.
+        #   Yuh: CARD NUMBER column → "**** 1150" (Emmanuel), "**** 8803" (Carys)
+        #   UBS: contract-number format, last_four not extractable → keep fake for now
+        #   CIC: not yet analysed → keep fake for now
         cards_data = [
-            (emmanuel, yuh_ca, "0001", Card.CardType.DEBIT),
-            (emmanuel, ubs_ca, "0002", Card.CardType.DEBIT),
-            (carys, ubs_ca, "0003", Card.CardType.DEBIT),
-            (emmanuel, cic_ca, "0004", Card.CardType.DEBIT),
+            (emmanuel, yuh_ca, "1150", Card.CardType.DEBIT),
+            (carys, yuh_ca, "8803", Card.CardType.DEBIT),
+            (
+                emmanuel,
+                ubs_ca,
+                "0002",
+                Card.CardType.DEBIT,
+            ),  # TODO: real last_four unknown
+            (
+                carys,
+                ubs_ca,
+                "0003",
+                Card.CardType.DEBIT,
+            ),  # TODO: real last_four unknown
+            (
+                emmanuel,
+                cic_ca,
+                "0004",
+                Card.CardType.DEBIT,
+            ),  # TODO: real last_four unknown
         ]
 
         created_count = 0
         updated_count = 0
 
         for user, checking_account, last_four, card_type in cards_data:
-            # Lookup key: (user, checking_account, last_four)
-            # Distinguishes debit vs credit if the same user has two cards
-            # on the same account (last_four would differ in real data).
+            # Lookup key: (user, checking_account) — assumes one card per user per account.
+            # last_four is in defaults so the seed can update it when we learn the real value.
+            # Limitation: if the same user ever gets a second card on the same account
+            # (e.g. debit + credit), this lookup would collide — revisit then.
             _, created = Card.objects.update_or_create(
                 user=user,
                 checking_account=checking_account,
-                last_four=last_four,
                 defaults={
+                    "last_four": last_four,
                     "card_type": card_type,
                     "is_active": True,
                 },

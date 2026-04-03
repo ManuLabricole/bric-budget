@@ -37,6 +37,10 @@ help:
 	@printf "  $(CYAN)📡 Status$(RESET)\n"
 	@printf "    $(BOLD)make status$(RESET)          Affiche l'état des services et les ports\n"
 	@printf "\n"
+	@printf "  $(CYAN)📥 Import CSV$(RESET)\n"
+	@printf "    $(BOLD)make import-yuh$(RESET)      Analyse un export Yuh CSV (dry run)\n"
+	@printf "    $(BOLD)make import-ubs$(RESET)      Analyse un export UBS CSV (dry run)\n"
+	@printf "\n"
 
 # =============================================================================
 # 📡 status — état de tous les services
@@ -130,6 +134,16 @@ reset-seed:
 	@$(MANAGE) reset_seed --yes
 	@printf "  $(DIM)→ relance make seed pour repeupler$(RESET)\n"
 
+import-yuh:
+	@if [ -z "$(FILE)" ]; then printf "  ❌ $(RED)Usage: make import-yuh FILE=path/to/export.csv$(RESET)\n"; exit 1; fi
+	@printf "  📥 $(CYAN)Import Yuh — rapport...$(RESET)\n"
+	@$(MANAGE) import_yuh --file "$(FILE)"
+
+import-ubs:
+	@if [ -z "$(FILE)" ]; then printf "  ❌ $(RED)Usage: make import-ubs FILE=path/to/export.csv$(RESET)\n"; exit 1; fi
+	@printf "  📥 $(CYAN)Import UBS — rapport...$(RESET)\n"
+	@$(MANAGE) import_ubs --file "$(FILE)"
+
 # =============================================================================
 # 💾 Sauvegarde / Restauration PostgreSQL
 # =============================================================================
@@ -165,4 +179,4 @@ restore:
 	@printf "  ✅ $(GREEN)Restauration terminée$(RESET)\n"
 
 # =============================================================================
-.PHONY: help status up down logs run migrate makemigrations shell create-superuser seed reset-seed backup restore
+.PHONY: help status up down logs run migrate makemigrations shell create-superuser seed reset-seed import-yuh import-ubs backup restore
