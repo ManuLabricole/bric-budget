@@ -40,6 +40,7 @@ help:
 	@printf "  $(CYAN)📥 Import CSV$(RESET)\n"
 	@printf "    $(BOLD)make import-yuh$(RESET)      Analyse un export Yuh CSV (dry run)\n"
 	@printf "    $(BOLD)make import-ubs$(RESET)      Analyse un export UBS CSV (dry run)\n"
+	@printf "    $(BOLD)make import-cic$(RESET)      Analyse un export CIC Excel (dry run)\n"
 	@printf "\n"
 
 # =============================================================================
@@ -144,6 +145,11 @@ import-ubs:
 	@printf "  📥 $(CYAN)Import UBS — rapport...$(RESET)\n"
 	@$(MANAGE) import_ubs --file "$(FILE)"
 
+import-cic:
+	@if [ -z "$(FILE)" ]; then printf "  ❌ $(RED)Usage: make import-cic FILE=path/to/export.xlsx$(RESET)\n"; exit 1; fi
+	@printf "  📥 $(CYAN)Import CIC — rapport...$(RESET)\n"
+	@$(MANAGE) import_cic --file "$(FILE)"
+
 # =============================================================================
 # 💾 Sauvegarde / Restauration PostgreSQL
 # =============================================================================
@@ -179,4 +185,4 @@ restore:
 	@printf "  ✅ $(GREEN)Restauration terminée$(RESET)\n"
 
 # =============================================================================
-.PHONY: help status up down logs run migrate makemigrations shell create-superuser seed reset-seed import-yuh import-ubs backup restore
+.PHONY: help status up down logs run migrate makemigrations shell create-superuser seed reset-seed import-yuh import-ubs import-cic backup restore

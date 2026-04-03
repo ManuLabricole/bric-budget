@@ -101,6 +101,14 @@ class Account(models.Model):
     # ISO 4217 currency code: CHF, EUR, GBP...
     currency = models.CharField(max_length=3)
 
+    # Bank-assigned contract number — used by import connectors to match a file to an account.
+    # Each bank uses its own format:
+    #   CIC : "100961802700064764601" (RIB without spaces)
+    #   UBS : not needed (IBAN in export file, stored in CheckingAccount.iban)
+    #   Yuh : not needed (single account, matched by bank slug)
+    # blank=True: optional — not all banks expose a contract number in their exports.
+    contract_number = models.CharField(max_length=100, blank=True, default="")
+
     is_active = models.BooleanField(default=True)
 
     created_at = models.DateTimeField(

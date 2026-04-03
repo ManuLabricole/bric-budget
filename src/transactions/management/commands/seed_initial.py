@@ -276,14 +276,17 @@ class Command(BaseCommand):
                 "account_reference": "",
             },
             # ── CIC ──────────────────────────────────────────────────────────
+            # contract_number = numéro de contrat CIC (RIB normalisé sans espaces)
+            # Utilisé par CICConnector pour matcher chaque feuille Excel à un compte DB.
             {
                 "key": "cic_cc",
                 "bank_slug": "cic",
                 "name": "CIC C/C",
                 "account_type": Account.AccountType.CHECKING,
                 "currency": "EUR",
+                "contract_number": "100961802700064764601",
                 "subtype": "checking",
-                "iban": "FR00 0000 0000 0000 0000 C",
+                "iban": "",  # IBAN SEPA réel inconnu — à renseigner si besoin
                 "bic": "CMCIFRPP",
             },
             {
@@ -292,8 +295,20 @@ class Command(BaseCommand):
                 "name": "CIC Livret A",
                 "account_type": Account.AccountType.SAVINGS,
                 "currency": "EUR",
+                "contract_number": "100961802700064764607",
                 "subtype": "savings",
-                "interest_rate": "1.00",
+                "interest_rate": "3.00",
+                "account_reference": "",
+            },
+            {
+                "key": "cic_ldds",
+                "bank_slug": "cic",
+                "name": "CIC LDDS",
+                "account_type": Account.AccountType.SAVINGS,
+                "currency": "EUR",
+                "contract_number": "100961802700064764604",
+                "subtype": "savings",
+                "interest_rate": "3.00",
                 "account_reference": "",
             },
             # ── Boursorama ───────────────────────────────────────────────────
@@ -332,6 +347,7 @@ class Command(BaseCommand):
                 defaults={
                     "account_type": data["account_type"],
                     "currency": data["currency"],
+                    "contract_number": data.get("contract_number", ""),
                     "is_active": True,
                 },
             )
@@ -427,49 +443,62 @@ class Command(BaseCommand):
         ubs_ca = CheckingAccount.objects.get(account=accounts["ubs_cc"])
         cic_ca = CheckingAccount.objects.get(account=accounts["cic_cc"])
 
-        # Each tuple: (user, CheckingAccount, last_four, card_type)
+        # Each tuple: (user, CheckingAccount, last_four, card_type, is_active)
         # last_four values: real digits extracted from bank CSV exports.
         #   Yuh: CARD NUMBER column → "**** 1150" (Emmanuel), "**** 8803" (Carys)
         #   UBS: contract-number format, last_four not extractable → keep fake for now
-        #   CIC: not yet analysed → keep fake for now
+        #   CIC: extracted from descriptions "CARTE XXXX"
+        #
+        # is_active=False for deactivated cards (lost/stolen/replaced).
+        # These must stay in DB so historical transactions can be linked to a cardholder.
         cards_data = [
-            (emmanuel, yuh_ca, "1150", Card.CardType.DEBIT),
-            (carys, yuh_ca, "8803", Card.CardType.DEBIT),
+            (emmanuel, yuh_ca, "1150", Card.CardType.DEBIT, True),
+            (carys, yuh_ca, "8803", Card.CardType.DEBIT, True),
             (
                 emmanuel,
                 ubs_ca,
                 "0002",
                 Card.CardType.DEBIT,
+                True,
             ),  # TODO: real last_four unknown
             (
                 carys,
                 ubs_ca,
                 "0003",
                 Card.CardType.DEBIT,
+                True,
             ),  # TODO: real last_four unknown
+            (emmanuel, cic_ca, "8703", Card.CardType.DEBIT, True),  # current CIC card
             (
                 emmanuel,
                 cic_ca,
-                "0004",
+                "6673",
                 Card.CardType.DEBIT,
-            ),  # TODO: real last_four unknown
+                False,
+            ),  # old CIC card (147 tx in history)
+            (
+                emmanuel,
+                cic_ca,
+                "0042",
+                Card.CardType.DEBIT,
+                False,
+            ),  # very old CIC card (2 tx)
         ]
 
         created_count = 0
         updated_count = 0
 
-        for user, checking_account, last_four, card_type in cards_data:
-            # Lookup key: (user, checking_account) — assumes one card per user per account.
-            # last_four is in defaults so the seed can update it when we learn the real value.
-            # Limitation: if the same user ever gets a second card on the same account
-            # (e.g. debit + credit), this lookup would collide — revisit then.
+        for user, checking_account, last_four, card_type, is_active in cards_data:
+            # Lookup key: (user, checking_account, last_four) — unique per physical card.
+            # Using last_four in the lookup (not just defaults) allows one user to have
+            # multiple cards on the same account (active current + deactivated old ones).
             _, created = Card.objects.update_or_create(
                 user=user,
                 checking_account=checking_account,
+                last_four=last_four,
                 defaults={
-                    "last_four": last_four,
                     "card_type": card_type,
-                    "is_active": True,
+                    "is_active": is_active,
                 },
             )
 
