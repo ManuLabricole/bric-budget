@@ -9,7 +9,7 @@
 <!-- NAVIGATION -->
 <nav class="flex-1 overflow-y-auto py-4 px-2">
     <a href="{% url 'synthese' %}"
-       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-1 {% if request.resolver_match.url_name == 'synthese' %} text-gold bg-surface-hover/50 {% else %} text-text-muted hover:text-gold hover:bg-surface-hover/50 {% endif %}">
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-1 {% if request.resolver_match.url_name == 'synthese' %} text-gold bg-surface-hover/30 {% else %} text-text-muted hover:text-gold hover:bg-surface-hover/30 {% endif %}">
         <svg class="w-5 h-5 flex-shrink-0"
              fill="none"
              viewBox="0 0 24 24"
@@ -20,7 +20,7 @@
         Synthèse
     </a>
     <a href="#"
-       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-1 {% if request.resolver_match.url_name == 'transactions_list' %} text-gold bg-surface-hover/50 {% else %} text-text-muted hover:text-gold hover:bg-surface-hover/50 {% endif %}">
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-1 {% if request.resolver_match.url_name == 'transactions_list' %} text-gold bg-surface-hover/30 {% else %} text-text-muted hover:text-gold hover:bg-surface-hover/30 {% endif %}">
         <svg class="w-5 h-5 flex-shrink-0"
              fill="none"
              viewBox="0 0 24 24"
@@ -31,7 +31,7 @@
         Transactions
     </a>
     <a href="#"
-       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-1 {% if request.resolver_match.url_name == 'budget_index' %} text-gold bg-surface-hover/50 {% else %} text-text-muted hover:text-gold hover:bg-surface-hover/50 {% endif %}">
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-1 {% if request.resolver_match.url_name == 'budget_index' %} text-gold bg-surface-hover/30 {% else %} text-text-muted hover:text-gold hover:bg-surface-hover/30 {% endif %}">
         <svg class="w-5 h-5 flex-shrink-0"
              fill="none"
              viewBox="0 0 24 24"
@@ -57,7 +57,7 @@
     </a>
     <div class="my-3 border-t border-edge"></div>
     <a href="#"
-       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors text-text-muted hover:text-gold hover:bg-surface-hover/50">
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors text-text-muted hover:text-gold hover:bg-surface-hover/30">
         <svg class="w-5 h-5 flex-shrink-0"
              fill="none"
              viewBox="0 0 24 24"
@@ -84,7 +84,7 @@
             <p class="text-xs text-text-muted truncate">{{ request.user.email }}</p>
         </div>
         <a href="{% url 'logout' %}"
-           class="ml-auto text-text-muted hover:text-gold bg-surface-hover/50 transition-colors flex-shrink-0"
+           class="ml-auto text-text-muted hover:text-gold bg-surface-hover/30 transition-colors flex-shrink-0"
            title="Se déconnecter">
             <svg class="w-4 h-4"
                  fill="none"

@@ -57,10 +57,12 @@
         {% endcomment %}
         <style>
       .bb-background {
-        background-color: #07070f;
+        background-color: #000000;
         background-image:
-          radial-gradient(ellipse 70% 65% at -5% -5%, #0e0e27 0%, transparent 65%),
-          radial-gradient(ellipse 40% 55% at 108% 22%, rgba(77, 191, 147, 0.055) 0%, transparent 65%);
+          /* Glow bleu top-left : élargi et atténué pour un effet plus doux/flou */
+          radial-gradient(ellipse 45% 65% at 0% 0%, rgba(30, 30, 110, 0.55) 0%, rgba(14, 14, 60, 0.2) 45%, transparent 70%),
+          /* Glow vert/or droite : subtil, mélange vert Finary + touche dorée */
+          radial-gradient(ellipse 35% 45% at 100% 50%, rgba(77, 191, 147, 0.07) 0%, rgba(242, 192, 134, 0.04) 50%, transparent 70%);
       }
         </style>
         {% block extra_head %}
