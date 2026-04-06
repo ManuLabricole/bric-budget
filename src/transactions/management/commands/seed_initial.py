@@ -255,10 +255,10 @@ class Command(BaseCommand):
                 "bic": "YUHHCHZZ",
             },
             # ── UBS ──────────────────────────────────────────────────────────
-            # contract_number = IBAN normalisé (sans espaces) du fichier CSV UBS.
-            # iban = IBAN avec espaces pour affichage SEPA.
-            # ⚠️ Placeholder — à remplacer par les vraies valeurs dans l'admin
-            # ou via une variable d'environnement avant utilisation en prod.
+            # Les IBANs UBS sont lus depuis .env — jamais codés en dur.
+            # Définir dans .env avant make seed :
+            #   UBS_IBAN_NORMALISED = IBAN sans espaces (clé d'import via contract_number)
+            #   UBS_IBAN_DISPLAY    = IBAN avec espaces (affiché dans l'UI / SEPA)
             {
                 "key": "ubs_cc",
                 "bank_slug": "ubs",
@@ -266,8 +266,8 @@ class Command(BaseCommand):
                 "account_type": Account.AccountType.CHECKING,
                 "currency": "CHF",
                 "subtype": "checking",
-                "contract_number": "",  # à renseigner : IBAN normalisé sans espaces
-                "iban": "",  # à renseigner : IBAN avec espaces (ex: CH94 XXXX ...)
+                "contract_number": config("UBS_IBAN_NORMALISED", default=""),
+                "iban": config("UBS_IBAN_DISPLAY", default=""),
                 "bic": "UBSWCHZH",
             },
             {
