@@ -34,7 +34,7 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 
 from accounts.models import Account, Bank, Card, CheckingAccount, SavingsAccount
-from transactions.models import Category, SubCategory
+from transactions.models import Category, ImportLog, SubCategory, Transaction
 
 
 class Command(BaseCommand):
@@ -62,6 +62,15 @@ class Command(BaseCommand):
                 return
 
         self.stdout.write(self.style.WARNING("=== reset_seed ==="))
+
+        # ── Transactions + ImportLogs (FK to Account — PROTECTED) ────────
+        # Transaction.account and ImportLog.account use on_delete=PROTECT,
+        # so they must be deleted before Account.
+        count = Transaction.objects.all().delete()[0]
+        self.stdout.write(self.style.SUCCESS(f"  Transactions deleted:    {count}"))
+
+        count = ImportLog.objects.all().delete()[0]
+        self.stdout.write(self.style.SUCCESS(f"  ImportLogs deleted:      {count}"))
 
         # ── Cards (FK to CheckingAccount + User) ──────────────────────────
         # Must be deleted before CheckingAccount

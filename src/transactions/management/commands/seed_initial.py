@@ -281,7 +281,11 @@ class Command(BaseCommand):
                 "account_reference": "",
             },
             # ── CIC ──────────────────────────────────────────────────────────
-            # contract_number = numéro de contrat CIC (RIB normalisé sans espaces)
+            # Les RIBs CIC sont lus depuis .env — jamais codés en dur.
+            # Définir dans .env avant make seed :
+            #   CIC_CC_CONTRACT      = RIB normalisé du compte courant
+            #   CIC_LIVRET_CONTRACT  = RIB normalisé du Livret A
+            #   CIC_LDDS_CONTRACT    = RIB normalisé du LDDS
             # Utilisé par CICConnector pour matcher chaque feuille Excel à un compte DB.
             {
                 "key": "cic_cc",
@@ -289,7 +293,7 @@ class Command(BaseCommand):
                 "name": "CIC C/C",
                 "account_type": Account.AccountType.CHECKING,
                 "currency": "EUR",
-                "contract_number": "100961802700064764601",
+                "contract_number": config("CIC_CC_CONTRACT", default=""),
                 "subtype": "checking",
                 "iban": "",  # IBAN SEPA réel inconnu — à renseigner si besoin
                 "bic": "CMCIFRPP",
@@ -300,7 +304,7 @@ class Command(BaseCommand):
                 "name": "CIC Livret A",
                 "account_type": Account.AccountType.SAVINGS,
                 "currency": "EUR",
-                "contract_number": "100961802700064764607",
+                "contract_number": config("CIC_LIVRET_CONTRACT", default=""),
                 "subtype": "savings",
                 "interest_rate": "3.00",
                 "account_reference": "",
@@ -311,7 +315,7 @@ class Command(BaseCommand):
                 "name": "CIC LDDS",
                 "account_type": Account.AccountType.SAVINGS,
                 "currency": "EUR",
-                "contract_number": "100961802700064764604",
+                "contract_number": config("CIC_LDDS_CONTRACT", default=""),
                 "subtype": "savings",
                 "interest_rate": "3.00",
                 "account_reference": "",

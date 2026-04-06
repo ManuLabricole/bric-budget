@@ -103,7 +103,7 @@ class Account(models.Model):
 
     # Bank-assigned contract number — used by import connectors to match a file to an account.
     # Each bank uses its own format:
-    #   CIC : "100961802700064764601" (RIB without spaces)
+    #   CIC : "10096XXXXXXXXXXXXXXXXXXX" (RIB without spaces)
     #   UBS : not needed (IBAN in export file, stored in CheckingAccount.iban)
     #   Yuh : not needed (single account, matched by bank slug)
     # blank=True: optional — not all banks expose a contract number in their exports.
