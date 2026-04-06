@@ -74,5 +74,29 @@ class BaseConnector(ABC):
         Default: returns None (not all sources encode balance in the file).
         Override in connectors where balance is available:
             - Yuh: encoded in the filename ("Activités_2026_03_17 - 33,344.CSV")
+            - UBS: line 6 of the metadata block ("Solde final:;7281.45;")
+        """
+        return None
+
+    def extract_account_identifier(self, filepath: Path) -> str | None:
+        """
+        Extract a normalized account identifier from the file.
+
+        Used by import commands to find the matching Account in the database
+        via Account.contract_number — the universal import matching key.
+
+        Default: returns None — override in connectors that embed an identifier.
+
+        Who overrides:
+            - UBSConnector  → IBAN normalized (no spaces): "CH9400243243693382 40P"
+            - YuhConnector  → None (no identifier in Yuh files — convention fallback)
+            - CICConnector  → None (multi-account file — identifier resolved per sheet)
+
+        Future connectors:
+            - FinpensionConnector → contract number extracted from PDF/CSV header
+            - UK connector        → sort code + account number
+
+        The returned string must match Account.contract_number exactly (no spaces,
+        same case) — the import command does a direct .get(contract_number=identifier).
         """
         return None

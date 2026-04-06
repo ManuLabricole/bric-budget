@@ -136,19 +136,19 @@ reset-seed:
 	@printf "  $(DIM)→ relance make seed pour repeupler$(RESET)\n"
 
 import-yuh:
-	@if [ -z "$(FILE)" ]; then printf "  ❌ $(RED)Usage: make import-yuh FILE=path/to/export.csv$(RESET)\n"; exit 1; fi
-	@printf "  📥 $(CYAN)Import Yuh — rapport...$(RESET)\n"
-	@$(MANAGE) import_yuh --file "$(FILE)"
+	@if [ -z "$(FILE)" ]; then printf "  ❌ $(RED)Usage: make import-yuh FILE=path/to/export.csv [COMMIT=1]$(RESET)\n"; exit 1; fi
+	@printf "  📥 $(CYAN)Import Yuh$(if $(COMMIT), — écriture DB,  — dry run)...$(RESET)\n"
+	@$(MANAGE) import_yuh --file "$(FILE)" $(if $(COMMIT),--commit,)
 
 import-ubs:
-	@if [ -z "$(FILE)" ]; then printf "  ❌ $(RED)Usage: make import-ubs FILE=path/to/export.csv$(RESET)\n"; exit 1; fi
-	@printf "  📥 $(CYAN)Import UBS — rapport...$(RESET)\n"
-	@$(MANAGE) import_ubs --file "$(FILE)"
+	@if [ -z "$(FILE)" ]; then printf "  ❌ $(RED)Usage: make import-ubs FILE=path/to/export.csv [COMMIT=1]$(RESET)\n"; exit 1; fi
+	@printf "  📥 $(CYAN)Import UBS$(if $(COMMIT), — écriture DB,  — dry run)...$(RESET)\n"
+	@$(MANAGE) import_ubs --file "$(FILE)" $(if $(COMMIT),--commit,)
 
 import-cic:
-	@if [ -z "$(FILE)" ]; then printf "  ❌ $(RED)Usage: make import-cic FILE=path/to/export.xlsx$(RESET)\n"; exit 1; fi
-	@printf "  📥 $(CYAN)Import CIC — rapport...$(RESET)\n"
-	@$(MANAGE) import_cic --file "$(FILE)"
+	@if [ -z "$(FILE)" ]; then printf "  ❌ $(RED)Usage: make import-cic FILE=path/to/export.xlsx [COMMIT=1]$(RESET)\n"; exit 1; fi
+	@printf "  📥 $(CYAN)Import CIC$(if $(COMMIT), — écriture DB,  — dry run)...$(RESET)\n"
+	@$(MANAGE) import_cic --file "$(FILE)" $(if $(COMMIT),--commit,)
 
 # =============================================================================
 # 💾 Sauvegarde / Restauration PostgreSQL

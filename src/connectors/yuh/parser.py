@@ -115,7 +115,7 @@ class YuhConnector(BaseConnector):
                     continue
 
                 try:
-                    transactions.append(self._parse_row(row))
+                    transactions.append(self._parse_row(row, line_number))
                 except Exception as e:
                     # Never abort on a bad row — log and continue
                     print(
@@ -176,7 +176,7 @@ class YuhConnector(BaseConnector):
     # Private helpers
     # =========================================================================
 
-    def _parse_row(self, row: dict) -> TransactionDict:
+    def _parse_row(self, row: dict, line_number: int) -> TransactionDict:
         """
         Convert one CSV row dict into a TransactionDict.
 
@@ -189,13 +189,15 @@ class YuhConnector(BaseConnector):
         merchant_name = self._clean_merchant(description_raw, row)
         card_last_four = self._parse_card(row.get("CARD NUMBER", "").strip())
 
-        # import_hash: SHA1 of the fields that uniquely identify a transaction.
-        # Using date + activity_type + amount + description_raw — this combination
-        # should be unique per transaction even if the same merchant appears twice
-        # on the same day (different amounts or descriptions).
-        # SHA1 is enough here — we don't need cryptographic strength, just a fast
-        # consistent fingerprint for deduplication.
-        raw = f"{date_str}|{row['ACTIVITY TYPE']}|{amount}|{description_raw}"
+        # import_hash: SHA1 fingerprint used for deduplication at import time.
+        # We include line_number because Yuh exports don't have transaction IDs,
+        # and the same merchant/amount/date can appear multiple times on the same
+        # day (e.g. two 2 CHF parking payments, two identical SBB tickets).
+        # Without line_number those rows produce the same hash — bulk_create would
+        # crash on the unique constraint.
+        # line_number is the position in the file (stable across re-imports of the
+        # same file — Yuh always exports in chronological order).
+        raw = f"{line_number}|{date_str}|{row['ACTIVITY TYPE']}|{amount}|{description_raw}"
         import_hash = hashlib.sha1(raw.encode()).hexdigest()
 
         return TransactionDict(

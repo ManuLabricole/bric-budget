@@ -184,7 +184,9 @@ class CICConnector(BaseConnector):
 
             try:
                 transactions.append(
-                    self._parse_row(date_val, libelle, debit, credit, currency, rib)
+                    self._parse_row(
+                        date_val, libelle, debit, credit, currency, rib, row_idx
+                    )
                 )
             except Exception as e:
                 print(f"  [CIC] WARNING row {row_idx}: {e} — skipped")
@@ -268,7 +270,8 @@ class CICConnector(BaseConnector):
         debit,  # float (negative) or None
         credit,  # float (positive) or None
         currency: str,
-        rib: str,  # used for import_hash uniqueness
+        rib: str,  # used for import_hash uniqueness across accounts
+        row_idx: int,  # Excel row number — used for import_hash uniqueness within a sheet
     ) -> TransactionDict:
         """
         Convert one Excel row into a TransactionDict.
@@ -292,9 +295,11 @@ class CICConnector(BaseConnector):
         merchant_name = self._clean_merchant(description_raw)
         card_last_four = self._parse_card(description_raw)
 
-        # import_hash includes rib to distinguish same-day same-amount transactions
-        # across different accounts within the same file
-        raw = f"{rib}|{date_str}|{amount}|{description_raw}"
+        # import_hash: includes rib (account) + row_idx (position in sheet).
+        # rib distinguishes transactions across accounts in the same file.
+        # row_idx disambiguates identical rows within the same sheet — e.g. two
+        # SNCF payments of the same amount on the same day are real distinct events.
+        raw = f"{rib}|{row_idx}|{date_str}|{amount}|{description_raw}"
         import_hash = hashlib.sha1(raw.encode()).hexdigest()
 
         return TransactionDict(

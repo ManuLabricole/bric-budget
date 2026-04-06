@@ -127,14 +127,20 @@ class UBSConnector(BaseConnector):
         )
         return transactions
 
-    def extract_iban(self, filepath: Path) -> str | None:
+    def extract_account_identifier(self, filepath: Path) -> str | None:
         """
-        Extract the IBAN from the UBS file's metadata block (line 2).
+        Extract the normalized IBAN from the UBS file's metadata block (line 2).
 
         Line 2 format: "IBAN:;CH9X XXXX XXXX XXXX XXXX X;"
-        Returns the IBAN with spaces stripped: "CH94002432436933824 0P"
-        Actually returns the raw IBAN string (with spaces) for display,
-        normalised (without spaces) is done separately for DB lookup.
+
+        Returns the IBAN without spaces: "CH9400243243693382 40P"
+        This normalized form must match Account.contract_number in the DB exactly.
+
+        Why normalize (strip spaces)?
+        - The file contains spaces for readability: "CH9X XXXX XXXX XXXX XXXX X"
+        - The DB stores it without spaces (set in seed_initial.py)
+        - Normalizing both sides makes the .get(contract_number=identifier) lookup reliable
+          regardless of how the IBAN was entered in the admin
 
         Returns None if line 2 doesn't match the expected format.
         """
@@ -146,7 +152,7 @@ class UBSConnector(BaseConnector):
             parts = line2.strip().split(";")
             # parts[0] = "IBAN:", parts[1] = "CH9X XXXX XXXX XXXX XXXX X", parts[2] = ""
             if len(parts) >= 2 and parts[0].strip() == "IBAN:":
-                return parts[1].strip()  # keep spaces for display
+                return parts[1].strip().replace(" ", "")  # normalize: strip spaces
         except Exception:
             pass
         return None

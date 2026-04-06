@@ -1,32 +1,35 @@
 """
 transactions/management/commands/import_ubs.py
 
-Parses a UBS CSV export and prints a full import report.
-Does NOT write anything to the database — report only at this stage.
+CLI entry point for importing a UBS CSV export.
 
-What this command does:
-    1. Detect that the file is a valid UBS CSV (IBAN line + column signature check)
-    2. Extract the IBAN from the file — query the matching CheckingAccount in DB
-    3. Parse all transactions from the file
-    4. Check each transaction's import_hash against existing DB transactions
-    5. Print a full report: new / duplicate / skipped
+Responsibilities of this command (and only these):
+    1. Validate the file exists and looks like a UBS CSV
+    2. Extract the IBAN from the file and find the matching account in DB
+    3. Get the user who is running the import (for the audit log)
+    4. Call ImportService.run() — all DB logic lives there
+    5. Print the result
 
 Usage:
-    python manage.py import_ubs --file path/to/export.csv
+    python manage.py import_ubs --file path/to/export.csv          # dry-run (default)
+    python manage.py import_ubs --file path/to/export.csv --commit  # write to DB
     make import-ubs FILE=path/to/export.csv
 """
 
 from pathlib import Path
 
+from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 
-from accounts.models import CheckingAccount
+from accounts.models import Account
 from connectors.ubs.parser import UBSConnector
-from transactions.models import Transaction
+from transactions.services import ImportService, compute_file_hash
+
+User = get_user_model()
 
 
 class Command(BaseCommand):
-    help = "Parse a UBS CSV export and print an import report (dry run — no DB writes)"
+    help = "Import a UBS CSV export. Dry-run by default — add --commit to write to DB."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -34,133 +37,125 @@ class Command(BaseCommand):
             required=True,
             help="Path to the UBS CSV export file",
         )
+        parser.add_argument(
+            "--commit",
+            action="store_true",
+            default=False,
+            help="Write transactions to the database (default: dry-run only)",
+        )
 
     def handle(self, *args, **options):
         filepath = Path(options["file"])
+        dry_run = not options["commit"]
 
-        # ── 1. File exists ────────────────────────────────────────────────
+        # ── 1. File validation ────────────────────────────────────────────────
         if not filepath.exists():
             raise CommandError(f"File not found: {filepath}")
 
-        # ── 2. Detect format ──────────────────────────────────────────────
         connector = UBSConnector()
-
         if not connector.matches_file(filepath):
             raise CommandError(
                 f"{filepath.name} does not look like a UBS CSV export.\n"
                 "Expected: IBAN on line 2, then standard UBS column headers."
             )
 
-        self.stdout.write(self.style.SUCCESS("\n=== UBS Import Report ==="))
-        self.stdout.write(f"File : {filepath.name}")
+        # ── 2. Find UBS account via IBAN ──────────────────────────────────────
+        # UBS embeds the IBAN in line 2 — this is how we identify which account
+        # the file belongs to. Bank-specific logic: stays in this command.
+        account = self._find_account(connector, filepath)
 
-        # ── 3. Extract IBAN + detect account ─────────────────────────────
-        # UBS files embed the IBAN in line 2 — this is how we identify the account.
-        # We normalise the IBAN (strip spaces) before the DB lookup because the DB
-        # may store it with or without spaces depending on how it was entered.
-        raw_iban = connector.extract_iban(filepath)
-        if not raw_iban:
+        # ── 3. Get importing user ─────────────────────────────────────────────
+        # DEV/CLI ONLY — management commands have no HTTP request, so no request.user.
+        # We fall back to the first active superuser for the ImportLog audit trail.
+        #
+        # ⚠️ In production (Phase 6 web upload), the view passes request.user directly:
+        #     ImportService().run(..., imported_by=request.user, ...)
+        # The service doesn't care where the user comes from — that's the caller's job.
+        user = User.objects.filter(is_superuser=True, is_active=True).first()
+        if not user:
             raise CommandError(
-                "Could not extract IBAN from file (expected on line 2).\n"
+                "No active superuser found. Run `make create-superuser` first."
+            )
+
+        # ── 4. Parse + call service ───────────────────────────────────────────
+        self.stdout.write(f"\nFile    : {filepath.name}")
+        self.stdout.write(f"Account : {account.name} (id={account.pk})")
+        self.stdout.write(
+            f"Mode    : {'DRY RUN — no DB writes' if dry_run else 'COMMIT — writing to DB'}\n"
+        )
+
+        transactions = connector.parse(filepath)
+        balance = connector.extract_balance(filepath)
+        file_hash = compute_file_hash(filepath)
+
+        if balance is not None:
+            self.stdout.write(f"Balance : {balance:,.2f} {account.currency}")
+
+        result = ImportService().run(
+            transactions=transactions,
+            account=account,
+            imported_by=user,
+            filename=filepath.name,
+            file_hash=file_hash,
+            balance=balance,
+            dry_run=dry_run,
+        )
+
+        # ── 5. Print result ───────────────────────────────────────────────────
+        self._print_result(result, dry_run)
+
+    # =========================================================================
+    # Private helpers
+    # =========================================================================
+
+    def _find_account(self, connector: UBSConnector, filepath: Path):
+        """
+        Extract the account identifier from the file and find the matching Account in DB.
+
+        UBSConnector.extract_account_identifier() returns the IBAN normalized (no spaces).
+        We look it up directly via Account.contract_number — the universal import key.
+
+        Same pattern used by all connectors that embed an identifier in their file.
+        For sources without an identifier (Yuh), the command uses a convention fallback instead.
+        """
+        identifier = connector.extract_account_identifier(filepath)
+        if not identifier:
+            raise CommandError(
+                "Could not extract account identifier (IBAN) from file (expected on line 2).\n"
                 "The file may be corrupted or not a standard UBS export."
             )
 
-        # Normalise: "CH9X XXXX XXXX XXXX XXXX X" → "CH9400243243693382 40P"
-        # Actually we strip ALL spaces for the lookup — the DB value may or may
-        # not contain spaces depending on how it was entered in the seed/admin.
-        iban_normalised = raw_iban.replace(" ", "")
-        self.stdout.write(f"IBAN  : {raw_iban}")
-
-        # Query by normalised IBAN — we normalise both sides of the comparison.
-        # Django doesn't have a built-in "strip spaces" lookup, so we fetch
-        # CheckingAccounts for the UBS bank and compare normalised values in Python.
-        # With at most a handful of accounts, this is fine.
-        ubs_checking = CheckingAccount.objects.filter(account__bank__slug="ubs")
-
-        account = None
-        for ca in ubs_checking:
-            if ca.iban.replace(" ", "") == iban_normalised:
-                account = ca.account
-                break
+        account = Account.objects.filter(
+            contract_number=identifier,
+            is_active=True,
+        ).first()
 
         if account is None:
             raise CommandError(
-                f"No UBS checking account with IBAN {raw_iban} found in the database.\n"
-                "Run `make seed` first, or add the account in the admin with this IBAN."
+                f"No account with contract_number='{identifier}' found in the database.\n"
+                "Run `make seed` first, or set Account.contract_number to this value in the admin."
             )
 
-        self.stdout.write(f"Account : {account.name} (id={account.pk})")
+        return account
 
-        # ── 4. Balance from metadata block ────────────────────────────────
-        balance = connector.extract_balance(filepath)
-        if balance is not None:
-            self.stdout.write(f"Balance : {balance:,.2f} {account.currency}")
+    def _print_result(self, result, dry_run: bool):
+        """Print a summary of the import result."""
+        self.stdout.write(self.style.SUCCESS("\n--- Result ---"))
+        self.stdout.write(f"  Created  : {result.count_created}")
+        self.stdout.write(f"  Skipped  : {result.count_skipped} (duplicates)")
+
+        if result.count_errors:
+            self.stdout.write(self.style.ERROR(f"  Errors   : {result.count_errors}"))
+            for msg in result.error_detail:
+                self.stdout.write(self.style.ERROR(f"    {msg}"))
         else:
-            self.stdout.write("Balance : not found in file")
+            self.stdout.write("  Errors   : 0")
 
-        # ── 5. Parse transactions ─────────────────────────────────────────
-        self.stdout.write("")
-        transactions = connector.parse(filepath)
-
-        # ── 6. Deduplication check ────────────────────────────────────────
-        # Fetch all existing import_hashes for this account in one DB query.
-        existing_hashes = set(
-            Transaction.objects.filter(account=account).values_list(
-                "import_hash", flat=True
-            )
-        )
-
-        new_txs = []
-        duplicate_txs = []
-
-        for tx in transactions:
-            if tx["import_hash"] in existing_hashes:
-                duplicate_txs.append(tx)
-            else:
-                new_txs.append(tx)
-
-        # ── 7. Report ─────────────────────────────────────────────────────
-        self.stdout.write(self.style.SUCCESS("\n--- Summary ---"))
-        self.stdout.write(f"  Total parsed  : {len(transactions)}")
-        self.stdout.write(self.style.SUCCESS(f"  New           : {len(new_txs)}"))
-        if duplicate_txs:
-            self.stdout.write(
-                self.style.WARNING(f"  Duplicates    : {len(duplicate_txs)}")
-            )
-        else:
-            self.stdout.write("  Duplicates    : 0")
-
-        # New transactions detail — include time column when available
-        if new_txs:
-            self.stdout.write(
-                self.style.SUCCESS(f"\n--- New transactions ({len(new_txs)}) ---")
-            )
-            for tx in new_txs:
-                sign = "+" if tx["amount"] > 0 else ""
-                # Show time if available, pad with spaces otherwise for alignment
-                time_col = tx["time"] if tx["time"] else "        "
-                self.stdout.write(
-                    f"  {tx['date']}  {time_col}  {sign}{tx['amount']:>10.2f} {tx['currency']}"
-                    f"  {tx['merchant_name'][:40]:<40}"
-                )
-
-        # Duplicate transactions detail
-        if duplicate_txs:
+        if dry_run:
             self.stdout.write(
                 self.style.WARNING(
-                    f"\n--- Duplicate transactions ({len(duplicate_txs)}) ---"
+                    "\nDry run — nothing written. Add --commit to import.\n"
                 )
             )
-            for tx in duplicate_txs:
-                sign = "+" if tx["amount"] > 0 else ""
-                time_col = tx["time"] if tx["time"] else "        "
-                self.stdout.write(
-                    f"  {tx['date']}  {time_col}  {sign}{tx['amount']:>10.2f} {tx['currency']}"
-                    f"  {tx['merchant_name'][:40]:<40}  [DUPLICATE]"
-                )
-
-        self.stdout.write(self.style.SUCCESS("\n=== End of report ==="))
-        self.stdout.write(
-            "No data was written to the database. "
-            "DB import will be added in the next step.\n"
-        )
+        else:
+            self.stdout.write(self.style.SUCCESS("\nImport complete.\n"))

@@ -1,37 +1,39 @@
 """
 transactions/management/commands/import_cic.py
 
-Parses a CIC France Excel export and prints a full import report.
-Does NOT write anything to the database — report only at this stage.
+CLI entry point for importing a CIC France Excel export.
 
-The CIC Excel file contains multiple sheets — one per account:
-  - C/C Contrat Personnel Global   → CheckingAccount (matched via IBAN/RIB)
-  - Livret A                       → SavingsAccount  (matched via account_reference)
-  - Livret de Développement Durable → SavingsAccount  (matched via account_reference)
+CIC exports are multi-sheet: one sheet per account (C/C, Livret A, LDDS...).
+This command loops over sheets and calls ImportService.run() once per account.
 
-What this command does for each sheet:
-    1. Detect that the file is a valid CIC Excel (presence of "Vos comptes" sheet)
-    2. List all account sheets + their RIB
-    3. For each sheet: find the matching Account in DB, parse transactions,
-       check import_hash vs DB, print report
+Responsibilities of this command (and only these):
+    1. Validate the file exists and looks like a CIC Excel
+    2. Discover account sheets in the file
+    3. For each sheet: find the matching Account in DB (via contract_number)
+    4. Call ImportService.run() per account — all DB logic lives there
+    5. Print the result per account + a global summary
 
 Usage:
-    python manage.py import_cic --file path/to/export.xlsx
+    python manage.py import_cic --file path/to/export.xlsx          # dry-run (default)
+    python manage.py import_cic --file path/to/export.xlsx --commit  # write to DB
     make import-cic FILE=path/to/export.xlsx
 """
 
 from pathlib import Path
 
+from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 
-from accounts.models import Card
+from accounts.models import Account
 from connectors.cic.parser import CICConnector
-from transactions.models import Transaction
+from transactions.services import ImportResult, ImportService, compute_file_hash
+
+User = get_user_model()
 
 
 class Command(BaseCommand):
     help = (
-        "Parse a CIC Excel export and print an import report (dry run — no DB writes)"
+        "Import a CIC Excel export. Dry-run by default — add --commit to write to DB."
     )
 
     def add_arguments(self, parser):
@@ -40,180 +42,175 @@ class Command(BaseCommand):
             required=True,
             help="Path to the CIC Excel export file (.xlsx)",
         )
+        parser.add_argument(
+            "--commit",
+            action="store_true",
+            default=False,
+            help="Write transactions to the database (default: dry-run only)",
+        )
 
     def handle(self, *args, **options):
         filepath = Path(options["file"])
+        dry_run = not options["commit"]
 
-        # ── 1. File exists ────────────────────────────────────────────────
+        # ── 1. File validation ────────────────────────────────────────────────
         if not filepath.exists():
             raise CommandError(f"File not found: {filepath}")
 
-        # ── 2. Detect format ──────────────────────────────────────────────
         connector = CICConnector()
-
         if not connector.matches_file(filepath):
             raise CommandError(
                 f"{filepath.name} does not look like a CIC Excel export.\n"
                 "Expected an .xlsx file with a 'Vos comptes' sheet."
             )
 
-        self.stdout.write(self.style.SUCCESS("\n=== CIC Import Report ==="))
-        self.stdout.write(f"File : {filepath.name}")
+        # ── 2. Get importing user ─────────────────────────────────────────────
+        # DEV/CLI ONLY — management commands have no HTTP request, so no request.user.
+        # We fall back to the first active superuser for the ImportLog audit trail.
+        #
+        # ⚠️ In production (Phase 6 web upload), the view passes request.user directly:
+        #     ImportService().run(..., imported_by=request.user, ...)
+        # The service doesn't care where the user comes from — that's the caller's job.
+        user = User.objects.filter(is_superuser=True, is_active=True).first()
+        if not user:
+            raise CommandError(
+                "No active superuser found. Run `make create-superuser` first."
+            )
 
-        # ── 3. Discover account sheets ────────────────────────────────────
+        # ── 3. Discover account sheets ────────────────────────────────────────
         sheets = connector.get_account_sheets(filepath)
-        self.stdout.write(f"Sheets found : {len(sheets)}")
-        self.stdout.write("")
 
-        # ── 4. Process each sheet ─────────────────────────────────────────
-        for sheet_info in sheets:
-            self._process_sheet(filepath, sheet_info, connector)
-
-        self.stdout.write(self.style.SUCCESS("\n=== End of report ==="))
+        self.stdout.write(f"\nFile    : {filepath.name}")
+        self.stdout.write(f"Sheets  : {len(sheets)} account(s) found")
         self.stdout.write(
-            "No data was written to the database. "
-            "DB import will be added in the next step.\n"
+            f"Mode    : {'DRY RUN — no DB writes' if dry_run else 'COMMIT — writing to DB'}\n"
         )
 
-    def _process_sheet(self, filepath: Path, sheet_info: dict, connector: CICConnector):
+        # file_hash is the same for all sheets — compute once
+        file_hash = compute_file_hash(filepath)
+
+        # ── 4. Process each sheet ─────────────────────────────────────────────
+        # CIC = one file, multiple accounts. Each sheet = one account = one ImportLog.
+        # We suffix the filename with the sheet name so ImportLog.file_hash stays
+        # unique per (file, sheet) — otherwise the same file_hash would appear twice
+        # and the second sheet would be rejected as "already imported".
+        total = ImportResult()
+
+        for sheet_info in sheets:
+            self._process_sheet(
+                filepath=filepath,
+                sheet_info=sheet_info,
+                connector=connector,
+                user=user,
+                file_hash=file_hash,
+                dry_run=dry_run,
+                total=total,
+            )
+
+        # ── 5. Global summary ─────────────────────────────────────────────────
+        self.stdout.write("=" * 50)
+        self.stdout.write(self.style.SUCCESS("Global summary"))
+        self.stdout.write(f"  Created : {total.count_created}")
+        self.stdout.write(f"  Skipped : {total.count_skipped} (duplicates)")
+        if total.count_errors:
+            self.stdout.write(self.style.ERROR(f"  Errors  : {total.count_errors}"))
+        else:
+            self.stdout.write("  Errors  : 0")
+
+        if dry_run:
+            self.stdout.write(
+                self.style.WARNING(
+                    "\nDry run — nothing written. Add --commit to import.\n"
+                )
+            )
+        else:
+            self.stdout.write(self.style.SUCCESS("\nImport complete.\n"))
+
+    # =========================================================================
+    # Private helpers
+    # =========================================================================
+
+    def _process_sheet(
+        self,
+        filepath: Path,
+        sheet_info: dict,
+        connector: CICConnector,
+        user,
+        file_hash: str,
+        dry_run: bool,
+        total: ImportResult,
+    ):
         """
-        Handle one account sheet: find DB account, parse, dedup, report.
+        Process one account sheet: find account, parse, call service, print.
+
+        `total` is mutated in place — accumulates counts across all sheets
+        for the global summary printed at the end.
         """
         sheet_name = sheet_info["sheet_name"]
-        rib = sheet_info["rib"]  # normalised (no spaces)
-        rib_raw = sheet_info["rib_raw"]  # with spaces (for display)
+        rib = sheet_info["rib"]
+        rib_raw = sheet_info["rib_raw"]
         balance = sheet_info["balance"]
-        account_type_hint = sheet_info["account_type_hint"]
 
-        self.stdout.write(f"{'─' * 60}")
-        self.stdout.write(f"Sheet   : {sheet_name}")
-        self.stdout.write(f"RIB     : {rib_raw}")
-        self.stdout.write(f"Type    : {account_type_hint}")
-        if balance is not None:
-            self.stdout.write(f"Balance : {balance:,.2f} EUR")
+        self.stdout.write(f"{'─' * 50}")
+        self.stdout.write(f"Sheet   : {sheet_name}  (RIB: {rib_raw})")
 
-        # ── Find matching Account in DB ───────────────────────────────────
-        account = self._find_account(rib, account_type_hint)
+        # ── Find matching account ─────────────────────────────────────────────
+        # CIC identifies accounts by contract_number = RIB without spaces.
+        account = Account.objects.filter(
+            bank__slug="cic",
+            is_active=True,
+            contract_number=rib,
+        ).first()
 
         if account is None:
             self.stdout.write(
                 self.style.WARNING(
-                    f"  ⚠ No matching account found for RIB {rib_raw}\n"
-                    f"  Update {'CheckingAccount.iban' if account_type_hint == 'checking' else 'SavingsAccount.account_reference'} "
-                    f"in the admin with this RIB (without spaces: {rib})"
+                    f"  No account found for RIB {rib_raw}\n"
+                    f"  Set Account.contract_number = '{rib}' in the admin."
                 )
             )
             self.stdout.write("")
             return
 
         self.stdout.write(f"Account : {account.name} (id={account.pk})")
+        if balance is not None:
+            self.stdout.write(f"Balance : {balance:,.2f} EUR")
 
-        # ── Load known cards for this account (checking only) ─────────────
-        cards_by_last_four = {}
-        if account_type_hint == "checking":
-            try:
-                cards_by_last_four = {
-                    card.last_four: card
-                    for card in Card.objects.filter(
-                        checking_account__account=account,
-                        is_active=True,
-                    ).select_related("user")
-                }
-                if cards_by_last_four:
-                    card_summary = ", ".join(
-                        f"*{lf} ({c.user.first_name or c.user.email.split('@')[0]})"
-                        for lf, c in cards_by_last_four.items()
-                    )
-                    self.stdout.write(f"Cards   : {card_summary}")
-            except Exception:
-                pass  # savings accounts have no CheckingAccount
-
-        # ── Parse transactions ────────────────────────────────────────────
-        self.stdout.write("")
+        # ── Parse this sheet ──────────────────────────────────────────────────
         transactions = connector.parse_sheet(filepath, sheet_name)
 
-        # ── Deduplication check ───────────────────────────────────────────
-        existing_hashes = set(
-            Transaction.objects.filter(account=account).values_list(
-                "import_hash", flat=True
-            )
+        # ── Unique file_hash per (file, sheet) ────────────────────────────────
+        # ImportLog.file_hash is unique=True and CharField(max_length=40).
+        # A CIC file contains multiple sheets — if we used the same file_hash for
+        # all sheets, the second sheet would be rejected as "already imported".
+        # We hash the combination file_hash+sheet_name to produce a new 40-char SHA1.
+        import hashlib
+
+        sheet_file_hash = hashlib.sha1(f"{file_hash}:{sheet_name}".encode()).hexdigest()
+
+        # ── Call service ──────────────────────────────────────────────────────
+        result = ImportService().run(
+            transactions=transactions,
+            account=account,
+            imported_by=user,
+            filename=f"{filepath.name} [{sheet_name}]",
+            file_hash=sheet_file_hash,
+            balance=balance,
+            dry_run=dry_run,
         )
 
-        new_txs = []
-        duplicate_txs = []
-        for tx in transactions:
-            if tx["import_hash"] in existing_hashes:
-                duplicate_txs.append(tx)
-            else:
-                new_txs.append(tx)
-
-        # ── Summary ───────────────────────────────────────────────────────
-        self.stdout.write(self.style.SUCCESS("--- Summary ---"))
-        self.stdout.write(f"  Total parsed  : {len(transactions)}")
-        self.stdout.write(self.style.SUCCESS(f"  New           : {len(new_txs)}"))
-        if duplicate_txs:
-            self.stdout.write(
-                self.style.WARNING(f"  Duplicates    : {len(duplicate_txs)}")
-            )
-        else:
-            self.stdout.write("  Duplicates    : 0")
-
-        # Helper: card label for a transaction
-        def card_label(last_four):
-            if not last_four:
-                return ""
-            card = cards_by_last_four.get(last_four)
-            if card:
-                name = card.user.first_name or card.user.email.split("@")[0]
-                return f" [{name} *{last_four}]"
-            return f" [? *{last_four}]"
-
-        # New transactions detail
-        if new_txs:
-            self.stdout.write(
-                self.style.SUCCESS(f"\n--- New transactions ({len(new_txs)}) ---")
-            )
-            for tx in new_txs:
-                sign = "+" if tx["amount"] > 0 else ""
-                self.stdout.write(
-                    f"  {tx['date']}  {sign}{tx['amount']:>10.2f} {tx['currency']}"
-                    f"  {tx['merchant_name'][:35]:<35}{card_label(tx['card_last_four'])}"
-                )
-
-        # Duplicates detail
-        if duplicate_txs:
-            self.stdout.write(
-                self.style.WARNING(
-                    f"\n--- Duplicate transactions ({len(duplicate_txs)}) ---"
-                )
-            )
-            for tx in duplicate_txs:
-                sign = "+" if tx["amount"] > 0 else ""
-                self.stdout.write(
-                    f"  {tx['date']}  {sign}{tx['amount']:>10.2f} {tx['currency']}"
-                    f"  {tx['merchant_name'][:35]:<35}{card_label(tx['card_last_four'])}  [DUPLICATE]"
-                )
+        # ── Per-sheet result ──────────────────────────────────────────────────
+        self.stdout.write(f"  Created : {result.count_created}")
+        self.stdout.write(f"  Skipped : {result.count_skipped} (duplicates)")
+        if result.count_errors:
+            self.stdout.write(self.style.ERROR(f"  Errors  : {result.count_errors}"))
+            for msg in result.error_detail:
+                self.stdout.write(self.style.ERROR(f"    {msg}"))
 
         self.stdout.write("")
 
-    def _find_account(self, rib_normalised: str, account_type_hint: str):
-        """
-        Find the Account in DB matching this contract number (RIB normalised).
-
-        CIC identifies accounts by a contract number ("numéro de contrat"),
-        which is their RIB without spaces: "100961802700064764601".
-        We store this in Account.contract_number and match directly — no need
-        to look at CheckingAccount.iban or SavingsAccount.account_reference.
-
-        account_type_hint is kept for logging context in _process_sheet(),
-        but is not used for the DB lookup itself.
-
-        Returns None if no match found.
-        """
-        from accounts.models import Account
-
-        return Account.objects.filter(
-            bank__slug="cic",
-            is_active=True,
-            contract_number=rib_normalised,
-        ).first()
+        # Accumulate into global total
+        total.count_created += result.count_created
+        total.count_skipped += result.count_skipped
+        total.count_errors += result.count_errors
+        total.error_detail.extend(result.error_detail)
