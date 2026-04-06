@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block body %}
+    <div class="flex h-screen overflow-hidden">
+        <aside class="w-60 flex-shrink-0 flex flex-col border-r border-edge bg-transparent">
+            {% include "components/layout/sidebar.html" %}
+        </aside>
+        <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+            {# Topbar — inlinée pour pouvoir exposer des blocs surchargés par les pages enfants #}
+            <div class="flex items-center justify-between h-16 px-6 border-b border-edge flex-shrink-0 bg-transparent">
+                <div>
+                    <h1 class="text-lg font-semibold text-text-base">
+                        {% block topbar_title %}
+                            BricBudget
+                        {% endblock topbar_title %}
+                    </h1>
+                    {% block topbar_subtitle %}
+                    {% endblock topbar_subtitle %}
+                </div>
+                <div class="flex items-center gap-2">
+                    {% block topbar_actions %}
+                    {% endblock topbar_actions %}
+                </div>
+            </div>
+            <main class="flex-1 overflow-y-auto p-6">
+                {% block content %}
+                {% endblock content %}
+            </main>
+        </div>
+        <aside id="right-panel"
+               class="fixed right-0 top-0 h-full w-96 flex-shrink-0 flex flex-col border-l border-edge bg-surface-2 transform translate-x-full transition-transform duration-300 z-40">
+            {% include "components/layout/right_panel.html" %}
+        </aside>
+    </div>
+    <script>
+  function openPanel() {
+    document.getElementById('right-panel').classList.remove('translate-x-full');
+  }
+  function closePanel() {
+    document.getElementById('right-panel').classList.add('translate-x-full');
+  }
+    </script>
+{% endblock body %}

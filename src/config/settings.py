@@ -107,9 +107,8 @@ AUTH_USER_MODEL = "users.CustomUser"
 LOGIN_URL = "/login/"
 
 # LOGIN_REDIRECT_URL: where to go after a successful login when no ?next= is set.
-# Phase 0B: point to admin while we have no front-end.
-# Phase 1B: change to "/" (dashboard).
-LOGIN_REDIRECT_URL = "/admin/"
+# Phase 1B: patrimoine est la page d'accueil principale.
+LOGIN_REDIRECT_URL = "/synthese/"
 
 # LOGOUT_REDIRECT_URL: where to go after logout.
 LOGOUT_REDIRECT_URL = "/login/"
