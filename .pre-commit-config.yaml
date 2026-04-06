@@ -41,6 +41,24 @@ repos:
       - id: djlint-django
 
   # ---------------------------------------------------------------------------
+  # Local hooks — project-specific checks
+  # ---------------------------------------------------------------------------
+  - repo: local
+    hooks:
+      # Bloc les identifiants bancaires hardcodés dans les fichiers Python.
+      # Patterns détectés :
+      #   - IBAN CH/FR : CH\d{2} ou FR\d{2} suivi de caractères alphanumériques
+      #   - RIB CIC    : séquence de 20-22 chiffres consécutifs (numéros de contrat)
+      # Les fichiers .env, .env.example, et les migrations sont exclus.
+      # Si ce hook bloque un faux positif, ajouter le fichier dans exclude ci-dessous.
+      - id: no-hardcoded-bank-ids
+        name: No hardcoded bank identifiers (IBAN / RIB)
+        language: pygrep
+        entry: '(CH\d{2}[A-Z0-9]{15,}|FR\d{2}[A-Z0-9]{20,}|\b\d{20,22}\b)'
+        types: [python]
+        exclude: ^(src/[^/]+/migrations/|\.env)
+
+  # ---------------------------------------------------------------------------
   # Commitizen — enforces Conventional Commits message format
   # Runs at commit-msg stage (after you type your message).
   # Valid:   feat(accounts): add Card model

@@ -109,7 +109,7 @@ class CICConnector(BaseConnector):
         Returns a list of dicts, one per account sheet:
         {
             "sheet_name" : "Cpt 18027 00064764601",
-            "rib"        : "100961802700064764601",   # normalised (no spaces)
+            "rib"        : "10096XXXXXXXXXXXXXXXXXXX",   # normalised (no spaces)
             "rib_raw"    : "10096 18027 00064764601", # as in the file
             "balance"    : 798.27,                    # from footer
             "account_type_hint": "checking",          # or "savings"
