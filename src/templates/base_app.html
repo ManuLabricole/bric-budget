@@ -1,11 +1,52 @@
 {% extends "base.html" %}
 {% block body %}
+    {#
+        LAYOUT GÉNÉRAL
+        ══════════════
+        Trois zones côte à côte dans toute la hauteur écran :
+          [sidebar 240px] | [zone principale flex-1] | [right-panel 384px — masqué par défaut]
+
+        La sidebar est fixe (pas de scroll).
+        La zone principale a son propre scroll (overflow-y-auto sur <main>).
+        Le right-panel est en position fixe (overlay), glisse depuis la droite via JS.
+    #}
     <div class="flex h-screen overflow-hidden">
+        {# ── SIDEBAR ─────────────────────────────────────────────────────────────
+           Largeur fixe 240px. Contenu délégué à sidebar.html.
+           Ce qu'elle affiche : logo, nav principale (Budget/Transactions/Comptes…),
+           section comptes bancaires avec soldes, et footer (settings/profil).
+        #}
         <aside class="w-60 flex-shrink-0 flex flex-col border-r border-edge bg-transparent">
             {% include "components/layout/sidebar.html" %}
         </aside>
+        {# ── ZONE PRINCIPALE ─────────────────────────────────────────────────── #}
         <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
-            {# Topbar — inlinée pour pouvoir exposer des blocs surchargés par les pages enfants #}
+            {# ── TOPBAR ───────────────────────────────────────────────────────────
+               Barre horizontale h-16 en haut de la zone de contenu (PAS au-dessus
+               de la sidebar — c'est un topbar par page, pas global).
+
+               Inlinée ici (plutôt qu'en include) pour pouvoir exposer des blocs
+               Django que les templates enfants peuvent surcharger avec {% block %}.
+
+               GAUCHE — {% block topbar_title %} + {% block topbar_subtitle %}
+               ┌─────────────────────────────────────────────────────┐
+               │ Par défaut : "BricBudget" (texte brut)              │
+               │                                                     │
+               │ Surchargé par ex. sur la page catégorie :           │
+               │   ← [●] Virements                         [▾]       │
+               │   (bouton retour + icône + nom catégorie + dropdown │
+               │    pour changer de catégorie sans revenir en arrière│
+               └─────────────────────────────────────────────────────┘
+
+               DROITE — {% block topbar_actions %}
+               ┌─────────────────────────────────────────────────────┐
+               │ Par défaut : vide                                   │
+               │                                                     │
+               │ Surchargé sur les pages avec filtres globaux :      │
+               │   [1M] [3M●] [1A]   [Tous les comptes ▾]           │
+               │   (période active + sélecteur de compte)           │
+               └─────────────────────────────────────────────────────┘
+            #}
             <div class="flex items-center justify-between h-16 px-6 border-b border-edge flex-shrink-0 bg-transparent">
                 <div>
                     <h1 class="text-lg font-semibold text-text-base">
@@ -13,28 +54,52 @@
                             BricBudget
                         {% endblock topbar_title %}
                     </h1>
+                    {# Sous-titre optionnel — ex. solde total ou période active #}
                     {% block topbar_subtitle %}
                     {% endblock topbar_subtitle %}
                 </div>
+                {# Actions droite : filtres période, sélecteur compte, boutons page-specific #}
                 <div class="flex items-center gap-2">
                     {% block topbar_actions %}
                     {% endblock topbar_actions %}
                 </div>
             </div>
+            {# ── CONTENU PRINCIPAL ────────────────────────────────────────────────
+               Zone scrollable. Chaque page enfant remplit {% block content %}.
+               Le padding p-6 est appliqué ici pour être cohérent sur toutes les pages.
+               Si une page a besoin de padding différent, elle peut surcharger via
+               un wrapping div dans son block content.
+            #}
             <main class="flex-1 overflow-y-auto p-6">
                 {% block content %}
                 {% endblock content %}
             </main>
         </div>
+        {# ── RIGHT PANEL ──────────────────────────────────────────────────────────
+           Panneau latéral droit — overlay fixe, 384px de large, masqué par défaut
+           (translate-x-full = décalé hors écran vers la droite).
+
+           Ouvert/fermé via les fonctions JS openPanel() / closePanel() ci-dessous,
+           appelées depuis HTMX (hx-on:htmx:after-request="openPanel()") ou
+           depuis des boutons avec onclick="openPanel()".
+
+           Contenu délégué à right_panel.html — qui lui-même expose une zone
+           #right-panel-content rechargée par HTMX selon le contexte :
+             - "Tout voir" (liste complète transactions d'une catégorie)
+             - Détail d'une transaction
+             - Formulaire d'édition de règle de catégorisation
+        #}
         <aside id="right-panel"
                class="fixed right-0 top-0 h-full w-96 flex-shrink-0 flex flex-col border-l border-edge bg-surface-2 transform translate-x-full transition-transform duration-300 z-40">
             {% include "components/layout/right_panel.html" %}
         </aside>
     </div>
     <script>
+  // Ouvre le right panel : retire la classe qui le pousse hors écran
   function openPanel() {
     document.getElementById('right-panel').classList.remove('translate-x-full');
   }
+  // Ferme le right panel : remet la classe translate-x-full (glisse vers la droite)
   function closePanel() {
     document.getElementById('right-panel').classList.add('translate-x-full');
   }
