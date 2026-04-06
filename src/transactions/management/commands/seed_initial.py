@@ -255,10 +255,10 @@ class Command(BaseCommand):
                 "bic": "YUHHCHZZ",
             },
             # ── UBS ──────────────────────────────────────────────────────────
-            # contract_number = IBAN normalisé (sans espaces) extrait du fichier CSV UBS.
-            # Utilisé par UBSConnector.extract_account_identifier() pour matcher le compte.
-            # CheckingAccount.iban = même valeur avec espaces (pour affichage SEPA).
-            # Source : "IBAN:;CH9X XXXX XXXX XXXX XXXX X;" — ligne 2 du sample UBS.
+            # contract_number = IBAN normalisé (sans espaces) du fichier CSV UBS.
+            # iban = IBAN avec espaces pour affichage SEPA.
+            # ⚠️ Placeholder — à remplacer par les vraies valeurs dans l'admin
+            # ou via une variable d'environnement avant utilisation en prod.
             {
                 "key": "ubs_cc",
                 "bank_slug": "ubs",
@@ -266,8 +266,8 @@ class Command(BaseCommand):
                 "account_type": Account.AccountType.CHECKING,
                 "currency": "CHF",
                 "subtype": "checking",
-                "contract_number": "CH9XXXXXXXXXXXXXXXXXXX",  # IBAN normalisé — clé d'import
-                "iban": "CH9X XXXX XXXX XXXX XXXX X",  # IBAN avec espaces — affichage
+                "contract_number": "",  # à renseigner : IBAN normalisé sans espaces
+                "iban": "",  # à renseigner : IBAN avec espaces (ex: CH94 XXXX ...)
                 "bic": "UBSWCHZH",
             },
             {

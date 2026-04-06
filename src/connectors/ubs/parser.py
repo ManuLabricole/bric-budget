@@ -14,7 +14,7 @@ Columns   : Date de transaction ; Heure de transaction ; Date de comptabilisatio
 Metadata block (lines 1-8, line 9 is blank)
 -------------------------------------------
 Line 1 : Numéro de compte:;0243 00693382.40;
-Line 2 : IBAN:;CH9X XXXX XXXX XXXX XXXX X;          ← account identifier
+Line 2 : IBAN:;<IBAN_REDACTED>;                      ← account identifier
 Line 3 : Du:;2025-12-22;
 Line 4 : Au:;2026-04-01;
 Line 5 : Solde initial:;0.00;
@@ -133,7 +133,7 @@ class UBSConnector(BaseConnector):
 
         Line 2 format: "IBAN:;CH9X XXXX XXXX XXXX XXXX X;"
 
-        Returns the IBAN without spaces: "CH9400243243693382 40P"
+        Returns the IBAN without spaces: "CH9XXXXXXXXXXXXXXXXXXX"
         This normalized form must match Account.contract_number in the DB exactly.
 
         Why normalize (strip spaces)?

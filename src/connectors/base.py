@@ -88,7 +88,7 @@ class BaseConnector(ABC):
         Default: returns None — override in connectors that embed an identifier.
 
         Who overrides:
-            - UBSConnector  → IBAN normalized (no spaces): "CH9400243243693382 40P"
+            - UBSConnector  → IBAN normalized (no spaces): "CH9XXXXXXXXXXXXXXXXXXX"
             - YuhConnector  → None (no identifier in Yuh files — convention fallback)
             - CICConnector  → None (multi-account file — identifier resolved per sheet)
 
