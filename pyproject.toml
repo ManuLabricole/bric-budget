@@ -86,3 +86,15 @@ tag_format = "v$version"
 # so imports are grouped correctly: stdlib → third-party → first-party
 known-first-party = ["accounts", "transactions", "users", "connectors", "config"]
 
+
+# =============================================================================
+# djLint — Django template linter
+# Docs: https://djlint.com/docs/configuration/
+# =============================================================================
+[tool.djlint]
+profile = "django"
+# Règles désactivées délibérément :
+#   H021 — inline styles : nécessaires pour le glassmorphism (gradient borders, backdrop-blur)
+#           Tailwind ne supporte pas ces propriétés en classes utilitaires.
+#   T003 — endblock sans nom : choix Django 6 (endblock vide = moins de bruit)
+ignore = "H021,T003"

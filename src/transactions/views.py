@@ -1,1 +1,472 @@
-# Create your views here.
+"""
+transactions/views.py — Vues de l'application Budget
+
+Pattern de toutes les vues ici :
+    1. Lire l'état depuis request.session (période active, onglet actif)
+    2. Construire le queryset de base (filtres fixes : non ignoré, non virement)
+    3. Appliquer les filtres de période
+    4. Calculer les agrégats (KPIs + totaux par catégorie)
+    5. Retourner le contexte au template
+
+Pourquoi tout en session Django ?
+    → Décision d'archi 2026-04-01 : pas d'URL params pour l'état UI.
+    Chaque requête POST/HTMX met à jour la session, puis redirige (ou re-render)
+    en GET pour que le navigateur voie toujours une URL propre.
+"""
+
+import calendar
+from datetime import date
+
+from django.contrib.auth.decorators import login_required
+from django.db.models import Sum
+from django.shortcuts import redirect, render
+
+from transactions.models import Transaction
+
+# =============================================================================
+# Helpers — arithmétique sur les dates
+# =============================================================================
+
+# Nombre de mois dans chaque mode de période.
+# Utilisé pour calculer period_end à partir de period_start.
+PERIOD_MODE_MONTHS = {"1m": 1, "3m": 3, "1y": 12}
+
+MOIS_FR = {
+    1: "Janvier",
+    2: "Février",
+    3: "Mars",
+    4: "Avril",
+    5: "Mai",
+    6: "Juin",
+    7: "Juillet",
+    8: "Août",
+    9: "Septembre",
+    10: "Octobre",
+    11: "Novembre",
+    12: "Décembre",
+}
+
+
+def _add_months(d, n):
+    """
+    Ajoute n mois à la date d (n peut être négatif).
+
+    Exemple : _add_months(date(2026, 1, 31), 1) → date(2026, 2, 28)
+    Le jour est réduit au dernier jour du mois si nécessaire (ex: 31 jan → 28 fév).
+
+    Pourquoi ne pas utiliser timedelta(days=30) ?
+    → Les mois n'ont pas le même nombre de jours. +30j depuis le 1er mars donne
+      le 31 mars, pas le 1er avril. _add_months(date(2026, 3, 1), 1) → 2026-04-01. ✓
+    """
+    month = d.month - 1 + n  # mois 0-indexé (0 = janvier)
+    year = d.year + month // 12  # débordement d'année si month < 0 ou > 11
+    month = month % 12 + 1  # retour en 1-indexé (1-12)
+    day = min(d.day, calendar.monthrange(year, month)[1])  # clamp au dernier jour
+    return d.replace(year=year, month=month, day=day)
+
+
+def _period_end_from_start(start, mode):
+    """
+    Calcule le dernier jour de la période à partir du premier jour et du mode.
+
+    Exemples :
+        _period_end_from_start(date(2026, 4, 1), "1m") → date(2026, 4, 30)
+        _period_end_from_start(date(2026, 2, 1), "3m") → date(2026, 4, 30)
+        _period_end_from_start(date(2026, 4, 1), "1y") → date(2027, 3, 31)
+
+    On calcule le mois de fin = start + (n_mois - 1), puis on prend le dernier jour.
+    Ex pour 3m depuis avril : fin = juin = dernier jour de juin = 30 juin.
+    """
+    n = PERIOD_MODE_MONTHS[mode]
+    end_month_start = _add_months(start, n - 1)  # premier jour du dernier mois
+    last_day = calendar.monthrange(end_month_start.year, end_month_start.month)[1]
+    return end_month_start.replace(day=last_day)
+
+
+# =============================================================================
+# transaction_list — Page Budget principale
+# =============================================================================
+
+
+@login_required
+def transaction_list(request):
+    """
+    Page Budget : agrégation des transactions par catégorie pour la période active.
+
+    URL : /budget/
+    Template : transactions/budget.html
+
+    Ce que cette vue calcule :
+        - La période active (mois en cours par défaut)
+        - Les 3 KPIs : Entrées totales / Sorties totales / Dépenses récurrentes
+        - Les catégories de dépenses triées par montant décroissant
+        - Les catégories de revenus triées par montant décroissant
+        - La répartition en % pour le donut
+
+    Principe des sessions Django :
+        request.session est un dict persisté côté serveur (table django_session en DB).
+        Chaque utilisateur a sa propre session. On y stocke l'état UI pour qu'il
+        survive entre les requêtes GET. Le navigateur envoie juste un cookie de session.
+    """
+
+    # ── 1. Période active ─────────────────────────────────────────────────────
+    #
+    # On stocke en session le premier et le dernier jour du mois actif.
+    # Format : "YYYY-MM-DD" (string ISO) — simple à sérialiser en JSON (format session).
+    #
+    # Default : mois en cours.
+    # "calendar.monthrange(year, month)[1]" retourne le nombre de jours dans le mois.
+    # Ex: monthrange(2026, 2)[1] → 28 (ou 29 si bissextile)
+
+    today = date.today()
+
+    period_start_str = request.session.get("budget_period_start")
+    period_end_str = request.session.get("budget_period_end")
+
+    if period_start_str and period_end_str:
+        # Reconstituer les objets date depuis les strings stockés en session
+        period_start = date.fromisoformat(period_start_str)
+        period_end = date.fromisoformat(period_end_str)
+    else:
+        # Initialiser au mois en cours
+        period_start = today.replace(day=1)
+        last_day = calendar.monthrange(today.year, today.month)[1]
+        period_end = today.replace(day=last_day)
+
+        # Persister en session
+        request.session["budget_period_start"] = period_start.isoformat()
+        request.session["budget_period_end"] = period_end.isoformat()
+
+    # Mode actif : "1m" | "3m" | "1y" — stocké en session, défaut 1 mois
+    period_mode = request.session.get("budget_period_mode", "1m")
+
+    # Label affiché dans la topbar : "Mars 2026" (1M) ou "Mars — Juin 2026" (3M)
+    # MOIS_FR est défini au niveau module (partagé avec budget_set_period)
+    if period_mode == "1m":
+        period_label = f"{MOIS_FR[period_start.month]} {period_start.year}"
+    else:
+        period_label = (
+            f"{MOIS_FR[period_start.month]} — "
+            f"{MOIS_FR[period_end.month]} {period_end.year}"
+        )
+
+    # ── 2. Onglet actif ───────────────────────────────────────────────────────
+    #
+    # 3 onglets dans l'UI Budget : sorties | entrees | recurrentes
+    # Stocké en session. Default : "sorties".
+    active_tab = request.session.get("budget_active_tab", "sorties")
+
+    # ── 3. Queryset de base ───────────────────────────────────────────────────
+    #
+    # Les transactions exclues systématiquement du budget :
+    #   - is_ignored=True : l'utilisateur a coché "Exclure de l'analyse"
+    #   - is_internal_transfer=True : virement entre propres comptes (ex: Yuh → CIC)
+    #     Ces virements gonfleraient artificiellement sorties ET entrées.
+    #   - category__isnull=True : transactions sans catégorie → on les met dans
+    #     la catégorie "Inconnu". Si on les filtre ici, elles disparaissent du budget.
+    #     On les INCLUT donc — l'Inconnu apparaîtra comme une catégorie normale.
+    #
+    # .filter() retourne un QuerySet (objet lazy) — la requête SQL n'est pas encore
+    # envoyée à PostgreSQL. Elle le sera seulement quand on itère ou qu'on appelle
+    # .aggregate(), .annotate()...
+    qs = Transaction.objects.filter(
+        date__gte=period_start,
+        date__lte=period_end,
+        is_ignored=False,
+        is_internal_transfer=False,
+    )
+
+    # ── 4. KPIs ───────────────────────────────────────────────────────────────
+    #
+    # Django .aggregate() exécute UNE requête SQL et retourne un dict.
+    # Ex: {"total": Decimal('-2341.50')} ou {"total": None} si aucune transaction.
+    #
+    # Entrées = montants positifs (salaire, remboursements, cadeaux...)
+    # Sorties = montants négatifs (dépenses) — on garde le signe, on l'affiche abs()
+    # Récurrentes = dépenses marquées is_recurring=True (loyer, abo...)
+
+    total_income = qs.filter(amount__gt=0).aggregate(total=Sum("amount"))["total"] or 0
+
+    total_expenses = (
+        qs.filter(amount__lt=0).aggregate(total=Sum("amount"))["total"] or 0
+    )
+
+    total_recurring = (
+        qs.filter(amount__lt=0, is_recurring=True).aggregate(total=Sum("amount"))[
+            "total"
+        ]
+        or 0
+    )
+
+    # ── 5. Agrégation par catégorie ───────────────────────────────────────────
+    #
+    # .values() + .annotate() = GROUP BY en SQL.
+    # Traduction SQL approximative :
+    #   SELECT category_id, category__name, SUM(amount) as total
+    #   FROM transactions
+    #   WHERE date BETWEEN ... AND ... AND is_ignored=False AND ...
+    #   GROUP BY category_id, category__name, ...
+    #   ORDER BY category__order
+    #
+    # Résultat : une liste de dicts, un dict par catégorie.
+    # Ex: [{"category__name": "Alimentation", "total": Decimal("-234.50"), ...}, ...]
+    #
+    # Pourquoi category__isnull=False ici ?
+    #   On INCLUT les transactions sans catégorie dans le qs de base (voir § 3).
+    #   Mais on ne peut pas les grouper par catégorie si elle est NULL.
+    #   On les exclut de l'agrégation catégorie → elles n'apparaissent pas dans les listes.
+    #   Elles comptent quand même dans les KPIs (total_income/expenses ci-dessus).
+    cat_totals = (
+        qs.filter(category__isnull=False)
+        .values(
+            "category__id",
+            "category__name",
+            "category__slug",
+            "category__colour_hex",
+            "category__icon",
+            "category__order",
+        )
+        .annotate(total=Sum("amount"))
+        .order_by("category__order")
+    )
+
+    # ── 6. Split entrées / sorties ────────────────────────────────────────────
+    #
+    # On sépare en Python (pas en SQL) pour garder les requêtes simples.
+    # Un "total > 0" sur une catégorie de dépenses est théoriquement possible
+    # (ex: remboursement reçu sur une catégorie Alimentation) → on classe par signe.
+    #
+    # Tri :
+    #   expense_categories    : du plus gros poste au plus petit (le plus négatif en premier)
+    #   income_categories     : du plus grand revenu au plus petit
+    #   recurring_categories  : même logique que expense, mais seulement is_recurring=True
+    expense_categories = sorted(
+        [c for c in cat_totals if c["total"] < 0],
+        key=lambda c: c["total"],  # -2000 < -500 → -2000 en premier
+    )
+
+    income_categories = sorted(
+        [c for c in cat_totals if c["total"] > 0],
+        key=lambda c: -c["total"],  # 3500 > 500 → 3500 en premier
+    )
+
+    # Catégories récurrentes : même GROUP BY que cat_totals mais filtré sur is_recurring.
+    # Requête séparée (pas un filtre sur cat_totals) car cat_totals est déjà évalué.
+    # On recalcule les pct plus bas, dans le bloc donut.
+    recurring_cat_totals = (
+        qs.filter(category__isnull=False, amount__lt=0, is_recurring=True)
+        .values(
+            "category__id",
+            "category__name",
+            "category__slug",
+            "category__colour_hex",
+            "category__icon",
+            "category__order",
+        )
+        .annotate(total=Sum("amount"))
+        .order_by("category__order")
+    )
+    recurring_categories = sorted(
+        list(recurring_cat_totals),
+        key=lambda c: c["total"],
+    )
+
+    # ── 7. Distribution (%) pour le donut ─────────────────────────────────────
+    #
+    # On calcule la part de chaque catégorie de dépenses sur le total des sorties.
+    # abs() car total_expenses est négatif.
+    total_expenses_abs = abs(total_expenses)
+
+    # SVG donut math :
+    #   Le cercle SVG a r=15.9 → circonférence ≈ 100 (pratique : 1 unité = 1%).
+    #   Chaque segment = un <circle> avec :
+    #     stroke-dasharray : "pct (100-pct)"  → trace pct% du cercle, masque le reste
+    #     stroke-dashoffset : -offset_cumulé  → décale le début du segment
+    #   On accumule l'offset au fil des catégories.
+    cumulative_pct = 0
+    for cat in expense_categories:
+        if total_expenses_abs > 0:
+            cat["pct"] = round(abs(cat["total"]) / total_expenses_abs * 100, 1)
+        else:
+            cat["pct"] = 0
+        # Valeurs précalculées pour éviter la logique dans le template
+        cat["dash_array"] = f"{cat['pct']} {100 - cat['pct']}"
+        cat["dash_offset"] = round(-cumulative_pct, 1)
+        cumulative_pct += cat["pct"]
+
+    # ── 8. Période affichée dans la nav ───────────────────────────────────────
+    # Format : "1er avril 2026 — 30 avril 2026"
+    # On formate en Python (pas en template) pour garder le mois en français.
+    # Seul le 1er du mois a un ordinal en français (1er vs 2, 3, 4...).
+    day_start = "1er" if period_start.day == 1 else str(period_start.day)
+    day_end = "1er" if period_end.day == 1 else str(period_end.day)
+    period_display = (
+        f"{day_start} {MOIS_FR[period_start.month].lower()} {period_start.year}"
+        f" — "
+        f"{day_end} {MOIS_FR[period_end.month].lower()} {period_end.year}"
+    )
+
+    # ── 9. Navigation — peut-on aller à droite ? ──────────────────────────────
+    #
+    # La flèche droite est masquée si period_end atteint ou dépasse le dernier
+    # jour du mois courant. On ne peut pas afficher "le futur".
+    # `today` est défini en § 1 — pas besoin de le recalculer.
+    current_month_end = today.replace(
+        day=calendar.monthrange(today.year, today.month)[1]
+    )
+    can_go_next = period_end < current_month_end
+
+    # ── 10. Catégories actives selon l'onglet ────────────────────────────────
+    #
+    # active_tab (session) détermine quelle liste on passe au template.
+    # Le template n'a qu'une seule variable `active_categories` à afficher —
+    # pas besoin de if/elif dans le template, toute la logique reste en Python.
+    #
+    # Libellés du compteur : "3 catégorie(s) de sorties" / "d'entrées" / "récurrentes"
+    TAB_CONFIG = {
+        "sorties": (expense_categories, "de sorties"),
+        "entrees": (income_categories, "d'entrées"),
+        "recurrentes": (recurring_categories, "récurrentes"),
+    }
+    active_categories, tab_label_suffix = TAB_CONFIG.get(
+        active_tab,
+        TAB_CONFIG["sorties"],  # fallback sorties si valeur invalide
+    )
+
+    # ── 11. Contexte → template ───────────────────────────────────────────────
+    # Disponible = ce qu'il reste après toutes les sorties
+    total_available = total_income + total_expenses  # expenses est négatif → addition
+
+    context = {
+        # Période
+        "period_start": period_start,
+        "period_end": period_end,
+        "period_label": period_label,
+        "period_display": period_display,
+        "period_mode": period_mode,
+        "can_go_next": can_go_next,
+        # Onglet actif
+        "active_tab": active_tab,
+        # KPIs (Decimal → template les formate avec |floatformat)
+        "total_income": total_income,
+        "total_expenses": total_expenses,
+        "total_expenses_abs": total_expenses_abs,
+        "total_recurring": abs(total_recurring),
+        "total_available": total_available,
+        # Catégories — active_categories = la liste à afficher selon l'onglet
+        "active_categories": active_categories,
+        "tab_label_suffix": tab_label_suffix,
+        # Toujours passer expense_categories au donut (la distribution reste en sorties)
+        "expense_categories": expense_categories,
+    }
+
+    return render(request, "transactions/budget.html", context)
+
+
+# =============================================================================
+# budget_set_period — Navigation temporelle (GET → redirect /budget/)
+# =============================================================================
+
+
+@login_required
+def budget_set_period(request, action):
+    """
+    Met à jour la période active en session et redirige vers /budget/.
+
+    URL : /budget/period/<action>/
+    Actions valides : "prev" | "next" | "1m" | "3m" | "1y"
+
+    Pattern PRG (Post-Redirect-Get) en version GET :
+        Le navigateur fait GET /budget/period/prev/ → on modifie la session
+        → on redirect 302 vers GET /budget/ → transaction_list se re-render.
+
+    Pourquoi GET et pas POST ?
+        Ces boutons ne modifient pas de données en DB — ils changent seulement
+        l'état UI (période en session). GET est donc sémantiquement correct.
+        Un POST serait excessif pour de la navigation pure.
+
+    Pourquoi redirect et pas render direct ?
+        Pour éviter que F5 (rafraîchir) déclenche une double navigation.
+        Avec redirect, F5 recharge simplement /budget/.
+    """
+    today = date.today()
+
+    # Lire l'état courant depuis la session (avec valeurs par défaut)
+    current_mode = request.session.get("budget_period_mode", "1m")
+    start_str = request.session.get("budget_period_start")
+    current_start = date.fromisoformat(start_str) if start_str else today.replace(day=1)
+
+    # ── Changement de mode (1m / 3m / 1y) ───────────────────────────────────
+    # On bascule vers le nouveau mode en gardant la même période de départ si possible.
+    # Si la nouvelle période dépasse le mois courant, on revient au mois courant.
+    if action in PERIOD_MODE_MONTHS:
+        new_mode = action
+        new_start = current_start  # on tente de garder le même mois de départ
+
+        # Calculer la fin avec le nouveau mode
+        new_end = _period_end_from_start(new_start, new_mode)
+
+        # Si la fin déborde dans le futur, recentrer sur le mois courant (comme fin)
+        current_month_end = today.replace(
+            day=calendar.monthrange(today.year, today.month)[1]
+        )
+        if new_end > current_month_end:
+            # Décaler le début pour que la fin = dernier mois courant
+            n = PERIOD_MODE_MONTHS[new_mode]
+            new_start = _add_months(today.replace(day=1), -(n - 1))
+            new_end = _period_end_from_start(new_start, new_mode)
+
+    # ── Navigation prev / next ────────────────────────────────────────────────
+    # On décale period_start de ±1 mois, puis on recalcule period_end selon le mode.
+    elif action == "prev":
+        new_mode = current_mode
+        new_start = _add_months(current_start, -1)
+        new_end = _period_end_from_start(new_start, new_mode)
+
+    elif action == "next":
+        # Bloquer si on est déjà au mois courant (bouton ne devrait pas apparaître)
+        current_month_end = today.replace(
+            day=calendar.monthrange(today.year, today.month)[1]
+        )
+        current_end = _period_end_from_start(current_start, current_mode)
+        if current_end >= current_month_end:
+            return redirect("transactions:list")  # no-op silencieux
+
+        new_mode = current_mode
+        new_start = _add_months(current_start, 1)
+        new_end = _period_end_from_start(new_start, new_mode)
+
+    else:
+        # Action inconnue → no-op
+        return redirect("transactions:list")
+
+    # ── Persister en session ──────────────────────────────────────────────────
+    request.session["budget_period_mode"] = new_mode
+    request.session["budget_period_start"] = new_start.isoformat()
+    request.session["budget_period_end"] = new_end.isoformat()
+
+    return redirect("transactions:list")
+
+
+# =============================================================================
+# budget_set_tab — Bascule l'onglet actif (GET → redirect /budget/)
+# =============================================================================
+
+
+@login_required
+def budget_set_tab(request, tab):
+    """
+    Met à jour l'onglet actif en session et redirige vers /budget/.
+
+    URL : /budget/tab/<tab>/
+    tab valides : "sorties" | "entrees" | "recurrentes"
+
+    Même pattern que budget_set_period : GET → session update → redirect.
+    Aucune écriture en DB — seulement l'état UI en session.
+    """
+    VALID_TABS = {"sorties", "entrees", "recurrentes"}
+
+    if tab in VALID_TABS:
+        request.session["budget_active_tab"] = tab
+
+    return redirect("transactions:list")

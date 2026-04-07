@@ -1,26 +1,7 @@
 {% extends "base_app.html" %}
 {# synthese/index.html — Vue Synthèse. Données fictives — Phase 2. #}
-{% block title %}
-    Synthèse — BricBudget
-{% endblock title %}
-{% block topbar_title %}
-    Synthèse
-{% endblock topbar_title %}
-{% block topbar_subtitle %}
-    <p class="text-xs text-text-muted mt-0.5">Mis à jour aujourd'hui</p>
-{% endblock topbar_subtitle %}
-{% block topbar_actions %}
-    <button class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-gold hover:bg-gold-hover text-surface-1 rounded-lg transition-colors">
-        <svg class="w-4 h-4"
-             fill="none"
-             viewBox="0 0 24 24"
-             stroke-width="2"
-             stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-        </svg>
-        Ajouter un compte
-    </button>
-{% endblock topbar_actions %}
+{# La topbar est fixe dans base_app.html — pas de surcharge ici. #}
+{# Tout le contenu spécifique à cette page va dans block content. #}
 {% block content %}
     <!-- KPIs -->
     <div class="grid grid-cols-3 gap-4 mb-8">
@@ -130,4 +111,4 @@
             </div>
         </div>
     </div>
-{% endblock content %}
+{% endblock %}

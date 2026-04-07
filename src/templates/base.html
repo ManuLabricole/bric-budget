@@ -1,14 +1,12 @@
 <!DOCTYPE html>
-<html lang="fr" class="h-full">
+<html lang="fr" class="h-full" style="font-size: 13px">
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <meta name="description" content="BricBudget — Suivi budgétaire personnel" />
         <meta name="keywords" content="budget, finance, BricBudget" />
         <title>
-            {% block title %}
-                BricBudget
-            {% endblock title %}
+            {% block title %}BricBudget{% endblock %}
         </title>
         {# Inter — police utilisée par Finary #}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -65,14 +63,11 @@
           radial-gradient(ellipse 35% 45% at 100% 50%, rgba(77, 191, 147, 0.07) 0%, rgba(242, 192, 134, 0.04) 50%, transparent 70%);
       }
         </style>
-        {% block extra_head %}
-        {% endblock extra_head %}
+        {% block extra_head %}{% endblock %}
     </head>
     <body class="h-full bb-background text-text-base antialiased font-sans">
-        {% block body %}
-        {% endblock body %}
+        {% block body %}{% endblock %}
         <script src="https://unpkg.com/htmx.org@2.0.4"></script>
-        {% block extra_js %}
-        {% endblock extra_js %}
+        {% block extra_js %}{% endblock %}
     </body>
 </html>

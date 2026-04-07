@@ -30,8 +30,8 @@
         </svg>
         Transactions
     </a>
-    <a href="#"
-       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-1 {% if request.resolver_match.url_name == 'budget_index' %} text-gold bg-surface-hover/30 {% else %} text-text-muted hover:text-gold hover:bg-surface-hover/30 {% endif %}">
+    <a href="{% url 'transactions:list' %}"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-1 {% if request.resolver_match.app_name == 'transactions' %} text-gold bg-surface-hover/30 {% else %} text-text-muted hover:text-gold hover:bg-surface-hover/30 {% endif %}">
         <svg class="w-5 h-5 flex-shrink-0"
              fill="none"
              viewBox="0 0 24 24"
