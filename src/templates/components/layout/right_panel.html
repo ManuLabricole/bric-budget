@@ -15,20 +15,15 @@
     3. Bouton ✕        : closePanel() remet translate-x-full
                          → optionnel : vider #panel-content (évite flash au prochain clic)
 -->
-<!-- HEADER du panneau : label + bouton fermeture -->
-<div class="flex items-center justify-between px-5 py-4 border-b border-zinc-800 flex-shrink-0">
-    <span class="text-sm font-semibold text-zinc-400 uppercase tracking-wider">Détail</span>
-    <!--
-    onclick="closePanel()" : appelle la fonction définie dans base_app.html
-    Après fermeture, on vide aussi #panel-content pour éviter un flash du contenu
-    précédent lors du prochain clic (le nouveau contenu n'est pas encore chargé).
-
-    innerHTML = '' : vide le contenu — HTMX rechargera au prochain clic.
-  -->
-    <button onclick="closePanel(); document.getElementById('panel-content').innerHTML = '';"
-            class="text-zinc-500 hover:text-white transition-colors p-1 rounded hover:bg-zinc-800"
+<!-- HEADER du panneau : titre dynamique + bouton fermeture -->
+<!-- Le titre "Liste des transactions" est écrit en dur ici.          -->
+<!-- En Phase 1C, il deviendra dynamique selon le contenu chargé.    -->
+<div class="flex items-center justify-between px-5 py-4 border-b border-edge flex-shrink-0">
+    <span class="text-sm font-semibold text-text-base">Liste des transactions</span>
+    <!-- closePanel() est défini dans base_app.html — retire translate-x-full + masque backdrop -->
+    <button onclick="closePanel()"
+            class="w-7 h-7 flex items-center justify-center rounded-full text-text-muted hover:text-text-base hover:bg-surface-hover transition-colors"
             aria-label="Fermer le panneau">
-        <!-- Icône : X mark -->
         <svg class="w-4 h-4"
              fill="none"
              viewBox="0 0 24 24"

@@ -26,4 +26,18 @@ urlpatterns = [
     # /budget/tab/<tab>/ → bascule l'onglet actif (GET → redirect vers /budget/)
     # tab : "sorties" | "entrees" | "recurrentes"
     path("tab/<str:tab>/", views.budget_set_tab, name="set_tab"),
+    # /budget/panel/transactions/ → partial HTMX — liste transactions dans le right panel
+    # Chargé par le bouton "Tout voir" via hx-get. Retourne uniquement le fragment HTML.
+    path(
+        "panel/transactions/",
+        views.budget_panel_transactions,
+        name="panel_transactions",
+    ),
+    # /budget/panel/transactions/<action>/ → met à jour la période puis retourne le fragment
+    # action : "prev" | "next" | "1m" | "3m" | "1y"
+    path(
+        "panel/transactions/<str:action>/",
+        views.budget_panel_navigate,
+        name="panel_navigate",
+    ),
 ]

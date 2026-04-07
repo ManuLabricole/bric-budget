@@ -164,6 +164,11 @@ dev-randomize:
 	@$(MANAGE) dev_randomize_categories $(if $(ALL),--all,)
 	@printf "  ✅ $(GREEN)Fait — recharge /budget/ pour voir les données$(RESET)\n"
 
+update-bank-logos:
+	@printf "  🏦 $(YELLOW)Téléchargement des logos banques (Google Favicons)...$(RESET)\n"
+	@$(MANAGE) update_bank_logos $(if $(BANK),--bank=$(BANK),)
+	@printf "  ✅ $(GREEN)Logos mis à jour dans static/icons/banks/miniature/$(RESET)\n"
+
 # =============================================================================
 # 💾 Sauvegarde / Restauration PostgreSQL
 # =============================================================================

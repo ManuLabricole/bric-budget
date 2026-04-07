@@ -1,0 +1,166 @@
+{% comment %}
+components/period/period_nav.html — Navigation période réutilisable (style Finary)
+
+Ce composant s'adapte à deux contextes de navigation :
+
+  Mode href (page principale) :
+    Les boutons sont des <a href> — navigation classique, full-page reload.
+    → ne pas passer htmx_target
+
+  Mode HTMX (panels) :
+    Les boutons sont des <button hx-get> — rechargement partiel du panel.
+    → passer htmx_target="#panel-content" (ou toute autre cible)
+
+Variables requises :
+  period_mode    — "1m" | "3m" | "1y" — détermine quel bouton est actif (doré)
+  period_display — string — label de la pill centrale (ex: "Mai 2026" ou "1er mai — 30 avr.")
+  can_go_next    — bool — si False, flèche → désactivée (placeholder vide)
+  nav_url_name   — string — nom URL Django, les actions "prev"/"next"/"1m"/"3m"/"1y"
+                   seront passées comme argument.
+                   Ex: "transactions:set_period" (page principale)
+                       "transactions:panel_navigate" (panel HTMX)
+
+Variable optionnelle :
+  htmx_target    — ex: "#panel-content"
+                   Si présent  → <button hx-get hx-target hx-swap="innerHTML">
+                   Si absent   → <a href>
+
+Usage page principale :
+  {% include "components/period/period_nav.html" with
+     period_mode=period_mode period_display=period_display can_go_next=can_go_next
+     nav_url_name="transactions:set_period" %}
+
+Usage panel HTMX :
+  {% include "components/period/period_nav.html" with
+     period_mode=period_mode period_display=period_label can_go_next=can_go_next
+     nav_url_name="transactions:panel_navigate" htmx_target="#panel-content" %}
+
+Pourquoi une seule variable nav_url_name au lieu de passer les URLs pré-calculées ?
+  Django's {% url %} tag accepte une variable template comme premier argument.
+  Ça évite de pré-calculer 5 URLs dans chaque vue qui utilise ce composant.
+{% endcomment %}
+<div class="flex items-center justify-between flex-shrink-0">
+    {% comment %} ── Groupe gauche : flèches prev/next + pill période ────────────── {% endcomment %}
+    <div class="flex items-center gap-1.5">
+        {% comment %} Flèche ← PREV — toujours active (on peut toujours aller dans le passé) {% endcomment %}
+        {% if htmx_target %}
+            <button hx-get="{% url nav_url_name 'prev' %}"
+                    hx-target="{{ htmx_target }}"
+                    hx-swap="innerHTML"
+                    class="w-6 h-6 flex items-center justify-center rounded-full text-text-muted hover:text-gold hover:bg-gold/20 transition-colors">
+            {% else %}
+                <a href="{% url nav_url_name 'prev' %}"
+                   class="w-6 h-6 flex items-center justify-center rounded-full text-text-muted hover:text-gold hover:bg-gold/20 transition-colors">
+                {% endif %}
+                <svg class="w-3 h-3"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="2.5"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+                </svg>
+                {% if htmx_target %}
+                </button>
+            {% else %}
+            </a>
+        {% endif %}
+        {% comment %} Flèche → NEXT — masquée si on est au mois courant (can_go_next=False) {% endcomment %}
+        {% if can_go_next %}
+            {% if htmx_target %}
+                <button hx-get="{% url nav_url_name 'next' %}"
+                        hx-target="{{ htmx_target }}"
+                        hx-swap="innerHTML"
+                        class="w-6 h-6 flex items-center justify-center rounded-full text-text-muted hover:text-gold hover:bg-gold/20 transition-colors">
+                {% else %}
+                    <a href="{% url nav_url_name 'next' %}"
+                       class="w-6 h-6 flex items-center justify-center rounded-full text-text-muted hover:text-gold hover:bg-gold/20 transition-colors">
+                    {% endif %}
+                    <svg class="w-3 h-3"
+                         fill="none"
+                         viewBox="0 0 24 24"
+                         stroke-width="2.5"
+                         stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                    </svg>
+                    {% if htmx_target %}
+                    </button>
+                {% else %}
+                </a>
+            {% endif %}
+        {% else %}
+            {% comment %} Placeholder invisible — maintient l'alignement {% endcomment %}
+            <span class="w-6 h-6"></span>
+        {% endif %}
+        {% comment %}
+          Pill période — label de la période active + chevron ▼
+          Non cliquable pour l'instant (date picker = Phase 2A).
+          Style : fond légèrement différent + border + rounded-full = identique Finary.
+        {% endcomment %}
+        <div class="flex items-center gap-1.5 text-xs font-medium text-text-base px-3 py-1.5 rounded-full bg-surface-hover border border-edge cursor-default select-none">
+            {{ period_display }}
+            <svg class="w-3 h-3 text-text-muted"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="2"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+            </svg>
+        </div>
+    </div>
+    {% comment %} ── Groupe droite : boutons mode 1M / 3M / 1A + Personnalisé ────── {% endcomment %}
+    <div class="flex items-center gap-1">
+        {% comment %} 1M {% endcomment %}
+        {% if htmx_target %}
+            <button hx-get="{% url nav_url_name '1m' %}"
+                    hx-target="{{ htmx_target }}"
+                    hx-swap="innerHTML"
+                    class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-colors {% if period_mode == '1m' %}text-gold bg-gold/15{% else %}text-text-muted hover:text-gold hover:bg-gold/15{% endif %}">
+            {% else %}
+                <a href="{% url nav_url_name '1m' %}"
+                   class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-colors {% if period_mode == '1m' %}text-gold bg-gold/15{% else %}text-text-muted hover:text-gold hover:bg-gold/15{% endif %}">
+                {% endif %}
+                1M
+                {% if htmx_target %}
+                </button>
+            {% else %}
+            </a>
+        {% endif %}
+        {% comment %} 3M {% endcomment %}
+        {% if htmx_target %}
+            <button hx-get="{% url nav_url_name '3m' %}"
+                    hx-target="{{ htmx_target }}"
+                    hx-swap="innerHTML"
+                    class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-colors {% if period_mode == '3m' %}text-gold bg-gold/15{% else %}text-text-muted hover:text-gold hover:bg-gold/15{% endif %}">
+            {% else %}
+                <a href="{% url nav_url_name '3m' %}"
+                   class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-colors {% if period_mode == '3m' %}text-gold bg-gold/15{% else %}text-text-muted hover:text-gold hover:bg-gold/15{% endif %}">
+                {% endif %}
+                3M
+                {% if htmx_target %}
+                </button>
+            {% else %}
+            </a>
+        {% endif %}
+        {% comment %} 1A {% endcomment %}
+        {% if htmx_target %}
+            <button hx-get="{% url nav_url_name '1y' %}"
+                    hx-target="{{ htmx_target }}"
+                    hx-swap="innerHTML"
+                    class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-colors {% if period_mode == '1y' %}text-gold bg-gold/15{% else %}text-text-muted hover:text-gold hover:bg-gold/15{% endif %}">
+            {% else %}
+                <a href="{% url nav_url_name '1y' %}"
+                   class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-colors {% if period_mode == '1y' %}text-gold bg-gold/15{% else %}text-text-muted hover:text-gold hover:bg-gold/15{% endif %}">
+                {% endif %}
+                1A
+                {% if htmx_target %}
+                </button>
+            {% else %}
+            </a>
+        {% endif %}
+        {% comment %} Personnalisé — désactivé (Phase 2A : date picker custom) {% endcomment %}
+        <div class="relative px-3 h-8 rounded-full flex items-center justify-center text-xs font-medium text-text-disabled cursor-not-allowed opacity-50 select-none">
+            Personnalisé
+            {% include "components/badges/soon.html" with extra_class="absolute -top-1 -right-1" %}
+        </div>
+    </div>
+</div>

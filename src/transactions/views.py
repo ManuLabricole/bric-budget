@@ -16,10 +16,13 @@ Pourquoi tout en session Django ?
 
 import calendar
 from datetime import date
+from pathlib import Path
 
+from django.conf import settings
 from django.contrib.auth.decorators import login_required
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.shortcuts import redirect, render
+from django.templatetags.static import static
 
 from transactions.models import Transaction
 
@@ -470,3 +473,202 @@ def budget_set_tab(request, tab):
         request.session["budget_active_tab"] = tab
 
     return redirect("transactions:list")
+
+
+# =============================================================================
+# budget_panel_transactions — Partial HTMX : liste transactions (right panel)
+# =============================================================================
+
+
+@login_required
+def budget_panel_transactions(request):
+    """
+    Partial HTMX — chargé dans #panel-content quand on clique "Tout voir".
+
+    URL : /budget/panel/transactions/
+    Template : transactions/_panel_tx_list.html  (fragment, pas une page complète)
+
+    Principe :
+        Cette vue ne retourne PAS une page HTML complète avec <html>/<head>/<body>.
+        Elle retourne uniquement le fragment HTML qui sera injecté dans #panel-content
+        par HTMX (hx-swap="innerHTML").
+
+    Pourquoi lire la période depuis la session plutôt que la recalculer ?
+        - La session contient déjà la période choisie par l'utilisateur.
+        - Recalculer ici risquerait de désynchroniser (ex: si l'user a navigué en 3M).
+        - Même source de vérité que transaction_list().
+
+    Limite à 200 transactions :
+        - Au-delà, le right panel devient inutilisable (scroll infini).
+        - La pagination sera ajoutée Phase 2A si besoin.
+    """
+    today = date.today()
+
+    # ── Lire la période depuis la session (même logique que transaction_list) ──
+    period_start_str = request.session.get("budget_period_start")
+    period_end_str = request.session.get("budget_period_end")
+
+    if period_start_str and period_end_str:
+        period_start = date.fromisoformat(period_start_str)
+        period_end = date.fromisoformat(period_end_str)
+    else:
+        # Fallback : mois en cours si session vide
+        period_start = today.replace(day=1)
+        period_end = today.replace(day=calendar.monthrange(today.year, today.month)[1])
+
+    # ── Queryset transactions ─────────────────────────────────────────────────
+    #
+    # ── Icônes banque — résolution avec priorité d'extension ─────────────────
+    #
+    # Problème : extensions hétérogènes (svg, png, jpg, jpeg) + ordre iterdir()
+    # non déterministe → si deux fichiers ont le même slug, on prend le mauvais.
+    #
+    # Solution : on scanne le dossier et on applique une priorité d'extension :
+    #   svg > png > jpg > jpeg  (SVG = qualité parfaite, JPEG = dernier recours)
+    # Pour chaque slug, on ne garde que le fichier avec la meilleure extension.
+    EXTENSION_PRIORITY = {"svg": 0, "png": 1, "jpg": 2, "jpeg": 3}
+    icon_dir = Path(settings.BASE_DIR) / "static" / "icons" / "banks" / "miniature"
+    # dict { slug → (priority, filename) } — on garde la meilleure extension
+    _best = {}
+    for f in icon_dir.iterdir():
+        if not f.is_file() or f.name.startswith("."):
+            continue
+        ext = f.suffix.lstrip(".").lower()
+        priority = EXTENSION_PRIORITY.get(ext, 99)
+        if f.stem not in _best or priority < _best[f.stem][0]:
+            _best[f.stem] = (priority, f.name)
+    bank_icon_map = {
+        slug: static(f"icons/banks/miniature/{fname}")
+        for slug, (_, fname) in _best.items()
+    }
+
+    # ── Recherche texte libre (filtre live) ──────────────────────────────────
+    #
+    # "q" est envoyé par le composant search_bar.html via hx-get avec name="q".
+    # On cherche dans merchant_name ET description_raw (OR).
+    # icontains = insensible à la casse.
+    q = request.GET.get("q", "").strip()
+
+    # ── Queryset transactions ─────────────────────────────────────────────────
+    #
+    # list() force l'évaluation du queryset pour pouvoir annoter les objets.
+    # select_related → 1 JOIN au lieu de N+1 requêtes en template.
+    # order_by("-date", "-id") → plus récentes en premier, "-id" = tie-breaker.
+    qs = Transaction.objects.filter(
+        date__gte=period_start,
+        date__lte=period_end,
+        is_ignored=False,
+        is_internal_transfer=False,
+    )
+    if q:
+        qs = qs.filter(Q(merchant_name__icontains=q) | Q(description_raw__icontains=q))
+    tx_list = list(
+        qs.select_related(
+            "category", "subcategory", "account", "account__bank"
+        ).order_by("-date", "-id")[:200]
+    )
+
+    # Annoter chaque transaction avec l'URL résolue de l'icône banque.
+    # tx.bank_icon_url est ensuite accessible directement dans le template.
+    for tx in tx_list:
+        slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
+        tx.bank_icon_url = bank_icon_map.get(slug, "")
+
+    period_mode = request.session.get("budget_period_mode", "1m")
+
+    # ── Label période (format Finary : "1er mai. 2025 — 30 avr. 2026") ─────────
+    day_start = "1er" if period_start.day == 1 else str(period_start.day)
+    day_end = "1er" if period_end.day == 1 else str(period_end.day)
+    period_label = (
+        f"{day_start} {MOIS_FR[period_start.month][:3].lower()}. {period_start.year}"
+        f" — "
+        f"{day_end} {MOIS_FR[period_end.month][:3].lower()}. {period_end.year}"
+    )
+
+    # ── Bouton "suivant" masqué si on est déjà au mois courant ──────────────────
+    current_month_end = today.replace(
+        day=calendar.monthrange(today.year, today.month)[1]
+    )
+    can_go_next = period_end < current_month_end
+
+    return render(
+        request,
+        "transactions/_panel_tx_list.html",
+        {
+            "transactions": tx_list,
+            "period_start": period_start,
+            "period_end": period_end,
+            "period_mode": period_mode,
+            "period_label": period_label,
+            "can_go_next": can_go_next,
+        },
+    )
+
+
+# =============================================================================
+# budget_panel_navigate — Met à jour la période puis retourne le fragment panel
+# =============================================================================
+
+
+@login_required
+def budget_panel_navigate(request, action):
+    """
+    Partial HTMX — met à jour la période en session puis retourne le fragment
+    liste transactions (même résultat que budget_panel_transactions, mais après
+    avoir modifié la période).
+
+    URL : /budget/panel/transactions/<action>/
+    action : "prev" | "next" | "1m" | "3m" | "1y"
+
+    Pourquoi ne pas réutiliser budget_set_period ?
+        budget_set_period fait un redirect (pattern PRG pour éviter F5 double).
+        Ici on est en HTMX : on veut retourner un fragment, pas une redirection.
+        On duplique la logique de session update, puis on appelle
+        budget_panel_transactions() directement pour le rendu.
+    """
+    today = date.today()
+    current_mode = request.session.get("budget_period_mode", "1m")
+    start_str = request.session.get("budget_period_start")
+    current_start = date.fromisoformat(start_str) if start_str else today.replace(day=1)
+
+    if action in PERIOD_MODE_MONTHS:
+        # Changement de mode : on tente de garder le même mois de départ
+        new_mode = action
+        new_start = current_start
+        new_end = _period_end_from_start(new_start, new_mode)
+        current_month_end = today.replace(
+            day=calendar.monthrange(today.year, today.month)[1]
+        )
+        if new_end > current_month_end:
+            n = PERIOD_MODE_MONTHS[new_mode]
+            new_start = _add_months(today.replace(day=1), -(n - 1))
+            new_end = _period_end_from_start(new_start, new_mode)
+
+    elif action == "prev":
+        new_mode = current_mode
+        new_start = _add_months(current_start, -1)
+        new_end = _period_end_from_start(new_start, new_mode)
+
+    elif action == "next":
+        current_month_end = today.replace(
+            day=calendar.monthrange(today.year, today.month)[1]
+        )
+        current_end = _period_end_from_start(current_start, current_mode)
+        if current_end >= current_month_end:
+            # Déjà au mois courant — no-op, retourne le panel tel quel
+            return budget_panel_transactions(request)
+        new_mode = current_mode
+        new_start = _add_months(current_start, 1)
+        new_end = _period_end_from_start(new_start, new_mode)
+
+    else:
+        # Action inconnue — no-op
+        return budget_panel_transactions(request)
+
+    # Persister la nouvelle période en session
+    request.session["budget_period_mode"] = new_mode
+    request.session["budget_period_start"] = new_start.isoformat()
+    request.session["budget_period_end"] = new_end.isoformat()
+
+    # Retourner le fragment mis à jour (lit la session fraîchement mise à jour)
+    return budget_panel_transactions(request)

@@ -1,0 +1,37 @@
+{% comment %}
+components/banks/account_badge.html — Badge compte bancaire réutilisable
+
+Affiche : [cercle blanc avec logo banque] [nom du compte]
+
+Variables requises :
+  bank_icon_url  — URL résolue de l'icône (string, peut être vide)
+  account        — objet Account Django (account.name, account.bank.name)
+
+Variables optionnelles :
+  icon_size   — taille du cercle Tailwind (défaut : "w-6 h-6")
+  text_size   — taille du texte Tailwind  (défaut : "text-[11px]")
+  text_color  — couleur du texte Tailwind (défaut : "text-text-base")
+
+Usage :
+  {% include "components/banks/account_badge.html" with bank_icon_url=tx.bank_icon_url account=tx.account %}
+
+  {% include "components/banks/account_badge.html" with bank_icon_url=tx.bank_icon_url account=tx.account icon_size="w-8 h-8" text_size="text-xs" %}
+{% endcomment %}
+<div class="flex items-center gap-1.5 flex-shrink-0">
+    {% if bank_icon_url %}
+        <div class="{{ icon_size|default:'w-6 h-6' }} rounded-full bg-white flex-shrink-0 flex items-center justify-center p-1">
+            <img src="{{ bank_icon_url }}"
+                 width="32"
+                 height="32"
+                 class="w-full h-full object-contain"
+                 alt="{{ account.bank.name }}">
+        </div>
+    {% else %}
+        <div class="{{ icon_size|default:'w-6 h-6' }} rounded-full bg-surface-hover border border-edge flex items-center justify-center flex-shrink-0">
+            <span class="text-[8px] font-bold text-text-muted">{{ account.bank.name|slice:":1" }}</span>
+        </div>
+    {% endif %}
+    <span class="{{ text_size|default:'text-[11px]' }} {{ text_color|default:'text-text-base' }} whitespace-nowrap">
+        {{ account.name }}
+    </span>
+</div>

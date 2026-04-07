@@ -60,9 +60,21 @@ DEV labels : textes font-mono discrets pour identifier les zones — pas de coul
                 {% block panel_right %}{% endblock %}
             </div>
         </div>
+        {# ── BACKDROP — overlay sombre + flou derrière le right panel ────────── #}
+        {# Invisible par défaut (opacity-0 pointer-events-none).                  #}
+        {# openPanel() → opacity-100 + pointer-events-auto                        #}
+        {# Clic dessus → closePanel() (ferme le panneau en cliquant à côté)       #}
+        <div id="panel-backdrop"
+             onclick="closePanel()"
+             class="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-300">
+        </div>
         {# ── RIGHT PANEL OVERLAY — masqué par défaut, glisse depuis la droite ── #}
+        {# w-[40%] : 40% de la largeur viewport — spec demandée                   #}
+        {# z-40 : au-dessus du backdrop (z-30)                                    #}
         <aside id="right-panel"
-               class="fixed right-0 top-0 h-full w-96 flex-shrink-0 flex flex-col border-l border-edge bg-surface-2 transform translate-x-full transition-transform duration-300 z-40">
+               class="fixed right-3 top-3 h-[calc(100%-1.5rem)] w-[36%] flex-shrink-0 flex flex-col border border-edge/60 bg-surface-2/70 backdrop-blur-xl rounded-2xl transform translate-x-[calc(100%+0.75rem)] transition-transform duration-300 z-40"
+               style="-ms-overflow-style:none;
+                      scrollbar-width:none">
             {# DEV label #}
             <div class="text-[10px] text-orange-400/40 px-2 pt-1 font-mono select-none leading-none">right_panel.html</div>
             {% include "components/layout/right_panel.html" %}
@@ -70,10 +82,27 @@ DEV labels : textes font-mono discrets pour identifier les zones — pas de coul
     </div>
     <script>
   function openPanel() {
-    document.getElementById('right-panel').classList.remove('translate-x-full');
+    // translate-x-[calc(100%+0.75rem)] → translate-x-0 (reste à right-3 grâce au CSS)
+    const panel = document.getElementById('right-panel');
+    panel.classList.remove('translate-x-[calc(100%+0.75rem)]');
+    panel.classList.add('translate-x-0');
+    // Backdrop : rendre visible + interactif
+    const bd = document.getElementById('panel-backdrop');
+    bd.classList.remove('opacity-0', 'pointer-events-none');
+    bd.classList.add('opacity-100', 'pointer-events-auto');
   }
   function closePanel() {
-    document.getElementById('right-panel').classList.add('translate-x-full');
+    const panel = document.getElementById('right-panel');
+    panel.classList.remove('translate-x-0');
+    panel.classList.add('translate-x-[calc(100%+0.75rem)]');
+    // Backdrop : masquer + désactiver les clics
+    const bd = document.getElementById('panel-backdrop');
+    bd.classList.remove('opacity-100', 'pointer-events-auto');
+    bd.classList.add('opacity-0', 'pointer-events-none');
+    // Vider le contenu après la transition (300ms = durée du slide)
+    setTimeout(() => {
+      document.getElementById('panel-content').innerHTML = '';
+    }, 300);
   }
     </script>
 {% endblock %}
