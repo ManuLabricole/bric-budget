@@ -40,4 +40,11 @@ urlpatterns = [
         views.budget_panel_navigate,
         name="panel_navigate",
     ),
+    # /budget/transactions/<tx_id>/toggle-ignore/ → bascule is_ignored + retourne fragment ligne
+    # POST uniquement (mutation DB) — HTMX swap="outerHTML" sur #tx-<id>
+    path(
+        "transactions/<int:tx_id>/toggle-ignore/",
+        views.budget_toggle_ignore,
+        name="toggle_ignore",
+    ),
 ]

@@ -21,8 +21,9 @@ from pathlib import Path
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q, Sum
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.templatetags.static import static
+from django.views.decorators.http import require_POST
 
 from transactions.models import Transaction
 
@@ -84,6 +85,54 @@ def _period_end_from_start(start, mode):
     end_month_start = _add_months(start, n - 1)  # premier jour du dernier mois
     last_day = calendar.monthrange(end_month_start.year, end_month_start.month)[1]
     return end_month_start.replace(day=last_day)
+
+
+# =============================================================================
+# _resolve_bank_icon_map — Helper privé : dict { icon_slug → URL statique }
+# =============================================================================
+
+
+def _resolve_bank_icon_map():
+    """
+    Construit un dict { icon_slug → URL statique de l'icône banque }.
+
+    Scanne le dossier static/icons/banks/miniature/ et applique une priorité
+    d'extension pour gérer les doublons :
+        svg > png > jpg > jpeg  (SVG = meilleure qualité)
+
+    Retourne {} si le dossier n'existe pas (ex: tests sans static).
+
+    Pourquoi une fonction séparée et pas inline dans chaque vue ?
+        Cette logique était dupliquée dans budget_panel_transactions() et
+        serait dupliquée à nouveau dans budget_toggle_ignore().
+        En Python : si tu copies/colles du code, c'est le signal qu'il faut
+        une fonction. Ici c'est un helper privé (préfixe _) → usage interne.
+
+    Pourquoi pas un cache module-level ?
+        Les icônes peuvent changer (make update-bank-logos). En dev, on veut
+        voir les changements sans redémarrer Django. En prod, le volume est
+        faible (< 10 banques) — le scan est négligeable.
+    """
+    EXTENSION_PRIORITY = {"svg": 0, "png": 1, "jpg": 2, "jpeg": 3}
+    icon_dir = Path(settings.BASE_DIR) / "static" / "icons" / "banks" / "miniature"
+
+    if not icon_dir.exists():
+        return {}
+
+    # { slug → (priority, filename) } — on garde la meilleure extension par slug
+    _best = {}
+    for f in icon_dir.iterdir():
+        if not f.is_file() or f.name.startswith("."):
+            continue
+        ext = f.suffix.lstrip(".").lower()
+        priority = EXTENSION_PRIORITY.get(ext, 99)
+        if f.stem not in _best or priority < _best[f.stem][0]:
+            _best[f.stem] = (priority, f.name)
+
+    return {
+        slug: static(f"icons/banks/miniature/{fname}")
+        for slug, (_, fname) in _best.items()
+    }
 
 
 # =============================================================================
@@ -516,31 +565,9 @@ def budget_panel_transactions(request):
         period_start = today.replace(day=1)
         period_end = today.replace(day=calendar.monthrange(today.year, today.month)[1])
 
-    # ── Queryset transactions ─────────────────────────────────────────────────
-    #
-    # ── Icônes banque — résolution avec priorité d'extension ─────────────────
-    #
-    # Problème : extensions hétérogènes (svg, png, jpg, jpeg) + ordre iterdir()
-    # non déterministe → si deux fichiers ont le même slug, on prend le mauvais.
-    #
-    # Solution : on scanne le dossier et on applique une priorité d'extension :
-    #   svg > png > jpg > jpeg  (SVG = qualité parfaite, JPEG = dernier recours)
-    # Pour chaque slug, on ne garde que le fichier avec la meilleure extension.
-    EXTENSION_PRIORITY = {"svg": 0, "png": 1, "jpg": 2, "jpeg": 3}
-    icon_dir = Path(settings.BASE_DIR) / "static" / "icons" / "banks" / "miniature"
-    # dict { slug → (priority, filename) } — on garde la meilleure extension
-    _best = {}
-    for f in icon_dir.iterdir():
-        if not f.is_file() or f.name.startswith("."):
-            continue
-        ext = f.suffix.lstrip(".").lower()
-        priority = EXTENSION_PRIORITY.get(ext, 99)
-        if f.stem not in _best or priority < _best[f.stem][0]:
-            _best[f.stem] = (priority, f.name)
-    bank_icon_map = {
-        slug: static(f"icons/banks/miniature/{fname}")
-        for slug, (_, fname) in _best.items()
-    }
+    # ── Icônes banque ─────────────────────────────────────────────────────────
+    # Délégué au helper privé _resolve_bank_icon_map() — voir définition plus haut.
+    bank_icon_map = _resolve_bank_icon_map()
 
     # ── Recherche texte libre (filtre live) ──────────────────────────────────
     #
@@ -554,10 +581,14 @@ def budget_panel_transactions(request):
     # list() force l'évaluation du queryset pour pouvoir annoter les objets.
     # select_related → 1 JOIN au lieu de N+1 requêtes en template.
     # order_by("-date", "-id") → plus récentes en premier, "-id" = tie-breaker.
+    # ── Queryset transactions ─────────────────────────────────────────────────
+    #
+    # Pas de filtre is_ignored=False ici — contrairement à transaction_list()
+    # qui exclut les ignorées des KPIs budget, le panel les affiche en grisé.
+    # L'utilisateur doit voir ce qu'il a ignoré pour pouvoir le réactiver.
     qs = Transaction.objects.filter(
         date__gte=period_start,
         date__lte=period_end,
-        is_ignored=False,
         is_internal_transfer=False,
     )
     if q:
@@ -672,3 +703,66 @@ def budget_panel_navigate(request, action):
 
     # Retourner le fragment mis à jour (lit la session fraîchement mise à jour)
     return budget_panel_transactions(request)
+
+
+# =============================================================================
+# budget_toggle_ignore — Toggle is_ignored sur une transaction (POST HTMX)
+# =============================================================================
+
+
+@login_required
+@require_POST
+def budget_toggle_ignore(request, tx_id):
+    """
+    Bascule le flag is_ignored d'une transaction et retourne le fragment HTML
+    de la ligne mise à jour.
+
+    URL      : POST /budget/transactions/<tx_id>/toggle-ignore/
+    Template : transactions/_panel_tx_row.html  (une seule ligne, pas une page)
+
+    Pourquoi POST et pas GET ?
+        is_ignored est une modification de données en DB — HTTP sémantique :
+        GET = lecture sans effet de bord, POST = mutation. Si on utilisait GET,
+        un navigateur pourrait pré-fetcher l'URL et déclencher un toggle
+        involontaire (ex: Google Bot, préchargement navigateur).
+
+    Pourquoi @require_POST ?
+        Décorateur Django qui renvoie HTTP 405 si la méthode n'est pas POST.
+        HTMX envoie bien un POST, mais ça protège contre les GET accidentels
+        (ex: un utilisateur qui tape l'URL dans la barre d'adresse).
+
+    Pourquoi hx-swap="outerHTML" et pas innerHTML ?
+        On remplace l'élément ENTIER (id="tx-<id>") pour que le nouvel état
+        (grisé / normal) et les nouveaux attributs hx-* soient bien présents.
+        innerHTML ne remplacerait que le contenu intérieur — l'id resterait
+        sur l'ancien élément, les classes conditionnelles (opacity-40) non.
+
+    update_fields=["is_ignored"] :
+        Optimisation — au lieu de faire UPDATE sur toutes les colonnes de la
+        ligne, Django n'envoie que is_ignored à PostgreSQL. Plus rapide et
+        sécurisé (évite d'écraser un champ modifié en concurrent).
+    """
+    tx = get_object_or_404(
+        Transaction.objects.select_related(
+            "category", "subcategory", "account", "account__bank"
+        ),
+        pk=tx_id,
+    )
+
+    # Toggle : True → False → True → ...
+    tx.is_ignored = not tx.is_ignored
+    tx.save(update_fields=["is_ignored"])
+
+    # Résolution icône banque pour la ligne retournée
+    bank_icon_map = _resolve_bank_icon_map()
+    slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
+    bank_icon_url = bank_icon_map.get(slug, "")
+
+    return render(
+        request,
+        "transactions/_panel_tx_row.html",
+        {
+            "tx": tx,
+            "bank_icon_url": bank_icon_url,
+        },
+    )

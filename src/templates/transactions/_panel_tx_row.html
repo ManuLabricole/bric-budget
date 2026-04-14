@@ -1,0 +1,120 @@
+{% load budget_filters %}
+{% comment %}
+transactions/_panel_tx_row.html — Fragment HTMX : une ligne transaction
+
+Contexte attendu (passé par la vue ou par {% include %}) :
+    tx              — objet Transaction (avec select_related category/subcategory/account/bank)
+    bank_icon_url   — str URL statique résolue par _resolve_bank_icon_map() en Python
+
+Utilisé de deux façons :
+    1. Dans _panel_tx_list.html via {% include %} — rendu initial de la liste
+    2. Retourné par budget_toggle_ignore() — HTMX remplace #tx-<id> en place (outerHTML)
+
+HTMX swap pattern :
+    id="tx-{{ tx.id }}" sur le div racine → cible du hx-target="#tx-<id>"
+    hx-swap="outerHTML" → remplace l'élément entier (id inclus) pas juste son contenu
+    Pourquoi outerHTML et pas innerHTML ?
+        Si on swap innerHTML, le div#tx-<id> reste dans le DOM mais sans ses classes
+        conditionnelles (opacity-40 etc). outerHTML remplace tout l'élément →
+        les nouvelles classes Tailwind et les nouveaux attributs hx-* sont bien présents.
+
+Rendu d'une transaction ignorée (is_ignored=True) :
+    - opacity-40 sur le conteneur entier → tout est atténué
+    - line-through sur la description + le montant → signal visuel fort "désactivé"
+    - Bouton œil-slash en doré → indique qu'elle est actuellement ignorée (clic = réactiver)
+
+Rendu d'une transaction normale :
+    - Bouton œil en gris, visible au hover seulement
+    - Clic = ignorer
+{% endcomment %}
+<div id="tx-{{ tx.id }}"
+     class="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-hover/40 transition-colors cursor-pointer group{% if tx.is_ignored %} opacity-40{% endif %}">
+    {% comment %} COL 1 — Icône catégorie 44px (cercle coloré avec initiale) {% endcomment %}
+    <div class="w-11 h-11 rounded-full flex-shrink-0 flex items-center justify-center text-white text-sm font-bold"
+         style="background-color: {{ tx.category.colour_hex|default:'#2d3033' }}">
+        {% if tx.category %}
+            {{ tx.category.name|slice:":1" }}
+        {% else %}
+            ?
+        {% endif %}
+    </div>
+    {% comment %} COL 2 — Sous-catégorie (muted, small) + description (UPPERCASE, bold) {% endcomment %}
+    <div class="w-[200px] flex-shrink-0 min-w-0">
+        <p class="text-[10px] text-text-muted leading-none mb-0.5 truncate">
+            {% if tx.subcategory %}
+                {{ tx.subcategory.name }}
+            {% elif tx.category %}
+                {{ tx.category.name }}
+            {% else %}
+                Non catégorisé
+            {% endif %}
+        </p>
+        <p class="text-[11px] font-semibold text-text-base uppercase tracking-wide truncate{% if tx.is_ignored %} line-through{% endif %}">
+            {% if tx.merchant_name %}
+                {{ tx.merchant_name|slice:":25" }}
+                {% if tx.merchant_name|length > 25 %}…{% endif %}
+            {% else %}
+                {{ tx.description_raw|slice:":25" }}
+                {% if tx.description_raw|length > 25 %}…{% endif %}
+            {% endif %}
+        </p>
+    </div>
+    {% comment %} COL 3 — Icône banque + nom compte {% endcomment %}
+    {% include "components/banks/account_badge.html" with bank_icon_url=bank_icon_url account=tx.account %}
+    {% comment %} COL 4 — Montant poussé à droite {% endcomment %}
+    <div class="ml-auto flex-shrink-0 text-right min-w-[64px]">
+        {% if tx.amount >= 0 %}
+            <span class="text-xs font-semibold text-income tabular-nums{% if tx.is_ignored %} line-through{% endif %}">
+                +{{ tx.amount|chf_dec }}
+            </span>
+        {% else %}
+            <span class="text-xs font-medium text-text-secondary tabular-nums{% if tx.is_ignored %} line-through{% endif %}">
+                −{{ tx.amount|chf_dec }}
+            </span>
+        {% endif %}
+    </div>
+    {% comment %} COL 5 — Bouton ignorer + checkbox pointer {% endcomment %}
+    <div class="flex items-center gap-1.5 flex-shrink-0">
+        {% comment %}
+        Bouton "Ignorer / Réactiver" — visible au hover via group-hover.
+        Si la transaction est ignorée, le bouton est toujours visible (pas besoin
+        de hover pour savoir qu'elle est ignorée) et coloré en doré.
+
+        hx-post     → POST /budget/transactions/<id>/toggle-ignore/
+        hx-target   → #tx-<id> (cet élément lui-même)
+        hx-swap     → outerHTML : remplace l'élément entier (classes + attributs)
+
+        Icône :
+            - Normale   : eye (contour) en gris → hover text-text-muted
+            - Ignorée   : eye-slash (rempli) en doré → clic = réactiver
+        {% endcomment %}
+        <button hx-post="{% url 'transactions:toggle_ignore' tx.id %}"
+                hx-target="#tx-{{ tx.id }}"
+                hx-swap="outerHTML"
+                title="{% if tx.is_ignored %}Réactiver la transaction{% else %}Ignorer la transaction{% endif %}"
+                class="transition-opacity p-0.5 rounded {% if tx.is_ignored %}opacity-100 text-gold{% else %}opacity-0 group-hover:opacity-100 text-text-disabled hover:text-text-muted{% endif %}">
+            {% if tx.is_ignored %}
+                {% comment %} Œil barré — transaction ignorée {% endcomment %}
+                <svg class="w-3.5 h-3.5"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="1.5"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88" />
+                </svg>
+            {% else %}
+                {% comment %} Œil normal — transaction active {% endcomment %}
+                <svg class="w-3.5 h-3.5"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="1.5"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                </svg>
+            {% endif %}
+        </button>
+        {% comment %} Checkbox pointer — non câblé pour l'instant (Phase 1C suivante) {% endcomment %}
+        <div class="w-4 h-4 rounded border border-edge group-hover:border-edge-subtle flex-shrink-0 transition-colors"></div>
+    </div>
+</div>
