@@ -94,18 +94,36 @@ Logique couleurs inversées pour la row "Principale" :
             {% if subcats %}
                 {% for sub in subcats %}
                     {% if sub.is_active %}
-                        <form hx-post="{% url 'transactions:categorize' %}"
-                              hx-target="#panel-content"
-                              hx-swap="innerHTML">
-                            <input type="hidden" name="tx_id" value="{{ tx.id }}">
-                            <input type="hidden" name="category_id" value="{{ cat.id }}">
-                            <input type="hidden" name="subcategory_id" value="{{ sub.id }}">
-                            <button type="submit"
-                                    class="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-text-secondary hover:bg-gold/10 hover:text-gold transition-colors">
-                                <span class="w-1.5 h-1.5 rounded-full bg-text-disabled flex-shrink-0"></span>
-                                {{ sub.name }}
-                            </button>
-                        </form>
+                        {% with sub_icon_path="icons/categories/"|add:sub.icon|add:".svg" %}
+                            <form hx-post="{% url 'transactions:categorize' %}"
+                                  hx-target="#panel-content"
+                                  hx-swap="innerHTML">
+                                <input type="hidden" name="tx_id" value="{{ tx.id }}">
+                                <input type="hidden" name="category_id" value="{{ cat.id }}">
+                                <input type="hidden" name="subcategory_id" value="{{ sub.id }}">
+                                <button type="submit"
+                                        class="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-text-secondary hover:bg-gold/10 hover:text-gold transition-colors">
+                                    {% comment %}
+                                    Icône sous-catégorie : trait clair sur fond foncé.
+                                    Fond : bg-surface-hover (gris foncé neutre)
+                                    Icône : brightness-0 invert = blanc
+                                    Contraste avec la row Principale (fond coloré clair, icône foncée).
+                                    {% endcomment %}
+                                    <div class="w-5 h-5 rounded-md flex-shrink-0 flex items-center justify-center bg-surface-hover">
+                                        {% if sub.icon %}
+                                            <img src="{% static sub_icon_path %}"
+                                                 width="12"
+                                                 height="12"
+                                                 class="w-3 h-3 brightness-0 invert opacity-70"
+                                                 alt="">
+                                        {% else %}
+                                            <span class="w-1 h-1 rounded-full bg-text-disabled block"></span>
+                                        {% endif %}
+                                    </div>
+                                    {{ sub.name }}
+                                </button>
+                            </form>
+                        {% endwith %}
                     {% endif %}
                 {% endfor %}
             {% endif %}
