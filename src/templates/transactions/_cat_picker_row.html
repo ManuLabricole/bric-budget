@@ -109,8 +109,7 @@ Logique couleurs inversées pour la row "Principale" :
                                     Icône : brightness-0 invert = blanc
                                     Contraste avec la row Principale (fond coloré clair, icône foncée).
                                     {% endcomment %}
-                                    <div class="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center"
-                                         style="background: {{ cat.colour_hex|default:'#4a4c55' }}">
+                                    <div class="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center bg-surface-hover">
                                         {% if sub.icon %}
                                             <img src="{% static sub_icon_path %}"
                                                  width="12"
