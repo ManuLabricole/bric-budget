@@ -67,20 +67,22 @@ Après sélection d'une sous-catégorie : POST → budget_categorize_transaction
      style="-ms-overflow-style:none;
             scrollbar-width:none"
      id="cat-picker-list">
-    {% comment %} Section catégories personnalisées (is_system=False) {% endcomment %}
+    {% comment %}
+    Ordre : perso d'abord, system ensuite.
+    is_system=False = créées par l'utilisateur (ex: Dépenses exceptionnelles)
+    is_system=True  = catégories Finary natives (ex: Alimentation, Transport…)
+    {% endcomment %}
     {% if custom_cats %}
-        <p class="px-2 pt-2 pb-1.5 text-[10px] font-semibold text-text-disabled uppercase tracking-wider">
-            Catégories personnalisées
-        </p>
+        <p class="px-2 pt-2 pb-1.5 text-[10px] font-semibold text-text-disabled uppercase tracking-wider">Mes catégories</p>
         {% for cat in custom_cats %}
             {% include "transactions/_cat_picker_row.html" %}
         {% endfor %}
-        {% comment %} Séparateur visuel entre les deux sections {% endcomment %}
         <div class="my-3 border-t border-edge/60"></div>
     {% endif %}
-    {% comment %} Section catégories système (is_system=True) {% endcomment %}
     {% if system_cats %}
-        <p class="px-2 pb-1.5 text-[10px] font-semibold text-text-disabled uppercase tracking-wider">Catégories système</p>
+        <p class="px-2 {% if not custom_cats %}pt-2{% endif %}pb-1.5 text-[10px] font-semibold text-text-disabled uppercase tracking-wider">
+            Catégories
+        </p>
         {% for cat in system_cats %}
             {% include "transactions/_cat_picker_row.html" %}
         {% endfor %}

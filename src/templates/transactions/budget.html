@@ -1,5 +1,5 @@
 {% extends "base_app.html" %}
-{% load budget_filters %}
+{% load budget_filters static %}
 {% comment %}
 transactions/list.html — Page Budget (/budget/)
 
@@ -208,12 +208,22 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                     <div class="flex flex-col gap-0.5">
                         {% for cat in active_categories %}
                             <div class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-surface-hover/50 cursor-pointer group transition-colors">
-                                {# Cercle coloré — couleur depuis Category.colour_hex en DB #}
-                                {# Fallback gris (#2d3033) si colour_hex vide               #}
-                                <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-white text-xs font-bold"
-                                     style="background-color: {{ cat.category__colour_hex|default:'#2d3033' }}">
-                                    {{ cat.category__name|slice:":1" }}
-                                </div>
+                                {# Carré arrondi coloré + icône SVG Tabler blanche #}
+                                {# Même pattern que le picker et les lignes de transaction #}
+                                {% with icon_path="icons/categories/"|add:cat.category__icon|add:".svg" %}
+                                    <div class="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center"
+                                         style="background-color: {{ cat.category__colour_hex|default:'#2d3033' }}">
+                                        {% if cat.category__icon %}
+                                            <img src="{% static icon_path %}"
+                                                 width="18"
+                                                 height="18"
+                                                 class="w-[18px] h-[18px] brightness-0 invert"
+                                                 alt="">
+                                        {% else %}
+                                            <span class="text-white text-xs font-bold">{{ cat.category__name|slice:":1" }}</span>
+                                        {% endif %}
+                                    </div>
+                                {% endwith %}
                                 <div class="flex-1 min-w-0">
                                     <p class="text-sm font-medium text-text-base">{{ cat.category__name }}</p>
                                 </div>
