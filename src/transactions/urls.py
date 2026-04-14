@@ -47,4 +47,18 @@ urlpatterns = [
         views.budget_toggle_ignore,
         name="toggle_ignore",
     ),
+    # /budget/panel/category-picker/?tx_id=X → picker catégorie (fragment HTMX)
+    # GET — lecture seule, retourne _panel_category_picker.html dans #panel-content
+    path(
+        "panel/category-picker/",
+        views.budget_panel_category_picker,
+        name="panel_category_picker",
+    ),
+    # /budget/transactions/categorize/ → assigne category + subcategory sur une transaction
+    # POST — mutation DB, retourne _panel_tx_list.html + header HX-Trigger pour le toast
+    path(
+        "transactions/categorize/",
+        views.budget_categorize_transaction,
+        name="categorize",
+    ),
 ]

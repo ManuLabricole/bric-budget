@@ -1,0 +1,103 @@
+{% comment %}
+transactions/_panel_category_picker.html — Fragment HTMX : picker catégorie
+
+Contexte attendu :
+    tx           — Transaction (avec select_related category + subcategory)
+    system_cats  — QuerySet Category (is_system=True), ordonné par order
+    custom_cats  — QuerySet Category (is_system=False), ordonné par order
+
+Chargé dans #panel-content par hx-get depuis _panel_tx_row.html.
+Après sélection d'une sous-catégorie : POST → budget_categorize_transaction()
+→ retourne _panel_tx_list.html (retour état A) + déclenche toast JS.
+
+Accordéon : <details>/<summary> HTML natif.
+    - Zéro JS, zéro HTMX pour l'ouverture des sous-catégories
+    - Le navigateur gère nativement "une seule ouverte à la fois" via JS
+      avec un event listener minimal (voir <script> en bas)
+    - group-open: Tailwind → style conditionnel selon l'état open/fermé
+
+Structure visuelle :
+    [← Retour]   Modifier la catégorie   [✕]
+    ─────────────────────────────────────────
+    [ toggle désactivé ] Règle intelligente
+    ─────────────────────────────────────────
+    Catégories personnalisées  (si custom_cats non vide)
+      [●] Nom cat  [>]
+    Catégories
+      [●] Alimentation  [>]
+        [●] Boulangerie        ← sous-cat indentée (accordéon ouvert)
+        [●] Supermarché
+      [●] Transport  [>]
+      ...
+{% endcomment %}
+{% comment %} ── Header : titre + bouton retour liste ─────────────────────────── {% endcomment %}
+<div class="px-4 py-3 flex items-center gap-3 flex-shrink-0 border-b border-edge">
+{% comment %} Bouton retour → recharge la liste (état A) {% endcomment %}
+<button hx-get="{% url 'transactions:panel_transactions' %}" hx-target="#panel-content" hx-swap="innerHTML" class="p-1 rounded text-text-muted hover:text-text-base hover:bg-surface-hover transition-colors flex-shrink-0" title="Retour à la liste">
+<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+</svg>
+</button>
+<span class="text-sm font-medium text-text-base flex-1">Modifier la catégorie</span>
+{% comment %} Catégorie actuelle de la transaction {% endcomment %}
+{% if tx.category %}
+<span class="text-[10px] text-text-muted px-2 py-0.5 rounded-full bg-surface-hover">{{ tx.category.name }}</span>
+{% endif %}
+</div>
+{% comment %} ── Section "Règle intelligente" — désactivée Phase 1C ──────────── {% endcomment %}
+<div class="px-4 py-3 flex-shrink-0 border-b border-edge">
+<div class="flex items-start gap-3">
+{% comment %}
+        Toggle désactivé — visuellement présent comme dans Finary mais non fonctionnel.
+        La classification IA est prévue Phase 6. On n'utilise pas <input type="checkbox">
+        car il serait soumis avec les formulaires de catégorie — on utilise un div.
+{% endcomment %}
+<div class="w-8 h-4 rounded-full bg-edge flex-shrink-0 mt-0.5 cursor-not-allowed" title="Classification automatique disponible en Phase 6">
+<div class="w-3.5 h-3.5 rounded-full bg-text-disabled m-0.5"></div>
+</div>
+<div>
+<p class="text-xs font-medium text-text-muted">Règle intelligente automatique</p>
+<p class="text-[10px] text-text-disabled mt-0.5">Classification automatique disponible en Phase 6</p>
+</div>
+</div>
+</div>
+{% comment %} ── Liste catégories — scrollable ─────────────────────────────────── {% endcomment %}
+<div class="flex-1 overflow-y-auto px-2 py-2" style="-ms-overflow-style:none; scrollbar-width:none" id="cat-picker-list">
+{% comment %} Section catégories personnalisées (is_system=False) {% endcomment %}
+{% if custom_cats %}
+<p class="px-2 pt-1 pb-1.5 text-[10px] font-semibold text-text-disabled uppercase tracking-wider">
+Catégories personnalisées
+</p>
+{% for cat in custom_cats %}
+{% include "transactions/_cat_picker_row.html" %}
+{% endfor %}
+<div class="my-2 border-t border-edge"></div>
+{% endif %}
+{% comment %} Section catégories système (is_system=True) {% endcomment %}
+<p class="px-2 pt-1 pb-1.5 text-[10px] font-semibold text-text-disabled uppercase tracking-wider">Catégories</p>
+{% for cat in system_cats %}
+{% include "transactions/_cat_picker_row.html" %}
+{% endfor %}
+</div>
+{% comment %}
+Script minimal : ferme les autres <details> quand on en ouvre un.
+Le HTML natif ne gère pas "un seul ouvert à la fois" automatiquement —
+on doit le faire en JS. Minimal : 5 lignes, pas de dépendance.
+
+Pourquoi dans le fragment et pas dans base_app.html ?
+    Ce comportement est spécifique à ce picker. Le mettre ici le rend
+    autonome — si le fragment est rechargé par HTMX, le script est
+    réexécuté et fonctionne sur le nouveau DOM.
+{% endcomment %}
+<script>
+(function () {
+    var list = document.getElementById('cat-picker-list');
+    if (!list) return;
+    list.addEventListener('toggle', function (e) {
+        if (e.target.tagName !== 'DETAILS' || !e.target.open) return;
+        list.querySelectorAll('details[open]').forEach(function (d) {
+            if (d !== e.target) d.removeAttribute('open');
+        });
+    }, true);  // capture phase : l'événement toggle ne bulle pas, il faut capture=true
+})();
+</script>

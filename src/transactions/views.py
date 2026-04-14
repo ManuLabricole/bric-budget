@@ -15,6 +15,7 @@ Pourquoi tout en session Django ?
 """
 
 import calendar
+import json
 from datetime import date
 from pathlib import Path
 
@@ -25,7 +26,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.templatetags.static import static
 from django.views.decorators.http import require_POST
 
-from transactions.models import Transaction
+from transactions.models import Category, SubCategory, Transaction
 
 # =============================================================================
 # Helpers — arithmétique sur les dates
@@ -766,3 +767,101 @@ def budget_toggle_ignore(request, tx_id):
             "bank_icon_url": bank_icon_url,
         },
     )
+
+
+# =============================================================================
+# budget_panel_category_picker — Partial HTMX : picker catégorie (GET)
+# =============================================================================
+
+
+@login_required
+def budget_panel_category_picker(request):
+    """
+    Partial HTMX — liste des catégories pour catégoriser une transaction.
+
+    URL      : GET /budget/panel/category-picker/?tx_id=X
+    Target   : #panel-content  (remplace tout le contenu du right panel)
+    Template : transactions/_panel_category_picker.html
+
+    Déclenché par clic sur une ligne de transaction dans _panel_tx_row.html.
+
+    Pourquoi deux listes séparées (system / custom) ?
+        La spec Finary distingue visuellement "Catégories personnalisées" (créées
+        par l'utilisateur, is_system=False) et "Catégories" (système, is_system=True).
+        En Python c'est plus clair qu'un seul queryset avec groupby en template.
+    """
+    tx_id = request.GET.get("tx_id")
+    tx = get_object_or_404(
+        Transaction.objects.select_related("category", "subcategory"),
+        pk=tx_id,
+    )
+    # Catégories système = seedées à l'init, non supprimables (ex: Alimentation, Transport...)
+    system_cats = Category.objects.filter(is_active=True, is_system=True).order_by(
+        "order"
+    )
+    # Catégories personnalisées = créées par l'utilisateur (aucune pour l'instant en Phase 1C)
+    custom_cats = Category.objects.filter(is_active=True, is_system=False).order_by(
+        "order"
+    )
+
+    return render(
+        request,
+        "transactions/_panel_category_picker.html",
+        {
+            "tx": tx,
+            "system_cats": system_cats,
+            "custom_cats": custom_cats,
+        },
+    )
+
+
+# =============================================================================
+# budget_categorize_transaction — Assigne catégorie + retourne liste (POST)
+# =============================================================================
+
+
+@login_required
+@require_POST
+def budget_categorize_transaction(request):
+    """
+    Assigne category + subcategory sur une transaction et retourne la liste
+    des transactions pour revenir au panel état A.
+
+    URL      : POST /budget/transactions/categorize/
+    Target   : #panel-content
+    Template : transactions/_panel_tx_list.html  (via budget_panel_transactions)
+
+    Pourquoi retourner budget_panel_transactions() et pas un redirect ?
+        On est en HTMX — un redirect (302) serait suivi par HTMX et retournerait
+        la page complète /budget/, pas le fragment. On appelle directement la vue
+        fragment pour avoir le bon HTML à injecter dans #panel-content.
+
+    HX-Trigger :
+        Header HTTP custom lu par HTMX → déclenche un événement JS côté client.
+        "categoryChanged" → le JS dans base_app.html affiche le toast de confirmation.
+        On passe le nom de la transaction et de la catégorie pour le message du toast.
+        Format : json.dumps({event_name: {payload}}) — HTMX le parse et l'émet.
+    """
+    tx_id = request.POST.get("tx_id")
+    cat_id = request.POST.get("category_id")
+    sub_id = request.POST.get("subcategory_id") or None
+
+    tx = get_object_or_404(Transaction, pk=tx_id)
+    tx.category = get_object_or_404(Category, pk=cat_id)
+    # subcategory est optionnelle — SET_NULL si non fournie
+    tx.subcategory = SubCategory.objects.filter(pk=sub_id).first() if sub_id else None
+    # categorization_source = "manual" : l'utilisateur a choisi lui-même
+    # (distinct de "rule" → règle auto, "ai" → Claude API, "default" → import)
+    tx.categorization_source = "manual"
+    tx.save(update_fields=["category", "subcategory", "categorization_source"])
+
+    # Retourner le fragment liste (état A du panel)
+    response = budget_panel_transactions(request)
+
+    # HX-Trigger : déclenche l'événement JS "categoryChanged" après swap HTMX
+    # Le JS dans base_app.html écoute cet événement et affiche le toast
+    tx_display = tx.merchant_name or tx.description_raw[:30]
+    response["HX-Trigger"] = json.dumps(
+        {"categoryChanged": {"tx_name": tx_display, "cat_name": tx.category.name}}
+    )
+    return response

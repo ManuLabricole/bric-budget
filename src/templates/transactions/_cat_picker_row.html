@@ -1,0 +1,86 @@
+{% comment %}
+transactions/_cat_picker_row.html — Une ligne catégorie dans le picker
+
+Contexte attendu (via {% include %} depuis _panel_category_picker.html) :
+    cat  — objet Category (avec subcategories préchargées via related_name)
+    tx   — objet Transaction (pour passer tx_id dans les formulaires POST)
+
+Comportement :
+    - <details> HTML natif = accordéon (open/fermé géré par le navigateur)
+    - <summary> = la ligne catégorie cliquable (chevron tourne avec group-open)
+    - Sous-cats = formulaires HTMX POST vers budget_categorize_transaction()
+    - group-open: Tailwind applique des styles quand <details open>
+
+Note sur group-open: Tailwind CDN :
+    Tailwind CDN Play génère les classes à la volée — "group-open:" est supporté.
+    Si une classe n'apparaît pas, vérifier que le token est dans le HTML statique
+    (pas généré dynamiquement via JS) — ce qui est le cas ici.
+{% endcomment %}
+{# djlint:off H025 #}
+<details class="group mb-0.5">
+    {% comment %} ── Header catégorie (cliquable = ouvre l'accordéon) ─────────── {% endcomment %}
+    <summary class="flex items-center gap-2.5 px-2 py-2 rounded-lg cursor-pointer list-none hover:bg-surface-hover group-open:bg-gold/10 transition-colors select-none">
+        {% comment %} Cercle coloré catégorie {% endcomment %}
+        <span class="w-3 h-3 rounded-full flex-shrink-0"
+              style="background: {{ cat.colour_hex|default:'#4a4c55' }}"></span>
+        {% comment %} Nom catégorie {% endcomment %}
+        <span class="flex-1 text-sm text-text-base group-open:text-gold transition-colors">{{ cat.name }}</span>
+        {% comment %} Chevron — tourne 90° quand ouvert {% endcomment %}
+        <span class="text-text-muted group-open:text-gold transition-transform duration-150 group-open:rotate-90 text-base leading-none">
+            ›
+        </span>
+    </summary>
+    {% comment %} ── Sous-catégories (visibles quand <details open>) ──────────── {% endcomment %}
+    {% with subcats=cat.subcategories.all %}
+        {% if subcats %}
+            <div class="ml-5 mt-0.5 mb-1">
+                {% comment %}
+                Chaque sous-catégorie = un formulaire HTMX.
+                Pourquoi un <form> par sous-catégorie et pas un formulaire global ?
+                    On veut que chaque bouton soumette uniquement ses propres
+                    category_id + subcategory_id. Un formulaire global avec
+                    des radios serait plus complexe et nécessiterait du JS.
+                    Ici : clic = soumission immédiate du formulaire correspondant.
+
+                hx-post  → POST /budget/transactions/categorize/
+                hx-target → #panel-content : remplace tout le panel par la liste
+                hx-swap  → innerHTML : injecte le fragment _panel_tx_list.html
+
+                Le header HX-Trigger retourné par la vue déclenche ensuite
+                l'événement JS "categoryChanged" → toast de confirmation.
+                {% endcomment %}
+                {% for sub in subcats %}
+                    {% if sub.is_active %}
+                        <form hx-post="{% url 'transactions:categorize' %}"
+                              hx-target="#panel-content"
+                              hx-swap="innerHTML">
+                            <input type="hidden" name="tx_id" value="{{ tx.id }}">
+                            <input type="hidden" name="category_id" value="{{ cat.id }}">
+                            <input type="hidden" name="subcategory_id" value="{{ sub.id }}">
+                            <button type="submit"
+                                    class="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-text-secondary hover:bg-gold/10 hover:text-gold transition-colors">
+                                <span class="w-1.5 h-1.5 rounded-full bg-text-disabled flex-shrink-0"></span>
+                                {{ sub.name }}
+                            </button>
+                        </form>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        {% else %}
+            {% comment %} Catégorie sans sous-catégories — clic direct assign sans sous-cat {% endcomment %}
+            <div class="ml-5 mt-0.5 mb-1">
+                <form hx-post="{% url 'transactions:categorize' %}"
+                      hx-target="#panel-content"
+                      hx-swap="innerHTML">
+                    <input type="hidden" name="tx_id" value="{{ tx.id }}">
+                    <input type="hidden" name="category_id" value="{{ cat.id }}">
+                    <button type="submit"
+                            class="w-full text-left px-2 py-1.5 rounded-lg text-sm text-text-disabled hover:bg-gold/10 hover:text-gold transition-colors italic">
+                        Assigner sans sous-catégorie
+                    </button>
+                </form>
+            </div>
+        {% endif %}
+    {% endwith %}
+</details>
+{# djlint:on H025 #}

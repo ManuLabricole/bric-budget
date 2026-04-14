@@ -78,11 +78,9 @@
         </style>
         {% block extra_head %}{% endblock %}
     </head>
-    {# hx-headers : injecte automatiquement le token CSRF sur tous les hx-post/hx-put enfants.
-       Sans ça, chaque bouton HTMX qui mute la DB devrait porter son propre {% csrf_token %},
-       ce qui est verbeux et facile à oublier. Pattern standard Django + HTMX. #}
     <body class="h-full bb-background text-text-base antialiased font-sans"
           hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+        {# hx-headers : CSRF global pour tous les hx-post enfants. Pattern standard Django+HTMX. #}
         {% block body %}{% endblock %}
         <script src="https://unpkg.com/htmx.org@2.0.4"></script>
         {% block extra_js %}{% endblock %}

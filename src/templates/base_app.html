@@ -104,5 +104,94 @@ DEV labels : textes font-mono discrets pour identifier les zones — pas de coul
       document.getElementById('panel-content').innerHTML = '';
     }, 300);
   }
+
+  // ── Toast "Catégorie modifiée" ─────────────────────────────────────────────
+  //
+  // Déclenché par l'événement HTMX "categoryChanged" — émis via le header
+  // HX-Trigger retourné par budget_categorize_transaction() après le POST.
+  //
+  // Comment ça marche :
+  //   1. HTMX reçoit la réponse du POST /budget/transactions/categorize/
+  //   2. Il lit le header "HX-Trigger: {"categoryChanged": {...}}"
+  //   3. Il émet un CustomEvent "categoryChanged" sur document.body
+  //   4. On écoute cet événement ici et on affiche le toast
+  //
+  // Le toast est un div positionné en fixed (overlay par-dessus tout),
+  // z-50 > z-40 (right panel) > z-30 (backdrop).
+  // Il disparaît automatiquement après 5s via setTimeout.
+  //
+  // Pourquoi JS pur et pas HTMX ?
+  //   Le toast n'est pas dans le DOM initial — il serait complexe à gérer
+  //   avec HTMX seul (hx-swap sur un élément absent). JS + CustomEvent
+  //   est la solution recommandée par la doc HTMX pour ce cas.
+
+  var _toastTimer = null;
+
+  function showToast(txName, catName) {
+    var toast = document.getElementById('cat-toast');
+    if (!toast) return;
+
+    // Mettre à jour le texte
+    document.getElementById('cat-toast-msg').textContent =
+      '"' + txName + '" classée en ' + catName + '.';
+
+    // Afficher
+    toast.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
+    toast.classList.add('opacity-100', 'pointer-events-auto', 'translate-y-0');
+
+    // Reset le timer si déjà en cours
+    if (_toastTimer) clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(hideToast, 5000);
+  }
+
+  function hideToast() {
+    var toast = document.getElementById('cat-toast');
+    if (!toast) return;
+    toast.classList.remove('opacity-100', 'pointer-events-auto', 'translate-y-0');
+    toast.classList.add('opacity-0', 'pointer-events-none', 'translate-y-2');
+  }
+
+  // Écoute l'événement HTMX "categoryChanged" émis par HX-Trigger
+  document.body.addEventListener('categoryChanged', function (e) {
+    var detail = e.detail || {};
+    showToast(detail.tx_name || '…', detail.cat_name || '');
+  });
     </script>
+    {# ── Toast overlay "Catégorie modifiée" ─────────────────────────────────── #}
+    {# z-50 : au-dessus du right panel (z-40) et du backdrop (z-30).            #}
+    {# Caché par défaut (opacity-0). showToast() le rend visible.               #}
+    <div id="cat-toast"
+         class="fixed top-4 right-4 z-50 max-w-sm pointer-events-none opacity-0 translate-y-2 transition-all duration-300">
+        <div class="bg-surface-3 border border-edge rounded-xl shadow-xl p-4">
+            <div class="flex items-start gap-3">
+                {# Icône checkmark vert #}
+                <svg class="w-5 h-5 text-income flex-shrink-0 mt-0.5"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="2"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                </svg>
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-text-base">Catégorie modifiée</p>
+                    <p id="cat-toast-msg" class="text-xs text-text-muted mt-0.5 truncate"></p>
+                    {# CTA règle — placeholder Phase 2E #}
+                    <button onclick="hideToast()"
+                            class="mt-2 text-xs text-gold hover:text-gold-hover transition-colors cursor-not-allowed opacity-50"
+                            title="Disponible en Phase 2E">Créer une règle automatique →</button>
+                </div>
+                {# Bouton fermer #}
+                <button onclick="hideToast()"
+                        class="text-text-disabled hover:text-text-muted transition-colors flex-shrink-0 pointer-events-auto">
+                    <svg class="w-4 h-4"
+                         fill="none"
+                         viewBox="0 0 24 24"
+                         stroke-width="2"
+                         stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
 {% endblock %}
