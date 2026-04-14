@@ -140,6 +140,8 @@ class Command(BaseCommand):
                         "icon": sub_data.get("icon", ""),
                         "default_nature": nature,
                         "is_active": sub_data.get("is_active", True),
+                        # is_system: True = Finary native, False = user-created (badge "perso")
+                        "is_system": sub_data.get("is_system", False),
                     },
                 )
 
