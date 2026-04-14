@@ -47,11 +47,11 @@ Après sélection d'une sous-catégorie : POST → budget_categorize_transaction
     {% comment %} Soon badge — même composant que partout dans l'app {% endcomment %}
     {% include "components/badges/soon.html" %}
 </div>
-{% comment %} ── Bouton "Créer une catégorie personnalisée" — placeholder {% endcomment %}
-<div class="px-4 mb-2 flex-shrink-0">
+{% comment %} ── Bouton "Créer une catégorie personnalisée" — placeholder Phase 3A {% endcomment %}
+<div class="px-4 mb-3 flex justify-end flex-shrink-0">
     <button disabled
             title="Disponible en Phase 3A"
-            class="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-edge text-xs text-text-disabled cursor-not-allowed opacity-60 hover:border-edge-subtle transition-colors">
+            class="flex items-center gap-2 px-3 py-1.5 text-xs font-medium border bg-gold border-gold text-black rounded-full opacity-60 cursor-not-allowed">
         <svg class="w-3.5 h-3.5 flex-shrink-0"
              fill="none"
              viewBox="0 0 24 24"
@@ -60,7 +60,6 @@ Après sélection d'une sous-catégorie : POST → budget_categorize_transaction
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
         </svg>
         Créer une catégorie personnalisée
-        {% include "components/badges/soon.html" with extra_class="ml-auto" %}
     </button>
 </div>
 {% comment %} ── Liste catégories — scrollable ── {% endcomment %}
