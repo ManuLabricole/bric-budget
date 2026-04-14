@@ -34,7 +34,7 @@ Rendu d'une transaction ignorée (is_ignored=True) :
         COL 1 — Icône catégorie 44px : carré arrondi coloré + SVG Tabler blanc.
         Fallback "?" si pas de catégorie ou pas d'icône.
         {% endcomment %}
-        <div class="w-11 h-11 rounded-xl flex-shrink-0 flex items-center justify-center"
+        <div class="w-11 h-11 rounded-full flex-shrink-0 flex items-center justify-center"
              style="background-color: {{ tx.category.colour_hex|default:'#2d3033' }}">
             {% if tx.category and tx.category.icon %}
                 {% with icon_path="icons/categories/"|add:tx.category.icon|add:".svg" %}

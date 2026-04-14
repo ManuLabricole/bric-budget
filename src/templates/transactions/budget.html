@@ -211,7 +211,7 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                                 {# Carré arrondi coloré + icône SVG Tabler blanche #}
                                 {# Même pattern que le picker et les lignes de transaction #}
                                 {% with icon_path="icons/categories/"|add:cat.category__icon|add:".svg" %}
-                                    <div class="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center"
+                                    <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center"
                                          style="background-color: {{ cat.category__colour_hex|default:'#2d3033' }}">
                                         {% if cat.category__icon %}
                                             <img src="{% static icon_path %}"
