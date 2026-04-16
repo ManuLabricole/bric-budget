@@ -13,11 +13,11 @@ Structure visuelle :
             [Row "Principale" — couleurs inversées : fond coloré clair, icône foncée]
             [Rows sous-cats   — style discret : fond transparent, hover gold]
 
-Logique couleurs inversées pour la row "Principale" :
-    - L'icône normale = blanc sur fond coloré (brightness-0 invert)
-    - La row "Principale" = foncé sur fond coloré à 15% opacity
-      → brightness(0) seul : force l'icône en noir/foncé (pas d'invert)
-      → background: colour_hex + alpha 26 (hex 10% opacity) pour le fond teinté clair
+Hiérarchie visuelle des icônes (3 niveaux) :
+    - Header (summary)  : cercle colour_hex plein (w-7) + icône blanche → niveau catégorie fermée
+    - Row "Principale"  : cercle colour_hex plein (w-5) + icône blanche → niveau catégorie ouverte
+    - Rows sous-cats    : cercle colour_hex 40% opacity (w-5) + icône blanche → niveau sous-catégorie
+    Tous les SVG = brightness-0 invert (blanc). La hiérarchie se lit via l'opacité du cercle.
 {% endcomment %}
 {# djlint:off H025 #}
 <details class="group mb-0.5 outline-none">
@@ -48,16 +48,12 @@ Logique couleurs inversées pour la row "Principale" :
         {% comment %}
         Row "Principale" — assigne la catégorie sans sous-catégorie.
 
-        Design intentionnellement inversé par rapport aux sous-cats :
-            - Fond coloré clair (colour_hex à 15% opacity via suffixe hex "26")
-            - Icône foncée (brightness(0) SANS invert → reste noire/foncée)
-            - Badge "Principale" pour identifier clairement ce choix
+        Design "niveau catégorie" : même cercle coloré plein que le header,
+        mais taille réduite (w-5 vs w-7). L'icône est blanche (brightness-0 invert).
+        Le fond du bouton reste légèrement teinté (colour_hex + "26") pour
+        distinguer visuellement cette row du reste de la liste.
 
-        Pourquoi ce design ?
-            Visuellement, la catégorie parente est plus "importante" que ses
-            sous-catégories — la couleur inversée la distingue immédiatement.
-            C'est le pattern Finary : la catégorie parente est mise en avant
-            quand on ouvre l'accordéon.
+        Hiérarchie : cercle plein = catégorie (header + Principale), cercle 40% = sous-cat.
         {% endcomment %}
         {% with icon_path="icons/categories/"|add:cat.icon|add:".svg" %}
             <form hx-post="{% url 'transactions:categorize' %}"
@@ -74,12 +70,15 @@ Logique couleurs inversées pour la row "Principale" :
                     Contraste avec les sous-cats qui ont une icône blanche (brightness-0 invert).
                     {% endcomment %}
                     <div class="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center"
-                         style="background: {{ cat.colour_hex|default:'#4a4c55' }}40">
+                         style="background: {{ cat.colour_hex|default:'#4a4c55' }}">
+                        {% comment %}
+                        Cercle couleur pleine (comme le header) + icône blanche.
+                        brightness-0 invert = SVG forcé blanc, lisible sur fond coloré.
+                        {% endcomment %}
                         <img src="{% static icon_path %}"
                              width="12"
                              height="12"
-                             class="w-3 h-3"
-                             style="filter: brightness(0) opacity(0.75)"
+                             class="w-3 h-3 brightness-0 invert"
                              alt="">
                     </div>
                     <span class="flex-1 text-sm font-medium text-text-base">{{ cat.name }}</span>
