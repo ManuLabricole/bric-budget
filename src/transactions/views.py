@@ -903,10 +903,12 @@ def budget_panel_rule_create(request):
         pk=tx_id,
     )
 
-    # Tokens cliquables : on split description_raw sur les séparateurs courants,
-    # on garde les tokens de 2+ caractères, on déduplique en préservant l'ordre.
-    # Exemple : "VIR APPLE.COM/BILL 123 APPLE.COM" → ["VIR", "APPLE.COM", "BILL", "123"]
-    raw_tokens = re.split(r"[\s\*\+\-\/\.]+", tx.description_raw.upper())
+    # Tokens cliquables : on split le meilleur nom disponible.
+    # Priorité : merchant_name (déjà nettoyé) > description_raw (texte brut banque).
+    # merchant_name = "MIGROS LAUSANNE" → 2 tokens propres
+    # description_raw = "VIR SEPA MIGROS LAUSANNE CB 12345" → beaucoup de bruit
+    source_text = tx.merchant_name if tx.merchant_name else tx.description_raw
+    raw_tokens = re.split(r"[\s\*\+\-\/\.]+", source_text.upper())
     seen = set()
     tokens = []
     for t in raw_tokens:
