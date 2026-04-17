@@ -903,12 +903,10 @@ def budget_panel_rule_create(request):
         pk=tx_id,
     )
 
-    # Tokens cliquables : on split le meilleur nom disponible.
-    # Priorité : merchant_name (déjà nettoyé) > description_raw (texte brut banque).
-    # merchant_name = "MIGROS LAUSANNE" → 2 tokens propres
-    # description_raw = "VIR SEPA MIGROS LAUSANNE CB 12345" → beaucoup de bruit
-    source_text = tx.merchant_name if tx.merchant_name else tx.description_raw
-    raw_tokens = re.split(r"[\s\*\+\-\/\.]+", source_text.upper())
+    # Tokens cliquables : on split toujours description_raw (texte brut banque).
+    # C'est le même champ que Finary utilise pour matcher ses règles — on reste
+    # cohérent avec ça. L'user choisit les tokens pertinents parmi tous les mots.
+    raw_tokens = re.split(r"[\s\*\+\-\/\.]+", tx.description_raw.upper())
     seen = set()
     tokens = []
     for t in raw_tokens:
