@@ -1,0 +1,215 @@
+{% load budget_filters static %}
+{% comment %}
+transactions/_panel_tx_detail.html — Fragment HTMX : détail d'une transaction (état C)
+
+Contexte attendu :
+    tx              — Transaction (select_related category/subcategory/account/bank)
+    bank_icon_url   — str URL statique résolue par _resolve_bank_icon_map()
+
+Chargé dans #panel-content par :
+    - hx-get depuis _panel_tx_row.html (clic sur une ligne)
+    - POST toggle_ignore / toggle_reconcile (retour après modification — Step 3)
+
+Structure :
+    [Header ← retour + titre]
+    [Nom + montant — big display]
+    [Séparateur]
+    [Catégorie cliquable → picker]
+    [Séparateur]
+    [Metadata : Compte · Montant · Date]
+    [Séparateur]
+    [Toggles : is_ignored (inversé) · is_reconciled]
+{% endcomment %}
+{% comment %} ── Header : bouton retour + titre ── {% endcomment %}
+<div class="px-4 pt-2 pb-3 flex items-center gap-3 flex-shrink-0">
+    {% comment %}
+    Bouton ← retour vers la liste des transactions (état A).
+    Même pattern que dans _panel_category_picker.html.
+    {% endcomment %}
+    <button hx-get="{% url 'transactions:panel_transactions' %}"
+            hx-target="#panel-content"
+            hx-swap="innerHTML"
+            class="p-1.5 rounded-lg text-text-muted hover:text-text-base hover:bg-surface-hover transition-colors flex-shrink-0"
+            title="Retour à la liste">
+        <svg class="w-4 h-4"
+             fill="none"
+             viewBox="0 0 24 24"
+             stroke-width="2"
+             stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+        </svg>
+    </button>
+    <span class="text-base font-semibold text-text-base flex-1">Détails de la transaction</span>
+</div>
+{% comment %} ── Nom + montant ── {% endcomment %}
+<div class="px-5 pb-5 flex-shrink-0">
+    {% comment %}
+    merchant_name = nom nettoyé (ex: "MIGROS LAUSANNE"). Si absent, tronque description_raw.
+    UPPERCASE + tracking pour l'aspect "données bancaires brutes".
+    {% endcomment %}
+    <p class="text-xs text-text-muted uppercase tracking-wider truncate mb-2">
+        {% if tx.merchant_name %}
+            {{ tx.merchant_name }}
+        {% else %}
+            {{ tx.description_raw|slice:":50" }}
+        {% endif %}
+    </p>
+    {% comment %}
+    Montant principal — gros affichage style relevé bancaire.
+    chf_dec retourne la valeur absolue → on ajoute le signe manuellement.
+    text-income (vert) pour les entrées, text-expense (rouge) pour les débits.
+    {% endcomment %}
+    {% if tx.amount >= 0 %}
+        <p class="text-3xl font-bold text-income">+{{ tx.amount|chf_dec }} {{ tx.currency }}</p>
+    {% else %}
+        <p class="text-3xl font-bold text-expense">−{{ tx.amount|chf_dec }} {{ tx.currency }}</p>
+    {% endif %}
+</div>
+<div class="border-t border-edge mx-4 mb-4 flex-shrink-0"></div>
+{% comment %} ── Catégorie cliquable → ouvre le picker ── {% endcomment %}
+{% comment %}
+Clic → charge _panel_category_picker.html dans #panel-content.
+Pas de fond de fond — la row se distingue via le hover uniquement.
+{% endcomment %}
+<button hx-get="{% url 'transactions:panel_category_picker' %}?tx_id={{ tx.id }}"
+        hx-target="#panel-content"
+        hx-swap="innerHTML"
+        class="mx-4 mb-4 w-[calc(100%-2rem)] flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-hover transition-colors flex-shrink-0 text-left">
+    {% comment %}
+    Icône catégorie — cercle coloré + SVG blanc.
+    Fallback cercle gris + "?" si la transaction n'est pas catégorisée.
+    {% endcomment %}
+    {% if tx.category and tx.category.icon %}
+        {% with icon_path="icons/categories/"|add:tx.category.icon|add:".svg" %}
+            <div class="w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center"
+                 style="background-color: {{ tx.category.colour_hex|default:'#2d3033' }}">
+                <img src="{% static icon_path %}"
+                     width="20"
+                     height="20"
+                     class="w-5 h-5 brightness-0 invert"
+                     alt="">
+            </div>
+        {% endwith %}
+    {% else %}
+        <div class="w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center bg-edge">
+            <span class="text-text-disabled text-sm font-bold">?</span>
+        </div>
+    {% endif %}
+    <div class="flex-1 min-w-0">
+        {% comment %}
+        Affiche la sous-catégorie si elle existe, sinon la catégorie principale.
+        Logique : on veut le niveau le plus précis disponible.
+        {% endcomment %}
+        <p class="text-sm font-medium text-text-base truncate">
+            {% if tx.subcategory %}
+                {{ tx.subcategory.name }}
+            {% elif tx.category %}
+                {{ tx.category.name }}
+            {% else %}
+                Non catégorisé
+            {% endif %}
+        </p>
+        {% comment %}
+        Badge "RÈGLE INTELLIGENTE APPLIQUÉE" — affiché si la transaction a été
+        catégorisée automatiquement par une règle (categorization_source="rule")
+        ou par l'IA (categorization_source="ai"). Pas affiché si manuel ou défaut.
+        {% endcomment %}
+        {% if tx.categorization_source == "rule" or tx.categorization_source == "ai" %}
+            <p class="text-[9px] font-semibold text-gold uppercase tracking-wider mt-0.5">Règle intelligente appliquée</p>
+        {% endif %}
+    </div>
+    <svg class="w-4 h-4 text-text-muted flex-shrink-0"
+         fill="none"
+         viewBox="0 0 24 24"
+         stroke-width="2"
+         stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+    </svg>
+</button>
+<div class="border-t border-edge mx-4 mb-4 flex-shrink-0"></div>
+{% comment %} ── Metadata : Compte · Montant natif · Date ── {% endcomment %}
+<div class="px-5 space-y-3 mb-4 flex-shrink-0">
+    {% comment %} Compte + icône banque {% endcomment %}
+    <div class="flex items-center justify-between">
+        <span class="text-sm text-text-muted">Compte</span>
+        <div class="flex items-center gap-1.5">
+            {% if bank_icon_url %}
+                <img src="{{ bank_icon_url }}"
+                     width="16"
+                     height="16"
+                     class="w-4 h-4 rounded-full bg-white p-[1px] flex-shrink-0"
+                     alt="">
+            {% endif %}
+            <span class="text-sm text-text-base">{{ tx.account.name }}</span>
+        </div>
+    </div>
+    {% comment %}
+    Montant CHF — affiché uniquement si le compte n'est pas en CHF.
+    Pour un compte EUR, on montre à la fois le montant EUR (en haut) et le
+    montant CHF équivalent ici. Si amount_chf est null (pas encore calculé),
+    on n'affiche pas la ligne.
+    {% endcomment %}
+    {% if tx.currency != "CHF" and tx.amount_chf %}
+        <div class="flex items-center justify-between">
+            <span class="text-sm text-text-muted">Montant CHF</span>
+            <span class="text-sm text-text-base tabular-nums">
+                {% if tx.amount_chf >= 0 %}
+                    +
+                {% else %}
+                    −
+                {% endif %}
+                {{ tx.amount_chf|chf_dec }} CHF
+            </span>
+        </div>
+    {% endif %}
+    {% comment %} Date au format DD/MM/YYYY {% endcomment %}
+    <div class="flex items-center justify-between">
+        <span class="text-sm text-text-muted">Date</span>
+        <span class="text-sm text-text-base">{{ tx.date|date:"d/m/Y" }}</span>
+    </div>
+</div>
+<div class="border-t border-edge mx-4 mb-4 flex-shrink-0"></div>
+{% comment %} ── Toggles is_ignored + is_reconciled ── {% endcomment %}
+{% comment %}
+Anatomie du toggle :
+    Pill w-9 h-5 rounded-full — fond doré (ON) ou gris bg-edge (OFF)
+    Cercle w-4 h-4 bg-white absolute — déplacé par translate-x
+        OFF : translate-x-0  (left-0.5 = 2px du bord gauche)
+        ON  : translate-x-4  (= 16px → marge droite 2px)
+
+"Inclure dans l'analyse budgétaire" = NOT is_ignored
+    ON  si is_ignored=False (incluse) — toggle doré
+    OFF si is_ignored=True  (exclue)  — toggle gris
+    source=detail → budget_toggle_ignore() retourne ce même panneau
+
+"Pointer la transaction" = is_reconciled
+    ON  si is_reconciled=True  — toggle doré
+    OFF si is_reconciled=False — toggle gris
+    budget_toggle_reconcile() retourne toujours ce panneau (pas de source nécessaire)
+{% endcomment %}
+<div class="px-5 space-y-4 flex-shrink-0">
+    <div class="flex items-center justify-between gap-3">
+        <span class="text-sm text-text-secondary">Inclure dans l'analyse budgétaire</span>
+        <form hx-post="{% url 'transactions:toggle_ignore' tx.id %}"
+              hx-target="#panel-content"
+              hx-swap="innerHTML">
+            <input type="hidden" name="source" value="detail">
+            <button type="submit"
+                    class="flex-shrink-0 w-9 h-5 rounded-full relative transition-colors {% if not tx.is_ignored %}bg-gold{% else %}bg-edge{% endif %}">
+                <span class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform {% if not tx.is_ignored %}translate-x-4{% else %}translate-x-0{% endif %}"></span>
+            </button>
+        </form>
+    </div>
+    <div class="flex items-center justify-between gap-3">
+        <span class="text-sm text-text-secondary">Pointer la transaction</span>
+        <form hx-post="{% url 'transactions:toggle_reconcile' tx.id %}"
+              hx-target="#panel-content"
+              hx-swap="innerHTML">
+            <input type="hidden" name="source" value="detail">
+            <button type="submit"
+                    class="flex-shrink-0 w-9 h-5 rounded-full relative transition-colors {% if tx.is_reconciled %}bg-gold{% else %}bg-edge{% endif %}">
+                <span class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform {% if tx.is_reconciled %}translate-x-4{% else %}translate-x-0{% endif %}"></span>
+            </button>
+        </form>
+    </div>
+</div>

@@ -61,4 +61,18 @@ urlpatterns = [
         views.budget_categorize_transaction,
         name="categorize",
     ),
+    # /budget/panel/tx-detail/?tx_id=X → détail d'une transaction (fragment HTMX)
+    # GET — lecture seule, retourne _panel_tx_detail.html dans #panel-content
+    path(
+        "panel/tx-detail/",
+        views.budget_panel_tx_detail,
+        name="panel_tx_detail",
+    ),
+    # /budget/transactions/<tx_id>/toggle-reconcile/ → bascule is_reconciled + retourne panneau détail
+    # POST uniquement (mutation DB) — HTMX swap="innerHTML" sur #panel-content
+    path(
+        "transactions/<int:tx_id>/toggle-reconcile/",
+        views.budget_toggle_reconcile,
+        name="toggle_reconcile",
+    ),
 ]

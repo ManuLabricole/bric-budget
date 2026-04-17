@@ -715,33 +715,18 @@ def budget_panel_navigate(request, action):
 @require_POST
 def budget_toggle_ignore(request, tx_id):
     """
-    Bascule le flag is_ignored d'une transaction et retourne le fragment HTML
-    de la ligne mise à jour.
+    Bascule le flag is_ignored d'une transaction.
 
     URL      : POST /budget/transactions/<tx_id>/toggle-ignore/
-    Template : transactions/_panel_tx_row.html  (une seule ligne, pas une page)
+    Source   : champ POST "source" — "list" (défaut) ou "detail"
+        → "list"   : retourne _panel_tx_row.html  (swap outerHTML sur #tx-id)
+        → "detail" : retourne _panel_tx_detail.html (swap innerHTML sur #panel-content)
 
-    Pourquoi POST et pas GET ?
-        is_ignored est une modification de données en DB — HTTP sémantique :
-        GET = lecture sans effet de bord, POST = mutation. Si on utilisait GET,
-        un navigateur pourrait pré-fetcher l'URL et déclencher un toggle
-        involontaire (ex: Google Bot, préchargement navigateur).
-
-    Pourquoi @require_POST ?
-        Décorateur Django qui renvoie HTTP 405 si la méthode n'est pas POST.
-        HTMX envoie bien un POST, mais ça protège contre les GET accidentels
-        (ex: un utilisateur qui tape l'URL dans la barre d'adresse).
-
-    Pourquoi hx-swap="outerHTML" et pas innerHTML ?
-        On remplace l'élément ENTIER (id="tx-<id>") pour que le nouvel état
-        (grisé / normal) et les nouveaux attributs hx-* soient bien présents.
-        innerHTML ne remplacerait que le contenu intérieur — l'id resterait
-        sur l'ancien élément, les classes conditionnelles (opacity-40) non.
-
-    update_fields=["is_ignored"] :
-        Optimisation — au lieu de faire UPDATE sur toutes les colonnes de la
-        ligne, Django n'envoie que is_ignored à PostgreSQL. Plus rapide et
-        sécurisé (évite d'écraser un champ modifié en concurrent).
+    Pourquoi deux templates de retour ?
+        La vue est appelée depuis deux endroits :
+        1. La liste transactions (_panel_tx_row.html) — le bouton œil en hover
+        2. Le panneau détail (_panel_tx_detail.html) — le toggle "Inclure dans l'analyse"
+        Le champ source=detail dans le formulaire HTMX indique quel fragment retourner.
     """
     tx = get_object_or_404(
         Transaction.objects.select_related(
@@ -750,22 +735,26 @@ def budget_toggle_ignore(request, tx_id):
         pk=tx_id,
     )
 
-    # Toggle : True → False → True → ...
     tx.is_ignored = not tx.is_ignored
     tx.save(update_fields=["is_ignored"])
 
-    # Résolution icône banque pour la ligne retournée
     bank_icon_map = _resolve_bank_icon_map()
     slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
     bank_icon_url = bank_icon_map.get(slug, "")
 
+    # source=detail → appelé depuis le panneau détail → retourner le panneau entier
+    if request.POST.get("source") == "detail":
+        return render(
+            request,
+            "transactions/_panel_tx_detail.html",
+            {"tx": tx, "bank_icon_url": bank_icon_url},
+        )
+
+    # source=list (défaut) → appelé depuis la liste → retourner juste la ligne
     return render(
         request,
         "transactions/_panel_tx_row.html",
-        {
-            "tx": tx,
-            "bank_icon_url": bank_icon_url,
-        },
+        {"tx": tx, "bank_icon_url": bank_icon_url},
     )
 
 
@@ -865,3 +854,97 @@ def budget_categorize_transaction(request):
         {"categoryChanged": {"tx_name": tx_display, "cat_name": tx.category.name}}
     )
     return response
+
+
+# =============================================================================
+# budget_panel_tx_detail — Partial HTMX : détail d'une transaction (GET)
+# =============================================================================
+
+
+@login_required
+def budget_panel_tx_detail(request):
+    """
+    Partial HTMX — panneau "Détails de la transaction" (état C du right panel).
+
+    URL      : GET /budget/panel/tx-detail/?tx_id=X
+    Target   : #panel-content  (remplace tout le contenu du right panel)
+    Template : transactions/_panel_tx_detail.html
+
+    Déclenché par clic sur une ligne de transaction dans _panel_tx_row.html.
+    Remplace l'ancien comportement qui ouvrait directement le picker catégorie.
+
+    Pourquoi select_related avec "account__bank" ?
+        On affiche le nom du compte et l'icône banque dans le panneau.
+        Sans select_related, Django ferait 2 requêtes supplémentaires
+        (tx → account, account → bank) au lieu d'un seul JOIN.
+    """
+    tx_id = request.GET.get("tx_id")
+    tx = get_object_or_404(
+        Transaction.objects.select_related(
+            "category", "subcategory", "account", "account__bank"
+        ),
+        pk=tx_id,
+    )
+
+    # Résolution icône banque — même helper que les autres vues panel
+    bank_icon_map = _resolve_bank_icon_map()
+    slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
+    bank_icon_url = bank_icon_map.get(slug, "")
+
+    return render(
+        request,
+        "transactions/_panel_tx_detail.html",
+        {
+            "tx": tx,
+            "bank_icon_url": bank_icon_url,
+        },
+    )
+
+
+# =============================================================================
+# budget_toggle_reconcile — Toggle is_reconciled sur une transaction (POST HTMX)
+# =============================================================================
+
+
+@login_required
+@require_POST
+def budget_toggle_reconcile(request, tx_id):
+    """
+    Bascule le flag is_reconciled ("Pointer la transaction") et retourne
+    le panneau détail mis à jour.
+
+    URL      : POST /budget/transactions/<tx_id>/toggle-reconcile/
+    Target   : #panel-content
+    Template : transactions/_panel_tx_detail.html
+
+    Pointer = vérifier que la transaction correspond au relevé de compte.
+    Appelé uniquement depuis le panneau détail — pas de source à détecter.
+    """
+    tx = get_object_or_404(
+        Transaction.objects.select_related(
+            "category", "subcategory", "account", "account__bank"
+        ),
+        pk=tx_id,
+    )
+
+    tx.is_reconciled = not tx.is_reconciled
+    tx.save(update_fields=["is_reconciled"])
+
+    bank_icon_map = _resolve_bank_icon_map()
+    slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
+    bank_icon_url = bank_icon_map.get(slug, "")
+
+    # source=list → appelé depuis la ligne liste → retourner juste la ligne
+    if request.POST.get("source") != "detail":
+        return render(
+            request,
+            "transactions/_panel_tx_row.html",
+            {"tx": tx, "bank_icon_url": bank_icon_url},
+        )
+
+    # source=detail → appelé depuis le panneau détail → retourner le panneau entier
+    return render(
+        request,
+        "transactions/_panel_tx_detail.html",
+        {"tx": tx, "bank_icon_url": bank_icon_url},
+    )

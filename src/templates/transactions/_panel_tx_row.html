@@ -27,7 +27,7 @@ Rendu d'une transaction ignorée (is_ignored=True) :
     flex-1 + min-w-0 : prend tout l'espace disponible sans déborder.
     {% endcomment %}
     <div class="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
-         hx-get="{% url 'transactions:panel_category_picker' %}?tx_id={{ tx.id }}"
+         hx-get="{% url 'transactions:panel_tx_detail' %}?tx_id={{ tx.id }}"
          hx-target="#panel-content"
          hx-swap="innerHTML">
         {% comment %}
@@ -123,7 +123,34 @@ Rendu d'une transaction ignorée (is_ignored=True) :
                 </svg>
             {% endif %}
         </button>
-        {% comment %} Checkbox pointer — non câblé (Phase 1C suivante) {% endcomment %}
-        <div class="w-4 h-4 rounded border border-edge group-hover:border-edge-subtle flex-shrink-0 transition-colors"></div>
+        {% comment %}
+        Badge "pointée" — cercle vert avec checkmark si is_reconciled=True.
+        Invisible si non pointée (aucun espace réservé — pas de placeholder vide).
+        La valeur est mise à jour quand on revient à la liste après le panneau détail.
+        {% endcomment %}
+        {% comment %}
+        Bouton "pointer" — toggle is_reconciled directement depuis la liste.
+        Même pattern que le bouton ignorer : hx-swap="outerHTML" sur #tx-id
+        pour que le nouvel état (badge vert / carré vide) soit bien rendu.
+        {% endcomment %}
+        <button hx-post="{% url 'transactions:toggle_reconcile' tx.id %}"
+                hx-target="#tx-{{ tx.id }}"
+                hx-swap="outerHTML"
+                title="{% if tx.is_reconciled %}Dépointée{% else %}Pointer la transaction{% endif %}"
+                class="flex-shrink-0">
+            {% if tx.is_reconciled %}
+                <div class="w-4 h-4 rounded-full flex items-center justify-center bg-income">
+                    <svg class="w-2.5 h-2.5 text-white"
+                         fill="none"
+                         viewBox="0 0 24 24"
+                         stroke-width="3"
+                         stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                    </svg>
+                </div>
+            {% else %}
+                <div class="w-4 h-4 rounded border border-edge group-hover:border-edge-subtle transition-colors"></div>
+            {% endif %}
+        </button>
     </div>
 </div>
