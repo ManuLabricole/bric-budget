@@ -3,23 +3,26 @@
 transactions/_panel_rule_create.html — Fragment HTMX : création d'une règle intelligente
 
 Contexte attendu :
-    tx         — Transaction source (pour afficher son nom + catégorie actuelle)
-    keyword    — Token pré-rempli extrait de description_raw (ex: "MIGROS")
-    categories — QuerySet Category actives triées par order
+    tx          — Transaction source
+    keyword     — Token initial suggéré (extrait par la vue)
+    tokens      — list[str] : mots de description_raw (pour les chips cliquables)
+    custom_cats — QuerySet Category (is_system=False)
+    system_cats — QuerySet Category (is_system=True)
 
-Flux :
-    Toast "Catégorie modifiée" → clic "Créer une règle automatique →"
-    → ce panel dans #panel-content
-    → POST → budget_rule_create_submit() → panel confirmation avec count
+Flow :
+    1. L'user clique des chips pour composer le keyword
+       → JS met à jour #rule-keyword (input hidden)
+    2. L'user clique une catégorie/sous-cat dans le picker accordéon
+       → onclick copie #rule-keyword dans le hidden field du formulaire
+       → POST → budget_rule_create_submit() → panel confirmation
 
 Structure :
     [Header ← retour + titre]
-    [Bandeau : transaction source]
-    [Séparateur]
-    [Champ keyword]
-    [Dropdown catégorie]
-    [Dropdown sous-catégorie (optionnelle)]
-    [Bouton soumettre]
+    [Bandeau transaction source]
+    [Section chips keyword]
+    [Séparateur + label "Modifier la catégorie en"]
+    [Picker accordéon avec icônes — même rendu que le picker classique]
+    [Script accordéon exclusif]
 {% endcomment %}
 {% comment %} ── Header ── {% endcomment %}
 <div class="px-4 pt-2 pb-3 flex items-center gap-3 flex-shrink-0">
@@ -39,10 +42,6 @@ Structure :
     <span class="text-base font-semibold text-text-base flex-1">Nouvelle règle intelligente</span>
 </div>
 {% comment %} ── Bandeau transaction source ── {% endcomment %}
-{% comment %}
-Rappel contextuel : montre sur quelle transaction la règle va se baser.
-Même style que le bandeau "Règle intelligente appliquée" dans le picker (screenshot 29).
-{% endcomment %}
 <div class="mx-4 mb-4 px-3 py-2.5 rounded-xl bg-gold/10 border border-gold/20 flex-shrink-0">
     <p class="text-[10px] font-semibold text-gold uppercase tracking-wider mb-0.5">Transaction source</p>
     <p class="text-sm text-text-base truncate">
@@ -52,79 +51,102 @@ Même style que le bandeau "Règle intelligente appliquée" dans le picker (scre
             {{ tx.description_raw|slice:":50" }}
         {% endif %}
     </p>
-    {% if tx.category %}
-        <p class="text-xs text-text-muted mt-0.5">
-            Catégorisée en : {{ tx.category.name }}
-            {% if tx.subcategory %}› {{ tx.subcategory.name }}{% endif %}
+</div>
+{% comment %} ── Section chips keyword ── {% endcomment %}
+{% comment %}
+Chaque token de description_raw = un chip cliquable.
+Clic → toggle classe "selected" (fond doré) + met à jour #rule-keyword.
+Le keyword envoyé au POST = tokens sélectionnés joints par espace.
+Le chip pré-sélectionné par défaut = le keyword suggéré par la vue.
+{% endcomment %}
+<div class="px-4 mb-4 flex-shrink-0">
+    <p class="text-[10px] text-text-muted uppercase tracking-wider mb-2">Si le nom comprend</p>
+    <div class="flex flex-wrap gap-1.5" id="rule-chips">
+        {% for token in tokens %}
+            <button type="button"
+                    data-token="{{ token }}"
+                    onclick="toggleChip(this)"
+                    class="rule-chip px-2.5 py-1 rounded-full text-xs font-medium border transition-colors {% if token == keyword %}bg-gold text-surface-3 border-gold chip-selected{% else %}bg-surface-hover text-text-muted border-edge hover:border-gold/50 hover:text-text-base{% endif %}">
+                {{ token }}
+            </button>
+        {% endfor %}
+    </div>
+    {% comment %}
+    Input hidden qui accumule les tokens sélectionnés.
+    C'est lui qui est lu par le onclick de chaque bouton de catégorie
+    juste avant le submit du formulaire.
+    Valeur initiale = keyword suggéré (pré-sélectionné ci-dessus).
+    {% endcomment %}
+    <input type="hidden" id="rule-keyword" value="{{ keyword }}">
+    {% comment %} Aperçu du keyword courant — mis à jour par le JS {% endcomment %}
+    <p class="text-[10px] text-text-disabled mt-2">
+        Règle : <span id="rule-keyword-preview" class="text-gold font-medium">{{ keyword }}</span>
+    </p>
+</div>
+<div class="border-t border-edge mx-4 mb-3 flex-shrink-0"></div>
+{% comment %} ── Label + picker catégorie ── {% endcomment %}
+<p class="px-4 mb-2 text-[10px] text-text-muted uppercase tracking-wider flex-shrink-0">Modifier la catégorie en</p>
+{% comment %} ── Picker accordéon — même rendu que _panel_category_picker.html ── {% endcomment %}
+<div class="flex-1 overflow-y-auto px-2 pb-2"
+     style="-ms-overflow-style:none;
+            scrollbar-width:none"
+     id="rule-cat-picker-list">
+    {% if custom_cats %}
+        <p class="px-2 pt-1 pb-1.5 text-[10px] font-semibold text-text-disabled uppercase tracking-wider">Mes catégories</p>
+        {% for cat in custom_cats %}
+            {% include "transactions/_rule_cat_picker_row.html" %}
+        {% endfor %}
+        <div class="my-3 border-t border-edge/60"></div>
+    {% endif %}
+    {% if system_cats %}
+        <p class="px-2 {% if not custom_cats %}pt-1{% endif %} pb-1.5 text-[10px] font-semibold text-text-disabled uppercase tracking-wider">
+            Catégories
         </p>
+        {% for cat in system_cats %}
+            {% include "transactions/_rule_cat_picker_row.html" %}
+        {% endfor %}
     {% endif %}
 </div>
-<div class="border-t border-edge mx-4 mb-4 flex-shrink-0"></div>
-{% comment %} ── Formulaire ── {% endcomment %}
-{% comment %}
-hx-post → budget_rule_create_submit() qui crée la règle en DB,
-applique en masse aux transactions existantes et retourne un panel de confirmation.
-{% endcomment %}
-<form hx-post="{% url 'transactions:rule_create_submit' %}"
-      hx-target="#panel-content"
-      hx-swap="innerHTML"
-      class="px-4 space-y-4 flex-shrink-0">
-    {% comment %} Champ keyword {% endcomment %}
-    {% comment %}
-    "Si le nom de votre transaction comprend" — copie exacte du label Finary.
-    Pré-rempli avec le token extrait de description_raw par la vue.
-    L'utilisateur peut le modifier avant de valider.
-    {% endcomment %}
-    <div>
-        <label class="block text-xs text-text-muted uppercase tracking-wider mb-2">Si le nom comprend</label>
-        <input type="text"
-               name="keyword"
-               value="{{ keyword }}"
-               placeholder="ex: MIGROS"
-               class="w-full bg-surface-hover border border-edge rounded-xl px-3 py-2.5 text-sm text-text-base placeholder-text-disabled focus:outline-none focus:border-gold/50 transition-colors uppercase">
-    </div>
-    {% comment %} Dropdown catégorie {% endcomment %}
-    {% comment %}
-    Pré-sélectionné sur la catégorie actuelle de la transaction.
-    onchange → met à jour les sous-catégories via HTMX (étape suivante).
-    {% endcomment %}
-    <div>
-        <label class="block text-xs text-text-muted uppercase tracking-wider mb-2">Modifier la catégorie en</label>
-        <select name="category_id"
-                class="w-full bg-surface-hover border border-edge rounded-xl px-3 py-2.5 text-sm text-text-base focus:outline-none focus:border-gold/50 transition-colors appearance-none cursor-pointer">
-            {% for cat in categories %}
-                <option value="{{ cat.id }}"
-                        {% if tx.category and tx.category.id == cat.id %}selected{% endif %}>{{ cat.name }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    {% comment %} Sous-catégorie (optionnelle) {% endcomment %}
-    {% comment %}
-    Pré-sélectionnée sur la sous-catégorie actuelle si elle existe.
-    On liste toutes les sous-cats de la catégorie actuelle de la transaction.
-    Pour l'instant statique — Phase suivante : mise à jour dynamique au changement de catégorie.
-    {% endcomment %}
-    {% if tx.category and tx.category.subcategories.all %}
-        <div>
-            <label class="block text-xs text-text-muted uppercase tracking-wider mb-2">Sous-catégorie (optionnel)</label>
-            <select name="subcategory_id"
-                    class="w-full bg-surface-hover border border-edge rounded-xl px-3 py-2.5 text-sm text-text-base focus:outline-none focus:border-gold/50 transition-colors appearance-none cursor-pointer">
-                <option value="">— Aucune —</option>
-                {% for sub in tx.category.subcategories.all %}
-                    {% if sub.is_active %}
-                        <option value="{{ sub.id }}"
-                                {% if tx.subcategory and tx.subcategory.id == sub.id %}selected{% endif %}>
-                            {{ sub.name }}
-                        </option>
-                    {% endif %}
-                {% endfor %}
-            </select>
-        </div>
-    {% endif %}
-    <div class="border-t border-edge pt-4">
-        <button type="submit"
-                class="w-full bg-gold hover:bg-gold-hover text-surface-3 font-semibold text-sm rounded-xl px-4 py-3 transition-colors">
-            Créer la règle intelligente
-        </button>
-    </div>
-</form>
+{% comment %} ── Scripts ── {% endcomment %}
+<script>
+(function () {
+    // ── Chips : toggle sélection + mise à jour du keyword ────────────────────
+    //
+    // Pourquoi une fonction globale (window.toggleChip) et pas addEventListener ?
+    //   Les chips ont un onclick="toggleChip(this)" inline.
+    //   Le fragment est rechargé par HTMX → addEventListener sur document ne
+    //   survivrait pas sans re-bind. La fonction globale est plus simple ici.
+    //
+    window.toggleChip = function (btn) {
+        btn.classList.toggle('chip-selected');
+
+        if (btn.classList.contains('chip-selected')) {
+            // Sélectionné : fond doré
+            btn.classList.remove('bg-surface-hover', 'text-text-muted', 'border-edge', 'hover:border-gold/50', 'hover:text-text-base');
+            btn.classList.add('bg-gold', 'text-surface-3', 'border-gold');
+        } else {
+            // Désélectionné : fond neutre
+            btn.classList.remove('bg-gold', 'text-surface-3', 'border-gold');
+            btn.classList.add('bg-surface-hover', 'text-text-muted', 'border-edge', 'hover:border-gold/50', 'hover:text-text-base');
+        }
+
+        // Recomposer le keyword depuis tous les chips sélectionnés, dans l'ordre d'affichage
+        var selected = Array.from(document.querySelectorAll('#rule-chips .chip-selected'))
+            .map(function (c) { return c.dataset.token; });
+
+        var keyword = selected.join(' ');
+        document.getElementById('rule-keyword').value = keyword;
+        document.getElementById('rule-keyword-preview').textContent = keyword || '—';
+    };
+
+    // ── Accordéon exclusif : ferme les autres <details> quand on en ouvre un ─
+    var list = document.getElementById('rule-cat-picker-list');
+    if (!list) return;
+    list.addEventListener('toggle', function (e) {
+        if (e.target.tagName !== 'DETAILS' || !e.target.open) return;
+        list.querySelectorAll('details[open]').forEach(function (d) {
+            if (d !== e.target) d.removeAttribute('open');
+        });
+    }, true);
+})();
+</script>

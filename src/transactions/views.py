@@ -903,8 +903,28 @@ def budget_panel_rule_create(request):
         pk=tx_id,
     )
 
-    # Toutes les catégories actives pour le dropdown — triées par order
-    categories = Category.objects.filter(is_active=True).order_by("order")
+    # Tokens cliquables : on split description_raw sur les séparateurs courants,
+    # on garde les tokens de 2+ caractères, on déduplique en préservant l'ordre.
+    # Exemple : "VIR APPLE.COM/BILL 123 APPLE.COM" → ["VIR", "APPLE.COM", "BILL", "123"]
+    raw_tokens = re.split(r"[\s\*\+\-\/\.]+", tx.description_raw.upper())
+    seen = set()
+    tokens = []
+    for t in raw_tokens:
+        if len(t) >= 2 and t not in seen:
+            seen.add(t)
+            tokens.append(t)
+
+    # Catégories séparées perso / système — même logique que le picker classique
+    custom_cats = (
+        Category.objects.filter(is_active=True, is_system=False)
+        .prefetch_related("subcategories")
+        .order_by("order")
+    )
+    system_cats = (
+        Category.objects.filter(is_active=True, is_system=True)
+        .prefetch_related("subcategories")
+        .order_by("order")
+    )
 
     return render(
         request,
@@ -912,7 +932,9 @@ def budget_panel_rule_create(request):
         {
             "tx": tx,
             "keyword": keyword,
-            "categories": categories,
+            "tokens": tokens,
+            "custom_cats": custom_cats,
+            "system_cats": system_cats,
         },
     )
 

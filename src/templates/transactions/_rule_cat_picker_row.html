@@ -1,0 +1,122 @@
+{% load static %}
+{% comment %}
+transactions/_rule_cat_picker_row.html — Ligne catégorie dans le picker de création de règle
+
+Même rendu visuel que _cat_picker_row.html mais les formulaires POST vers
+rule_create_submit au lieu de categorize.
+
+Contexte attendu (via {% include %}) :
+    cat  — objet Category
+    tx   — Transaction source (pour passer tx_id)
+
+Chaque bouton soumet le formulaire avec :
+    keyword     — lu depuis #rule-keyword (input hidden mis à jour par les chips JS)
+    category_id — la catégorie choisie
+    subcategory_id — la sous-catégorie choisie (optionnel)
+
+Pourquoi un fichier séparé et pas une variable dans _cat_picker_row.html ?
+    Les deux templates ont des actions POST différentes et des champs hidden
+    différents. Une variable "action" rendrait le template trop complexe.
+    Deux fichiers simples valent mieux qu'un template générique surchargé.
+{% endcomment %}
+{# djlint:off H025 #}
+<details class="group mb-0.5 outline-none">
+    {% comment %} ── Header catégorie ── {% endcomment %}
+    <summary class="flex items-center gap-2.5 px-2 py-2 rounded-lg cursor-pointer list-none outline-none hover:bg-surface-hover group-open:bg-gold/10 transition-colors select-none">
+        {% with icon_path="icons/categories/"|add:cat.icon|add:".svg" %}
+            <div class="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center"
+                 style="background: {{ cat.colour_hex|default:'#4a4c55' }}">
+                <img src="{% static icon_path %}"
+                     width="16"
+                     height="16"
+                     class="w-4 h-4 brightness-0 invert"
+                     alt="">
+            </div>
+        {% endwith %}
+        <span class="flex-1 text-sm text-text-base group-open:text-gold transition-colors">{{ cat.name }}</span>
+        <span class="text-text-muted group-open:text-gold transition-transform duration-150 group-open:rotate-90 text-base leading-none">›</span>
+    </summary>
+    {% comment %} ── Contenu ouvert : "Principale" + sous-catégories ── {% endcomment %}
+    <div class="ml-5 mt-0.5 mb-1">
+        {% comment %} Row "Principale" — assigne la catégorie sans sous-catégorie {% endcomment %}
+        {% with icon_path="icons/categories/"|add:cat.icon|add:".svg" %}
+            <form hx-post="{% url 'transactions:rule_create_submit' %}"
+                  hx-target="#panel-content"
+                  hx-swap="innerHTML">
+                {% comment %}
+                tx_id : pour retrouver la transaction source dans la vue
+                keyword : lu dynamiquement depuis l'input hidden mis à jour par les chips
+                          onsubmit copie la valeur courante de #rule-keyword dans ce champ
+                {% endcomment %}
+                <input type="hidden" name="tx_id" value="{{ tx.id }}">
+                <input type="hidden"
+                       name="keyword"
+                       id="rule-keyword-{{ cat.id }}-main"
+                       value="">
+                <input type="hidden" name="category_id" value="{{ cat.id }}">
+                <button type="submit"
+                        onclick="document.getElementById('rule-keyword-{{ cat.id }}-main').value = document.getElementById('rule-keyword').value"
+                        class="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg mb-0.5 transition-colors hover:brightness-110"
+                        style="background: {{ cat.colour_hex|default:'#4a4c55' }}26">
+                    <div class="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center"
+                         style="background: {{ cat.colour_hex|default:'#4a4c55' }}">
+                        <img src="{% static icon_path %}"
+                             width="12"
+                             height="12"
+                             class="w-3 h-3 brightness-0 invert"
+                             alt="">
+                    </div>
+                    <span class="flex-1 text-sm font-medium text-text-base">{{ cat.name }}</span>
+                    <span class="text-[9px] font-medium px-1.5 py-0.5 rounded-full border text-text-muted border-edge/60 flex-shrink-0">
+                        Principale
+                    </span>
+                </button>
+            </form>
+        {% endwith %}
+        {% comment %} ── Sous-catégories ── {% endcomment %}
+        {% with subcats=cat.subcategories.all %}
+            {% if subcats %}
+                {% for sub in subcats %}
+                    {% if sub.is_active %}
+                        {% with sub_icon_path="icons/categories/"|add:sub.icon|add:".svg" %}
+                            <form hx-post="{% url 'transactions:rule_create_submit' %}"
+                                  hx-target="#panel-content"
+                                  hx-swap="innerHTML">
+                                <input type="hidden" name="tx_id" value="{{ tx.id }}">
+                                <input type="hidden"
+                                       name="keyword"
+                                       id="rule-keyword-{{ cat.id }}-{{ sub.id }}"
+                                       value="">
+                                <input type="hidden" name="category_id" value="{{ cat.id }}">
+                                <input type="hidden" name="subcategory_id" value="{{ sub.id }}">
+                                <button type="submit"
+                                        onclick="document.getElementById('rule-keyword-{{ cat.id }}-{{ sub.id }}').value = document.getElementById('rule-keyword').value"
+                                        class="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-text-secondary hover:bg-gold/10 hover:text-gold transition-colors">
+                                    <div class="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center"
+                                         style="background: {{ cat.colour_hex|default:'#4a4c55' }}66">
+                                        {% if sub.icon %}
+                                            <img src="{% static sub_icon_path %}"
+                                                 width="12"
+                                                 height="12"
+                                                 class="w-3 h-3 brightness-0 invert opacity-70"
+                                                 alt="">
+                                        {% else %}
+                                            <span class="w-1 h-1 rounded-full bg-text-disabled block"></span>
+                                        {% endif %}
+                                    </div>
+                                    {{ sub.name }}
+                                    {% if not sub.is_system %}
+                                        <span class="text-[9px] font-semibold px-1.5 py-0.5 rounded-full border text-gold border-gold/40 flex-shrink-0 ml-auto">
+                                            perso
+                                        </span>
+                                    {% endif %}
+                                </button>
+                            </form>
+                        {% endwith %}
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+    </div>
+</details>
+{# djlint:on H025 #}
