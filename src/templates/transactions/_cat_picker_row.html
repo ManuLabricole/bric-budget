@@ -121,6 +121,11 @@ Hiérarchie visuelle des icônes (3 niveaux) :
                                         {% endif %}
                                     </div>
                                     {{ sub.name }}
+                                    {% if not sub.is_system %}
+                                        <span class="text-[9px] font-semibold px-1.5 py-0.5 rounded-full border text-gold border-gold/40 flex-shrink-0 ml-auto">
+                                            perso
+                                        </span>
+                                    {% endif %}
                                 </button>
                             </form>
                         {% endwith %}
