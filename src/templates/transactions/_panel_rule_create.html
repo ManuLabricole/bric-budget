@@ -44,11 +44,11 @@ Structure :
 {% comment %} ── Bandeau transaction source ── {% endcomment %}
 <div class="mx-4 mb-4 px-3 py-2.5 rounded-xl bg-gold/10 border border-gold/20 flex-shrink-0">
     <p class="text-[10px] font-semibold text-gold uppercase tracking-wider mb-0.5">Transaction source</p>
-    <p class="text-sm text-text-base truncate">
+    <p class="text-sm text-text-base leading-snug">
         {% if tx.merchant_name %}
             {{ tx.merchant_name }}
         {% else %}
-            {{ tx.description_raw|slice:":50" }}
+            {{ tx.description_raw|slice:":80" }}
         {% endif %}
     </p>
 </div>
