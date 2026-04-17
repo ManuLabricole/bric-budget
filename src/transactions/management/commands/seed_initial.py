@@ -140,6 +140,8 @@ class Command(BaseCommand):
                         "icon": sub_data.get("icon", ""),
                         "default_nature": nature,
                         "is_active": sub_data.get("is_active", True),
+                        # is_system: True = Finary native, False = user-created (badge "perso")
+                        "is_system": sub_data.get("is_system", False),
                     },
                 )
 
@@ -174,19 +176,21 @@ class Command(BaseCommand):
         Returns a dict of {slug: Bank instance} for use in _seed_accounts().
         """
 
-        # Each tuple: (name, slug, country, currency, icon_slug)
+        # Each tuple: (name, slug, country, currency, icon_slug, domain)
+        # domain : utilisé par `make update-bank-logos` pour télécharger le logo
+        #          via Google Favicons API (https://www.google.com/s2/favicons?domain=...)
         banks_data = [
-            ("Yuh", "yuh", "CH", "CHF", "yuh"),
-            ("UBS", "ubs", "CH", "CHF", "ubs"),
-            ("CIC", "cic", "FR", "EUR", "cic"),
-            ("Boursorama", "boursorama", "FR", "EUR", "boursorama"),
+            ("Yuh", "yuh", "CH", "CHF", "yuh", "yuh.ch"),
+            ("UBS", "ubs", "CH", "CHF", "ubs", "ubs.com"),
+            ("CIC", "cic", "FR", "EUR", "cic", "cic.fr"),
+            ("Boursorama", "boursorama", "FR", "EUR", "boursorama", "boursorama.com"),
         ]
 
         created_count = 0
         updated_count = 0
         banks = {}
 
-        for name, slug, country, currency, icon_slug in banks_data:
+        for name, slug, country, currency, icon_slug, domain in banks_data:
             bank, created = Bank.objects.update_or_create(
                 slug=slug,
                 defaults={
@@ -194,6 +198,7 @@ class Command(BaseCommand):
                     "country": country,
                     "default_currency": currency,
                     "icon_slug": icon_slug,
+                    "domain": domain,
                     "is_active": True,
                 },
             )

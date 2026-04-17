@@ -119,6 +119,11 @@ class SubCategory(models.Model):
 
     is_active = models.BooleanField(default=True)
 
+    # is_system=True: seeded at setup, cannot be deleted/renamed by the user.
+    # is_system=False: created by the user in the UI — shown with a "perso" badge.
+    # Mirrors Category.is_system but at the sub-category level.
+    is_system = models.BooleanField(default=False)
+
     class Meta:
         verbose_name = "sub-category"
         verbose_name_plural = "sub-categories"

@@ -42,6 +42,10 @@ help:
 	@printf "    $(BOLD)make import-ubs$(RESET)      Analyse un export UBS CSV (dry run)\n"
 	@printf "    $(BOLD)make import-cic$(RESET)      Analyse un export CIC Excel (dry run)\n"
 	@printf "\n"
+	@printf "  $(CYAN)🧪 Dev tools$(RESET)\n"
+	@printf "    $(BOLD)make dev-randomize$(RESET)   Catégorisation aléatoire (transactions non catégorisées)\n"
+	@printf "    $(BOLD)make dev-randomize ALL=1$(RESET)  Re-randomiser toutes les transactions\n"
+	@printf "\n"
 
 # =============================================================================
 # 📡 status — état de tous les services
@@ -151,6 +155,21 @@ import-cic:
 	@$(MANAGE) import_cic --file "$(FILE)" $(if $(COMMIT),--commit,)
 
 # =============================================================================
+# 🧪 Dev tools
+# =============================================================================
+
+dev-randomize:
+	@printf "  🎲 $(YELLOW)DEV — Catégorisation aléatoire des transactions...$(RESET)\n"
+	@printf "  $(DIM)→ income → Revenus/Remboursements | dépenses → toutes les autres$(RESET)\n"
+	@$(MANAGE) dev_randomize_categories $(if $(ALL),--all,)
+	@printf "  ✅ $(GREEN)Fait — recharge /budget/ pour voir les données$(RESET)\n"
+
+update-bank-logos:
+	@printf "  🏦 $(YELLOW)Téléchargement des logos banques (Google Favicons)...$(RESET)\n"
+	@$(MANAGE) update_bank_logos $(if $(BANK),--bank=$(BANK),)
+	@printf "  ✅ $(GREEN)Logos mis à jour dans static/icons/banks/miniature/$(RESET)\n"
+
+# =============================================================================
 # 💾 Sauvegarde / Restauration PostgreSQL
 # =============================================================================
 # pg_dump : outil standard PostgreSQL qui exporte toute la DB en SQL
@@ -185,4 +204,4 @@ restore:
 	@printf "  ✅ $(GREEN)Restauration terminée$(RESET)\n"
 
 # =============================================================================
-.PHONY: help status up down logs run migrate makemigrations shell create-superuser seed reset-seed import-yuh import-ubs import-cic backup restore
+.PHONY: help status up down logs run migrate makemigrations shell create-superuser seed reset-seed import-yuh import-ubs import-cic backup restore dev-randomize

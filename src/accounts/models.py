@@ -36,12 +36,16 @@ class Bank(models.Model):
     # ISO 4217 currency code: CHF, EUR, GBP...
     default_currency = models.CharField(max_length=3)
 
-    # Icon identifier mapped to a file in static/icons/banks/miniature/<icon_slug>.[svg|png]
-    # Example: "yuh", "cic", "ubs", "finpension"
-    # Kept separate from slug so the icon can differ from the URL identifier.
-    # Extension varies: .svg for cic/ubs, .png for yuh/finpension — resolve in template.
-    # blank=True: optional — falls back to a generic bank icon in templates.
+    # Icon identifier mapped to a file in static/icons/banks/miniature/<icon_slug>.png
+    # Example: "yuh", "cic", "ubs". Kept separate from slug so icon can differ from URL slug.
+    # blank=True: optional — falls back to initiale in templates.
     icon_slug = models.CharField(max_length=50, blank=True, default="")
+
+    # Domain used to fetch the logo via Google Favicons API.
+    # Example: "yuh.ch", "ubs.com", "cic.fr"
+    # Used by the update_bank_logos management command.
+    # blank=True: optional — logo won't be fetched if empty.
+    domain = models.CharField(max_length=100, blank=True, default="")
 
     is_active = models.BooleanField(default=True)
 

@@ -1,0 +1,107 @@
+{% comment %}
+transactions/_panel_category_picker.html — Fragment HTMX : picker catégorie
+
+Contexte attendu :
+    tx           — Transaction (avec select_related category + subcategory)
+    system_cats  — QuerySet Category (is_system=True), ordonné par order
+    custom_cats  — QuerySet Category (is_system=False), ordonné par order
+
+Chargé dans #panel-content par hx-get depuis _panel_tx_row.html.
+Après sélection d'une sous-catégorie : POST → budget_categorize_transaction()
+→ retourne _panel_tx_list.html (retour état A) + déclenche toast JS.
+{% endcomment %}
+{% comment %} ── Header : bouton retour + titre ── {% endcomment %}
+<div class="px-4 pt-2 pb-3 flex items-center gap-3 flex-shrink-0">
+    {% comment %} Bouton retour → recharge la liste {% endcomment %}
+    <button hx-get="{% url 'transactions:panel_transactions' %}"
+            hx-target="#panel-content"
+            hx-swap="innerHTML"
+            class="p-1.5 rounded-lg text-text-muted hover:text-text-base hover:bg-surface-hover transition-colors flex-shrink-0"
+            title="Retour à la liste">
+        <svg class="w-4 h-4"
+             fill="none"
+             viewBox="0 0 24 24"
+             stroke-width="2"
+             stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+        </svg>
+    </button>
+    <span class="text-base font-semibold text-text-base flex-1">Modifier la catégorie</span>
+    {% comment %} Badge catégorie actuelle {% endcomment %}
+    {% if tx.category %}
+        <span class="text-[10px] text-text-muted px-2 py-0.5 rounded-full bg-surface-hover flex-shrink-0">
+            {{ tx.category.name }}
+        </span>
+    {% endif %}
+</div>
+{% comment %} ── Section "Règle intelligente" — Soon tag ── {% endcomment %}
+<div class="mx-4 mb-3 px-3 py-2.5 rounded-xl bg-surface-hover border border-edge flex items-center gap-3 flex-shrink-0">
+    {% comment %}
+    Toggle OFF visuel — non fonctionnel Phase 6.
+    div au lieu de input checkbox : évite soumission avec les formulaires de catégorie.
+    {% endcomment %}
+    <div class="w-8 h-4 rounded-full bg-edge flex-shrink-0 cursor-not-allowed relative">
+        <div class="w-3.5 h-3.5 rounded-full bg-text-disabled absolute top-0.5 left-0.5"></div>
+    </div>
+    <span class="text-xs text-text-muted flex-1">Règle intelligente automatique</span>
+    {% comment %} Soon badge — même composant que partout dans l'app {% endcomment %}
+    {% include "components/badges/soon.html" %}
+</div>
+{% comment %} ── Bouton "Créer une catégorie personnalisée" — placeholder Phase 3A {% endcomment %}
+<div class="px-4 mb-3 flex justify-end flex-shrink-0">
+    <button disabled
+            title="Disponible en Phase 3A"
+            class="flex items-center gap-2 px-3 py-1.5 text-xs font-medium border bg-gold border-gold text-black rounded-full opacity-60 cursor-not-allowed">
+        <svg class="w-3.5 h-3.5 flex-shrink-0"
+             fill="none"
+             viewBox="0 0 24 24"
+             stroke-width="2"
+             stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+        </svg>
+        Créer une catégorie personnalisée
+    </button>
+</div>
+{% comment %} ── Liste catégories — scrollable ── {% endcomment %}
+<div class="flex-1 overflow-y-auto px-2 pb-2"
+     style="-ms-overflow-style:none;
+            scrollbar-width:none"
+     id="cat-picker-list">
+    {% comment %}
+    Ordre : perso d'abord, system ensuite.
+    is_system=False = créées par l'utilisateur (ex: Dépenses exceptionnelles)
+    is_system=True  = catégories Finary natives (ex: Alimentation, Transport…)
+    {% endcomment %}
+    {% if custom_cats %}
+        <p class="px-2 pt-2 pb-1.5 text-[10px] font-semibold text-text-disabled uppercase tracking-wider">Mes catégories</p>
+        {% for cat in custom_cats %}
+            {% include "transactions/_cat_picker_row.html" %}
+        {% endfor %}
+        <div class="my-3 border-t border-edge/60"></div>
+    {% endif %}
+    {% if system_cats %}
+        <p class="px-2 {% if not custom_cats %}pt-2{% endif %}pb-1.5 text-[10px] font-semibold text-text-disabled uppercase tracking-wider">
+            Catégories
+        </p>
+        {% for cat in system_cats %}
+            {% include "transactions/_cat_picker_row.html" %}
+        {% endfor %}
+    {% endif %}
+</div>
+{% comment %}
+Script : ferme les autres <details> quand on en ouvre un (accordéon exclusif).
+Placé dans le fragment pour être réexécuté à chaque chargement HTMX.
+toggle ne bulle pas → capture=true obligatoire.
+{% endcomment %}
+<script>
+(function () {
+    var list = document.getElementById('cat-picker-list');
+    if (!list) return;
+    list.addEventListener('toggle', function (e) {
+        if (e.target.tagName !== 'DETAILS' || !e.target.open) return;
+        list.querySelectorAll('details[open]').forEach(function (d) {
+            if (d !== e.target) d.removeAttribute('open');
+        });
+    }, true);
+})();
+</script>

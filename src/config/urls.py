@@ -16,12 +16,24 @@ Including another URLconf
 """
 
 from django.contrib import admin
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import render
 from django.urls import include, path
+
+
+# Vue temporaire de test pour valider le layout Phase 1B.
+# Données fictives hardcodées — sera remplacée par une vraie vue avec données
+# DB quand la Phase 2 (Finpension, net worth) sera implémentée.
+@login_required
+def synthese(request):
+    return render(request, "synthese/index.html", {})
+
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    # Django's built-in auth views: login, logout, password_change, password_reset...
-    # Convention: Django looks for templates in registration/ (e.g. registration/login.html)
-    # We only use login + logout for now — the rest comes in Phase 1B.
     path("", include("django.contrib.auth.urls")),
+    path("synthese/", synthese, name="synthese"),
+    # Délégation des URLs de l'app transactions à transactions/urls.py
+    # Toutes les URLs de l'app sont préfixées par /transactions/
+    path("budget/", include("transactions.urls")),
 ]

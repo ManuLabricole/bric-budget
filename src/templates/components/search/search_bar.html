@@ -1,0 +1,54 @@
+{% comment %}
+components/search/search_bar.html — Barre de recherche minimaliste + live HTMX
+
+États :
+  Default  → icône grise, underline blanc permanent
+  Hover    → icône + texte blancs (Tailwind group-hover — simple, fiable)
+  Focus    → icône dorée (inline style direct sur previousElementSibling)
+
+Pourquoi inline style pour le focus icône ?
+  group-focus-within ne se génère pas toujours avec Tailwind CDN sur du contenu HTMX.
+  this.previousElementSibling.style.color cible directement le SVG (spécificité max).
+
+Variables requises :
+  hx_url, hx_target, hx_select
+Variables optionnelles :
+  placeholder, width (défaut "w-56")
+{% endcomment %}
+<div class="group relative flex items-center gap-2 pb-1 {{ width|default:'w-56' }} flex-shrink-0">
+    <svg class="w-3.5 h-3.5 flex-shrink-0 text-text-disabled group-hover:text-text-base transition-colors"
+         style="transition: color 0.15s ease"
+         fill="none"
+         viewBox="0 0 24 24"
+         stroke-width="2"
+         stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+    </svg>
+    <input type="text"
+           name="q"
+           placeholder="{{ placeholder|default:'Rechercher…' }}"
+           autocomplete="off"
+           spellcheck="false"
+           hx-get="{{ hx_url }}"
+           hx-target="{{ hx_target|default:'#tx-results' }}"
+           hx-select="{{ hx_select|default:'#tx-results' }}"
+           hx-swap="outerHTML"
+           hx-trigger="input changed delay:300ms"
+           onfocus="this.previousElementSibling.style.color='#f2c086'"
+           onblur="this.previousElementSibling.style.color=''"
+           class="flex-1 min-w-0 bg-transparent text-xs outline-none text-text-disabled placeholder:text-text-disabled group-hover:text-text-base group-hover:placeholder:text-text-muted focus:text-text-base">
+    <button class="search-clear-btn"
+            type="button"
+            onclick="const inp=this.parentElement.querySelector('input');inp.value='';inp.dispatchEvent(new Event('input',{bubbles:true}));"
+            aria-label="Effacer la recherche">
+        <svg class="w-3 h-3"
+             fill="none"
+             viewBox="0 0 24 24"
+             stroke-width="2.5"
+             stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+        </svg>
+    </button>
+    <div class="absolute bottom-0 left-0 right-0 h-px pointer-events-none"
+         style="background-color: rgba(255,255,255,0.25)"></div>
+</div>

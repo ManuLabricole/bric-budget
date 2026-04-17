@@ -1,0 +1,24 @@
+{% comment %}
+components/badges/soon.html — Badge "SOON" glassmorphism Finary
+
+Usage minimal (inline) :
+    include 'components/badges/soon.html'
+
+Usage positionné (ex: coin d'un bouton) :
+    include 'components/badges/soon.html' with extra_class="absolute -top-1 -right-1"
+
+Variable optionnelle :
+    extra_class — classes Tailwind supplémentaires (positionnement, marge…)
+                  défaut : rien (inline dans le flux)
+
+Style :
+    - Texte doré (color: #f2c086)
+    - Fond bleu navy semi-transparent avec backdrop-blur (glassmorphism)
+    - Border gradient : gold → bleu en 60% (transition rapide)
+    - Box-shadow doré subtil (glow)
+{% endcomment %}
+<span class="px-1.5 py-px text-[7px] font-bold uppercase tracking-widest rounded-full text-gold {{ extra_class }}"
+      style="background: linear-gradient(rgba(20,20,100,0.70), rgba(20,20,100,0.70)) padding-box, linear-gradient(135deg, #f2c086 0%, rgba(30,30,110,0.4) 60%) border-box;
+             border: 1px solid transparent;
+             backdrop-filter: blur(8px);
+             box-shadow: 0 0 8px rgba(242,192,134,0.2)">SOON</span>

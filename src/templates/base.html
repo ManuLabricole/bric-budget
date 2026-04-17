@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="fr" class="h-full" style="font-size: 13px">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="description" content="BricBudget — Suivi budgétaire personnel" />
+        <meta name="keywords" content="budget, finance, BricBudget" />
+        <title>
+            {% block title %}BricBudget{% endblock %}
+        </title>
+        {# Inter — police utilisée par Finary #}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+              rel="stylesheet" />
+        <script src="https://cdn.tailwindcss.com"></script>
+        {% comment %}
+      DESIGN TOKENS — SOURCE UNIQUE DE VÉRITÉ (palette Finary, 2026-04-06)
+      Dans les templates : text-gold, bg-surface-2, border-edge...
+      NE PAS utiliser hex ou classes Tailwind arbitraires dans les templates.
+        {% endcomment %}
+        <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'ui-sans-serif', 'system-ui'],
+            },
+            colors: {
+              "surface-1":      "#0e0e27",
+              "surface-2":      "#131314",
+              "surface-3":      "#131314",
+              "surface-hover":  "#1c1c1e",
+              "edge":           "#2a2a2e",
+              "edge-subtle":    "#3a3a3f",
+              "text-base":      "#edf0f5",
+              "text-secondary": "#e0e2e7",
+              "text-muted":     "#8b8d97",
+              "text-disabled":  "#4a4c55",
+              "gold":           "#f2c086",
+              "gold-hover":     "#e8ab6a",
+              "income":         "#4dbf93",
+              "expense":        "#e5494a",
+            }
+          }
+        }
+      }
+        </script>
+        {% comment %}
+      BACKGROUND FINARY — 3 couches :
+        1. Base noire (#07070f)
+        2. Glow bleu top-left (surface-1)
+        3. Glow vert droit (income, très faible opacité)
+      Sidebar transparente → gradient visible derrière les liens.
+        {% endcomment %}
+        <style>
+      /* Bouton × clear — caché par défaut, visible quand l'input a une valeur */
+      .search-clear-btn {
+        display: none;
+        align-items: center; justify-content: center;
+        flex-shrink: 0; width: 1rem; height: 1rem;
+        color: #4a4c55; cursor: pointer;
+        background: none; border: none; padding: 0;
+        transition: color 0.15s ease;
+      }
+      .search-bar-c input:not(:placeholder-shown) ~ .search-clear-btn { display: flex; }
+      .search-clear-btn:hover { color: #edf0f5; }
+
+      /* ── .bb-background ──────────────────────────────────────────────────── */
+      .bb-background {
+        background-color: #000000;
+        background-image:
+          /* Glow bleu top-left : élargi et atténué pour un effet plus doux/flou */
+          radial-gradient(ellipse 45% 65% at 0% 0%, rgba(30, 30, 110, 0.55) 0%, rgba(14, 14, 60, 0.2) 45%, transparent 70%),
+          /* Glow vert/or droite : subtil, mélange vert Finary + touche dorée */
+          radial-gradient(ellipse 35% 45% at 100% 50%, rgba(77, 191, 147, 0.07) 0%, rgba(242, 192, 134, 0.04) 50%, transparent 70%);
+      }
+        </style>
+        {% block extra_head %}{% endblock %}
+    </head>
+    <body class="h-full bb-background text-text-base antialiased font-sans"
+          hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+        {# hx-headers : CSRF global pour tous les hx-post enfants. Pattern standard Django+HTMX. #}
+        {% block body %}{% endblock %}
+        <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+        {% block extra_js %}{% endblock %}
+    </body>
+</html>

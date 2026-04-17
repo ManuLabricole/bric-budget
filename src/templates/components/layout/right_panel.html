@@ -1,0 +1,53 @@
+<!--
+  components/layout/right_panel.html — Shell du panneau contextuel droit.
+
+  Ce fichier contient uniquement la structure du panneau : header (avec bouton ✕)
+  et la zone de contenu #panel-content qui sera remplie par HTMX.
+
+  Le panneau lui-même (position, animation) est géré dans base_app.html.
+  Ce fichier ne contient que ce qui est DANS le panneau.
+
+  Cycle de vie :
+    1. Chargement page : #panel-content est vide — panneau hors écran
+    2. Clic ligne tx   : HTMX fait GET /transactions/{id}/panel/
+                         → injecte _panel_detail.html dans #panel-content
+                         → openPanel() retire translate-x-full
+    3. Bouton ✕        : closePanel() remet translate-x-full
+                         → optionnel : vider #panel-content (évite flash au prochain clic)
+-->
+<!-- HEADER du panneau : bouton fermeture uniquement.
+     Chaque fragment HTMX (#panel-content) gère son propre titre
+     et sa propre navigation (retour, titre contextuel, etc.)
+     — plus flexible que fixer le titre ici. -->
+<div class="flex items-center justify-end px-4 py-3 flex-shrink-0">
+    <!-- closePanel() est défini dans base_app.html -->
+    <button onclick="closePanel()"
+            class="w-7 h-7 flex items-center justify-center rounded-full text-text-muted hover:text-text-base hover:bg-surface-hover transition-colors"
+            aria-label="Fermer le panneau">
+        <svg class="w-4 h-4"
+             fill="none"
+             viewBox="0 0 24 24"
+             stroke-width="2"
+             stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+        </svg>
+    </button>
+</div>
+<!--
+  ZONE DE CONTENU — Remplie par HTMX au clic.
+
+  id="panel-content" : cible des requêtes HTMX depuis les lignes de transaction :
+    hx-get="/transactions/{{ tx.id }}/panel/"
+    hx-target="#panel-content"
+    hx-on::after-request="openPanel()"
+
+  overflow-y-auto : le contenu du panel scrolle indépendamment
+  flex-1 : prend tout l'espace vertical restant sous le header
+-->
+<div id="panel-content" class="flex-1 overflow-y-auto">
+    <!--
+    Vide au chargement — HTMX injectera le contenu ici.
+    On peut mettre un état vide discret si besoin, mais c'est optionnel
+    puisque le panneau est caché par défaut (translate-x-full).
+  -->
+</div>

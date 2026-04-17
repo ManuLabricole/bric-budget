@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block body %}
+    {% comment %}
+LAYOUT GÉNÉRAL — 3 zones côte à côte pleine hauteur :
+  [sidebar 240px fixe] | [zone principale flex-1] | [right-panel 384px overlay]
+
+Tous les conteneurs intermédiaires sont transparents (bg-transparent).
+Le bb-background (body) doit être visible partout en fond.
+Les "cartes" visuelles sont définies par chaque page dans panel_left / panel_right.
+
+DEV labels : textes font-mono discrets pour identifier les zones — pas de couleurs de fond.
+    {% endcomment %}
+    <div class="flex h-screen overflow-hidden">
+        {# ── SIDEBAR 240px fixe ──────────────────────────────────────── #}
+        <aside class="w-60 flex-shrink-0 flex flex-col border-r border-edge bg-transparent">
+            {# DEV label #}
+            <div class="text-[10px] text-purple-400/40 px-2 pt-1 font-mono select-none leading-none">sidebar.html</div>
+            {% include "components/layout/sidebar.html" %}
+        </aside>
+        {# ── ZONE PRINCIPALE ─────────────────────────────────────────── #}
+        <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+            {# ── TOPBAR — transparent, contenu fixe sur toutes les pages ─────── #}
+            <div class="relative flex items-center justify-between h-[72px] px-5 border-b border-edge flex-shrink-0 bg-transparent">
+                {# DEV label #}
+                <div class="absolute top-0.5 left-1/2 -translate-x-1/2 text-[10px] text-blue-400/30 font-mono select-none leading-none">
+                    topbar
+                </div>
+                <div class="flex items-center gap-4">
+                    {# TODO Phase 2C : jauges circulaires objectifs budget du mois #}
+                    <span class="text-xs text-text-disabled font-mono">[ objectifs du mois ]</span>
+                </div>
+                <button class="flex items-center gap-2 px-3 py-1.5 text-xs font-medium border bg-gold border-gold text-black rounded-full hover:bg-gold/90 transition-colors">
+                    <svg class="w-3.5 h-3.5"
+                         fill="none"
+                         viewBox="0 0 24 24"
+                         stroke-width="1.5"
+                         stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                    </svg>
+                    Compléter mon patrimoine
+                </button>
+            </div>
+            {# ── CONTENU PRINCIPAL ─────────────────────────────────────────────── #}
+            {# Padding p-4 autour + gap-4 entre les deux panels.                   #}
+            {# Le fond bb-background (body) est visible dans les espaces entre     #}
+            {# les cartes et autour d'elles.                                        #}
+            {# panel_left  (flex-[2]) : Cashflow, transactions, catégorie…          #}
+            {# panel_right (flex-[1]) : Distribution, stats, détail…               #}
+            <div class="flex-1 flex gap-4 p-4 overflow-y-auto bg-transparent items-start">
+                {# DEV label #}
+                <div class="absolute text-[10px] text-green-400/30 font-mono select-none leading-none"
+                     style="top:3.75rem;
+                            left:50%;
+                            transform:translateX(-50%)">panel_left · panel_right</div>
+                {# Panel gauche — scrollable via la carte interne définie par la page #}
+                <main class="flex-[2] min-w-0">
+                    {% block panel_left %}{% endblock %}
+                </main>
+                {# Panel droit — défini par la page (ou vide → gauche prend tout) #}
+                {% block panel_right %}{% endblock %}
+            </div>
+        </div>
+        {# ── BACKDROP — overlay sombre + flou derrière le right panel ────────── #}
+        {# Invisible par défaut (opacity-0 pointer-events-none).                  #}
+        {# openPanel() → opacity-100 + pointer-events-auto                        #}
+        {# Clic dessus → closePanel() (ferme le panneau en cliquant à côté)       #}
+        <div id="panel-backdrop"
+             onclick="closePanel()"
+             class="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-300">
+        </div>
+        {# ── RIGHT PANEL OVERLAY — masqué par défaut, glisse depuis la droite ── #}
+        {# w-[40%] : 40% de la largeur viewport — spec demandée                   #}
+        {# z-40 : au-dessus du backdrop (z-30)                                    #}
+        <aside id="right-panel"
+               class="fixed right-3 top-3 h-[calc(100%-1.5rem)] w-[36%] flex-shrink-0 flex flex-col border border-edge/60 bg-surface-2/70 backdrop-blur-xl rounded-2xl transform translate-x-[calc(100%+0.75rem)] transition-transform duration-300 z-40"
+               style="-ms-overflow-style:none;
+                      scrollbar-width:none">
+            {# DEV label #}
+            <div class="text-[10px] text-orange-400/40 px-2 pt-1 font-mono select-none leading-none">right_panel.html</div>
+            {% include "components/layout/right_panel.html" %}
+        </aside>
+    </div>
+    <script>
+  function openPanel() {
+    // translate-x-[calc(100%+0.75rem)] → translate-x-0 (reste à right-3 grâce au CSS)
+    const panel = document.getElementById('right-panel');
+    panel.classList.remove('translate-x-[calc(100%+0.75rem)]');
+    panel.classList.add('translate-x-0');
+    // Backdrop : rendre visible + interactif
+    const bd = document.getElementById('panel-backdrop');
+    bd.classList.remove('opacity-0', 'pointer-events-none');
+    bd.classList.add('opacity-100', 'pointer-events-auto');
+  }
+  function closePanel() {
+    const panel = document.getElementById('right-panel');
+    panel.classList.remove('translate-x-0');
+    panel.classList.add('translate-x-[calc(100%+0.75rem)]');
+    // Backdrop : masquer + désactiver les clics
+    const bd = document.getElementById('panel-backdrop');
+    bd.classList.remove('opacity-100', 'pointer-events-auto');
+    bd.classList.add('opacity-0', 'pointer-events-none');
+    // Vider le contenu après la transition (300ms = durée du slide)
+    setTimeout(() => {
+      document.getElementById('panel-content').innerHTML = '';
+    }, 300);
+  }
+
+  // ── Toast "Catégorie modifiée" ─────────────────────────────────────────────
+  //
+  // Déclenché par l'événement HTMX "categoryChanged" — émis via le header
+  // HX-Trigger retourné par budget_categorize_transaction() après le POST.
+  //
+  // Comment ça marche :
+  //   1. HTMX reçoit la réponse du POST /budget/transactions/categorize/
+  //   2. Il lit le header "HX-Trigger: {"categoryChanged": {...}}"
+  //   3. Il émet un CustomEvent "categoryChanged" sur document.body
+  //   4. On écoute cet événement ici et on affiche le toast
+  //
+  // Le toast est un div positionné en fixed (overlay par-dessus tout),
+  // z-50 > z-40 (right panel) > z-30 (backdrop).
+  // Il disparaît automatiquement après 5s via setTimeout.
+  //
+  // Pourquoi JS pur et pas HTMX ?
+  //   Le toast n'est pas dans le DOM initial — il serait complexe à gérer
+  //   avec HTMX seul (hx-swap sur un élément absent). JS + CustomEvent
+  //   est la solution recommandée par la doc HTMX pour ce cas.
+
+  var _toastTimer = null;
+
+  function showToast(txName, catName) {
+    var toast = document.getElementById('cat-toast');
+    if (!toast) return;
+
+    // Mettre à jour le texte
+    document.getElementById('cat-toast-msg').textContent =
+      '"' + txName + '" classée en ' + catName + '.';
+
+    // Afficher
+    toast.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
+    toast.classList.add('opacity-100', 'pointer-events-auto', 'translate-y-0');
+
+    // Reset le timer si déjà en cours
+    if (_toastTimer) clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(hideToast, 5000);
+  }
+
+  function hideToast() {
+    var toast = document.getElementById('cat-toast');
+    if (!toast) return;
+    toast.classList.remove('opacity-100', 'pointer-events-auto', 'translate-y-0');
+    toast.classList.add('opacity-0', 'pointer-events-none', 'translate-y-2');
+  }
+
+  // Écoute l'événement HTMX "categoryChanged" émis par HX-Trigger
+  document.body.addEventListener('categoryChanged', function (e) {
+    var detail = e.detail || {};
+    showToast(detail.tx_name || '…', detail.cat_name || '');
+  });
+    </script>
+    {# ── Toast overlay "Catégorie modifiée" ─────────────────────────────────── #}
+    {# z-50 : au-dessus du right panel (z-40) et du backdrop (z-30).            #}
+    {# Caché par défaut (opacity-0). showToast() le rend visible.               #}
+    <div id="cat-toast"
+         class="fixed top-4 right-4 z-50 max-w-sm pointer-events-none opacity-0 translate-y-2 transition-all duration-300">
+        <div class="bg-surface-3 border border-edge rounded-xl shadow-xl p-4">
+            <div class="flex items-start gap-3">
+                {# Icône checkmark vert #}
+                <svg class="w-5 h-5 text-income flex-shrink-0 mt-0.5"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="2"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                </svg>
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-text-base">Catégorie modifiée</p>
+                    <p id="cat-toast-msg" class="text-xs text-text-muted mt-0.5 truncate"></p>
+                    {# CTA règle — placeholder Phase 2E #}
+                    <button onclick="hideToast()"
+                            class="mt-2 text-xs text-gold hover:text-gold-hover transition-colors cursor-not-allowed opacity-50"
+                            title="Disponible en Phase 2E">Créer une règle automatique →</button>
+                </div>
+                {# Bouton fermer #}
+                <button onclick="hideToast()"
+                        class="text-text-disabled hover:text-text-muted transition-colors flex-shrink-0 pointer-events-auto">
+                    <svg class="w-4 h-4"
+                         fill="none"
+                         viewBox="0 0 24 24"
+                         stroke-width="2"
+                         stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+{% endblock %}
