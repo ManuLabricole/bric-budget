@@ -1,0 +1,99 @@
+{% load static %}
+{% comment %}
+transactions/_panel_rule_preview.html — Prévisualisation règle avant validation
+
+Contexte attendu :
+    keyword        — str : le mot-clé de la règle (uppercase)
+    category       — Category
+    subcategory    — SubCategory | None
+    tx_id          — str : id de la transaction source (pour le bouton retour)
+    affected_count — int : nombre de transactions qui seront mises à jour
+
+Flow :
+    _panel_rule_create.html → POST rule_preview → ce panel
+    Bouton "Valider" → POST rule_create_submit → _panel_rule_confirm.html
+    Flèche retour → GET panel_rule_create (reprend le formulaire avec les mêmes params)
+{% endcomment %}
+{% comment %} ── Header ── {% endcomment %}
+<div class="px-4 pt-2 pb-3 flex items-center gap-3 flex-shrink-0">
+    {% comment %}
+    Retour vers le formulaire de création de règle avec les mêmes params.
+    On repasse tx_id + keyword en query string pour que le panel se ré-ouvre
+    dans le même état qu'avant.
+    {% endcomment %}
+    <button hx-get="{% url 'transactions:panel_rule_create' %}?tx_id={{ tx_id }}&keyword={{ keyword }}"
+            hx-target="#panel-content"
+            hx-swap="innerHTML"
+            class="p-1.5 rounded-lg text-text-muted hover:text-text-base hover:bg-surface-hover transition-colors flex-shrink-0"
+            title="Retour">
+        <svg class="w-4 h-4"
+             fill="none"
+             viewBox="0 0 24 24"
+             stroke-width="2"
+             stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+        </svg>
+    </button>
+    <span class="text-base font-semibold text-text-base flex-1">Confirmer la règle</span>
+</div>
+<div class="border-t border-edge mx-4 mb-4 flex-shrink-0"></div>
+{% comment %} ── Résumé de la règle ── {% endcomment %}
+<div class="mx-4 mb-4 px-3 py-3 rounded-xl bg-surface-hover border border-edge flex-shrink-0">
+    <p class="text-[10px] text-text-muted uppercase tracking-wider mb-2">Règle à créer</p>
+    <p class="text-sm text-text-secondary">
+        SI le nom comprend
+        <span class="font-semibold text-text-base">"{{ keyword }}"</span>
+    </p>
+    <p class="text-sm text-text-secondary mt-1">
+        → {{ category.name }}
+        {% if subcategory %}› <span class="text-text-base">{{ subcategory.name }}</span>{% endif %}
+    </p>
+</div>
+{% comment %} ── Count transactions affectées ── {% endcomment %}
+{% comment %}
+Chiffre clé affiché en grand — l'user voit l'impact avant de valider.
+Doré si > 0 (impact réel), gris si 0 (aucune transaction matchée).
+{% endcomment %}
+<div class="px-5 mb-6 flex-shrink-0">
+    <div class="flex items-center justify-between">
+        <span class="text-sm text-text-muted">Transactions concernées</span>
+        <span class="text-2xl font-bold {% if affected_count > 0 %}text-gold{% else %}text-text-disabled{% endif %}">
+            {{ affected_count }}
+        </span>
+    </div>
+    {% if affected_count == 0 %}
+        <p class="text-xs text-text-disabled mt-1">
+            Aucune transaction existante ne correspond à ce mot-clé. La règle s'appliquera aux prochains imports.
+        </p>
+    {% else %}
+        <p class="text-xs text-text-muted mt-1">
+            Ces transactions seront recatégorisées (sauf celles modifiées manuellement).
+        </p>
+    {% endif %}
+</div>
+{% comment %} ── Bouton Valider ── {% endcomment %}
+{% comment %}
+Formulaire POST vers rule_create_submit avec tous les paramètres.
+On repasse keyword + category_id + subcategory_id + tx_id pour que
+budget_rule_create_submit() puisse créer la règle et faire le bulk apply.
+{% endcomment %}
+<div class="px-4 space-y-2">
+    <form hx-post="{% url 'transactions:rule_create_submit' %}"
+          hx-target="#panel-content"
+          hx-swap="innerHTML">
+        <input type="hidden" name="keyword" value="{{ keyword }}">
+        <input type="hidden" name="category_id" value="{{ category.id }}">
+        {% if subcategory %}<input type="hidden" name="subcategory_id" value="{{ subcategory.id }}">{% endif %}
+        <input type="hidden" name="tx_id" value="{{ tx_id }}">
+        <button type="submit"
+                class="w-full bg-gold hover:bg-gold-hover text-surface-3 font-semibold text-sm rounded-xl px-4 py-3 transition-colors">
+            Valider et appliquer
+        </button>
+    </form>
+    <button hx-get="{% url 'transactions:panel_transactions' %}"
+            hx-target="#panel-content"
+            hx-swap="innerHTML"
+            class="w-full border border-edge hover:bg-surface-hover text-text-secondary text-sm font-medium rounded-xl px-4 py-2.5 transition-colors">
+        Annuler
+    </button>
+</div>

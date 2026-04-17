@@ -40,7 +40,7 @@ Pourquoi un fichier séparé et pas une variable dans _cat_picker_row.html ?
     <div class="ml-5 mt-0.5 mb-1">
         {% comment %} Row "Principale" — assigne la catégorie sans sous-catégorie {% endcomment %}
         {% with icon_path="icons/categories/"|add:cat.icon|add:".svg" %}
-            <form hx-post="{% url 'transactions:rule_create_submit' %}"
+            <form hx-post="{% url 'transactions:rule_preview' %}"
                   hx-target="#panel-content"
                   hx-swap="innerHTML">
                 {% comment %}
@@ -79,7 +79,7 @@ Pourquoi un fichier séparé et pas une variable dans _cat_picker_row.html ?
                 {% for sub in subcats %}
                     {% if sub.is_active %}
                         {% with sub_icon_path="icons/categories/"|add:sub.icon|add:".svg" %}
-                            <form hx-post="{% url 'transactions:rule_create_submit' %}"
+                            <form hx-post="{% url 'transactions:rule_preview' %}"
                                   hx-target="#panel-content"
                                   hx-swap="innerHTML">
                                 <input type="hidden" name="tx_id" value="{{ tx.id }}">

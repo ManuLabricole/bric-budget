@@ -940,6 +940,59 @@ def budget_panel_rule_create(request):
 
 
 # =============================================================================
+# budget_rule_preview — Prévisualise la règle sans l'appliquer (POST)
+# =============================================================================
+
+
+@login_required
+@require_POST
+def budget_rule_preview(request):
+    """
+    Prévisualise l'impact d'une règle sans rien créer ni modifier en DB.
+
+    URL      : POST /budget/transactions/rule-preview/
+    Target   : #panel-content
+    Template : transactions/_panel_rule_preview.html
+
+    Reçoit keyword + category_id + subcategory_id + tx_id.
+    Compte le nombre de transactions qui seraient affectées (icontains, exclude manual).
+    Retourne un panel avec le résumé de la règle + le count + un bouton Valider.
+
+    Pourquoi POST et pas GET ?
+        Les données (keyword, category_id) viennent d'un formulaire HTMX.
+        GET avec ces données nécessiterait de construire une URL à la main en JS.
+        POST est plus simple et cohérent avec les autres actions du panel.
+    """
+    keyword = request.POST.get("keyword", "").strip().upper()
+    cat_id = request.POST.get("category_id")
+    sub_id = request.POST.get("subcategory_id") or None
+    tx_id = request.POST.get("tx_id")
+
+    category = get_object_or_404(Category, pk=cat_id)
+    subcategory = SubCategory.objects.filter(pk=sub_id).first() if sub_id else None
+
+    # Compter les transactions affectées SANS les modifier
+    # Même filtre que le bulk apply réel — pour que le count soit exact
+    affected_count = (
+        Transaction.objects.filter(description_raw__icontains=keyword)
+        .exclude(categorization_source="manual")
+        .count()
+    )
+
+    return render(
+        request,
+        "transactions/_panel_rule_preview.html",
+        {
+            "keyword": keyword,
+            "category": category,
+            "subcategory": subcategory,
+            "tx_id": tx_id,
+            "affected_count": affected_count,
+        },
+    )
+
+
+# =============================================================================
 # budget_rule_create_submit — Crée la règle + bulk apply (POST)
 # =============================================================================
 

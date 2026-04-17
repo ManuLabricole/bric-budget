@@ -82,6 +82,13 @@ urlpatterns = [
         views.budget_panel_rule_create,
         name="panel_rule_create",
     ),
+    # /budget/transactions/rule-preview/ → prévisualise l'impact d'une règle (POST, sans modifier)
+    # Retourne _panel_rule_preview.html avec le count + bouton Valider
+    path(
+        "transactions/rule-preview/",
+        views.budget_rule_preview,
+        name="rule_preview",
+    ),
     # /budget/transactions/rule-create/ → crée la règle + bulk apply (POST)
     # Retourne _panel_rule_confirm.html avec le count de transactions mises à jour
     path(
