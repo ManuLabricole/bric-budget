@@ -19,13 +19,31 @@ Usage :
 {% endcomment %}
 <div class="flex items-center gap-1.5 flex-shrink-0">
     {% if bank_icon_url %}
-        <div class="{{ icon_size|default:'w-6 h-6' }} rounded-full bg-white flex-shrink-0 flex items-center justify-center p-1">
-            <img src="{{ bank_icon_url }}"
-                 width="32"
-                 height="32"
-                 class="w-full h-full object-contain"
-                 alt="{{ account.bank.name }}">
-        </div>
+        {% comment %}
+        Les SVG banque utilisent fill="currentColor" — pas de fond intégré.
+        On force brightness-0 invert pour les rendre blancs sur fond sombre,
+        exactement comme les icônes de catégories.
+        Les PNG (fallback miniature/) sont affichés tels quels sur bg-white.
+        ⚠️  Si un nouveau logo s'affiche mal : vérifier que le SVG n'a pas de fond
+            hardcodé (fill="white" ou rect de fond) — à supprimer dans Inkscape.
+        {% endcomment %}
+        {% if bank_icon_url|slice:"-4:" == ".svg" %}
+            <div class="{{ icon_size|default:'w-6 h-6' }} rounded-full bg-surface-3 border border-edge/40 flex-shrink-0 flex items-center justify-center p-1">
+                <img src="{{ bank_icon_url }}"
+                     width="32"
+                     height="32"
+                     class="w-full h-full object-contain brightness-0 invert opacity-80"
+                     alt="{{ account.bank.name }}">
+            </div>
+        {% else %}
+            <div class="{{ icon_size|default:'w-6 h-6' }} rounded-full bg-white flex-shrink-0 flex items-center justify-center p-1">
+                <img src="{{ bank_icon_url }}"
+                     width="32"
+                     height="32"
+                     class="w-full h-full object-contain"
+                     alt="{{ account.bank.name }}">
+            </div>
+        {% endif %}
     {% else %}
         <div class="{{ icon_size|default:'w-6 h-6' }} rounded-full bg-surface-hover border border-edge flex items-center justify-center flex-shrink-0">
             <span class="text-[8px] font-bold text-text-muted">{{ account.bank.name|slice:":1" }}</span>

@@ -98,43 +98,64 @@ def _resolve_bank_icon_map():
     """
     Construit un dict { icon_slug → URL statique de l'icône banque }.
 
-    Scanne le dossier static/icons/banks/miniature/ et applique une priorité
-    d'extension pour gérer les doublons :
-        svg > png > jpg > jpeg  (SVG = meilleure qualité)
+    Scanne le dossier static/icons/banks/svg/ — SVGs sans fond, avec fill="currentColor".
+    Le SVG currentColor permet d'adapter la couleur de l'icône via CSS (dark theme natif).
 
     Retourne {} si le dossier n'existe pas (ex: tests sans static).
 
-    Pourquoi une fonction séparée et pas inline dans chaque vue ?
-        Cette logique était dupliquée dans budget_panel_transactions() et
-        serait dupliquée à nouveau dans budget_toggle_ignore().
-        En Python : si tu copies/colles du code, c'est le signal qu'il faut
-        une fonction. Ici c'est un helper privé (préfixe _) → usage interne.
+    Pourquoi svg/ et pas miniature/ ?
+        Les PNG dans miniature/ ont un fond blanc intégré dans le fichier → carré blanc
+        moche sur dark theme. Les SVG dans svg/ sont des paths purs sans fond — ils
+        prennent la couleur CSS de leur conteneur via currentColor.
+
+    ⚠️  AJOUTER UN NOUVEAU LOGO BANQUE
+        → Déposer le SVG dans static/icons/banks/svg/<slug>.svg
+        → Le nom du fichier doit correspondre à Bank.icon_slug en base
+        → Le SVG doit utiliser fill="currentColor" (pas de fill="#xxx" hardcodé)
+        → Si le SVG a un fond blanc/coloré intégré : l'enlever dans Inkscape/Figma avant
 
     Pourquoi pas un cache module-level ?
         Les icônes peuvent changer (make update-bank-logos). En dev, on veut
         voir les changements sans redémarrer Django. En prod, le volume est
         faible (< 10 banques) — le scan est négligeable.
     """
-    EXTENSION_PRIORITY = {"svg": 0, "png": 1, "jpg": 2, "jpeg": 3}
-    icon_dir = Path(settings.BASE_DIR) / "static" / "icons" / "banks" / "miniature"
+    base = Path(settings.BASE_DIR) / "static" / "icons" / "banks"
+    svg_dir = base / "svg"
+    miniature_dir = base / "miniature"
 
-    if not icon_dir.exists():
-        return {}
+    # Collecte tous les slugs disponibles dans miniature/ (PNG/JPG = fallback)
+    result = {}
+    if miniature_dir.exists():
+        EXTENSION_PRIORITY = {"svg": 0, "png": 1, "jpg": 2, "jpeg": 3}
+        _best = {}
+        for f in miniature_dir.iterdir():
+            if not f.is_file() or f.name.startswith("."):
+                continue
+            ext = f.suffix.lstrip(".").lower()
+            priority = EXTENSION_PRIORITY.get(ext, 99)
+            if f.stem not in _best or priority < _best[f.stem][0]:
+                _best[f.stem] = (priority, f.name)
+        result = {
+            slug: static(f"icons/banks/miniature/{fname}")
+            for slug, (_, fname) in _best.items()
+        }
 
-    # { slug → (priority, filename) } — on garde la meilleure extension par slug
-    _best = {}
-    for f in icon_dir.iterdir():
-        if not f.is_file() or f.name.startswith("."):
-            continue
-        ext = f.suffix.lstrip(".").lower()
-        priority = EXTENSION_PRIORITY.get(ext, 99)
-        if f.stem not in _best or priority < _best[f.stem][0]:
-            _best[f.stem] = (priority, f.name)
+    # Écrase avec les SVG quand disponibles (priorité absolue — pas de fond, currentColor)
+    # ⚠️  AJOUTER UN NOUVEAU LOGO BANQUE :
+    #   → Déposer le SVG dans static/icons/banks/svg/<slug>.svg
+    #   → Le nom = Bank.icon_slug en base
+    #   → Le SVG doit utiliser fill="currentColor" (pas de fill="#xxx" hardcodé)
+    #   → Pas de rect/fond blanc intégré dans le SVG (à supprimer dans Inkscape si besoin)
+    if svg_dir.exists():
+        for f in svg_dir.iterdir():
+            if (
+                f.is_file()
+                and not f.name.startswith(".")
+                and f.suffix.lower() == ".svg"
+            ):
+                result[f.stem] = static(f"icons/banks/svg/{f.name}")
 
-    return {
-        slug: static(f"icons/banks/miniature/{fname}")
-        for slug, (_, fname) in _best.items()
-    }
+    return result
 
 
 # =============================================================================
@@ -903,14 +924,22 @@ def budget_panel_rule_create(request):
         pk=tx_id,
     )
 
-    # Tokens cliquables : on split toujours description_raw (texte brut banque).
+    # Tokens cliquables : on split description_raw (texte brut banque).
     # C'est le même champ que Finary utilise pour matcher ses règles — on reste
     # cohérent avec ça. L'user choisit les tokens pertinents parmi tous les mots.
-    raw_tokens = re.split(r"[\s\*\+\-\/\.]+", tx.description_raw.upper())
+    #
+    # ⚠️  FORMAT BANQUE — À METTRE À JOUR SI NOUVEAU CONNECTEUR
+    # Yuh (CHF) : "Raja Foods Lausanne | 21303625 0 12 28; PAIEMENT CARTE DE DEBIT NO TRANSACTION: ..."
+    #             → tout ce qui est après "|" = métadonnées de paiement, pas utile pour les règles
+    # CIC (EUR) : format différent — à vérifier quand le connecteur CIC sera implémenté (Phase 1D)
+    #
+    # On ne tokenise que la partie avant "|" pour éviter le bruit (IDs, dates, "PAIEMENT CARTE DE DEBIT"...)
+    description_clean = tx.description_raw.split("|")[0].strip()
+    raw_tokens = re.split(r"[\s\*\+\-\/\.]+", description_clean.upper())
     seen = set()
     tokens = []
     for t in raw_tokens:
-        if len(t) >= 2 and t not in seen:
+        if len(t) >= 1 and t not in seen:
             seen.add(t)
             tokens.append(t)
 
