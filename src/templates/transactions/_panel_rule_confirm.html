@@ -1,0 +1,109 @@
+{% load static %}
+{% comment %}
+transactions/_panel_rule_confirm.html — Fragment HTMX : confirmation création règle
+
+Contexte attendu :
+    rule          — CategorizationRule créée (ou existante si doublon)
+    created       — bool : True si nouvelle règle, False si elle existait déjà
+    updated_count — int : nombre de transactions mises à jour par le bulk apply
+    keyword       — str : le mot-clé de la règle (uppercase)
+    category      — Category
+    subcategory   — SubCategory | None
+
+Affiché dans #panel-content après POST budget_rule_create_submit().
+
+Structure :
+    [Header ← retour liste]
+    [Icône checkmark centré]
+    [Titre confirmation]
+    [Card règle créée : keyword → catégorie]
+    [Séparateur]
+    [Count transactions mises à jour]
+    [Bouton retour liste]
+{% endcomment %}
+{% comment %} ── Header ── {% endcomment %}
+<div class="px-4 pt-2 pb-3 flex items-center gap-3 flex-shrink-0">
+    <button hx-get="{% url 'transactions:panel_transactions' %}"
+            hx-target="#panel-content"
+            hx-swap="innerHTML"
+            class="p-1.5 rounded-lg text-text-muted hover:text-text-base hover:bg-surface-hover transition-colors flex-shrink-0"
+            title="Retour à la liste">
+        <svg class="w-4 h-4"
+             fill="none"
+             viewBox="0 0 24 24"
+             stroke-width="2"
+             stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+        </svg>
+    </button>
+    <span class="text-base font-semibold text-text-base flex-1">Règle intelligente</span>
+</div>
+{% comment %} ── Checkmark + titre ── {% endcomment %}
+<div class="px-5 py-6 flex flex-col items-center text-center flex-shrink-0">
+    {% comment %}
+    Cercle vert avec checkmark — même style que le toast "Catégorie modifiée".
+    Taille plus grande (w-14) pour un affichage plein panel.
+    {% endcomment %}
+    <div class="w-14 h-14 rounded-full bg-income/15 flex items-center justify-center mb-4">
+        <svg class="w-7 h-7 text-income"
+             fill="none"
+             viewBox="0 0 24 24"
+             stroke-width="2"
+             stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+        </svg>
+    </div>
+    {% if created %}
+        <p class="text-base font-semibold text-text-base">Règle créée !</p>
+        <p class="text-sm text-text-muted mt-1">Elle sera appliquée automatiquement aux prochains imports.</p>
+    {% else %}
+        <p class="text-base font-semibold text-text-base">Règle déjà existante</p>
+        <p class="text-sm text-text-muted mt-1">Le bulk apply a quand même été relancé.</p>
+    {% endif %}
+</div>
+<div class="border-t border-edge mx-4 mb-4 flex-shrink-0"></div>
+{% comment %} ── Card règle ── {% endcomment %}
+{% comment %}
+Résumé visuel de la règle créée : "SI … comprend KEYWORD → catégorie/sous-cat"
+Style inspiré screenshot 31 Finary : fond surface-hover, keyword en gras.
+{% endcomment %}
+<div class="mx-4 mb-4 px-3 py-3 rounded-xl bg-surface-hover border border-edge flex-shrink-0">
+    <p class="text-[10px] text-text-muted uppercase tracking-wider mb-2">Règle appliquée</p>
+    <p class="text-sm text-text-secondary">
+        SI le nom comprend
+        <span class="font-semibold text-text-base">"{{ keyword }}"</span>
+    </p>
+    <p class="text-sm text-text-secondary mt-1">
+        → {{ category.name }}
+        {% if subcategory %}› <span class="text-text-base">{{ subcategory.name }}</span>{% endif %}
+    </p>
+</div>
+<div class="border-t border-edge mx-4 mb-4 flex-shrink-0"></div>
+{% comment %} ── Count transactions mises à jour ── {% endcomment %}
+{% comment %}
+Le chiffre clé : combien de transactions existantes ont été recatégorisées.
+Affiché en grand — c'est l'info la plus utile pour l'utilisateur.
+Les transactions "manual" sont exclues du count (voir budget_rule_create_submit).
+{% endcomment %}
+<div class="px-5 mb-6 flex-shrink-0">
+    <div class="flex items-center justify-between">
+        <span class="text-sm text-text-muted">Transactions mises à jour</span>
+        <span class="text-2xl font-bold {% if updated_count > 0 %}text-gold{% else %}text-text-disabled{% endif %}">
+            {{ updated_count }}
+        </span>
+    </div>
+    {% if updated_count == 0 %}
+        <p class="text-xs text-text-disabled mt-1">
+            Aucune transaction existante ne correspond à ce mot-clé, ou elles sont toutes catégorisées manuellement.
+        </p>
+    {% endif %}
+</div>
+{% comment %} ── Bouton retour liste ── {% endcomment %}
+<div class="px-4">
+    <button hx-get="{% url 'transactions:panel_transactions' %}"
+            hx-target="#panel-content"
+            hx-swap="innerHTML"
+            class="w-full border border-edge hover:bg-surface-hover text-text-secondary text-sm font-medium rounded-xl px-4 py-2.5 transition-colors">
+        Retour à la liste
+    </button>
+</div>

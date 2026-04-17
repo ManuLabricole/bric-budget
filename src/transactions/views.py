@@ -16,6 +16,7 @@ Pourquoi tout en session Django ?
 
 import calendar
 import json
+import re
 from datetime import date
 from pathlib import Path
 
@@ -26,7 +27,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.templatetags.static import static
 from django.views.decorators.http import require_POST
 
-from transactions.models import Category, SubCategory, Transaction
+from transactions.models import CategorizationRule, Category, SubCategory, Transaction
 
 # =============================================================================
 # Helpers — arithmétique sur les dates
@@ -850,10 +851,151 @@ def budget_categorize_transaction(request):
     # HX-Trigger : déclenche l'événement JS "categoryChanged" après swap HTMX
     # Le JS dans base_app.html écoute cet événement et affiche le toast
     tx_display = tx.merchant_name or tx.description_raw[:30]
+
+    # Extraction du keyword pour pré-remplir le formulaire de règle.
+    # On split description_raw sur les séparateurs courants (espace, *, +, -, /)
+    # et on garde le premier token de 3+ caractères qui n'est pas un nombre pur.
+    # Exemples : "VIR APPLE.COM/BILL 123" → "VIR", "MIGROS LAUSANNE" → "MIGROS"
+    raw_tokens = re.split(r"[\s\*\+\-\/]+", tx.description_raw.upper())
+    keyword_tokens = [t for t in raw_tokens if len(t) >= 3 and not t.isdigit()]
+    keyword = keyword_tokens[0] if keyword_tokens else tx_display
+
     response["HX-Trigger"] = json.dumps(
-        {"categoryChanged": {"tx_name": tx_display, "cat_name": tx.category.name}}
+        {
+            "categoryChanged": {
+                "tx_name": tx_display,
+                "cat_name": tx.category.name,
+                "tx_id": tx.id,
+                "keyword": keyword,
+            }
+        }
     )
     return response
+
+
+# =============================================================================
+# budget_panel_rule_create — Partial HTMX : formulaire création règle (GET)
+# =============================================================================
+
+
+@login_required
+def budget_panel_rule_create(request):
+    """
+    Partial HTMX — panneau "Créer une règle intelligente".
+
+    URL      : GET /budget/panel/rule-create/?tx_id=X&keyword=MIGROS
+    Target   : #panel-content
+    Template : transactions/_panel_rule_create.html
+
+    Déclenché par le bouton "Créer une règle automatique →" dans le toast,
+    après qu'une transaction a été catégorisée manuellement.
+
+    Contexte transmis au template :
+        tx       — Transaction source (pour afficher son nom + catégorie actuelle)
+        keyword  — Token pré-rempli extrait de description_raw (ex: "MIGROS")
+        categories — QuerySet Category actives triées par order (pour le dropdown)
+    """
+    tx_id = request.GET.get("tx_id")
+    keyword = request.GET.get("keyword", "").strip()
+
+    tx = get_object_or_404(
+        Transaction.objects.select_related("category", "subcategory"),
+        pk=tx_id,
+    )
+
+    # Toutes les catégories actives pour le dropdown — triées par order
+    categories = Category.objects.filter(is_active=True).order_by("order")
+
+    return render(
+        request,
+        "transactions/_panel_rule_create.html",
+        {
+            "tx": tx,
+            "keyword": keyword,
+            "categories": categories,
+        },
+    )
+
+
+# =============================================================================
+# budget_rule_create_submit — Crée la règle + bulk apply (POST)
+# =============================================================================
+
+
+@login_required
+@require_POST
+def budget_rule_create_submit(request):
+    """
+    Crée une CategorizationRule et l'applique aux transactions existantes.
+
+    URL      : POST /budget/transactions/rule-create/
+    Target   : #panel-content
+    Template : transactions/_panel_rule_confirm.html
+
+    Étapes :
+        1. Lire keyword + category_id + subcategory_id depuis POST
+        2. Créer (ou récupérer si doublon) la CategorizationRule
+        3. Bulk update : appliquer aux transactions dont description_raw
+           contient le keyword — sauf celles catégorisées manuellement
+           (categorization_source="manual" = choix explicite de l'user → jamais écrasé)
+        4. Retourner le panel de confirmation avec le count mis à jour
+
+    Pourquoi exclure categorization_source="manual" ?
+        Si l'user a déjà catégorisé une transaction à la main, c'est une décision
+        intentionnelle. On ne doit pas l'écraser avec une règle automatique.
+        Seules les transactions "default" (import), "rule" (autre règle) ou
+        "ai" (Claude) sont recatégorisables.
+    """
+    keyword = request.POST.get("keyword", "").strip().upper()
+    cat_id = request.POST.get("category_id")
+    sub_id = request.POST.get("subcategory_id") or None
+
+    category = get_object_or_404(Category, pk=cat_id)
+    subcategory = SubCategory.objects.filter(pk=sub_id).first() if sub_id else None
+
+    # Créer la règle — get_or_create évite les doublons si même keyword + catégorie
+    # update_fields non applicable ici : on veut l'objet complet pour le contexte
+    rule, created = CategorizationRule.objects.get_or_create(
+        keyword=keyword,
+        category=category,
+        defaults={
+            "subcategory": subcategory,
+            "target_field": "description_raw",  # wizard UI → toujours description_raw
+            "priority": 10,
+            "is_active": True,
+        },
+    )
+
+    # Bulk apply : toutes les transactions dont description_raw contient le keyword
+    # en excluant les catégorisations manuelles (décision explicite de l'user)
+    # icontains = case-insensitive LIKE '%keyword%' en SQL → 1 seule query
+    updated_count = (
+        Transaction.objects.filter(
+            description_raw__icontains=keyword,
+        )
+        .exclude(
+            categorization_source="manual",
+        )
+        .update(
+            category=category,
+            subcategory=subcategory,
+            categorization_source="rule",
+            categorization_rule=rule,
+        )
+    )
+
+    return render(
+        request,
+        "transactions/_panel_rule_confirm.html",
+        {
+            "rule": rule,
+            "created": created,
+            "updated_count": updated_count,
+            "keyword": keyword,
+            "category": category,
+            "subcategory": subcategory,
+        },
+    )
 
 
 # =============================================================================

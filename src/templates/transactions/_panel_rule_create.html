@@ -1,0 +1,130 @@
+{% load budget_filters static %}
+{% comment %}
+transactions/_panel_rule_create.html — Fragment HTMX : création d'une règle intelligente
+
+Contexte attendu :
+    tx         — Transaction source (pour afficher son nom + catégorie actuelle)
+    keyword    — Token pré-rempli extrait de description_raw (ex: "MIGROS")
+    categories — QuerySet Category actives triées par order
+
+Flux :
+    Toast "Catégorie modifiée" → clic "Créer une règle automatique →"
+    → ce panel dans #panel-content
+    → POST → budget_rule_create_submit() → panel confirmation avec count
+
+Structure :
+    [Header ← retour + titre]
+    [Bandeau : transaction source]
+    [Séparateur]
+    [Champ keyword]
+    [Dropdown catégorie]
+    [Dropdown sous-catégorie (optionnelle)]
+    [Bouton soumettre]
+{% endcomment %}
+{% comment %} ── Header ── {% endcomment %}
+<div class="px-4 pt-2 pb-3 flex items-center gap-3 flex-shrink-0">
+    <button hx-get="{% url 'transactions:panel_transactions' %}"
+            hx-target="#panel-content"
+            hx-swap="innerHTML"
+            class="p-1.5 rounded-lg text-text-muted hover:text-text-base hover:bg-surface-hover transition-colors flex-shrink-0"
+            title="Retour à la liste">
+        <svg class="w-4 h-4"
+             fill="none"
+             viewBox="0 0 24 24"
+             stroke-width="2"
+             stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+        </svg>
+    </button>
+    <span class="text-base font-semibold text-text-base flex-1">Nouvelle règle intelligente</span>
+</div>
+{% comment %} ── Bandeau transaction source ── {% endcomment %}
+{% comment %}
+Rappel contextuel : montre sur quelle transaction la règle va se baser.
+Même style que le bandeau "Règle intelligente appliquée" dans le picker (screenshot 29).
+{% endcomment %}
+<div class="mx-4 mb-4 px-3 py-2.5 rounded-xl bg-gold/10 border border-gold/20 flex-shrink-0">
+    <p class="text-[10px] font-semibold text-gold uppercase tracking-wider mb-0.5">Transaction source</p>
+    <p class="text-sm text-text-base truncate">
+        {% if tx.merchant_name %}
+            {{ tx.merchant_name }}
+        {% else %}
+            {{ tx.description_raw|slice:":50" }}
+        {% endif %}
+    </p>
+    {% if tx.category %}
+        <p class="text-xs text-text-muted mt-0.5">
+            Catégorisée en : {{ tx.category.name }}
+            {% if tx.subcategory %}› {{ tx.subcategory.name }}{% endif %}
+        </p>
+    {% endif %}
+</div>
+<div class="border-t border-edge mx-4 mb-4 flex-shrink-0"></div>
+{% comment %} ── Formulaire ── {% endcomment %}
+{% comment %}
+hx-post → budget_rule_create_submit() qui crée la règle en DB,
+applique en masse aux transactions existantes et retourne un panel de confirmation.
+{% endcomment %}
+<form hx-post="{% url 'transactions:rule_create_submit' %}"
+      hx-target="#panel-content"
+      hx-swap="innerHTML"
+      class="px-4 space-y-4 flex-shrink-0">
+    {% comment %} Champ keyword {% endcomment %}
+    {% comment %}
+    "Si le nom de votre transaction comprend" — copie exacte du label Finary.
+    Pré-rempli avec le token extrait de description_raw par la vue.
+    L'utilisateur peut le modifier avant de valider.
+    {% endcomment %}
+    <div>
+        <label class="block text-xs text-text-muted uppercase tracking-wider mb-2">Si le nom comprend</label>
+        <input type="text"
+               name="keyword"
+               value="{{ keyword }}"
+               placeholder="ex: MIGROS"
+               class="w-full bg-surface-hover border border-edge rounded-xl px-3 py-2.5 text-sm text-text-base placeholder-text-disabled focus:outline-none focus:border-gold/50 transition-colors uppercase">
+    </div>
+    {% comment %} Dropdown catégorie {% endcomment %}
+    {% comment %}
+    Pré-sélectionné sur la catégorie actuelle de la transaction.
+    onchange → met à jour les sous-catégories via HTMX (étape suivante).
+    {% endcomment %}
+    <div>
+        <label class="block text-xs text-text-muted uppercase tracking-wider mb-2">Modifier la catégorie en</label>
+        <select name="category_id"
+                class="w-full bg-surface-hover border border-edge rounded-xl px-3 py-2.5 text-sm text-text-base focus:outline-none focus:border-gold/50 transition-colors appearance-none cursor-pointer">
+            {% for cat in categories %}
+                <option value="{{ cat.id }}"
+                        {% if tx.category and tx.category.id == cat.id %}selected{% endif %}>{{ cat.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% comment %} Sous-catégorie (optionnelle) {% endcomment %}
+    {% comment %}
+    Pré-sélectionnée sur la sous-catégorie actuelle si elle existe.
+    On liste toutes les sous-cats de la catégorie actuelle de la transaction.
+    Pour l'instant statique — Phase suivante : mise à jour dynamique au changement de catégorie.
+    {% endcomment %}
+    {% if tx.category and tx.category.subcategories.all %}
+        <div>
+            <label class="block text-xs text-text-muted uppercase tracking-wider mb-2">Sous-catégorie (optionnel)</label>
+            <select name="subcategory_id"
+                    class="w-full bg-surface-hover border border-edge rounded-xl px-3 py-2.5 text-sm text-text-base focus:outline-none focus:border-gold/50 transition-colors appearance-none cursor-pointer">
+                <option value="">— Aucune —</option>
+                {% for sub in tx.category.subcategories.all %}
+                    {% if sub.is_active %}
+                        <option value="{{ sub.id }}"
+                                {% if tx.subcategory and tx.subcategory.id == sub.id %}selected{% endif %}>
+                            {{ sub.name }}
+                        </option>
+                    {% endif %}
+                {% endfor %}
+            </select>
+        </div>
+    {% endif %}
+    <div class="border-t border-edge pt-4">
+        <button type="submit"
+                class="w-full bg-gold hover:bg-gold-hover text-surface-3 font-semibold text-sm rounded-xl px-4 py-3 transition-colors">
+            Créer la règle intelligente
+        </button>
+    </div>
+</form>

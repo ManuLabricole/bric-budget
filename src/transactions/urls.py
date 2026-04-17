@@ -75,4 +75,18 @@ urlpatterns = [
         views.budget_toggle_reconcile,
         name="toggle_reconcile",
     ),
+    # /budget/panel/rule-create/?tx_id=X&keyword=MIGROS → formulaire création règle (fragment HTMX)
+    # GET — lecture seule, retourne _panel_rule_create.html dans #panel-content
+    path(
+        "panel/rule-create/",
+        views.budget_panel_rule_create,
+        name="panel_rule_create",
+    ),
+    # /budget/transactions/rule-create/ → crée la règle + bulk apply (POST)
+    # Retourne _panel_rule_confirm.html avec le count de transactions mises à jour
+    path(
+        "transactions/rule-create/",
+        views.budget_rule_create_submit,
+        name="rule_create_submit",
+    ),
 ]

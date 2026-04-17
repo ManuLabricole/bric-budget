@@ -155,6 +155,20 @@ DEV labels : textes font-mono discrets pour identifier les zones — pas de coul
   document.body.addEventListener('categoryChanged', function (e) {
     var detail = e.detail || {};
     showToast(detail.tx_name || '…', detail.cat_name || '');
+
+    // Mettre à jour le bouton "Créer une règle" avec les données de la transaction.
+    // On injecte tx_id et keyword dans l'attribut hx-get du bouton, puis on
+    // ré-initialise HTMX sur ce bouton pour qu'il prenne en compte la nouvelle URL.
+    var btn = document.getElementById('toast-rule-btn');
+    if (btn && detail.tx_id && detail.keyword) {
+      var url = '/budget/panel/rule-create/?tx_id=' + detail.tx_id + '&keyword=' + encodeURIComponent(detail.keyword);
+      btn.setAttribute('hx-get', url);
+      btn.setAttribute('hx-target', '#panel-content');
+      btn.setAttribute('hx-swap', 'innerHTML');
+      // htmx.process() ré-initialise les attributs hx-* sur cet élément
+      // nécessaire car le bouton a été modifié après le chargement initial de la page
+      htmx.process(btn);
+    }
   });
     </script>
     {# ── Toast overlay "Catégorie modifiée" ─────────────────────────────────── #}
@@ -175,10 +189,17 @@ DEV labels : textes font-mono discrets pour identifier les zones — pas de coul
                 <div class="flex-1 min-w-0">
                     <p class="text-sm font-medium text-text-base">Catégorie modifiée</p>
                     <p id="cat-toast-msg" class="text-xs text-text-muted mt-0.5 truncate"></p>
-                    {# CTA règle — placeholder Phase 2E #}
-                    <button onclick="hideToast()"
-                            class="mt-2 text-xs text-gold hover:text-gold-hover transition-colors cursor-not-allowed opacity-50"
-                            title="Disponible en Phase 2E">Créer une règle automatique →</button>
+                    {# CTA règle — déclenche le panel de création de règle #}
+                    {# hx-get est injecté dynamiquement par le listener categoryChanged ci-dessus #}
+                    {# hideToast() est appelé via hx-on::before-request pour fermer le toast au clic #}
+                    <button id="toast-rule-btn"
+                            hx-get=""
+                            hx-target="#panel-content"
+                            hx-swap="innerHTML"
+                            hx-on::before-request="hideToast()"
+                            class="mt-2 text-xs text-gold hover:text-gold-hover transition-colors pointer-events-auto">
+                        Créer une règle automatique →
+                    </button>
                 </div>
                 {# Bouton fermer #}
                 <button onclick="hideToast()"
