@@ -37,7 +37,8 @@ erDiagram
         string slug UK
         string country
         string default_currency
-        string icon
+        string icon_slug
+        string domain
         boolean is_active
     }
 
@@ -45,9 +46,9 @@ erDiagram
         bigint id PK
         bigint bank_id FK
         string name
-        string slug UK
         string account_type
         string currency
+        string contract_number
         boolean is_active
         datetime created_at
     }
@@ -113,6 +114,7 @@ erDiagram
         string icon
         string default_nature
         boolean is_active
+        boolean is_system
     }
 
     CategorizationRule {
@@ -134,6 +136,7 @@ erDiagram
         bigint categorization_rule_id FK
         bigint paired_transaction_id FK
         date date
+        time time
         decimal amount
         string currency
         decimal amount_chf
