@@ -143,7 +143,10 @@ def get_exchange_rate(
     )
 
     try:
-        with urllib.request.urlopen(url, timeout=5) as response:
+        # frankfurter.app bloque les requêtes sans User-Agent (répond 403).
+        # On ajoute un header minimal pour identifier notre client.
+        req = urllib.request.Request(url, headers={"User-Agent": "BricBudget/1.0"})
+        with urllib.request.urlopen(req, timeout=5) as response:
             data = json.loads(response.read().decode())
             rate = Decimal(str(data["rates"][to_currency]))
     except (urllib.error.URLError, KeyError, ValueError) as e:
