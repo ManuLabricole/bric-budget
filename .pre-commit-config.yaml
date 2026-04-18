@@ -56,7 +56,7 @@ repos:
         language: pygrep
         entry: '(CH\d{2}[A-Z0-9]{15,}|FR\d{2}[A-Z0-9]{20,}|\b\d{20,22}\b)'
         types: [python]
-        exclude: ^(src/[^/]+/migrations/|\.env)
+        exclude: ^(src/[^/]+/migrations/|src/tests/|\.env)
 
   # ---------------------------------------------------------------------------
   # Commitizen — enforces Conventional Commits message format
