@@ -26,6 +26,9 @@ No command-specific printing here — only business logic and DB writes.
 """
 
 import hashlib
+import json
+import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
 from datetime import date as date_type
 from datetime import time as time_type
@@ -34,7 +37,7 @@ from pathlib import Path
 
 from django.db import transaction as db_transaction
 
-from accounts.models import Account, BalanceSnapshot, Card
+from accounts.models import Account, BalanceSnapshot, Card, ExchangeRate
 from connectors.base import TransactionDict
 from transactions.models import CategorizationRule, ImportLog, Transaction
 
@@ -86,6 +89,80 @@ def compute_file_hash(filepath: Path) -> str:
         for chunk in iter(lambda: f.read(65536), b""):
             sha1.update(chunk)
     return sha1.hexdigest()
+
+
+# =============================================================================
+# get_exchange_rate — Récupère le taux de change via DB ou frankfurter.app
+# =============================================================================
+
+
+def get_exchange_rate(
+    date: date_type, from_currency: str, to_currency: str = "CHF"
+) -> Decimal | None:
+    """
+    Retourne le taux de change from_currency → to_currency pour une date donnée.
+
+    Stratégie : DB d'abord, API ensuite.
+        1. Si le taux existe déjà dans ExchangeRate → le retourner directement.
+           (Évite un appel réseau à chaque transaction — un import CIC de 200 lignes
+           ne fera que quelques appels API, les dates se répétant souvent.)
+        2. Si absent → appeler frankfurter.app (API publique, gratuite, pas de clé).
+        3. Stocker le résultat dans ExchangeRate pour les appels futurs.
+        4. En cas d'erreur réseau ou API → retourner None sans crasher l'import.
+
+    Pourquoi NOT get_or_create ?
+        get_or_create passerait le rate=None à la création, puis on devrait le mettre
+        à jour. Deux requêtes au lieu d'une. Plus simple : get() → None → appel API
+        → create().
+
+    API frankfurter.app — exemple :
+        GET https://api.frankfurter.app/2026-03-17?from=EUR&to=CHF
+        → {"amount":1.0,"base":"EUR","date":"2026-03-17","rates":{"CHF":0.9321}}
+
+    ⚠️  NOUVEAU CONNECTEUR (devise non-CHF) :
+        Si tu ajoutes un compte GBP, CAD, USD... → cette fonction le gère automatiquement.
+        frankfurter.app supporte toutes les devises majeures.
+        Vérifier que la devise est supportée : https://api.frankfurter.app/currencies
+    """
+    if from_currency == to_currency:
+        return Decimal("1")
+
+    # ── 1. DB d'abord ────────────────────────────────────────────────────────
+    try:
+        existing = ExchangeRate.objects.get(
+            date=date, from_currency=from_currency, to_currency=to_currency
+        )
+        return existing.rate
+    except ExchangeRate.DoesNotExist:
+        pass  # pas encore en cache → appel API ci-dessous
+
+    # ── 2. Appel API frankfurter.app ─────────────────────────────────────────
+    date_str = date.isoformat()  # "2026-03-17"
+    url = (
+        f"https://api.frankfurter.app/{date_str}?from={from_currency}&to={to_currency}"
+    )
+
+    try:
+        with urllib.request.urlopen(url, timeout=5) as response:
+            data = json.loads(response.read().decode())
+            rate = Decimal(str(data["rates"][to_currency]))
+    except (urllib.error.URLError, KeyError, ValueError) as e:
+        # Erreur réseau ou format inattendu → on ne plante pas l'import.
+        # La transaction sera créée avec amount_chf=None — mieux que de tout perdre.
+        print(
+            f"[exchange_rate] WARNING: could not fetch {from_currency}→{to_currency} for {date_str}: {e}"
+        )
+        return None
+
+    # ── 3. Stocker en DB pour les prochains imports ───────────────────────────
+    ExchangeRate.objects.create(
+        date=date,
+        from_currency=from_currency,
+        to_currency=to_currency,
+        rate=rate,
+    )
+
+    return rate
 
 
 # =============================================================================
@@ -346,8 +423,18 @@ class ImportService:
 
         # --- amount_chf ------------------------------------------------------
         # For CHF accounts: amount_chf = amount (no conversion needed).
-        # For EUR/GBP accounts: leave None until exchange rates are loaded (Phase 1C).
-        amount_chf = amount if account.currency == "CHF" else None
+        # For other currencies: fetch the rate from DB or frankfurter.app API,
+        # then multiply. If the API fails, amount_chf stays None — the import
+        # continues, and the field can be backfilled later.
+        if account.currency == "CHF":
+            amount_chf = amount
+        else:
+            rate = get_exchange_rate(parsed_date, account.currency)
+            if rate is not None:
+                # Quantize to 2 decimal places — same precision as amount
+                amount_chf = (amount * rate).quantize(Decimal("0.01"))
+            else:
+                amount_chf = None
 
         # --- Build and return the unsaved object -----------------------------
         return Transaction(
