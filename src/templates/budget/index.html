@@ -23,37 +23,44 @@ Données hardcodées — prochaine étape : brancher la vue Django.
             <div class="flex items-center justify-between pb-2">
                 <h2 class="text-sm font-semibold text-text-base">Cashflow</h2>
                 <div class="flex items-center gap-2">
-                    {# Toggle sous-catégories #}
-                    <label class="flex items-center gap-1.5 cursor-pointer select-none">
+                    {# Toggle sous-catégories — Soon #}
+                    <label class="flex items-center gap-1.5 select-none opacity-40 cursor-not-allowed"
+                           title="Bientôt disponible">
                         <span class="text-xs text-text-muted">Sous-catégories</span>
                         <div class="w-7 h-3.5 bg-surface-hover border border-edge rounded-full relative">
                             <div class="w-2.5 h-2.5 bg-text-disabled rounded-full absolute top-[1px] left-[1px]"></div>
                         </div>
                     </label>
-                    {# Dropdown catégories — pill rounded-full, texte blanc #}
-                    <button class="flex items-center gap-1 px-3 py-1.5 text-xs text-text-base bg-surface-hover rounded-full hover:bg-edge transition-colors">
+                    {# Dropdown catégories — Soon #}
+                    <div class="relative flex items-center gap-1 px-3 py-1.5 text-xs text-text-disabled bg-surface-hover rounded-full opacity-50 cursor-not-allowed"
+                         title="Bientôt disponible">
                         Toutes les catégories
-                        <svg class="w-3 h-3 text-text-muted"
+                        <svg class="w-3 h-3"
                              fill="none"
                              viewBox="0 0 24 24"
                              stroke-width="2"
                              stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
                         </svg>
-                    </button>
-                    {# Dropdown comptes — même style #}
-                    <button class="flex items-center gap-1 px-3 py-1.5 text-xs text-text-base bg-surface-hover rounded-full hover:bg-edge transition-colors">
-                        2 comptes
-                        <svg class="w-3 h-3 text-text-muted"
+                        <span class="absolute -top-1.5 -right-1 text-[8px] font-bold bg-text-muted/30 text-text-muted px-1 rounded-full uppercase tracking-wide leading-4">Soon</span>
+                    </div>
+                    {# Dropdown comptes — Soon #}
+                    <div class="relative flex items-center gap-1 px-3 py-1.5 text-xs text-text-disabled bg-surface-hover rounded-full opacity-50 cursor-not-allowed"
+                         title="Bientôt disponible">
+                        Tous les comptes
+                        <svg class="w-3 h-3"
                              fill="none"
                              viewBox="0 0 24 24"
                              stroke-width="2"
                              stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
                         </svg>
-                    </button>
-                    {# Icônes copie + expand (petits, discrets) #}
-                    <button class="w-7 h-7 flex items-center justify-center rounded-full text-text-muted hover:text-text-base hover:bg-surface-hover transition-colors">
+                        <span class="absolute -top-1.5 -right-1 text-[8px] font-bold bg-text-muted/30 text-text-muted px-1 rounded-full uppercase tracking-wide leading-4">Soon</span>
+                    </div>
+                    {# Icônes copie + expand — Soon (juste désactivées, pas de badge) #}
+                    <button class="w-7 h-7 flex items-center justify-center rounded-full text-text-disabled opacity-30 cursor-not-allowed"
+                            title="Bientôt disponible"
+                            disabled>
                         <svg class="w-3.5 h-3.5"
                              fill="none"
                              viewBox="0 0 24 24"
@@ -62,7 +69,9 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                             <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" />
                         </svg>
                     </button>
-                    <button class="w-7 h-7 flex items-center justify-center rounded-full text-text-muted hover:text-text-base hover:bg-surface-hover transition-colors">
+                    <button class="w-7 h-7 flex items-center justify-center rounded-full text-text-disabled opacity-30 cursor-not-allowed"
+                            title="Bientôt disponible"
+                            disabled>
                         <svg class="w-3.5 h-3.5"
                              fill="none"
                              viewBox="0 0 24 24"
@@ -177,26 +186,32 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                         </svg>
                         Tout voir
                     </button>
-                    <button class="flex items-center gap-1 px-3 py-1.5 text-xs text-text-base bg-surface-hover rounded-full hover:bg-edge transition-colors">
+                    {# Créer — Soon #}
+                    <div class="relative flex items-center gap-1 px-3 py-1.5 text-xs text-text-disabled bg-surface-hover rounded-full opacity-50 cursor-not-allowed"
+                         title="Bientôt disponible">
                         Créer
-                        <svg class="w-3 h-3 text-text-muted"
+                        <svg class="w-3 h-3"
                              fill="none"
                              viewBox="0 0 24 24"
                              stroke-width="2"
                              stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
                         </svg>
-                    </button>
-                    <button class="flex items-center gap-1 px-3 py-1.5 text-xs text-text-base bg-surface-hover rounded-full hover:bg-edge transition-colors">
+                        <span class="absolute -top-1.5 -right-1 text-[8px] font-bold bg-text-muted/30 text-text-muted px-1 rounded-full uppercase tracking-wide leading-4">Soon</span>
+                    </div>
+                    {# Paramètres — Soon #}
+                    <div class="relative flex items-center gap-1 px-3 py-1.5 text-xs text-text-disabled bg-surface-hover rounded-full opacity-50 cursor-not-allowed"
+                         title="Bientôt disponible">
                         Paramètres
-                        <svg class="w-3 h-3 text-text-muted"
+                        <svg class="w-3 h-3"
                              fill="none"
                              viewBox="0 0 24 24"
                              stroke-width="2"
                              stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
                         </svg>
-                    </button>
+                        <span class="absolute -top-1.5 -right-1 text-[8px] font-bold bg-text-muted/30 text-text-muted px-1 rounded-full uppercase tracking-wide leading-4">Soon</span>
+                    </div>
                 </div>
             </div>
             {# ── Liste catégories ─────────────────────────────────────────────────── #}

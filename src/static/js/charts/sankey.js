@@ -38,60 +38,69 @@ window.BricCharts = window.BricCharts || {};
       if (n.itemStyle && n.itemStyle.color) nodeColorMap[n.name] = n.itemStyle.color;
     });
 
-    // ── Détection du mode pool ─────────────────────────────────────────────────
-    // Si __pool__ est présent, on applique le positionnement Finary (labels inside).
-    // Sinon (détail catégorie), les labels restent en position par défaut.
+    // ── Détection pool + __disponible__ ───────────────────────────────────────
     const hasPool = sankeyData.nodes.some(function (n) { return n.name === "__pool__"; });
 
-    if (hasPool) {
-      // Identifier les nœuds income (→ pool) et expense (pool →)
-      const incomeNodes  = new Set();
-      const expenseNodes = new Set();
-      sankeyData.links.forEach(function (link) {
-        if (link.target === "__pool__") incomeNodes.add(link.source);
-        if (link.source === "__pool__") expenseNodes.add(link.target);
-      });
+    // ── Positionnement universel des labels — source RIGHT, target LEFT ────────
+    //
+    // Principe identique pour les deux variantes de Sankey :
+    //   - Sankey global (avec pool)  : income → pool → expense
+    //   - Sankey catégorie (sans pool) : category → subcategories
+    //
+    // Dans les deux cas, les nœuds "source" (colonne gauche) ont leur label à
+    // DROITE de leur barre → le label tombe dans l'espace des flux, lisible.
+    // Les nœuds "target" (colonne droite) ont leur label à GAUCHE de leur barre
+    // → même principe, label dans le flux, pas rogné sur le bord du chart.
+    //
+    // On détecte source/target via les liens (pas via hasPool) pour que la même
+    // logique fonctionne quelle que soit la structure du graphe.
+    //
+    // Nœuds invisibles (__pool__, __disponible__) → label masqué.
+    const HIDDEN_NODES = new Set(["__pool__", "__disponible__"]);
+    const targetNodes  = new Set();
+    sankeyData.links.forEach(function (link) {
+      if (!HIDDEN_NODES.has(link.target)) targetNodes.add(link.target);
+    });
 
-      // Assigner la position du label par type de nœud :
-      //   income  → label à droite de la barre (dans le flux income)
-      //   expense → label à gauche de la barre (dans le flux expense, côté pool)
-      //   pool    → label masqué
-      sankeyData.nodes = sankeyData.nodes.map(function (n) {
-        if (n.name === "__pool__") return n;
-        const pos = expenseNodes.has(n.name) ? "left" : "right";
-        return Object.assign({}, n, { label: { position: pos } });
-      });
-    }
+    sankeyData.nodes = sankeyData.nodes.map(function (n) {
+      if (HIDDEN_NODES.has(n.name)) return n;
+      const pos = targetNodes.has(n.name) ? "left" : "right";
+      return Object.assign({}, n, { label: { position: pos } });
+    });
 
-    // ── Dégradé par lien — toujours visible, sombre → lumineux ───────────────
-    // Deux cas :
-    //   income→pool : sombre à gauche (0.05), lumineux à droite (0.7)
-    //   pool→expense : identique — le pool est au centre donc même sens G→D
-    // Sans pool : gradient simple basé sur le nœud source.
+    // ── Dégradé par lien — utilise la couleur du nœud TARGET ─────────────────
+    // Le target est toujours le nœud coloré (sous-catégorie ou expense).
+    // Le source peut être le pool invisible → on prend target dans ce cas aussi.
+    // Gradient : sombre (factor 0.05) à gauche → lumineux (factor 0.7) à droite.
+    // Exception : liens __disponible__ gardent opacity:0 du backend.
     sankeyData.links = sankeyData.links.map(function (link) {
-      const isToPool  = link.target === "__pool__";
-      const catColor  = isToPool
+      if (link.target === "__disponible__") return link;
+      // On prend toujours la couleur du target (porteur de la couleur distincte).
+      // Si le target est le pool (income→pool), on prend le source à la place.
+      const linkColor = HIDDEN_NODES.has(link.target)
         ? nodeColorMap[link.source]
-        : nodeColorMap[link.target] || nodeColorMap[link.source];
+        : nodeColorMap[link.target];
       return Object.assign({}, link, {
         lineStyle: {
           opacity: 0.75,
           color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-            { offset: 0, color: applyFactor(catColor, 0.05) },
-            { offset: 1, color: applyFactor(catColor, 0.7)  },
+            { offset: 0, color: applyFactor(linkColor, 0.05) },
+            { offset: 1, color: applyFactor(linkColor, 0.7)  },
           ]),
         },
       });
     });
 
-    // Marges de la série selon le mode :
-    // - Avec pool : left=0, right=0 → barres sur les bords, labels à l'intérieur des flux.
-    // - Sans pool : marges à 10% pour que les labels ne soient pas rognés sur les côtés.
-    const seriesLeft   = hasPool ? 0 : "10%";
-    const seriesRight  = hasPool ? 0 : "10%";
+    // Marges à 0 dans les deux cas — les labels sont à l'intérieur des flux,
+    // pas en dehors du chart, donc pas besoin de marge pour les protéger.
+    const seriesLeft  = 0;
+    const seriesRight = 0;
 
     sankey.setOption({
       backgroundColor: "transparent",
+      animation: true,
+      animationDuration: 400,
+      animationEasing: "cubicOut",
       tooltip: {
         trigger: "item",
         backgroundColor: T["surface-hover"],
@@ -109,9 +118,17 @@ window.BricCharts = window.BricCharts || {};
       },
       series: [{
         type: "sankey",
-        layout: "none",
+        animation: true,
+        animationDuration: 400,
+        animationEasing: "cubicOut",
         orient: "horizontal",
         nodeAlign: "justify",
+        // layoutIterations: 0 → désactive l'algorithme de réduction de croisements.
+        // Avec la valeur par défaut (32), ECharts réordonne les nœuds verticalement
+        // pour minimiser les croisements de flux — mais avec 2 income vs 13 expense,
+        // ça place les income en bas et les expenses en haut, ce qui croise tout.
+        // À 0 : les nœuds restent dans l'ordre exact du tableau data.
+        layoutIterations: 0,
         // left/right DOIVENT être dans la série (ignorés au niveau racine pour Sankey).
         left: seriesLeft,
         right: seriesRight,

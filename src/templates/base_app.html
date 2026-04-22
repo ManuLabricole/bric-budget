@@ -29,7 +29,8 @@ DEV labels : textes font-mono discrets pour identifier les zones — pas de coul
                     {# TODO Phase 2C : jauges circulaires objectifs budget du mois #}
                     <span class="text-xs text-text-disabled font-mono">[ objectifs du mois ]</span>
                 </div>
-                <button class="flex items-center gap-2 px-3 py-1.5 text-xs font-medium border bg-gold border-gold text-black rounded-full hover:bg-gold/90 transition-colors">
+                <div class="relative flex items-center gap-2 px-3 py-1.5 text-xs font-medium border bg-gold/30 border-gold/30 text-black/50 rounded-full cursor-not-allowed"
+                     title="Bientôt disponible">
                     <svg class="w-3.5 h-3.5"
                          fill="none"
                          viewBox="0 0 24 24"
@@ -38,7 +39,8 @@ DEV labels : textes font-mono discrets pour identifier les zones — pas de coul
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                     </svg>
                     Compléter mon patrimoine
-                </button>
+                    <span class="absolute -top-1.5 -right-1 text-[8px] font-bold bg-text-muted/30 text-text-muted px-1 rounded-full uppercase tracking-wide leading-4">Soon</span>
+                </div>
             </div>
             {# ── CONTENU PRINCIPAL ─────────────────────────────────────────────── #}
             {# Padding p-4 autour + gap-4 entre les deux panels.                   #}

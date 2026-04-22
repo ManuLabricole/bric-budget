@@ -11,18 +11,27 @@ Contexte Django :
     period_label — str période formatée (ex: "Avril 2026")
     total_amount — Decimal total brut (négatif pour les dépenses)
     tx_count     — int nombre de transactions
+    avg_amount   — Decimal|None moyenne par transaction
     txs          — queryset Transaction (avec select_related)
+    subcat_list  — list de dicts { subcategory__name, subcategory__slug, total }
     sankey_data  — dict { nodes, links } pour BricCharts.initSankey
     has_sankey   — bool — True si au moins une sous-catégorie a des transactions
+    donut_data   — dict { segments, label, sign, total } pour BricCharts.initDonut
+    has_donut    — bool — True si au moins un segment donut
 
-Pas de panel_right → panel_left prend toute la largeur.
-Le right panel overlay (de base_app.html) reste disponible pour le détail transaction.
+Layout :
+    panel_left  → header + carte Cashflow (Sankey + KPI strip) + liste transactions
+    panel_right → carte Distribution (donut + liste sous-catégories)
+    Le right panel overlay (de base_app.html) reste disponible pour le détail transaction.
 {% endcomment %}
 {% block title %}{{ category.name }} — BricBudget{% endblock %}
+{# ══════════════════════════════════════════════════════════════════════════════
+   PANEL GAUCHE
+   ══════════════════════════════════════════════════════════════════════════════ #}
 {% block panel_left %}
-    {# ── Header ──────────────────────────────────────────────────────────────── #}
-    <div class="flex items-center gap-4 mb-4">
-        {# Bouton retour #}
+    {# ── Header — breadcrumb + period nav ───────────────────────────────────── #}
+    <div class="flex items-center gap-3 mb-4">
+        {# Breadcrumb ← Budget / icône + nom #}
         <a href="{% url 'budget:index' %}"
            class="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-base transition-colors flex-shrink-0">
             <svg class="w-4 h-4"
@@ -35,8 +44,7 @@ Le right panel overlay (de base_app.html) reste disponible pour le détail trans
             Budget
         </a>
         <span class="text-text-disabled text-xs">/</span>
-        {# Icône catégorie + nom #}
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 flex-shrink-0">
             <div class="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center"
                  style="background-color: {{ category.colour_hex|default:'#2d3033' }}">
                 {% if category.icon %}
@@ -51,53 +59,61 @@ Le right panel overlay (de base_app.html) reste disponible pour le détail trans
             </div>
             <h1 class="text-sm font-semibold text-text-base">{{ category.name }}</h1>
         </div>
-        <span class="text-text-disabled text-xs ml-auto">{{ period_label }}</span>
-    </div>
-    {# ── KPIs — 3 cards en ligne ─────────────────────────────────────────────── #}
-    <div class="grid grid-cols-3 gap-3 mb-4">
-        {# Total période #}
-        <div class="bg-surface-2 border border-edge rounded-xl p-4">
-            <p class="text-[10px] text-text-muted mb-1 uppercase tracking-wider">Total {{ period_label }}</p>
-            {% if total_amount >= 0 %}
-                <p class="text-lg font-bold text-income tabular-nums">+{{ total_amount|chf }} CHF</p>
-            {% else %}
-                <p class="text-lg font-bold text-expense tabular-nums">−{{ total_amount|chf }} CHF</p>
-            {% endif %}
-        </div>
-        {# Nombre de transactions #}
-        <div class="bg-surface-2 border border-edge rounded-xl p-4">
-            <p class="text-[10px] text-text-muted mb-1 uppercase tracking-wider">Transactions</p>
-            <p class="text-lg font-bold text-text-base tabular-nums">{{ tx_count }}</p>
-        </div>
-        {# Moyenne par transaction #}
-        <div class="bg-surface-2 border border-edge rounded-xl p-4">
-            <p class="text-[10px] text-text-muted mb-1 uppercase tracking-wider">Moyenne / transaction</p>
-            {% if avg_amount is not None %}
-                <p class="text-lg font-bold text-text-base tabular-nums">
-                    {% if avg_amount >= 0 %}
-                        +
-                    {% else %}
-                        −
-                    {% endif %}
-                    {{ avg_amount|chf }} CHF
-                </p>
-            {% else %}
-                <p class="text-lg font-bold text-text-disabled">—</p>
-            {% endif %}
+        {# Period nav — même composant que l'index, utilise budget:set_period #}
+        {# set_period redirige vers HTTP_REFERER → revient sur cette page après le clic #}
+        <div class="ml-auto">
+            {% include "components/period/period_nav.html" with period_mode=period_mode period_display=period_display can_go_next=can_go_next nav_url_name="budget:set_period" %}
         </div>
     </div>
-    {# ── Sankey sous-catégories ───────────────────────────────────────────────── #}
-    {% if has_sankey %}
-        <div class="bg-surface-2 border border-edge rounded-xl p-4 mb-4">
-            <p class="text-[10px] text-text-muted uppercase tracking-wider mb-3">Répartition par sous-catégorie</p>
-            <div id="sankey-chart" class="w-full" style="height: 240px;"></div>
-            {{ sankey_data|json_script:"sankey-data" }}
+    {# ── Carte Cashflow — Sankey + KPI strip ─────────────────────────────────── #}
+    {# Même structure que la carte Cashflow de index.html :                       #}
+    {#   header "Cashflow" → Sankey → KPI strip collée en bas (divide-x)          #}
+    <div class="bg-surface-3 rounded-xl mb-4">
+        <div class="flex items-center justify-between px-5 pt-5 pb-2">
+            <h2 class="text-sm font-semibold text-text-base">Cashflow</h2>
+            <span class="text-[10px] text-text-disabled">{{ period_label }}</span>
         </div>
-    {% endif %}
+        {% if has_sankey %}
+            <div class="px-5 pb-2">
+                <div id="sankey-chart" class="w-full" style="height: 220px;"></div>
+                {{ sankey_data|json_script:"sankey-data" }}
+            </div>
+        {% endif %}
+        {# KPI strip — 3 colonnes séparées par divide-x, collées au bas de la carte #}
+        {# Même pattern que Finary : Transactions | Sous-catégories | Moyenne       #}
+        <div class="grid grid-cols-3 divide-x divide-edge border-t border-edge mt-2">
+            <div class="px-5 py-4">
+                <p class="text-[9px] text-text-muted uppercase tracking-wider mb-1">Total</p>
+                {% if total_amount >= 0 %}
+                    <p class="text-base font-bold text-income tabular-nums">+{{ total_amount|chf }} CHF</p>
+                {% else %}
+                    <p class="text-base font-bold text-expense tabular-nums">−{{ total_amount|chf }} CHF</p>
+                {% endif %}
+            </div>
+            <div class="px-5 py-4">
+                <p class="text-[9px] text-text-muted uppercase tracking-wider mb-1">Transactions</p>
+                <p class="text-base font-bold text-text-base tabular-nums">{{ tx_count }}</p>
+            </div>
+            <div class="px-5 py-4">
+                <p class="text-[9px] text-text-muted uppercase tracking-wider mb-1">Moyenne / tx</p>
+                {% if avg_amount is not None %}
+                    <p class="text-base font-bold text-text-base tabular-nums">
+                        {% if avg_amount >= 0 %}
+                            +
+                        {% else %}
+                            −
+                        {% endif %}
+                        {{ avg_amount|chf }} CHF
+                    </p>
+                {% else %}
+                    <p class="text-base font-bold text-text-disabled">—</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
     {# ── Liste de transactions ────────────────────────────────────────────────── #}
-    {# hx-on::htmx:after-swap : quand HTMX injecte dans #panel-content depuis cette zone, #}
-    {# openPanel() glisse le panneau overlay en visibilité. Même pattern que index.html    #}
-    {# (où c'est le bouton "Tout voir" qui le déclenche), mais ici chaque ligne le fait.   #}
+    {# hx-on::htmx:after-swap : quand HTMX injecte dans #panel-content,          #}
+    {# openPanel() glisse le panneau overlay en visibilité.                       #}
     <div class="bg-surface-2 border border-edge rounded-xl overflow-hidden"
          hx-on::htmx:after-swap="if(event.detail.target.id==='panel-content') openPanel()">
         <div class="flex items-center justify-between px-4 py-3 border-b border-edge">
@@ -115,17 +131,67 @@ Le right panel overlay (de base_app.html) reste disponible pour le détail trans
         {% endif %}
     </div>
 {% endblock %}
+{# ══════════════════════════════════════════════════════════════════════════════
+   PANEL DROIT — Distribution (donut + liste sous-catégories)
+   Même structure que le panel Distribution de index.html.
+   ══════════════════════════════════════════════════════════════════════════════ #}
+{% block panel_right %}
+    {% if has_donut %}
+        <aside class="flex-[1] min-w-0">
+            <div class="bg-surface-3 rounded-xl">
+                <div class="px-5 pt-5 pb-3">
+                    <h2 class="text-sm font-semibold text-text-base">Distribution</h2>
+                </div>
+                {# Donut ECharts — même pattern que index.html #}
+                <div id="donut-chart" class="w-full px-4" style="height: 220px;"></div>
+                {{ donut_data|json_script:"donut-data" }}
+                {# Liste sous-catégories avec montants #}
+                <div class="px-5 pb-4 pt-2 flex flex-col gap-1">
+                    {% for sub in subcat_list %}
+                        <div class="flex items-center justify-between py-1">
+                            <div class="flex items-center gap-2 min-w-0">
+                                {# Pastille colorée — même facteur que le segment donut correspondant #}
+                                <div class="w-2 h-2 rounded-full flex-shrink-0"
+                                     style="background-color: {{ category.colour_hex|default:'#4ade80' }}"></div>
+                                <span class="text-xs text-text-base truncate">{{ sub.subcategory__name }}</span>
+                            </div>
+                            {% if sub.total >= 0 %}
+                                <span class="text-xs font-medium text-income tabular-nums ml-3 flex-shrink-0">+{{ sub.total|chf }} CHF</span>
+                            {% else %}
+                                <span class="text-xs font-medium text-expense tabular-nums ml-3 flex-shrink-0">−{{ sub.total|chf }} CHF</span>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </aside>
+    {% endif %}
+{% endblock %}
 {% block extra_js %}
-    {% if has_sankey %}
+    {% if has_sankey or has_donut %}
         <script src="{% static 'js/vendor/echarts.min.js' %}"></script>
         <script src="{% static 'js/charts/utils.js' %}"></script>
-        <script src="{% static 'js/charts/sankey.js' %}"></script>
+        {% if has_sankey %}
+            <script src="{% static 'js/charts/sankey.js' %}"></script>
+        {% endif %}
+        {% if has_donut %}
+            <script src="{% static 'js/charts/donut.js' %}"></script>
+        {% endif %}
         <script>
+  {% if has_sankey %}
   var sankeyEl = document.getElementById("sankey-chart");
   if (sankeyEl) {
     var sankeyData = JSON.parse(document.getElementById("sankey-data").textContent);
     BricCharts.initSankey(sankeyEl, sankeyData);
   }
+  {% endif %}
+  {% if has_donut %}
+  var donutEl = document.getElementById("donut-chart");
+  if (donutEl) {
+    var donutData = JSON.parse(document.getElementById("donut-data").textContent);
+    BricCharts.initDonut(donutEl, donutData);
+  }
+  {% endif %}
         </script>
     {% endif %}
 {% endblock %}

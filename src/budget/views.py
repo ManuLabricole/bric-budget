@@ -516,6 +516,27 @@ def budget_index(request):
                 }
             )
 
+        # Nœud __disponible__ — invisible, en bas, pour équilibrer le pool.
+        # Sans lui : pool reçoit total_income mais n'envoie que total_expenses
+        # → ECharts laisse une barre suspendue dans le pool (forme asymétrique).
+        # Rendu invisible via opacity 0 sur le nœud ET le flux.
+        if total_available > 0:
+            sankey_nodes.append(
+                {
+                    "name": "__disponible__",
+                    "itemStyle": {"color": "rgba(0,0,0,0)", "borderWidth": 0},
+                    "label": {"show": False},
+                }
+            )
+            sankey_links.append(
+                {
+                    "source": POOL,
+                    "target": "__disponible__",
+                    "value": round(float(total_available), 2),
+                    "lineStyle": {"color": "rgba(0,0,0,0)", "opacity": 0},
+                }
+            )
+
     # On passe des dicts Python (pas des strings JSON) au contexte.
     # json_script dans le template se charge de la sérialisation JSON → une seule fois.
     # Si on faisait json.dumps() ici ET json_script dans le template, on aurait
@@ -696,7 +717,11 @@ def budget_set_period(request, action):
     request.session["budget_period_start"] = new_start.isoformat()
     request.session["budget_period_end"] = new_end.isoformat()
 
-    return redirect("budget:index")
+    # Redirect vers la page appelante (Referer) — permet d'utiliser set_period
+    # depuis n'importe quelle page (index, category_detail…) sans URL dédiée.
+    # Fallback sur budget:index si pas de Referer (direct URL, test, etc.).
+    referer = request.META.get("HTTP_REFERER", "")
+    return redirect(referer or "budget:index")
 
 
 # =============================================================================
@@ -1372,6 +1397,17 @@ def budget_toggle_reconcile(request, tx_id):
 
 
 # =============================================================================
+def _vary_color(hex_color, factor):
+    """Assombrit une couleur hex par un facteur (1.0 = original, 0.4 = 40%).
+    Miroir Python de BC.applyFactor en JS (utils.js).
+    """
+    hex_color = (hex_color or "#4ade80").lstrip("#")
+    if len(hex_color) != 6:
+        return "#4ade80"
+    r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+    return f"#{round(r * factor):02x}{round(g * factor):02x}{round(b * factor):02x}"
+
+
 # budget_category_detail — Page détail d'une catégorie
 # =============================================================================
 
@@ -1421,6 +1457,12 @@ def budget_category_detail(request, slug):
             f"{MOIS_FR[period_end.month]} {period_end.year}"
         )
 
+    # Pour le composant period_nav — même logique que budget_index
+    current_month_end = date.today().replace(
+        day=calendar.monthrange(today.year, today.month)[1]
+    )
+    can_go_next = period_end < current_month_end
+
     # ── Transactions de la catégorie sur la période ──────────────────────────
     # On exclut les transactions ignorées — même logique que budget_index.
     txs = (
@@ -1436,8 +1478,10 @@ def budget_category_detail(request, slug):
 
     total_amount = txs.aggregate(total=Sum("amount"))["total"] or 0
 
-    # ── Sous-totaux par sous-catégorie — pour le Sankey ──────────────────────
-    subcat_totals = (
+    # ── Sous-totaux par sous-catégorie — pour le Sankey + donut ─────────────
+    # list() force l'évaluation du queryset ici — on itère deux fois :
+    # une fois pour le Sankey, une fois pour le donut.
+    subcat_list = list(
         txs.filter(subcategory__isnull=False)
         .values("subcategory__id", "subcategory__name", "subcategory__slug")
         .annotate(total=Sum("amount"))
@@ -1460,12 +1504,27 @@ def budget_category_detail(request, slug):
     ]
     sankey_links = []
 
-    for sub in subcat_totals:
+    # Couleurs pré-calculées : même palette pour Sankey ET donut.
+    # _seg_factor distribue les teintes entre 0.70 (lumineux) et 0.15 (sombre)
+    # sur n segments — aligné sur le range du gradient Sankey (0.05→0.70).
+    n_segs = len(subcat_list)
+
+    def _seg_factor(i, n):
+        """Distribue n segments entre 0.70 (lumineux) et 0.35 (sombre min lisible)."""
+        if n <= 1:
+            return 0.70
+        return 0.70 - (0.70 - 0.35) * i / (n - 1)
+
+    subcat_colors = [
+        _vary_color(cat_color, _seg_factor(i, n_segs)) for i in range(n_segs)
+    ]
+
+    for i, sub in enumerate(subcat_list):
         sankey_nodes.append(
             {
                 "name": sub["subcategory__name"],
                 "slug": sub["subcategory__slug"],
-                "itemStyle": {"color": cat_color},
+                "itemStyle": {"color": subcat_colors[i]},
             }
         )
         sankey_links.append(
@@ -1478,6 +1537,25 @@ def budget_category_detail(request, slug):
 
     sankey_data = {"nodes": sankey_nodes, "links": sankey_links}
     has_sankey = len(sankey_links) > 0
+
+    # ── Distribution donut (panel droit) ────────────────────────────────────
+    # subcat_colors calculé au-dessus (même palette que les nœuds Sankey).
+    donut_segments = [
+        {
+            "name": sub["subcategory__name"],
+            "value": round(float(abs(sub["total"])), 2),
+            "itemStyle": {"color": subcat_colors[i]},
+        }
+        for i, sub in enumerate(subcat_list)
+    ]
+
+    donut_data = {
+        "segments": donut_segments,
+        "label": "Distribution",
+        "sign": "−" if total_amount < 0 else "+",
+        "total": round(float(abs(total_amount)), 2),
+    }
+    has_donut = len(donut_segments) > 0
 
     # ── Icônes banques pour la liste de transactions ─────────────────────────
     bank_icon_map = _resolve_bank_icon_map()
@@ -1500,7 +1578,13 @@ def budget_category_detail(request, slug):
             "tx_count": tx_count,
             "avg_amount": avg_amount,
             "txs": txs,
+            "subcat_list": subcat_list,
             "sankey_data": sankey_data,
             "has_sankey": has_sankey,
+            "donut_data": donut_data,
+            "has_donut": has_donut,
+            "period_mode": period_mode,
+            "period_display": period_label,
+            "can_go_next": can_go_next,
         },
     )
