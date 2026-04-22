@@ -1,0 +1,131 @@
+{% extends "base_app.html" %}
+{% load budget_filters static %}
+{% comment %}
+budget/category_detail.html — Page détail d'une catégorie.
+
+URL : /budget/categorie/<slug>/
+Vue : budget_category_detail
+
+Contexte Django :
+    category     — objet Category
+    period_label — str période formatée (ex: "Avril 2026")
+    total_amount — Decimal total brut (négatif pour les dépenses)
+    tx_count     — int nombre de transactions
+    txs          — queryset Transaction (avec select_related)
+    sankey_data  — dict { nodes, links } pour BricCharts.initSankey
+    has_sankey   — bool — True si au moins une sous-catégorie a des transactions
+
+Pas de panel_right → panel_left prend toute la largeur.
+Le right panel overlay (de base_app.html) reste disponible pour le détail transaction.
+{% endcomment %}
+{% block title %}{{ category.name }} — BricBudget{% endblock %}
+{% block panel_left %}
+    {# ── Header ──────────────────────────────────────────────────────────────── #}
+    <div class="flex items-center gap-4 mb-4">
+        {# Bouton retour #}
+        <a href="{% url 'budget:index' %}"
+           class="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-base transition-colors flex-shrink-0">
+            <svg class="w-4 h-4"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="2"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+            </svg>
+            Budget
+        </a>
+        <span class="text-text-disabled text-xs">/</span>
+        {# Icône catégorie + nom #}
+        <div class="flex items-center gap-2">
+            <div class="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center"
+                 style="background-color: {{ category.colour_hex|default:'#2d3033' }}">
+                {% if category.icon %}
+                    {% with icon_path="icons/categories/"|add:category.icon|add:".svg" %}
+                        <img src="{% static icon_path %}"
+                             width="16"
+                             height="16"
+                             class="w-4 h-4 brightness-0 invert"
+                             alt="">
+                    {% endwith %}
+                {% endif %}
+            </div>
+            <h1 class="text-sm font-semibold text-text-base">{{ category.name }}</h1>
+        </div>
+        <span class="text-text-disabled text-xs ml-auto">{{ period_label }}</span>
+    </div>
+    {# ── KPIs — 3 cards en ligne ─────────────────────────────────────────────── #}
+    <div class="grid grid-cols-3 gap-3 mb-4">
+        {# Total période #}
+        <div class="bg-surface-2 border border-edge rounded-xl p-4">
+            <p class="text-[10px] text-text-muted mb-1 uppercase tracking-wider">Total {{ period_label }}</p>
+            {% if total_amount >= 0 %}
+                <p class="text-lg font-bold text-income tabular-nums">+{{ total_amount|chf }} CHF</p>
+            {% else %}
+                <p class="text-lg font-bold text-expense tabular-nums">−{{ total_amount|chf }} CHF</p>
+            {% endif %}
+        </div>
+        {# Nombre de transactions #}
+        <div class="bg-surface-2 border border-edge rounded-xl p-4">
+            <p class="text-[10px] text-text-muted mb-1 uppercase tracking-wider">Transactions</p>
+            <p class="text-lg font-bold text-text-base tabular-nums">{{ tx_count }}</p>
+        </div>
+        {# Moyenne par transaction #}
+        <div class="bg-surface-2 border border-edge rounded-xl p-4">
+            <p class="text-[10px] text-text-muted mb-1 uppercase tracking-wider">Moyenne / transaction</p>
+            {% if avg_amount is not None %}
+                <p class="text-lg font-bold text-text-base tabular-nums">
+                    {% if avg_amount >= 0 %}
+                        +
+                    {% else %}
+                        −
+                    {% endif %}
+                    {{ avg_amount|chf }} CHF
+                </p>
+            {% else %}
+                <p class="text-lg font-bold text-text-disabled">—</p>
+            {% endif %}
+        </div>
+    </div>
+    {# ── Sankey sous-catégories ───────────────────────────────────────────────── #}
+    {% if has_sankey %}
+        <div class="bg-surface-2 border border-edge rounded-xl p-4 mb-4">
+            <p class="text-[10px] text-text-muted uppercase tracking-wider mb-3">Répartition par sous-catégorie</p>
+            <div id="sankey-chart" class="w-full" style="height: 240px;"></div>
+            {{ sankey_data|json_script:"sankey-data" }}
+        </div>
+    {% endif %}
+    {# ── Liste de transactions ────────────────────────────────────────────────── #}
+    {# hx-on::htmx:after-swap : quand HTMX injecte dans #panel-content depuis cette zone, #}
+    {# openPanel() glisse le panneau overlay en visibilité. Même pattern que index.html    #}
+    {# (où c'est le bouton "Tout voir" qui le déclenche), mais ici chaque ligne le fait.   #}
+    <div class="bg-surface-2 border border-edge rounded-xl overflow-hidden"
+         hx-on::htmx:after-swap="if(event.detail.target.id==='panel-content') openPanel()">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-edge">
+            <p class="text-[10px] text-text-muted uppercase tracking-wider">Transactions</p>
+            <span class="text-[10px] text-text-disabled">{{ tx_count }} au total</span>
+        </div>
+        {% if txs %}
+            <div class="divide-y divide-edge/40">
+                {% for tx in txs %}
+                    {% include "budget/_panel_tx_row.html" with tx=tx bank_icon_url=tx.bank_icon_url %}
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="text-xs text-text-disabled text-center py-8">Aucune transaction sur cette période</p>
+        {% endif %}
+    </div>
+{% endblock %}
+{% block extra_js %}
+    {% if has_sankey %}
+        <script src="{% static 'js/vendor/echarts.min.js' %}"></script>
+        <script src="{% static 'js/charts/utils.js' %}"></script>
+        <script src="{% static 'js/charts/sankey.js' %}"></script>
+        <script>
+  var sankeyEl = document.getElementById("sankey-chart");
+  if (sankeyEl) {
+    var sankeyData = JSON.parse(document.getElementById("sankey-data").textContent);
+    BricCharts.initSankey(sankeyEl, sankeyData);
+  }
+        </script>
+    {% endif %}
+{% endblock %}

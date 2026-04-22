@@ -438,6 +438,7 @@ def budget_index(request):
         sankey_nodes.append(
             {
                 "name": cat["category__name"],
+                "slug": cat["category__slug"],
                 "itemStyle": {"color": cat["category__colour_hex"] or "#4ade80"},
             }
         )
@@ -454,6 +455,7 @@ def budget_index(request):
         sankey_nodes.append(
             {
                 "name": cat["category__name"],
+                "slug": cat["category__slug"],
                 "itemStyle": {"color": cat["category__colour_hex"] or "#2d3033"},
             }
         )
@@ -525,6 +527,7 @@ def budget_index(request):
         "segments": [
             {
                 "name": cat["category__name"],
+                "slug": cat["category__slug"],
                 "value": round(float(abs(cat["total"])), 2),
                 "itemStyle": {"color": cat["category__colour_hex"] or "#2d3033"},
             }
@@ -1365,4 +1368,139 @@ def budget_toggle_reconcile(request, tx_id):
         request,
         "budget/_panel_tx_detail.html",
         {"tx": tx, "bank_icon_url": bank_icon_url},
+    )
+
+
+# =============================================================================
+# budget_category_detail — Page détail d'une catégorie
+# =============================================================================
+
+
+@login_required
+def budget_category_detail(request, slug):
+    """
+    Page détail d'une catégorie : Sankey sous-catégories + liste de transactions.
+
+    URL : /budget/categorie/<slug>/
+    Template : budget/category_detail.html
+
+    Ce que cette vue calcule :
+        - La catégorie par slug (404 si inconnue)
+        - La période active (lue depuis la session — même clé que budget_index)
+        - Les transactions de cette catégorie sur la période
+        - Le total et le nombre de transactions (KPIs)
+        - Les sous-totaux par sous-catégorie (pour le Sankey)
+
+    Le Sankey ici est "direct" (sans nœud pool) :
+        Category → SubCategory1, Category → SubCategory2, ...
+    La même fonction BricCharts.initSankey() gère ce cas via la détection
+    automatique de l'absence de "__pool__" dans les nœuds.
+    """
+
+    category = get_object_or_404(Category, slug=slug)
+
+    # ── Période active — même clé session que budget_index ───────────────────
+    today = date.today()
+    period_start_str = request.session.get("budget_period_start")
+    period_end_str = request.session.get("budget_period_end")
+
+    if period_start_str and period_end_str:
+        period_start = date.fromisoformat(period_start_str)
+        period_end = date.fromisoformat(period_end_str)
+    else:
+        period_start = today.replace(day=1)
+        last_day = calendar.monthrange(today.year, today.month)[1]
+        period_end = today.replace(day=last_day)
+
+    period_mode = request.session.get("budget_period_mode", "1m")
+    if period_mode == "1m":
+        period_label = f"{MOIS_FR[period_start.month]} {period_start.year}"
+    else:
+        period_label = (
+            f"{MOIS_FR[period_start.month]} — "
+            f"{MOIS_FR[period_end.month]} {period_end.year}"
+        )
+
+    # ── Transactions de la catégorie sur la période ──────────────────────────
+    # On exclut les transactions ignorées — même logique que budget_index.
+    txs = (
+        Transaction.objects.filter(
+            category=category,
+            date__gte=period_start,
+            date__lte=period_end,
+            is_ignored=False,
+        )
+        .select_related("subcategory", "account", "account__bank")
+        .order_by("-date", "-id")
+    )
+
+    total_amount = txs.aggregate(total=Sum("amount"))["total"] or 0
+
+    # ── Sous-totaux par sous-catégorie — pour le Sankey ──────────────────────
+    subcat_totals = (
+        txs.filter(subcategory__isnull=False)
+        .values("subcategory__id", "subcategory__name", "subcategory__slug")
+        .annotate(total=Sum("amount"))
+        .order_by("total")
+    )
+
+    # ── Construction du Sankey "direct" (Category → SubCategories) ───────────
+    # Nœud source = la catégorie elle-même.
+    # Nœuds cibles = les sous-catégories avec des transactions sur la période.
+    # Pas de nœud "__pool__" → BricCharts.initSankey détecte hasPool=false
+    # et utilise des marges de 10% pour ne pas rogner les labels.
+    cat_color = category.colour_hex or "#4ade80"
+
+    sankey_nodes = [
+        {
+            "name": category.name,
+            "slug": category.slug,
+            "itemStyle": {"color": cat_color},
+        }
+    ]
+    sankey_links = []
+
+    for sub in subcat_totals:
+        sankey_nodes.append(
+            {
+                "name": sub["subcategory__name"],
+                "slug": sub["subcategory__slug"],
+                "itemStyle": {"color": cat_color},
+            }
+        )
+        sankey_links.append(
+            {
+                "source": category.name,
+                "target": sub["subcategory__name"],
+                "value": round(float(abs(sub["total"])), 2),
+            }
+        )
+
+    sankey_data = {"nodes": sankey_nodes, "links": sankey_links}
+    has_sankey = len(sankey_links) > 0
+
+    # ── Icônes banques pour la liste de transactions ─────────────────────────
+    bank_icon_map = _resolve_bank_icon_map()
+    for tx in txs:
+        icon_slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
+        tx.bank_icon_url = bank_icon_map.get(icon_slug, "")
+
+    tx_count = txs.count()
+    avg_amount = (total_amount / tx_count) if tx_count > 0 else None
+
+    return render(
+        request,
+        "budget/category_detail.html",
+        {
+            "category": category,
+            "period_start": period_start,
+            "period_end": period_end,
+            "period_label": period_label,
+            "total_amount": total_amount,
+            "tx_count": tx_count,
+            "avg_amount": avg_amount,
+            "txs": txs,
+            "sankey_data": sankey_data,
+            "has_sankey": has_sankey,
+        },
     )

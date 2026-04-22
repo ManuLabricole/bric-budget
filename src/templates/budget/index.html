@@ -210,7 +210,8 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                 {% if active_categories %}
                     <div class="flex flex-col gap-0.5">
                         {% for cat in active_categories %}
-                            <div class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-surface-hover/50 cursor-pointer group transition-colors">
+                            <a href="{% url 'budget:category_detail' cat.category__slug %}"
+                               class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-surface-hover/50 cursor-pointer group transition-colors">
                                 {# Carré arrondi coloré + icône SVG Tabler blanche #}
                                 {# Même pattern que le picker et les lignes de transaction #}
                                 {% with icon_path="icons/categories/"|add:cat.category__icon|add:".svg" %}
@@ -248,7 +249,7 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                                         <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
                                     </svg>
                                 </div>
-                            </div>
+                            </a>
                         {% endfor %}
                     </div>
                 {% else %}
@@ -297,230 +298,33 @@ Données hardcodées — prochaine étape : brancher la vue Django.
 </aside>
 {% endblock %}
 {% block extra_js %}
-{# ── ECharts — chargé uniquement sur la page Budget ──────────────────────────────── #}
-{# On charge ECharts depuis le CDN jsDelivr (rapide, HTTPS, pas de tracking).        #}
-{# Le script d'init est inline car il est spécifique à cette page et court (~80 lg). #}
-<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+{# ── ECharts + charts BricBudget — servis en local (pas de CDN) ───────────── #}
+<script src="{% static 'js/vendor/echarts.min.js' %}"></script>
+<script src="{% static 'js/charts/utils.js' %}"></script>
+<script src="{% static 'js/charts/sankey.js' %}"></script>
+<script src="{% static 'js/charts/donut.js' %}"></script>
 <script>
-(function () {
-  // ── Palette et typo — lues depuis window.BRICBUDGET_TOKENS (base.html) ──────
-  // ⛔ Règle : pas de hex hardcodé ici. La source de vérité est tailwind.config
-  //    dans base.html. On lit les tokens via window.BRICBUDGET_TOKENS.
-  const T    = window.BRICBUDGET_TOKENS;   // alias court
-  const FONT = window.BRICBUDGET_FONT;
-  const COLOR_TEXT_MUTED  = T["text-muted"];
-  const COLOR_TEXT_BASE   = T["text-base"];
-  const COLOR_SURFACE     = T["surface-2"];
-  const COLOR_GOLD        = T["gold"];
-
-  // ── Sankey ──────────────────────────────────────────────────────────────────
-  // Principe :
-  //   1. On lit les données JSON depuis l'attribut data-sankey du div.
-  //      → Pas de variable globale : chaque chart est autonome.
-  //   2. ECharts dessine les nœuds (catégories) et les liens (flux financiers).
-  //   3. lineStyle.color "gradient" = les flux prennent la couleur source → cible.
-  //      C'est ce qui donne l'effet Finary (dégradé de couleur sur les rivières).
-  //   4. emphasis.focus "adjacency" = au hover, les liens non-connectés s'estompent.
-
-  const sankeyEl = document.getElementById("sankey-chart");
+  // Init Sankey — les données viennent du json_script Django (pas de variable globale).
+  // onNodeClick redirige vers la page détail de la catégorie cliquée.
+  var sankeyEl = document.getElementById("sankey-chart");
   if (sankeyEl) {
-    // json_script émet un <script id="sankey-data" type="application/json">.
-    // .textContent contient le JSON brut — pas d'encodage HTML à gérer.
-    const sankeyData = JSON.parse(document.getElementById("sankey-data").textContent);
-    const sankey = echarts.init(sankeyEl, null, { renderer: "svg" });
-
-    // ── Gradient par lien — toujours visible, sombre(0.25) → lumineux(1.0) G→D ──
-    // Les deux types de liens (income→pool, pool→expense) ont le même sens de gradient :
-    // sombre à gauche, pleinement lumineux à droite. opacity:0.75 par défaut (ECharts
-    // applique 0.2 sinon, quasi invisible). Au hover : opacity monte à 1 (emphasis).
-
-    const nodeColorMap = {};
-    sankeyData.nodes.forEach(n => {
-      if (n.itemStyle && n.itemStyle.color) nodeColorMap[n.name] = n.itemStyle.color;
-    });
-
-    function applyFactor(hex, factor) {
-      // Assombrit une couleur hex en multipliant chaque canal par factor (0=noir, 1=original).
-      if (!hex || hex.length < 7) return "rgba(80,80,80,1)";
-      const r = parseInt(hex.slice(1, 3), 16);
-      const g = parseInt(hex.slice(3, 5), 16);
-      const b = parseInt(hex.slice(5, 7), 16);
-      return `rgba(${Math.round(r*factor)},${Math.round(g*factor)},${Math.round(b*factor)},1)`;
-    }
-
-    // ── Position des labels par type de nœud ─────────────────────────────────
-    // Principe Finary : les labels apparaissent SUR les flux (courbes), pas en dehors du graphe.
-    //   income nodes  → label à DROITE de la barre  = à l'intérieur du flux income
-    //   expense nodes → label à GAUCHE de la barre  = à l'intérieur du flux expense
-    //   pool node     → label masqué (formatter retourne "")
-    // Avec left:0 et right:0 dans la série, les barres touchent les bords du conteneur,
-    // et les labels restent entièrement à l'intérieur du graphe.
-    const incomeNodes  = new Set();
-    const expenseNodes = new Set();
-    sankeyData.links.forEach(link => {
-      if (link.target === "__pool__") incomeNodes.add(link.source);
-      if (link.source === "__pool__") expenseNodes.add(link.target);
-    });
-
-    sankeyData.nodes = sankeyData.nodes.map(function(n) {
-      if (n.name === "__pool__") return n;
-      const pos = expenseNodes.has(n.name) ? "left" : "right";
-      return Object.assign({}, n, { label: { position: pos } });
-    });
-
-    sankeyData.links = sankeyData.links.map(function(link) {
-      const isToPool = link.target === "__pool__";
-      // Couleur catégorie : source pour income→pool, target pour pool→expense
-      const catColor = isToPool ? nodeColorMap[link.source] : nodeColorMap[link.target];
-      return Object.assign({}, link, {
-        lineStyle: {
-          opacity: 0.75,
-          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-            { offset: 0, color: applyFactor(catColor, 0.3) },
-            { offset: 1, color: applyFactor(catColor, 0.8)  },
-          ])
-        }
-      });
-    });
-
-    sankey.setOption({
-      backgroundColor: "transparent",
-      tooltip: {
-        trigger: "item",
-        backgroundColor: T["surface-hover"],
-        borderColor: T["edge"],
-        textStyle: { color: COLOR_TEXT_BASE, fontSize: 12, fontFamily: FONT },
-        formatter: function(params) {
-          if (params.dataType === "node") {
-            if (params.name === "__pool__") return "";
-            const val = Math.round(Math.abs(params.value)).toLocaleString("fr-CH", { maximumFractionDigits: 0 });
-            return `<b>${params.name}</b><br />${val} CHF`;
-          }
-          const val = params.value.toLocaleString("fr-CH", { maximumFractionDigits: 0 });
-          return `${params.data.source} → ${params.data.target}<br /><b>${val} CHF</b>`;
-        },
+    var sankeyData = JSON.parse(document.getElementById("sankey-data").textContent);
+    BricCharts.initSankey(sankeyEl, sankeyData, {
+      onNodeClick: function (node) {
+        if (node.slug) window.location.href = "/budget/categorie/" + node.slug + "/";
       },
-      series: [{
-        type: "sankey",
-        layout: "none",
-        orient: "horizontal",
-        nodeAlign: "justify",
-        // left/right/top/bottom DOIVENT être dans la série (ignorés au niveau racine pour Sankey).
-        // left=0, right=0 : barres income et expense calées sur les bords du conteneur.
-        // Les labels sont positionnés "inside" via les nœuds (incomeNodes→right, expenseNodes→left).
-        left: 0,
-        right: 0,
-        top: "2%",
-        bottom: "2%",
-        nodeWidth: 7,
-        nodeGap: 10,
-        emphasis: {
-          focus: "adjacency",
-          lineStyle: { opacity: 1 },
-        },
-        data: sankeyData.nodes,
-        links: sankeyData.links,
-        lineStyle: { curveness: 0.4 },
-        label: {
-          fontFamily: FONT,
-          fontSize: 10,
-          color: COLOR_TEXT_BASE,
-          formatter: function(params) {
-            if (params.name === "__pool__") return "";
-            const val = Math.round(Math.abs(params.value))
-              .toLocaleString("fr-FR")
-              .replace(/ /g, " ");  // espace fine insécable (cohérent avec |chf)
-            return `${params.name}  ${val} CHF`;
-          },
-        },
-        itemStyle: {
-          borderRadius: 2,
-          borderColor: T["surface-2"],
-          borderWidth: 2,
-        },
-      }],
     });
-
-    // Resize automatique quand la fenêtre change de taille
-    window.addEventListener("resize", () => sankey.resize());
   }
 
-  // ── Donut ───────────────────────────────────────────────────────────────────
-  // Principe :
-  //   1. type:"pie" avec radius intérieur = donut.
-  //   2. Le label centre est géré par l'option "graphic" (deux lignes de texte
-  //      superposées au centre du donut). ECharts n'a pas de "center label" natif
-  //      dans pie, donc on utilise graphic (une couche de dessin indépendante).
-  //   3. Les segments sans hover effect (silent:true sur les labels) pour un rendu
-  //      propre et minimal.
-
-  const donutEl = document.getElementById("donut-chart");
+  // Init Donut — même principe.
+  var donutEl = document.getElementById("donut-chart");
   if (donutEl) {
-    const d = JSON.parse(document.getElementById("donut-data").textContent);
-    const donut = echarts.init(donutEl, null, { renderer: "svg" });
-
-    // Formatage du montant pour le label centre (espace insécable comme |chf filter)
-    const totalFormatted = Math.round(d.total)
-      .toLocaleString("fr-FR")
-      .replace(/ /g, " ");  // espace insécable → espace fine insécable
-
-    donut.setOption({
-      backgroundColor: "transparent",
-      tooltip: {
-        trigger: "item",
-        backgroundColor: T["surface-hover"],
-        borderColor: T["edge"],
-        textStyle: { color: COLOR_TEXT_BASE, fontSize: 12, fontFamily: FONT },
-        formatter: function (params) {
-          const val = params.value.toLocaleString("fr-CH", { maximumFractionDigits: 0 });
-          return `${params.name}<br /><b>${val} CHF</b> (${params.percent}%)`;
-        },
+    var donutData = JSON.parse(document.getElementById("donut-data").textContent);
+    BricCharts.initDonut(donutEl, donutData, {
+      onSegmentClick: function (segment) {
+        if (segment.slug) window.location.href = "/budget/categorie/" + segment.slug + "/";
       },
-      // "graphic" : couche de dessin libre superposée au graphique.
-      // On l'utilise pour afficher le label + montant au centre du donut.
-      // "center" en x/y = position relative au conteneur (0.5 = 50%).
-      graphic: [
-        {
-          type: "text",
-          left: "center",
-          top: "38%",
-          style: {
-            text: d.label,
-            fill: COLOR_TEXT_MUTED,
-            fontSize: 10,
-            fontFamily: FONT,
-          },
-        },
-        {
-          type: "text",
-          left: "center",
-          top: "48%",
-          style: {
-            text: d.sign + totalFormatted + " CHF",
-            fill: COLOR_TEXT_BASE,
-            fontSize: 13,
-            fontWeight: "bold",
-            fontFamily: FONT,
-          },
-        },
-      ],
-      series: [{
-        type: "pie",
-        radius: ["55%", "78%"],   // anneau : intérieur 55%, extérieur 78% du conteneur
-        center: ["50%", "50%"],
-        avoidLabelOverlap: false,
-        label: { show: false },
-        labelLine: { show: false },
-        emphasis: {
-          scale: true,
-          scaleSize: 4,
-        },
-        data: d.segments,
-      }],
     });
-
-    window.addEventListener("resize", () => donut.resize());
   }
-})();
 </script>
 {% endblock %}

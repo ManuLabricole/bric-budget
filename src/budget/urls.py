@@ -71,4 +71,8 @@ urlpatterns = [
         views.budget_rule_create_submit,
         name="rule_create_submit",
     ),
+    # /budget/categorie/<slug>/ → page détail d'une catégorie (Sankey sous-catégories + transactions)
+    path(
+        "categorie/<slug:slug>/", views.budget_category_detail, name="category_detail"
+    ),
 ]
