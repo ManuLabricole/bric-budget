@@ -33,7 +33,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("", include("django.contrib.auth.urls")),
     path("synthese/", synthese, name="synthese"),
-    # Délégation des URLs de l'app transactions à transactions/urls.py
-    # Toutes les URLs de l'app sont préfixées par /transactions/
+    # URLs de l'app budget — vues + templates de l'interface Budget
+    # Toutes les URLs sont préfixées par /budget/
     path("budget/", include("budget.urls")),
 ]

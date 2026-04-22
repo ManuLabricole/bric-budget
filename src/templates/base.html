@@ -47,6 +47,17 @@
       }
         </script>
         {% comment %}
+        Design tokens globaux — SOURCE UNIQUE DE VÉRITÉ pour tous les scripts JS.
+        Principe : tailwind.config contient la palette. On expose les tokens en globaux JS
+        pour éviter de dupliquer les hex dans chaque template.
+        Utilisation : window.BRICBUDGET_TOKENS['gold'] → "#f2c086"
+        RÈGLE : Ne JAMAIS hardcoder couleur/police dans un script JS de template.
+        {% endcomment %}
+        <script>
+      window.BRICBUDGET_TOKENS = tailwind.config.theme.extend.colors;
+      window.BRICBUDGET_FONT   = tailwind.config.theme.extend.fontFamily.sans.join(", ");
+        </script>
+        {% comment %}
       BACKGROUND FINARY — 3 couches :
         1. Base noire (#07070f)
         2. Glow bleu top-left (surface-1)

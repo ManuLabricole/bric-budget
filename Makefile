@@ -112,7 +112,7 @@ run:
 
 test:
 	@printf "  🧪 $(CYAN)Lancement des tests...$(RESET)\n"
-	@poetry run pytest --tb=short -q
+	@poetry run pytest --color=yes 
 	@printf "  ✅ $(GREEN)Tests terminés$(RESET)\n"
 
 migrate:
@@ -169,6 +169,11 @@ dev-randomize:
 	@$(MANAGE) dev_randomize_categories $(if $(ALL),--all,)
 	@printf "  ✅ $(GREEN)Fait — recharge /budget/ pour voir les données$(RESET)\n"
 
+dev-seed-realistic:
+	@printf "  🌱 $(YELLOW)DEV — Seed réaliste 12 mois (Genève, ratio 1.30)...$(RESET)\n"
+	@$(MANAGE) dev_seed_realistic $(if $(FLUSH),--flush,) $(if $(MONTHS),--months=$(MONTHS),)
+	@printf "  ✅ $(GREEN)Fait — recharge /budget/ pour voir les données$(RESET)\n"
+
 update-bank-logos:
 	@printf "  🏦 $(YELLOW)Téléchargement des logos banques (Google Favicons)...$(RESET)\n"
 	@$(MANAGE) update_bank_logos $(if $(BANK),--bank=$(BANK),)
@@ -209,4 +214,4 @@ restore:
 	@printf "  ✅ $(GREEN)Restauration terminée$(RESET)\n"
 
 # =============================================================================
-.PHONY: help status up down logs run migrate makemigrations shell create-superuser seed reset-seed import-yuh import-ubs import-cic backup restore dev-randomize
+.PHONY: help status up down logs run migrate makemigrations shell create-superuser seed reset-seed import-yuh import-ubs import-cic backup restore dev-randomize dev-seed-realistic

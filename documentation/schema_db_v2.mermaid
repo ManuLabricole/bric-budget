@@ -177,10 +177,19 @@ erDiagram
     %% Transaction.objects.filter(category=c, date__year=y, date__month=m).aggregate(Sum('amount_chf'))
 
     %% ==========================================================================
+    %% PHASE 0A — SavingsAccount (implemented — CIC Livret A / LDDS)
+    %% ==========================================================================
+
+    SavingsAccount {
+        bigint account_id PK_FK
+        decimal interest_rate
+        string account_reference
+    }
+
+    %% ==========================================================================
     %% PHASE 4+ — Net worth (not yet implemented)
     %% ==========================================================================
 
-    %% SavingsAccount  { account_id PK_FK, interest_rate, legal_ceiling }
     %% PensionAccount  { account_id PK_FK, pension_type, management_fee }
 
     %% ==========================================================================
@@ -203,6 +212,7 @@ erDiagram
     %% Banks & Accounts
     Bank ||--o{ Account : "hosts"
     Account ||--o| CheckingAccount : "specialised as"
+    Account ||--o| SavingsAccount : "specialised as"
     CheckingAccount ||--o{ Card : "has"
     Account ||--o{ BalanceSnapshot : "balance history"
     Account ||--o{ ImportLog : "tracked by"

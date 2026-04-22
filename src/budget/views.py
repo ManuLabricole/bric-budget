@@ -353,28 +353,189 @@ def budget_index(request):
 
     # ── 7. Distribution (%) pour le donut ─────────────────────────────────────
     #
-    # On calcule la part de chaque catégorie de dépenses sur le total des sorties.
-    # abs() car total_expenses est négatif.
-    total_expenses_abs = abs(total_expenses)
-
+    # Le donut est synchronisé avec le KPI actif (active_tab) :
+    #   - "sorties"     → répartition des catégories de dépenses
+    #   - "entrees"     → répartition des catégories de revenus
+    #   - "recurrentes" → répartition des dépenses récurrentes
+    #
     # SVG donut math :
     #   Le cercle SVG a r=15.9 → circonférence ≈ 100 (pratique : 1 unité = 1%).
     #   Chaque segment = un <circle> avec :
     #     stroke-dasharray : "pct (100-pct)"  → trace pct% du cercle, masque le reste
     #     stroke-dashoffset : -offset_cumulé  → décale le début du segment
     #   On accumule l'offset au fil des catégories.
-    cumulative_pct = 0
-    for cat in expense_categories:
-        if total_expenses_abs > 0:
-            cat["pct"] = round(abs(cat["total"]) / total_expenses_abs * 100, 1)
-        else:
-            cat["pct"] = 0
-        # Valeurs précalculées pour éviter la logique dans le template
-        cat["dash_array"] = f"{cat['pct']} {100 - cat['pct']}"
-        cat["dash_offset"] = round(-cumulative_pct, 1)
-        cumulative_pct += cat["pct"]
+    #
+    # On définit une fonction locale pour ne pas répéter 3× le même bloc de calcul.
 
-    # ── 8. Période affichée dans la nav ───────────────────────────────────────
+    def _add_donut_math(categories, total_abs):
+        """Ajoute pct, dash_array, dash_offset sur chaque catégorie (mutation en place)."""
+        cumulative = 0
+        for cat in categories:
+            cat["pct"] = (
+                round(abs(cat["total"]) / total_abs * 100, 1) if total_abs > 0 else 0
+            )
+            cat["dash_array"] = f"{cat['pct']} {100 - cat['pct']}"
+            cat["dash_offset"] = round(-cumulative, 1)
+            cumulative += cat["pct"]
+
+    total_expenses_abs = abs(total_expenses)
+    total_recurring_abs = abs(total_recurring)
+
+    _add_donut_math(expense_categories, total_expenses_abs)
+    _add_donut_math(income_categories, total_income)  # total_income est déjà positif
+    _add_donut_math(recurring_categories, total_recurring_abs)
+
+    # Sélection du jeu de données donut selon l'onglet actif.
+    # donut_label  : texte affiché au centre du donut
+    # donut_total  : montant affiché au centre (toujours positif)
+    # donut_sign   : signe affiché devant le montant ("+" ou "−")
+    DONUT_CONFIG = {
+        "sorties": (expense_categories, total_expenses_abs, "Sorties", "−"),
+        "entrees": (income_categories, total_income, "Entrées", "+"),
+        "recurrentes": (recurring_categories, total_recurring_abs, "Récurrentes", "−"),
+    }
+    donut_categories, donut_total, donut_label, donut_sign = DONUT_CONFIG.get(
+        active_tab,
+        DONUT_CONFIG["sorties"],  # fallback si valeur invalide en session
+    )
+
+    # Disponible = ce qu'il reste après toutes les sorties (utilisé en section 8 et 11)
+    total_available = total_income + total_expenses  # total_expenses est négatif
+
+    # ── 8. Données JSON pour ECharts (Sankey + Donut) ────────────────────────
+    #
+    # On sérialise les données en JSON ici (Python) plutôt que dans le template
+    # pour garder toute la logique côté serveur. Le template ne fait que passer
+    # la chaîne JSON à ECharts via un attribut data-* ou un bloc <script>.
+    #
+    # --- Sankey ---
+    # Structure : income categories (gauche) → expense categories (droite) + Disponible.
+    # Chaque catégorie de revenu est reliée à chaque catégorie de dépense
+    # proportionnellement à la part de la dépense dans le total sorties.
+    # Exemple : si Revenus = 3000 CHF et Alimentation = 20% des sorties,
+    #           le lien Revenus → Alimentation a une valeur de 3000 × 0.20 = 600.
+    # Cela crée visuellement des "rivières" qui fusionnent au centre, style Finary.
+
+    # Structure Sankey style Finary : 3 colonnes avec nœud pool INVISIBLE au centre.
+    #
+    # Pourquoi invisible ? ECharts Sankey supporte la propriété `depth` sur chaque
+    # nœud — elle force sa colonne horizontale. On place :
+    #   depth=0 → income (gauche)
+    #   depth=1 → pool invisible (centre) — reçoit tous les revenus, redistribue
+    #   depth=2 → expense + disponible (droite)
+    #
+    # Le nœud pool est coloré comme le fond de la carte (#1e1e2a = surface-3)
+    # pour se fondre dans le background. Seuls les flux (streams) sont visibles.
+    # Résultat visuel : les revenus "convergent" au centre puis "s'écoulent" vers
+    # les dépenses — exactement l'effet Finary.
+
+    POOL = "__pool__"
+
+    sankey_nodes = []
+    sankey_links = []
+
+    for cat in income_categories:
+        sankey_nodes.append(
+            {
+                "name": cat["category__name"],
+                "itemStyle": {"color": cat["category__colour_hex"] or "#4ade80"},
+            }
+        )
+
+    sankey_nodes.append(
+        {
+            "name": POOL,
+            "itemStyle": {"color": "#f2c086", "borderWidth": 0},
+            "label": {"show": False},
+        }
+    )
+
+    for cat in expense_categories:
+        sankey_nodes.append(
+            {
+                "name": cat["category__name"],
+                "itemStyle": {"color": cat["category__colour_hex"] or "#2d3033"},
+            }
+        )
+
+    # Gradient d'opacité par lien — même couleur catégorie du début à la fin,
+    # mais avec une variation d'opacité : sombre aux bords, lumineux au centre.
+    #
+    # ECharts accepte un objet LinearGradient dans lineStyle.color :
+    #   {"type": "linear", "x": 0, "y": 0, "x2": 1, "y2": 0, "colorStops": [...]}
+    # x=0 → bord gauche du flux, x=1 → bord droit.
+    #
+    # income → pool (gauche → centre) : opacité 0.15 → 0.55
+    # pool   → expense (centre → droite) : opacité 0.55 → 0.15
+    # Résultat : les flux s'éclaircissent en approchant du pool doré,
+    # s'assombrissent en s'en éloignant — sans jamais changer de couleur.
+
+    def _rgba(hex_color: str, alpha: float) -> str:
+        """Convertit #rrggbb en rgba(r,g,b,alpha) pour ECharts colorStops."""
+        h = hex_color.lstrip("#")
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+        return f"rgba({r},{g},{b},{alpha})"
+
+    def _gradient(hex_color: str, alpha_start: float, alpha_end: float) -> dict:
+        """LinearGradient horizontal avec variation d'opacité uniquement."""
+        color = hex_color or "#4ade80"
+        return {
+            "type": "linear",
+            "x": 0,
+            "y": 0,
+            "x2": 1,
+            "y2": 0,
+            "colorStops": [
+                {"offset": 0, "color": _rgba(color, alpha_start)},
+                {"offset": 1, "color": _rgba(color, alpha_end)},
+            ],
+            "global": False,
+        }
+
+    if income_categories and expense_categories:
+        for inc in income_categories:
+            color = inc["category__colour_hex"] or "#4ade80"
+            sankey_links.append(
+                {
+                    "source": inc["category__name"],
+                    "target": POOL,
+                    "value": round(float(inc["total"]), 2),
+                    "lineStyle": {"color": _gradient(color, 0.15, 0.55)},
+                }
+            )
+        for exp in expense_categories:
+            color = exp["category__colour_hex"] or "#888888"
+            sankey_links.append(
+                {
+                    "source": POOL,
+                    "target": exp["category__name"],
+                    "value": round(float(abs(exp["total"])), 2),
+                    "lineStyle": {"color": _gradient(color, 0.55, 0.15)},
+                }
+            )
+
+    # On passe des dicts Python (pas des strings JSON) au contexte.
+    # json_script dans le template se charge de la sérialisation JSON → une seule fois.
+    # Si on faisait json.dumps() ici ET json_script dans le template, on aurait
+    # un double-encodage : le JS recevrait une string au lieu d'un objet.
+    sankey_data = {"nodes": sankey_nodes, "links": sankey_links}
+
+    # --- Donut ECharts ---
+    donut_data = {
+        "segments": [
+            {
+                "name": cat["category__name"],
+                "value": round(float(abs(cat["total"])), 2),
+                "itemStyle": {"color": cat["category__colour_hex"] or "#2d3033"},
+            }
+            for cat in donut_categories
+        ],
+        "label": donut_label,
+        "sign": donut_sign,
+        "total": round(float(donut_total), 2),
+    }
+
+    # ── 9. Période affichée dans la nav ───────────────────────────────────────
     # Format : "1er avril 2026 — 30 avril 2026"
     # On formate en Python (pas en template) pour garder le mois en français.
     # Seul le 1er du mois a un ordinal en français (1er vs 2, 3, 4...).
@@ -414,8 +575,7 @@ def budget_index(request):
     )
 
     # ── 11. Contexte → template ───────────────────────────────────────────────
-    # Disponible = ce qu'il reste après toutes les sorties
-    total_available = total_income + total_expenses  # expenses est négatif → addition
+    # total_available calculé en section 8 (avant le Sankey JSON)
 
     context = {
         # Période
@@ -436,7 +596,15 @@ def budget_index(request):
         # Catégories — active_categories = la liste à afficher selon l'onglet
         "active_categories": active_categories,
         "tab_label_suffix": tab_label_suffix,
-        # Toujours passer expense_categories au donut (la distribution reste en sorties)
+        # Donut — synchronisé avec l'onglet actif (sorties / entrées / récurrentes)
+        "donut_categories": donut_categories,
+        "donut_total": donut_total,
+        "donut_label": donut_label,
+        "donut_sign": donut_sign,
+        # Dicts Python pour ECharts — json_script dans le template fait la sérialisation
+        "sankey_data": sankey_data,
+        "donut_data": donut_data,
+        # Toujours passer expense_categories pour les calculs de % déjà présents ailleurs
         "expense_categories": expense_categories,
     }
 

@@ -1,7 +1,7 @@
 {% extends "base_app.html" %}
 {% load budget_filters static %}
 {% comment %}
-transactions/list.html — Page Budget (/budget/)
+budget/index.html — Page Budget (/budget/)
 
 Utilise les deux blocs définis dans base_app.html :
   panel_left  → nav période + Cashflow (sankey + KPIs + liste catégories)
@@ -73,10 +73,14 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                     </button>
                 </div>
             </div>
-            {# ── Graphique Sankey — placeholder ───────────────────────────────────── #}
-            <div class="bg-surface-hover/40 rounded-xl h-44 flex items-center justify-center mb-2">
-                <span class="text-xs text-text-disabled font-mono">Sankey — Phase 2A</span>
-            </div>
+            {# ── Graphique Sankey — ECharts ────────────────────────────────────────── #}
+            {# json_script : tag Django officiel qui émet un <script type="application/json"> #}
+            {# safe vis-à-vis du XSS (échappement automatique) et lisible par JSON.parse().   #}
+            {{ sankey_data|json_script:"sankey-data" }}
+            <div id="sankey-chart"
+                 class="w-full mb-2"
+                 style="height: 38vh;
+                        min-height: 180px"></div>
             {# ── KPIs — tabs cliquables ───────────────────────────────────────────── #}
             {# Pattern actif  : texte gold + underline gold (-mb-px déborde sur le border-b du parent) #}
             {# Pattern inactif: texte blanc + hover gold (via group + group-hover sur le label)         #}
@@ -137,10 +141,10 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                         <span class="text-base font-bold text-expense">−{{ total_available|chf }} CHF</span>
                     {% endif %}
                 </div>
-                {# Récurrentes — désactivé, badge "Bientôt" #}
-                {# div au lieu de <a> : non cliquable, cursor-not-allowed, opacité réduite #}
-                <div class="flex flex-col items-start gap-1 pb-3 pr-8 cursor-not-allowed opacity-50 select-none">
-                    <span class="flex items-center gap-1.5 text-[9px] font-medium uppercase tracking-wide text-text-muted">
+                {# Récurrentes — cliquable, même pattern que Entrées/Sorties #}
+                <a href="{% url 'budget:set_tab' 'recurrentes' %}"
+                   class="group flex flex-col items-start gap-1 pb-3 pr-8 cursor-pointer transition-colors {% if active_tab == 'recurrentes' %}text-gold border-b border-gold -mb-px{% else %}text-text-base hover:text-gold{% endif %}">
+                    <span class="flex items-center gap-1.5 text-[9px] font-medium uppercase tracking-wide transition-colors {% if active_tab == 'recurrentes' %}text-gold{% else %}text-text-muted group-hover:text-gold{% endif %}">
                         <svg class="w-3 h-3"
                              fill="none"
                              viewBox="0 0 24 24"
@@ -149,10 +153,9 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                             <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
                         </svg>
                         Récurrentes
-                        {% include "components/badges/soon.html" %}
                     </span>
                     <span class="text-base font-bold">−{{ total_recurring|chf }} CHF</span>
-                </div>
+                </a>
                 {# Boutons actions — alignés à droite, même ligne que les KPIs #}
                 <div class="ml-auto flex items-center gap-1.5 pb-3">
                     {# Tout voir — HTMX : charge la liste transactions dans #panel-content #}
@@ -269,44 +272,255 @@ Données hardcodées — prochaine étape : brancher la vue Django.
    PANEL DROIT — Distribution (sans border)
    ══════════════════════════════════════════════════════════════════════════════ #}
 {% block panel_right %}
-    <aside class="flex-[1] min-w-0">
-        <div class="bg-surface-3 rounded-xl p-5 flex flex-col gap-5">
-            <h2 class="text-sm font-semibold text-text-base flex-shrink-0">Distribution</h2>
-            {# Donut — anneau SVG, un <circle> par catégorie de dépenses              #}
-            {# Math SVG :                                                              #}
-            {#   r=15.9 → circonférence ≈ 100 (1 unité = 1%)                          #}
-            {#   stroke-dasharray="pct (100-pct)" → trace pct% du cercle              #}
-            {#   stroke-dashoffset="-offset_cumulé" → positionne le début du segment  #}
-            {#   -rotate-90 sur le SVG : départ à midi (en haut) au lieu de 3h        #}
-            {#   Les valeurs dash_array et dash_offset sont calculées dans la vue.     #}
-            <div class="relative w-full aspect-square max-w-[220px] mx-auto flex-shrink-0">
-                <svg viewBox="0 0 36 36" class="w-full h-full -rotate-90">
-                    {# Fond gris : anneau complet visible quand les segments ne couvrent pas 100% #}
-                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="#2a2a2e" stroke-width="2.5" />
-                    {% for cat in expense_categories %}
-                        <circle cx="18" cy="18" r="15.9" fill="none" stroke="{{ cat.category__colour_hex|default:'#2d3033' }}" stroke-width="2.5" stroke-dasharray="{{ cat.dash_array }}" stroke-dashoffset="{{ cat.dash_offset }}" />
-                    {% endfor %}
-                </svg>
-                <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
-                    <span class="text-[10px] text-text-muted">Sorties</span>
-                    <span class="text-sm font-bold text-text-base mt-0.5">−{{ total_expenses_abs|chf }} CHF</span>
-                </div>
-            </div>
-            {# Légende — même ordre que les segments du donut #}
-            {% if expense_categories %}
-                <div class="flex flex-col gap-2">
-                    {% for cat in expense_categories %}
-                        <div class="flex items-center gap-2">
-                            <div class="w-2 h-2 rounded-full flex-shrink-0"
-                                 style="background-color: {{ cat.category__colour_hex|default:'#2d3033' }}"></div>
-                            <span class="text-xs text-text-muted flex-1 truncate">{{ cat.category__name }}</span>
-                            <span class="text-xs text-text-base font-medium tabular-nums">{{ cat.pct }}%</span>
-                        </div>
-                    {% endfor %}
-                </div>
-            {% else %}
-                <p class="text-xs text-text-disabled text-center">Aucune donnée</p>
-            {% endif %}
-        </div>
-    </aside>
+<aside class="flex-[1] min-w-0">
+<div class="bg-surface-3 rounded-xl p-5 flex flex-col gap-5">
+<h2 class="text-sm font-semibold text-text-base flex-shrink-0">Distribution</h2>
+{# Donut ECharts — synchronisé avec le KPI actif                           #}
+{{ donut_data|json_script:"donut-data" }}
+<div id="donut-chart" class="w-full flex-shrink-0" style="height: 220px;"></div>
+{# Légende textuelle sous le donut — même ordre que les segments #}
+{% if donut_categories %}
+<div class="flex flex-col gap-2">
+{% for cat in donut_categories %}
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full flex-shrink-0" style="background-color: {{ cat.category__colour_hex|default:'#2d3033' }}">
+</div>
+<span class="text-xs text-text-muted flex-1 truncate">{{ cat.category__name }}</span>
+<span class="text-xs text-text-base font-medium tabular-nums">{{ cat.pct }}%</span>
+</div>
+{% endfor %}
+</div>
+{% else %}
+<p class="text-xs text-text-disabled text-center">Aucune donnée</p>
+{% endif %}
+</div>
+</aside>
+{% endblock %}
+{% block extra_js %}
+{# ── ECharts — chargé uniquement sur la page Budget ──────────────────────────────── #}
+{# On charge ECharts depuis le CDN jsDelivr (rapide, HTTPS, pas de tracking).        #}
+{# Le script d'init est inline car il est spécifique à cette page et court (~80 lg). #}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<script>
+(function () {
+  // ── Palette et typo — lues depuis window.BRICBUDGET_TOKENS (base.html) ──────
+  // ⛔ Règle : pas de hex hardcodé ici. La source de vérité est tailwind.config
+  //    dans base.html. On lit les tokens via window.BRICBUDGET_TOKENS.
+  const T    = window.BRICBUDGET_TOKENS;   // alias court
+  const FONT = window.BRICBUDGET_FONT;
+  const COLOR_TEXT_MUTED  = T["text-muted"];
+  const COLOR_TEXT_BASE   = T["text-base"];
+  const COLOR_SURFACE     = T["surface-2"];
+  const COLOR_GOLD        = T["gold"];
+
+  // ── Sankey ──────────────────────────────────────────────────────────────────
+  // Principe :
+  //   1. On lit les données JSON depuis l'attribut data-sankey du div.
+  //      → Pas de variable globale : chaque chart est autonome.
+  //   2. ECharts dessine les nœuds (catégories) et les liens (flux financiers).
+  //   3. lineStyle.color "gradient" = les flux prennent la couleur source → cible.
+  //      C'est ce qui donne l'effet Finary (dégradé de couleur sur les rivières).
+  //   4. emphasis.focus "adjacency" = au hover, les liens non-connectés s'estompent.
+
+  const sankeyEl = document.getElementById("sankey-chart");
+  if (sankeyEl) {
+    // json_script émet un <script id="sankey-data" type="application/json">.
+    // .textContent contient le JSON brut — pas d'encodage HTML à gérer.
+    const sankeyData = JSON.parse(document.getElementById("sankey-data").textContent);
+    const sankey = echarts.init(sankeyEl, null, { renderer: "svg" });
+
+    // ── Gradient par lien — toujours visible, sombre(0.25) → lumineux(1.0) G→D ──
+    // Les deux types de liens (income→pool, pool→expense) ont le même sens de gradient :
+    // sombre à gauche, pleinement lumineux à droite. opacity:0.75 par défaut (ECharts
+    // applique 0.2 sinon, quasi invisible). Au hover : opacity monte à 1 (emphasis).
+
+    const nodeColorMap = {};
+    sankeyData.nodes.forEach(n => {
+      if (n.itemStyle && n.itemStyle.color) nodeColorMap[n.name] = n.itemStyle.color;
+    });
+
+    function applyFactor(hex, factor) {
+      // Assombrit une couleur hex en multipliant chaque canal par factor (0=noir, 1=original).
+      if (!hex || hex.length < 7) return "rgba(80,80,80,1)";
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      return `rgba(${Math.round(r*factor)},${Math.round(g*factor)},${Math.round(b*factor)},1)`;
+    }
+
+    // ── Position des labels par type de nœud ─────────────────────────────────
+    // Principe Finary : les labels apparaissent SUR les flux (courbes), pas en dehors du graphe.
+    //   income nodes  → label à DROITE de la barre  = à l'intérieur du flux income
+    //   expense nodes → label à GAUCHE de la barre  = à l'intérieur du flux expense
+    //   pool node     → label masqué (formatter retourne "")
+    // Avec left:0 et right:0 dans la série, les barres touchent les bords du conteneur,
+    // et les labels restent entièrement à l'intérieur du graphe.
+    const incomeNodes  = new Set();
+    const expenseNodes = new Set();
+    sankeyData.links.forEach(link => {
+      if (link.target === "__pool__") incomeNodes.add(link.source);
+      if (link.source === "__pool__") expenseNodes.add(link.target);
+    });
+
+    sankeyData.nodes = sankeyData.nodes.map(function(n) {
+      if (n.name === "__pool__") return n;
+      const pos = expenseNodes.has(n.name) ? "left" : "right";
+      return Object.assign({}, n, { label: { position: pos } });
+    });
+
+    sankeyData.links = sankeyData.links.map(function(link) {
+      const isToPool = link.target === "__pool__";
+      // Couleur catégorie : source pour income→pool, target pour pool→expense
+      const catColor = isToPool ? nodeColorMap[link.source] : nodeColorMap[link.target];
+      return Object.assign({}, link, {
+        lineStyle: {
+          opacity: 0.75,
+          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+            { offset: 0, color: applyFactor(catColor, 0.3) },
+            { offset: 1, color: applyFactor(catColor, 0.8)  },
+          ])
+        }
+      });
+    });
+
+    sankey.setOption({
+      backgroundColor: "transparent",
+      tooltip: {
+        trigger: "item",
+        backgroundColor: T["surface-hover"],
+        borderColor: T["edge"],
+        textStyle: { color: COLOR_TEXT_BASE, fontSize: 12, fontFamily: FONT },
+        formatter: function(params) {
+          if (params.dataType === "node") {
+            if (params.name === "__pool__") return "";
+            const val = Math.round(Math.abs(params.value)).toLocaleString("fr-CH", { maximumFractionDigits: 0 });
+            return `<b>${params.name}</b><br />${val} CHF`;
+          }
+          const val = params.value.toLocaleString("fr-CH", { maximumFractionDigits: 0 });
+          return `${params.data.source} → ${params.data.target}<br /><b>${val} CHF</b>`;
+        },
+      },
+      series: [{
+        type: "sankey",
+        layout: "none",
+        orient: "horizontal",
+        nodeAlign: "justify",
+        // left/right/top/bottom DOIVENT être dans la série (ignorés au niveau racine pour Sankey).
+        // left=0, right=0 : barres income et expense calées sur les bords du conteneur.
+        // Les labels sont positionnés "inside" via les nœuds (incomeNodes→right, expenseNodes→left).
+        left: 0,
+        right: 0,
+        top: "2%",
+        bottom: "2%",
+        nodeWidth: 7,
+        nodeGap: 10,
+        emphasis: {
+          focus: "adjacency",
+          lineStyle: { opacity: 1 },
+        },
+        data: sankeyData.nodes,
+        links: sankeyData.links,
+        lineStyle: { curveness: 0.4 },
+        label: {
+          fontFamily: FONT,
+          fontSize: 10,
+          color: COLOR_TEXT_BASE,
+          formatter: function(params) {
+            if (params.name === "__pool__") return "";
+            const val = Math.round(Math.abs(params.value))
+              .toLocaleString("fr-FR")
+              .replace(/ /g, " ");  // espace fine insécable (cohérent avec |chf)
+            return `${params.name}  ${val} CHF`;
+          },
+        },
+        itemStyle: {
+          borderRadius: 2,
+          borderColor: T["surface-2"],
+          borderWidth: 2,
+        },
+      }],
+    });
+
+    // Resize automatique quand la fenêtre change de taille
+    window.addEventListener("resize", () => sankey.resize());
+  }
+
+  // ── Donut ───────────────────────────────────────────────────────────────────
+  // Principe :
+  //   1. type:"pie" avec radius intérieur = donut.
+  //   2. Le label centre est géré par l'option "graphic" (deux lignes de texte
+  //      superposées au centre du donut). ECharts n'a pas de "center label" natif
+  //      dans pie, donc on utilise graphic (une couche de dessin indépendante).
+  //   3. Les segments sans hover effect (silent:true sur les labels) pour un rendu
+  //      propre et minimal.
+
+  const donutEl = document.getElementById("donut-chart");
+  if (donutEl) {
+    const d = JSON.parse(document.getElementById("donut-data").textContent);
+    const donut = echarts.init(donutEl, null, { renderer: "svg" });
+
+    // Formatage du montant pour le label centre (espace insécable comme |chf filter)
+    const totalFormatted = Math.round(d.total)
+      .toLocaleString("fr-FR")
+      .replace(/ /g, " ");  // espace insécable → espace fine insécable
+
+    donut.setOption({
+      backgroundColor: "transparent",
+      tooltip: {
+        trigger: "item",
+        backgroundColor: T["surface-hover"],
+        borderColor: T["edge"],
+        textStyle: { color: COLOR_TEXT_BASE, fontSize: 12, fontFamily: FONT },
+        formatter: function (params) {
+          const val = params.value.toLocaleString("fr-CH", { maximumFractionDigits: 0 });
+          return `${params.name}<br /><b>${val} CHF</b> (${params.percent}%)`;
+        },
+      },
+      // "graphic" : couche de dessin libre superposée au graphique.
+      // On l'utilise pour afficher le label + montant au centre du donut.
+      // "center" en x/y = position relative au conteneur (0.5 = 50%).
+      graphic: [
+        {
+          type: "text",
+          left: "center",
+          top: "38%",
+          style: {
+            text: d.label,
+            fill: COLOR_TEXT_MUTED,
+            fontSize: 10,
+            fontFamily: FONT,
+          },
+        },
+        {
+          type: "text",
+          left: "center",
+          top: "48%",
+          style: {
+            text: d.sign + totalFormatted + " CHF",
+            fill: COLOR_TEXT_BASE,
+            fontSize: 13,
+            fontWeight: "bold",
+            fontFamily: FONT,
+          },
+        },
+      ],
+      series: [{
+        type: "pie",
+        radius: ["55%", "78%"],   // anneau : intérieur 55%, extérieur 78% du conteneur
+        center: ["50%", "50%"],
+        avoidLabelOverlap: false,
+        label: { show: false },
+        labelLine: { show: false },
+        emphasis: {
+          scale: true,
+          scaleSize: 4,
+        },
+        data: d.segments,
+      }],
+    });
+
+    window.addEventListener("resize", () => donut.resize());
+  }
+})();
+</script>
 {% endblock %}
