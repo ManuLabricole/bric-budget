@@ -110,6 +110,11 @@ run:
 	@printf "  $(DIM)─────────────────────────────────────────$(RESET)\n\n"
 	@$(MANAGE) runserver
 
+test:
+	@printf "  🧪 $(CYAN)Lancement des tests...$(RESET)\n"
+	@poetry run pytest --tb=short -q
+	@printf "  ✅ $(GREEN)Tests terminés$(RESET)\n"
+
 migrate:
 	@printf "  🔄 $(CYAN)Application des migrations...$(RESET)\n"
 	@$(MANAGE) migrate
