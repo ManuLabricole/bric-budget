@@ -23,7 +23,7 @@ Structure :
 {% endcomment %}
 {% comment %} ── Header ── {% endcomment %}
 <div class="px-4 pt-2 pb-3 flex items-center gap-3 flex-shrink-0">
-    <button hx-get="{% url 'transactions:panel_transactions' %}"
+    <button hx-get="{% url 'budget:panel_transactions' %}"
             hx-target="#panel-content"
             hx-swap="innerHTML"
             class="p-1.5 rounded-lg text-text-muted hover:text-text-base hover:bg-surface-hover transition-colors flex-shrink-0"
@@ -100,7 +100,7 @@ Les transactions "manual" sont exclues du count (voir budget_rule_create_submit)
 </div>
 {% comment %} ── Bouton retour liste ── {% endcomment %}
 <div class="px-4">
-    <button hx-get="{% url 'transactions:panel_transactions' %}"
+    <button hx-get="{% url 'budget:panel_transactions' %}"
             hx-target="#panel-content"
             hx-swap="innerHTML"
             class="w-full border border-edge hover:bg-surface-hover text-text-secondary text-sm font-medium rounded-xl px-4 py-2.5 transition-colors">

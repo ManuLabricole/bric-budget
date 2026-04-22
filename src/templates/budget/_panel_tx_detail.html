@@ -26,7 +26,7 @@ Structure :
     Bouton ← retour vers la liste des transactions (état A).
     Même pattern que dans _panel_category_picker.html.
     {% endcomment %}
-    <button hx-get="{% url 'transactions:panel_transactions' %}"
+    <button hx-get="{% url 'budget:panel_transactions' %}"
             hx-target="#panel-content"
             hx-swap="innerHTML"
             class="p-1.5 rounded-lg text-text-muted hover:text-text-base hover:bg-surface-hover transition-colors flex-shrink-0"
@@ -71,7 +71,7 @@ Structure :
 Clic → charge _panel_category_picker.html dans #panel-content.
 Pas de fond de fond — la row se distingue via le hover uniquement.
 {% endcomment %}
-<button hx-get="{% url 'transactions:panel_category_picker' %}?tx_id={{ tx.id }}"
+<button hx-get="{% url 'budget:panel_category_picker' %}?tx_id={{ tx.id }}"
         hx-target="#panel-content"
         hx-swap="innerHTML"
         class="mx-4 mb-4 w-[calc(100%-2rem)] flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-hover transition-colors flex-shrink-0 text-left">
@@ -190,7 +190,7 @@ Anatomie du toggle :
 <div class="px-5 space-y-4 flex-shrink-0">
     <div class="flex items-center justify-between gap-3">
         <span class="text-sm text-text-secondary">Inclure dans l'analyse budgétaire</span>
-        <form hx-post="{% url 'transactions:toggle_ignore' tx.id %}"
+        <form hx-post="{% url 'budget:toggle_ignore' tx.id %}"
               hx-target="#panel-content"
               hx-swap="innerHTML">
             <input type="hidden" name="source" value="detail">
@@ -202,7 +202,7 @@ Anatomie du toggle :
     </div>
     <div class="flex items-center justify-between gap-3">
         <span class="text-sm text-text-secondary">Pointer la transaction</span>
-        <form hx-post="{% url 'transactions:toggle_reconcile' tx.id %}"
+        <form hx-post="{% url 'budget:toggle_reconcile' tx.id %}"
               hx-target="#panel-content"
               hx-swap="innerHTML">
             <input type="hidden" name="source" value="detail">

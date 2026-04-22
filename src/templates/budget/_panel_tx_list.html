@@ -13,10 +13,10 @@ Données :
 <style>#panel-content::-webkit-scrollbar { display: none; }</style>
 {% comment %} Barre période — composant réutilisable (mode HTMX) {% endcomment %}
 <div class="px-4 py-3 flex-shrink-0 border-b border-edge">
-    {% include "components/period/period_nav.html" with period_mode=period_mode period_display=period_label can_go_next=can_go_next nav_url_name="transactions:panel_navigate" htmx_target="#panel-content" %}
+    {% include "components/period/period_nav.html" with period_mode=period_mode period_display=period_label can_go_next=can_go_next nav_url_name="budget:panel_navigate" htmx_target="#panel-content" %}
 </div>
 {% comment %} Barre recherche + filtres {% endcomment %}
-{% url 'transactions:panel_transactions' as panel_search_url %}
+{% url 'budget:panel_transactions' as panel_search_url %}
 <div class="px-4 pt-3 pb-2 flex items-center gap-2 flex-shrink-0 border-b border-edge">
     {% include "components/search/search_bar.html" with hx_url=panel_search_url hx_target="#tx-results" hx_select="#tx-results" placeholder="Chercher une transaction" width="w-52" %}
     <button class="ml-auto flex items-center gap-1.5 pl-3 pr-2.5 py-1.5 text-[11px] font-medium text-text-muted bg-surface-hover rounded-full hover:text-text-base hover:bg-edge transition-colors flex-shrink-0 whitespace-nowrap">
@@ -64,7 +64,7 @@ Données :
                 aussi quand il est retourné seul par budget_toggle_ignore()
                 (dans ce cas, bank_icon_url est passé directement dans le contexte).
                 {% endcomment %}
-                {% include "transactions/_panel_tx_row.html" with bank_icon_url=tx.bank_icon_url %}
+                {% include "budget/_panel_tx_row.html" with bank_icon_url=tx.bank_icon_url %}
             {% endfor %}
         </div>
     {% else %}

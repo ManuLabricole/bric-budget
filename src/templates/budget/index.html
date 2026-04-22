@@ -17,7 +17,7 @@ Données hardcodées — prochaine étape : brancher la vue Django.
     <div class="bg-surface-3 rounded-xl">
         <div class="flex flex-col gap-0 p-5">
             {# ── Navigation période ───────────────────────────────────────────────── #}
-            {% include "components/period/period_nav.html" with period_mode=period_mode period_display=period_display can_go_next=can_go_next nav_url_name="transactions:set_period" %}
+            {% include "components/period/period_nav.html" with period_mode=period_mode period_display=period_display can_go_next=can_go_next nav_url_name="budget:set_period" %}
             <div class="border-t border-edge my-3"></div>
             {# ── Header Cashflow + contrôles ──────────────────────────────────────── #}
             <div class="flex items-center justify-between pb-2">
@@ -90,7 +90,7 @@ Données hardcodées — prochaine étape : brancher la vue Django.
         - -mb-px  : le border-b déborde d'1px sur le border-b du parent pour se superposer proprement
                 {% endcomment %}
                 {# Entrées #}
-                <a href="{% url 'transactions:set_tab' 'entrees' %}"
+                <a href="{% url 'budget:set_tab' 'entrees' %}"
                    class="group flex flex-col items-start gap-1 pb-3 pr-8 cursor-pointer transition-colors {% if active_tab == 'entrees' %}text-gold border-b border-gold -mb-px{% else %}text-text-base hover:text-gold{% endif %}">
                     <span class="flex items-center gap-1.5 text-[9px] font-medium uppercase tracking-wide transition-colors {% if active_tab == 'entrees' %}text-gold{% else %}text-text-muted group-hover:text-gold{% endif %}">
                         <svg class="w-3 h-3"
@@ -105,7 +105,7 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                     <span class="text-base font-bold">+{{ total_income|chf }} CHF</span>
                 </a>
                 {# Sorties #}
-                <a href="{% url 'transactions:set_tab' 'sorties' %}"
+                <a href="{% url 'budget:set_tab' 'sorties' %}"
                    class="group flex flex-col items-start gap-1 pb-3 pr-8 cursor-pointer transition-colors {% if active_tab == 'sorties' %}text-gold border-b border-gold -mb-px{% else %}text-text-base hover:text-gold{% endif %}">
                     <span class="flex items-center gap-1.5 text-[9px] font-medium uppercase tracking-wide transition-colors {% if active_tab == 'sorties' %}text-gold{% else %}text-text-muted group-hover:text-gold{% endif %}">
                         <svg class="w-3 h-3"
@@ -160,7 +160,7 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                     {# hx-target   : injecte dans #panel-content (défini dans right_panel.html) #}
                     {# hx-swap     : remplace le contenu intérieur (pas l'élément lui-même) #}
                     {# hx-on::after-request : ouvre le panneau APRÈS que le contenu est chargé #}
-                    <button hx-get="{% url 'transactions:panel_transactions' %}"
+                    <button hx-get="{% url 'budget:panel_transactions' %}"
                             hx-target="#panel-content"
                             hx-swap="innerHTML"
                             hx-on::after-request="openPanel()"

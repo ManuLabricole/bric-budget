@@ -35,5 +35,5 @@ urlpatterns = [
     path("synthese/", synthese, name="synthese"),
     # Délégation des URLs de l'app transactions à transactions/urls.py
     # Toutes les URLs de l'app sont préfixées par /transactions/
-    path("budget/", include("transactions.urls")),
+    path("budget/", include("budget.urls")),
 ]

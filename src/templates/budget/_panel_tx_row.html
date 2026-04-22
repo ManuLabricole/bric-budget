@@ -27,7 +27,7 @@ Rendu d'une transaction ignorée (is_ignored=True) :
     flex-1 + min-w-0 : prend tout l'espace disponible sans déborder.
     {% endcomment %}
     <div class="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
-         hx-get="{% url 'transactions:panel_tx_detail' %}?tx_id={{ tx.id }}"
+         hx-get="{% url 'budget:panel_tx_detail' %}?tx_id={{ tx.id }}"
          hx-target="#panel-content"
          hx-swap="innerHTML">
         {% comment %}
@@ -99,7 +99,7 @@ Rendu d'une transaction ignorée (is_ignored=True) :
         hx-swap  → outerHTML : remplace l'élément entier pour que les nouvelles
                    classes conditionnelles (opacity-40, line-through) soient appliquées.
         {% endcomment %}
-        <button hx-post="{% url 'transactions:toggle_ignore' tx.id %}"
+        <button hx-post="{% url 'budget:toggle_ignore' tx.id %}"
                 hx-target="#tx-{{ tx.id }}"
                 hx-swap="outerHTML"
                 title="{% if tx.is_ignored %}Réactiver la transaction{% else %}Ignorer la transaction{% endif %}"
@@ -133,7 +133,7 @@ Rendu d'une transaction ignorée (is_ignored=True) :
         Même pattern que le bouton ignorer : hx-swap="outerHTML" sur #tx-id
         pour que le nouvel état (badge vert / carré vide) soit bien rendu.
         {% endcomment %}
-        <button hx-post="{% url 'transactions:toggle_reconcile' tx.id %}"
+        <button hx-post="{% url 'budget:toggle_reconcile' tx.id %}"
                 hx-target="#tx-{{ tx.id }}"
                 hx-swap="outerHTML"
                 title="{% if tx.is_reconciled %}Dépointée{% else %}Pointer la transaction{% endif %}"

@@ -63,6 +63,7 @@ INSTALLED_APPS = [
     "users",
     "accounts",
     "transactions",
+    "budget",
 ]
 
 # MIDDLEWARE: a stack of functions that wrap every request/response.

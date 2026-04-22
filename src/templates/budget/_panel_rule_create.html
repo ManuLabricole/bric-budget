@@ -26,7 +26,7 @@ Structure :
 {% endcomment %}
 {% comment %} ── Header ── {% endcomment %}
 <div class="px-4 pt-2 pb-3 flex items-center gap-3 flex-shrink-0">
-    <button hx-get="{% url 'transactions:panel_transactions' %}"
+    <button hx-get="{% url 'budget:panel_transactions' %}"
             hx-target="#panel-content"
             hx-swap="innerHTML"
             class="p-1.5 rounded-lg text-text-muted hover:text-text-base hover:bg-surface-hover transition-colors flex-shrink-0"
@@ -94,7 +94,7 @@ Le chip pré-sélectionné par défaut = le keyword suggéré par la vue.
     {% if custom_cats %}
         <p class="px-2 pt-1 pb-1.5 text-[10px] font-semibold text-text-disabled uppercase tracking-wider">Mes catégories</p>
         {% for cat in custom_cats %}
-            {% include "transactions/_rule_cat_picker_row.html" %}
+            {% include "budget/_rule_cat_picker_row.html" %}
         {% endfor %}
         <div class="my-3 border-t border-edge/60"></div>
     {% endif %}
@@ -103,7 +103,7 @@ Le chip pré-sélectionné par défaut = le keyword suggéré par la vue.
             Catégories
         </p>
         {% for cat in system_cats %}
-            {% include "transactions/_rule_cat_picker_row.html" %}
+            {% include "budget/_rule_cat_picker_row.html" %}
         {% endfor %}
     {% endif %}
 </div>

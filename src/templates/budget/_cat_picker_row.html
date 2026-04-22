@@ -56,7 +56,7 @@ Hiérarchie visuelle des icônes (3 niveaux) :
         Hiérarchie : cercle plein = catégorie (header + Principale), cercle 40% = sous-cat.
         {% endcomment %}
         {% with icon_path="icons/categories/"|add:cat.icon|add:".svg" %}
-            <form hx-post="{% url 'transactions:categorize' %}"
+            <form hx-post="{% url 'budget:categorize' %}"
                   hx-target="#panel-content"
                   hx-swap="innerHTML">
                 <input type="hidden" name="tx_id" value="{{ tx.id }}">
@@ -94,7 +94,7 @@ Hiérarchie visuelle des icônes (3 niveaux) :
                 {% for sub in subcats %}
                     {% if sub.is_active %}
                         {% with sub_icon_path="icons/categories/"|add:sub.icon|add:".svg" %}
-                            <form hx-post="{% url 'transactions:categorize' %}"
+                            <form hx-post="{% url 'budget:categorize' %}"
                                   hx-target="#panel-content"
                                   hx-swap="innerHTML">
                                 <input type="hidden" name="tx_id" value="{{ tx.id }}">
