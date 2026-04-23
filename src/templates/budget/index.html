@@ -186,19 +186,69 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                         </svg>
                         Tout voir
                     </button>
-                    {# Créer — Soon #}
-                    <div class="relative flex items-center gap-1 px-3 py-1.5 text-xs text-text-disabled bg-surface-hover rounded-full opacity-50 cursor-not-allowed"
-                         title="Bientôt disponible">
-                        Créer
-                        <svg class="w-3 h-3"
-                             fill="none"
-                             viewBox="0 0 24 24"
-                             stroke-width="2"
-                             stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-                        </svg>
-                        <span class="absolute -top-1.5 -right-1 text-[8px] font-bold bg-text-muted/30 text-text-muted px-1 rounded-full uppercase tracking-wide leading-4">Soon</span>
+                    {# Créer — dropdown #}
+                    <div class="relative" id="creer-dropdown-container">
+                        <button type="button"
+                                onclick="document.getElementById('creer-menu').classList.toggle('hidden')"
+                                class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-text-secondary bg-surface-hover hover:bg-surface-3 border border-edge/50 hover:border-gold/40 rounded-full transition-colors">
+                            <svg class="w-3 h-3"
+                                 fill="none"
+                                 viewBox="0 0 24 24"
+                                 stroke-width="2.5"
+                                 stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                            </svg>
+                            Créer
+                        </button>
+                        {# Menu dropdown #}
+                        <div id="creer-menu"
+                             class="hidden absolute left-0 top-full mt-2 w-56 bg-surface-3 border border-edge/70 rounded-2xl shadow-2xl z-20 py-1.5 overflow-hidden">
+                            {# Label section #}
+                            <p class="px-4 pt-2 pb-1 text-[9px] font-bold text-text-disabled uppercase tracking-widest">Actions</p>
+                            {# Créer un objectif — actif #}
+                            <button type="button"
+                                    hx-get="{% url 'budget:modal_target_create' %}"
+                                    hx-target="#modal-content"
+                                    hx-swap="innerHTML"
+                                    onclick="document.getElementById('creer-menu').classList.add('hidden')"
+                                    class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-text-base hover:bg-surface-hover transition-colors">
+                                <span class="w-6 h-6 rounded-lg bg-gold/15 border border-gold/30 flex items-center justify-center flex-shrink-0">
+                                    <svg class="w-3 h-3 text-gold"
+                                         fill="none"
+                                         viewBox="0 0 24 24"
+                                         stroke-width="2.5"
+                                         stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                    </svg>
+                                </span>
+                                <span>Objectif mensuel</span>
+                            </button>
+                            {# Créer une catégorie — désactivé #}
+                            <div class="flex items-center gap-3 px-4 py-2.5 text-sm text-text-disabled cursor-not-allowed opacity-40">
+                                <span class="w-6 h-6 rounded-lg bg-surface-hover border border-edge/50 flex items-center justify-center flex-shrink-0">
+                                    <svg class="w-3 h-3"
+                                         fill="none"
+                                         viewBox="0 0 24 24"
+                                         stroke-width="2"
+                                         stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6Z" />
+                                    </svg>
+                                </span>
+                                <span>Catégorie</span>
+                                <span class="ml-auto text-[8px] font-bold bg-surface-hover text-text-disabled px-1.5 py-0.5 rounded-full uppercase tracking-wide">Soon</span>
+                            </div>
+                        </div>
                     </div>
+                    <script>
+                    document.addEventListener('click', function(e) {
+                        var c = document.getElementById('creer-dropdown-container');
+                        if (c && !c.contains(e.target)) {
+                            var m = document.getElementById('creer-menu');
+                            if (m) m.classList.add('hidden');
+                        }
+                    });
+                    </script>
                     {# Paramètres — Soon #}
                     <div class="relative flex items-center gap-1 px-3 py-1.5 text-xs text-text-disabled bg-surface-hover rounded-full opacity-50 cursor-not-allowed"
                          title="Bientôt disponible">
@@ -288,37 +338,37 @@ Données hardcodées — prochaine étape : brancher la vue Django.
    PANEL DROIT — Distribution (sans border)
    ══════════════════════════════════════════════════════════════════════════════ #}
 {% block panel_right %}
-<aside class="flex-[1] min-w-0">
-<div class="bg-surface-3 rounded-xl p-5 flex flex-col gap-5">
-<h2 class="text-sm font-semibold text-text-base flex-shrink-0">Distribution</h2>
-{# Donut ECharts — synchronisé avec le KPI actif                           #}
-{{ donut_data|json_script:"donut-data" }}
-<div id="donut-chart" class="w-full flex-shrink-0" style="height: 220px;"></div>
-{# Légende textuelle sous le donut — même ordre que les segments #}
-{% if donut_categories %}
-<div class="flex flex-col gap-2">
-{% for cat in donut_categories %}
-<div class="flex items-center gap-2">
-<div class="w-2 h-2 rounded-full flex-shrink-0" style="background-color: {{ cat.category__colour_hex|default:'#2d3033' }}">
-</div>
-<span class="text-xs text-text-muted flex-1 truncate">{{ cat.category__name }}</span>
-<span class="text-xs text-text-base font-medium tabular-nums">{{ cat.pct }}%</span>
-</div>
-{% endfor %}
-</div>
-{% else %}
-<p class="text-xs text-text-disabled text-center">Aucune donnée</p>
-{% endif %}
-</div>
-</aside>
+    <aside class="flex-[1] min-w-0">
+        <div class="bg-surface-3 rounded-xl p-5 flex flex-col gap-5">
+            <h2 class="text-sm font-semibold text-text-base flex-shrink-0">Distribution</h2>
+            {# Donut ECharts — synchronisé avec le KPI actif                           #}
+            {{ donut_data|json_script:"donut-data" }}
+            <div id="donut-chart" class="w-full flex-shrink-0" style="height: 220px;"></div>
+            {# Légende textuelle sous le donut — même ordre que les segments #}
+            {% if donut_categories %}
+                <div class="flex flex-col gap-2">
+                    {% for cat in donut_categories %}
+                        <div class="flex items-center gap-2">
+                            <div class="w-2 h-2 rounded-full flex-shrink-0"
+                                 style="background-color: {{ cat.category__colour_hex|default:'#2d3033' }}"></div>
+                            <span class="text-xs text-text-muted flex-1 truncate">{{ cat.category__name }}</span>
+                            <span class="text-xs text-text-base font-medium tabular-nums">{{ cat.pct }}%</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="text-xs text-text-disabled text-center">Aucune donnée</p>
+            {% endif %}
+        </div>
+    </aside>
 {% endblock %}
 {% block extra_js %}
-{# ── ECharts + charts BricBudget — servis en local (pas de CDN) ───────────── #}
-<script src="{% static 'js/vendor/echarts.min.js' %}"></script>
-<script src="{% static 'js/charts/utils.js' %}"></script>
-<script src="{% static 'js/charts/sankey.js' %}"></script>
-<script src="{% static 'js/charts/donut.js' %}"></script>
-<script>
+    {# ── ECharts + charts BricBudget — servis en local (pas de CDN) ───────────── #}
+    <script src="{% static 'js/vendor/echarts.min.js' %}"></script>
+    <script src="{% static 'js/charts/utils.js' %}"></script>
+    <script src="{% static 'js/charts/sankey.js' %}"></script>
+    <script src="{% static 'js/charts/donut.js' %}"></script>
+    <script>
   // Init Sankey — les données viennent du json_script Django (pas de variable globale).
   // onNodeClick redirige vers la page détail de la catégorie cliquée.
   var sankeyEl = document.getElementById("sankey-chart");
@@ -341,5 +391,5 @@ Données hardcodées — prochaine étape : brancher la vue Django.
       },
     });
   }
-</script>
+    </script>
 {% endblock %}

@@ -22,7 +22,7 @@ Flow :
     dans le même état qu'avant.
     {% endcomment %}
     <button hx-get="{% url 'budget:panel_rule_create' %}?tx_id={{ tx_id }}&keyword={{ keyword }}"
-            hx-target="#panel-content"
+            hx-target="#modal-content"
             hx-swap="innerHTML"
             class="p-1.5 rounded-lg text-text-muted hover:text-text-base hover:bg-surface-hover transition-colors flex-shrink-0"
             title="Retour">
@@ -79,7 +79,7 @@ budget_rule_create_submit() puisse créer la règle et faire le bulk apply.
 {% endcomment %}
 <div class="px-4 space-y-2">
     <form hx-post="{% url 'budget:rule_create_submit' %}"
-          hx-target="#panel-content"
+          hx-target="#modal-content"
           hx-swap="innerHTML">
         <input type="hidden" name="keyword" value="{{ keyword }}">
         <input type="hidden" name="category_id" value="{{ category.id }}">
@@ -90,9 +90,7 @@ budget_rule_create_submit() puisse créer la règle et faire le bulk apply.
             Valider et appliquer
         </button>
     </form>
-    <button hx-get="{% url 'budget:panel_transactions' %}"
-            hx-target="#panel-content"
-            hx-swap="innerHTML"
+    <button onclick="closeModal()"
             class="w-full border border-edge hover:bg-surface-hover text-text-secondary text-sm font-medium rounded-xl px-4 py-2.5 transition-colors">
         Annuler
     </button>

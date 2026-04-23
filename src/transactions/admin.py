@@ -228,7 +228,6 @@ class ImportLogAdmin(admin.ModelAdmin):
 
 @admin.register(BudgetTarget)
 class BudgetTargetAdmin(admin.ModelAdmin):
-    list_display = ("period", "category", "amount")
+    list_display = ("category", "amount")
     list_filter = ("category",)
-    date_hierarchy = "period"
-    ordering = ("-period", "category__order")
+    ordering = ("category__order",)

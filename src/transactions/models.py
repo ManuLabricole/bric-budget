@@ -462,38 +462,32 @@ class ImportLog(models.Model):
 
 class BudgetTarget(models.Model):
     """
-    A spending target for a category in a given month.
+    A monthly spending target for a category — applies to every month.
 
-    `period` stores the first day of the target month — always day 1.
-    Example: March 2026 → 2026-03-01. This makes filtering clean:
-        BudgetTarget.objects.filter(period__year=2026, period__month=3)
+    One target per category (no period). The target is a general monthly setting:
+    "I want to spend at most 500 CHF/month on Alimentation."
 
-    The actual result (how much was spent vs the target) is NOT stored here.
-    It is computed live from Transaction.objects.filter(...).aggregate(Sum('amount_chf')).
-    For a personal app with a few thousand transactions, PostgreSQL SUM is sub-millisecond.
-    We add caching later if we ever feel latency — not before.
+    When viewing a 3-month or 1-year period, the view multiplies by the number of
+    months to get the scaled target.
 
-    amount is always in CHF — the reference currency for all budget calculations.
+    The actual result is NOT stored — computed live from transactions.
+    amount is always in CHF.
     """
 
-    category = models.ForeignKey(
+    # unique=True: one target per category, period-independent
+    category = models.OneToOneField(
         Category,
-        on_delete=models.CASCADE,  # CASCADE: deleting a category removes its targets
-        related_name="budget_targets",
+        on_delete=models.CASCADE,
+        related_name="budget_target",
     )
 
-    # First day of the target month — e.g. 2026-03-01 for March 2026
-    period = models.DateField()
-
-    # Target spend in CHF for this category this month
+    # Target monthly spend in CHF
     amount = models.DecimalField(max_digits=10, decimal_places=2)
 
     class Meta:
         verbose_name = "budget target"
         verbose_name_plural = "budget targets"
-        ordering = ["-period", "category__order"]
-        # One target per category per month
-        unique_together = [("category", "period")]
+        ordering = ["category__order"]
 
     def __str__(self):
         return f"{self.period:%Y-%m} | {self.category} → {self.amount} CHF"

@@ -1,0 +1,101 @@
+{% load budget_filters static %}
+{% comment %}
+budget/_modal_target_create.html — Modal HTMX : formulaire objectif pour une catégorie
+
+Contexte attendu :
+    category        — objet Category (toujours présent)
+    existing_amount — Decimal | None (None = création, sinon modification)
+
+Appelé depuis :
+  - _modal_target_list.html (clic sur une catégorie) → bouton ← retour vers la liste
+  - category_detail.html (bouton + ou crayon) → bouton Annuler ferme la modal
+{% endcomment %}
+<div class="p-6">
+    {# ── Header : retour vers la liste + catégorie + fermer ── #}
+    <div class="flex items-center gap-3 mb-5">
+        {# ← Retour vers la liste des objectifs (depuis index) #}
+        <button type="button"
+                hx-get="{% url 'budget:modal_target_create' %}"
+                hx-target="#modal-content"
+                hx-swap="innerHTML"
+                class="p-1.5 rounded-lg text-text-muted hover:text-text-base hover:bg-surface-hover transition-colors flex-shrink-0"
+                title="Retour à la liste">
+            <svg class="w-4 h-4"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="2"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+            </svg>
+        </button>
+        {# Icône + nom catégorie #}
+        <div class="flex items-center gap-2.5 flex-1">
+            <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center"
+                 style="background-color: {{ category.colour_hex|default:'#2d3033' }}">
+                {% if category.icon %}
+                    {% with icon_path="icons/categories/"|add:category.icon|add:".svg" %}
+                        <img src="{% static icon_path %}"
+                             width="16"
+                             height="16"
+                             class="w-4 h-4 brightness-0 invert"
+                             alt="">
+                    {% endwith %}
+                {% endif %}
+            </div>
+            <div>
+                <p class="text-[10px] text-text-muted uppercase tracking-wider leading-none mb-0.5">Objectif mensuel</p>
+                <p class="text-sm font-semibold text-text-base leading-none">{{ category.name }}</p>
+            </div>
+        </div>
+        {# × fermer #}
+        <button onclick="closeModal()"
+                class="p-1.5 rounded-lg text-text-disabled hover:text-text-muted hover:bg-surface-hover transition-colors flex-shrink-0">
+            <svg class="w-4 h-4"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="2"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+            </svg>
+        </button>
+    </div>
+    <div class="border-t border-edge mb-5"></div>
+    {# ── Formulaire ── #}
+    <form hx-post="{% url 'budget:modal_target_create' %}"
+          hx-target="#modal-content"
+          hx-swap="innerHTML">
+        {% csrf_token %}
+        <input type="hidden" name="category_id" value="{{ category.id }}">
+        <div class="mb-5">
+            <label class="block text-[10px] text-text-muted uppercase tracking-wider mb-2">
+                Montant mensuel (CHF) — s'applique à tous les mois
+            </label>
+            <div class="relative">
+                <input type="number"
+                       name="amount"
+                       min="0"
+                       step="1"
+                       placeholder="ex : 800"
+                       {% if existing_amount %}value="{{ existing_amount|floatformat:0 }}"{% endif %}
+                       autofocus
+                       class="w-full bg-surface-hover border border-edge rounded-xl px-4 py-3 pr-14 text-base font-semibold text-text-base placeholder-text-disabled focus:outline-none focus:border-gold/50 transition-colors">
+                <span class="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-text-muted font-medium">CHF</span>
+            </div>
+        </div>
+        <div class="flex gap-2">
+            <button type="submit"
+                    class="flex-1 bg-gold hover:bg-gold-hover text-surface-3 font-semibold text-sm rounded-xl px-4 py-3 transition-colors">
+                {% if existing_amount %}
+                    Mettre à jour
+                {% else %}
+                    Enregistrer
+                {% endif %}
+            </button>
+            <button type="button"
+                    onclick="closeModal()"
+                    class="flex-1 border border-edge hover:bg-surface-hover text-text-secondary text-sm font-medium rounded-xl px-4 py-3 transition-colors">
+                Annuler
+            </button>
+        </div>
+    </form>
+</div>

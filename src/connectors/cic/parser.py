@@ -345,9 +345,12 @@ class CICConnector(BaseConnector):
         # Remove RETRAIT DAB prefix (ATM, includes 4-digit date)
         text = re.sub(r"^RETRAIT DAB \d{4} ", "", text)
 
-        # 3. Strip trailing internal reference codes: long alphanumeric strings
-        # e.g. "I20V23091L036457", "C20W26081W003325" — starts with letter, 10+ chars
-        text = re.sub(r"\s+[A-Z][A-Z0-9]{9,}$", "", text)
+        # 3. Strip trailing internal reference codes.
+        # Heuristic : un code de station/terminal contient toujours des chiffres mélangés
+        # aux lettres (ex: ESSOF108, ESSO31761ROC1, I20V23091L036457).
+        # Un nom de marchand est pure-lettres (GRENOBLE, CERTAS, BIVIERS).
+        # On retire tout token final qui contient AU MOINS UN chiffre.
+        text = re.sub(r"\s+[A-Z][A-Z0-9]*\d[A-Z0-9]*$", "", text)
 
         return text.strip().title() or description.title()
 

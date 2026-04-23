@@ -36,7 +36,15 @@ Rendu d'une transaction ignorée (is_ignored=True) :
         {% endcomment %}
         <div class="w-11 h-11 rounded-full flex-shrink-0 flex items-center justify-center"
              style="background-color: {{ tx.category.colour_hex|default:'#2d3033' }}">
-            {% if tx.category and tx.category.icon %}
+            {% if tx.subcategory and tx.subcategory.icon %}
+                {% with icon_path="icons/categories/"|add:tx.subcategory.icon|add:".svg" %}
+                    <img src="{% static icon_path %}"
+                         width="24"
+                         height="24"
+                         class="w-6 h-6 brightness-0 invert"
+                         alt="">
+                {% endwith %}
+            {% elif tx.category and tx.category.icon %}
                 {% with icon_path="icons/categories/"|add:tx.category.icon|add:".svg" %}
                     <img src="{% static icon_path %}"
                          width="24"

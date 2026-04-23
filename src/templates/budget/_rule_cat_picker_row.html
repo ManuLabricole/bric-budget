@@ -41,7 +41,7 @@ Pourquoi un fichier séparé et pas une variable dans _cat_picker_row.html ?
         {% comment %} Row "Principale" — assigne la catégorie sans sous-catégorie {% endcomment %}
         {% with icon_path="icons/categories/"|add:cat.icon|add:".svg" %}
             <form hx-post="{% url 'budget:rule_preview' %}"
-                  hx-target="#panel-content"
+                  hx-target="#modal-content"
                   hx-swap="innerHTML">
                 {% comment %}
                 tx_id : pour retrouver la transaction source dans la vue
@@ -80,7 +80,7 @@ Pourquoi un fichier séparé et pas une variable dans _cat_picker_row.html ?
                     {% if sub.is_active %}
                         {% with sub_icon_path="icons/categories/"|add:sub.icon|add:".svg" %}
                             <form hx-post="{% url 'budget:rule_preview' %}"
-                                  hx-target="#panel-content"
+                                  hx-target="#modal-content"
                                   hx-swap="innerHTML">
                                 <input type="hidden" name="tx_id" value="{{ tx.id }}">
                                 <input type="hidden"

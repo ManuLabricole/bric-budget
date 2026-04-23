@@ -77,6 +77,20 @@
       .search-bar-c input:not(:placeholder-shown) ~ .search-clear-btn { display: flex; }
       .search-clear-btn:hover { color: #edf0f5; }
 
+      /* ── Toast progress bar — se vide en 5s (synchro avec setTimeout hideToast) ── */
+      @keyframes toast-drain {
+        from { width: 100%; }
+        to   { width: 0%; }
+      }
+
+      /* ── Scrollbar fine pour les listes internes (modal rule preview, etc.) ── */
+      .bb-scroll::-webkit-scrollbar { width: 4px; }
+      .bb-scroll::-webkit-scrollbar-track { background: transparent; }
+      .bb-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
+      .bb-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
+      /* Firefox */
+      .bb-scroll { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.12) transparent; }
+
       /* ── .bb-background ──────────────────────────────────────────────────── */
       .bb-background {
         background-color: #000000;

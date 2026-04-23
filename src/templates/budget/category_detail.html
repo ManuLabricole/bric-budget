@@ -79,34 +79,69 @@ Layout :
                 {{ sankey_data|json_script:"sankey-data" }}
             </div>
         {% endif %}
-        {# KPI strip — 3 colonnes séparées par divide-x, collées au bas de la carte #}
-        {# Même pattern que Finary : Transactions | Sous-catégories | Moyenne       #}
+        {# KPI strip — 3 colonnes informationnelles (non cliquables).                      #}
+        {# Transactions = montant total · Sous-catégories = count distinct · Objectif     #}
         <div class="grid grid-cols-3 divide-x divide-edge border-t border-edge mt-2">
+            {# Montant total sur la période #}
             <div class="px-5 py-4">
-                <p class="text-[9px] text-text-muted uppercase tracking-wider mb-1">Total</p>
+                <p class="text-[9px] text-text-muted uppercase tracking-wider mb-1">Transactions</p>
                 {% if total_amount >= 0 %}
                     <p class="text-base font-bold text-income tabular-nums">+{{ total_amount|chf }} CHF</p>
                 {% else %}
                     <p class="text-base font-bold text-expense tabular-nums">−{{ total_amount|chf }} CHF</p>
                 {% endif %}
             </div>
+            {# Nombre de sous-catégories distinctes sur la période #}
             <div class="px-5 py-4">
-                <p class="text-[9px] text-text-muted uppercase tracking-wider mb-1">Transactions</p>
-                <p class="text-base font-bold text-text-base tabular-nums">{{ tx_count }}</p>
+                <p class="text-[9px] text-text-muted uppercase tracking-wider mb-1">Sous-catégories</p>
+                <p class="text-base font-bold text-text-base tabular-nums">{{ subcat_count }}</p>
             </div>
+            {# Objectif — montant mis à l'échelle de la période + indicateur de progression #}
             <div class="px-5 py-4">
-                <p class="text-[9px] text-text-muted uppercase tracking-wider mb-1">Moyenne / tx</p>
-                {% if avg_amount is not None %}
-                    <p class="text-base font-bold text-text-base tabular-nums">
-                        {% if avg_amount >= 0 %}
-                            +
-                        {% else %}
-                            −
-                        {% endif %}
-                        {{ avg_amount|chf }} CHF
-                    </p>
+                <p class="text-[9px] text-text-muted uppercase tracking-wider mb-1">Objectif</p>
+                {% if budget_target %}
+                    {# Montant cible mis à l'échelle (×period_months) + bouton modifier #}
+                    <div class="flex items-center gap-1.5">
+                        <p class="text-base font-bold text-text-base tabular-nums">{{ target_amount|chf }} CHF</p>
+                        <button hx-get="{% url 'budget:modal_target_create' %}?category_id={{ category.id }}"
+                                hx-target="#modal-content"
+                                hx-swap="innerHTML"
+                                class="w-5 h-5 rounded-full border border-edge/60 flex items-center justify-center text-text-muted hover:text-gold hover:border-gold/50 transition-colors flex-shrink-0"
+                                title="Modifier l'objectif mensuel">
+                            <svg class="w-2.5 h-2.5"
+                                 fill="none"
+                                 viewBox="0 0 24 24"
+                                 stroke-width="2.5"
+                                 stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" />
+                            </svg>
+                        </button>
+                    </div>
+                    {# Indicateur de progression — vert si on_track, rouge si dépassé #}
+                    {% if target_pct is not None %}
+                        <p class="text-[10px] font-semibold tabular-nums mt-0.5 {% if on_track %}text-income{% else %}text-expense{% endif %}">
+                            {{ target_pct }}%
+                            {% if on_track %}
+                                ✓
+                            {% else %}
+                                ⚠
+                            {% endif %}
+                        </p>
+                    {% endif %}
                 {% else %}
-                    <p class="text-base font-bold text-text-disabled">—</p>
+                    <button hx-get="{% url 'budget:modal_target_create' %}?category_id={{ category.id }}"
+                            hx-target="#modal-content"
+                            hx-swap="innerHTML"
+                            class="w-8 h-8 rounded-full border border-dashed border-edge/50 hover:border-gold/50 flex items-center justify-center text-text-disabled hover:text-gold transition-colors"
+                            title="Définir un objectif mensuel">
+                        <svg class="w-3.5 h-3.5"
+                             fill="none"
+                             viewBox="0 0 24 24"
+                             stroke-width="2.5"
+                             stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                        </svg>
+                    </button>
                 {% endif %}
             </div>
         </div>

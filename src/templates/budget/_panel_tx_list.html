@@ -11,9 +11,22 @@ Données :
 {% endcomment %}
 {% comment %} Masquer le scrollbar webkit {% endcomment %}
 <style>#panel-content::-webkit-scrollbar { display: none; }</style>
-{% comment %} Barre période — composant réutilisable (mode HTMX) {% endcomment %}
-<div class="px-4 py-3 flex-shrink-0 border-b border-edge">
-    {% include "components/period/period_nav.html" with period_mode=period_mode period_display=period_label can_go_next=can_go_next nav_url_name="budget:panel_navigate" htmx_target="#panel-content" %}
+{% comment %} Barre période + bouton fermer panneau ── {% endcomment %}
+<div class="px-4 py-3 flex-shrink-0 border-b border-edge flex items-center gap-2">
+    <div class="flex-1">
+        {% include "components/period/period_nav.html" with period_mode=period_mode period_display=period_label can_go_next=can_go_next nav_url_name="budget:panel_navigate" htmx_target="#panel-content" %}
+    </div>
+    <button onclick="closePanel()"
+            class="w-6 h-6 rounded-full border border-edge flex items-center justify-center text-text-disabled hover:text-text-muted hover:border-edge-subtle transition-colors flex-shrink-0"
+            title="Fermer">
+        <svg class="w-3 h-3"
+             fill="none"
+             viewBox="0 0 24 24"
+             stroke-width="2.5"
+             stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+        </svg>
+    </button>
 </div>
 {% comment %} Barre recherche + filtres {% endcomment %}
 {% url 'budget:panel_transactions' as panel_search_url %}

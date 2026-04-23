@@ -107,13 +107,18 @@ window.BricCharts = window.BricCharts || {};
         borderColor: T["edge"],
         textStyle: { color: T["text-base"], fontSize: 12, fontFamily: FONT },
         formatter: function (params) {
+          // Strip U+200B (zero-width space) utilisé pour dédupliquer le nœud
+          // source quand catégorie et sous-catégorie portent le même nom.
           if (params.dataType === "node") {
             if (params.name === "__pool__") return "";
+            const name = params.name.replace(/​/g, "");
             const val = Math.round(Math.abs(params.value)).toLocaleString("fr-CH", { maximumFractionDigits: 0 });
-            return `<b>${params.name}</b><br />${val} CHF`;
+            return `<b>${name}</b><br />${val} CHF`;
           }
           const val = params.value.toLocaleString("fr-CH", { maximumFractionDigits: 0 });
-          return `${params.data.source} → ${params.data.target}<br /><b>${val} CHF</b>`;
+          const src = params.data.source.replace(/​/g, "");
+          const tgt = params.data.target.replace(/​/g, "");
+          return `${src} → ${tgt}<br /><b>${val} CHF</b>`;
         },
       },
       series: [{
@@ -149,10 +154,11 @@ window.BricCharts = window.BricCharts || {};
           color: T["text-base"],
           formatter: function (params) {
             if (params.name === "__pool__") return "";
+            const name = params.name.replace(/​/g, "");
             const val = Math.round(Math.abs(params.value))
               .toLocaleString("fr-FR")
               .replace(/ /g, " ");
-            return `${params.name}  ${val} CHF`;
+            return `${name}  ${val} CHF`;
           },
         },
         itemStyle: {

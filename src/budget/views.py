@@ -32,7 +32,13 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.templatetags.static import static
 from django.views.decorators.http import require_POST
 
-from transactions.models import CategorizationRule, Category, SubCategory, Transaction
+from transactions.models import (
+    BudgetTarget,
+    CategorizationRule,
+    Category,
+    SubCategory,
+    Transaction,
+)
 
 # =============================================================================
 # Helpers — arithmétique sur les dates
@@ -41,6 +47,102 @@ from transactions.models import CategorizationRule, Category, SubCategory, Trans
 # Nombre de mois dans chaque mode de période.
 # Utilisé pour calculer period_end à partir de period_start.
 PERIOD_MODE_MONTHS = {"1m": 1, "3m": 3, "1y": 12}
+
+# Tokens banque sans valeur pour les règles de catégorisation.
+# Filtrés lors de la génération des chips — ne doivent pas apparaître comme suggestions.
+# Source : métadonnées Yuh (CHF) et CIC (EUR), codes de paiement standard CH/EU.
+_RULE_NOISE_TOKENS = {
+    # Types de paiement et terminaux
+    "PSC",
+    "CB",
+    "TPE",
+    "NFC",
+    "SCV",
+    "SCC",
+    # Verbes / mots d'action banque
+    "PAIEMENT",
+    "RETRAIT",
+    "ACHAT",
+    "VIREMENT",
+    "VIR",
+    "PRELEVEMENT",
+    "SEPA",
+    "DEBIT",
+    "CREDIT",
+    "ORDRE",
+    "TRANSFERT",
+    "REMISE",
+    "DEPOT",
+    # Instruments de paiement
+    "CARTE",
+    "CARD",
+    "VISA",
+    "MASTERCARD",
+    "MAESTRO",
+    "TWINT",
+    "PAYPAL",
+    # Devises
+    "CHF",
+    "EUR",
+    "GBP",
+    "USD",
+    "CAD",
+    "JPY",
+    # Codes pays / zones
+    "CH",
+    "FR",
+    "DE",
+    "BE",
+    "LU",
+    "UK",
+    "EU",
+    # Mots génériques bruit
+    "SANS",
+    "CONTACT",
+    "BANCAIRE",
+    "BANQUE",
+    "TRANSACTION",
+    "PRET",
+    "NO",
+    "NUM",
+    "REF",
+    "ID",
+    "PAY",
+    "PAYMENT",
+    "NUMERO",
+    "CODE",
+}
+
+
+def _keyword_q(keyword: str):
+    r"""
+    Retourne un Q filtre Django pour description_raw basé sur le keyword.
+
+    Règles :
+      - Chaque mot du keyword doit apparaître comme MOT ENTIER dans description_raw.
+        Ex : keyword="ESSO" ne match pas "ESSOF108" car \y (word boundary PostgreSQL)
+        sépare les tokens alphanumériques.
+      - Plusieurs mots → condition AND (toutes les parties doivent être présentes).
+      - Keyword vide → retourne Q(pk__in=[]) pour ne matcher aucune transaction.
+
+    Pourquoi iregex et pas icontains ?
+        icontains correspond à LIKE '%mot%' — ne respecte pas les frontières de mots.
+        iregex utilise le moteur regex PostgreSQL qui supporte \y (word boundary),
+        ce qui correspond exactement à un token complet.
+    """
+    from django.db.models import Q
+
+    words = [w for w in keyword.upper().split() if w]
+    if not words:
+        # Aucun mot → on ne veut matcher rien (protection anti-apply-all)
+        return Q(pk__in=[])
+    q = Q()
+    for word in words:
+        # \y = word boundary dans PostgreSQL. re.escape protège les caractères spéciaux.
+        pattern = r"\y" + re.escape(word) + r"\y"
+        q &= Q(description_raw__iregex=pattern)
+    return q
+
 
 MOIS_FR = {
     1: "Janvier",
@@ -749,6 +851,98 @@ def budget_set_tab(request, tab):
 
 
 # =============================================================================
+# budget_set_cat_tab — Bascule l'onglet actif de la page catégorie (GET → redirect)
+# =============================================================================
+
+
+@login_required
+def budget_set_cat_tab(request, tab):
+    """
+    Met à jour l'onglet actif de la page catégorie en session et redirige vers
+    la page appelante (HTTP_REFERER).
+
+    URL : /budget/categorie/tab/<tab>/
+    tab valides : "transactions" | "subcategories" | "objectif"
+
+    Même pattern que budget_set_tab mais pour la page catégorie :
+    - Pas de redirect fixe vers /budget/ — on revient sur la page catégorie
+      courante via HTTP_REFERER.
+    - L'onglet actif (cat_tab) est lu dans budget_category_detail pour
+      décider quelle valeur mettre en avant dans les KPIs.
+    """
+    VALID_TABS = {"transactions", "subcategories", "objectif"}
+
+    if tab in VALID_TABS:
+        request.session["budget_cat_tab"] = tab
+
+    referer = request.META.get("HTTP_REFERER", "")
+    return redirect(referer or "budget:index")
+
+
+# =============================================================================
+# budget_modal_target_create — Modal HTMX : créer / modifier un objectif mensuel
+# =============================================================================
+
+
+@login_required
+def budget_modal_target_create(request):
+    """
+    GET  → retourne le formulaire de création d'objectif dans la modal centrale.
+    POST → crée ou met à jour le BudgetTarget, puis redirige via HX-Redirect.
+
+    Deux modes :
+      - Avec category_id (depuis category_detail) : formulaire pré-rempli catégorie
+      - Sans category_id (depuis index) : formulaire avec sélecteur de catégorie
+
+    L'objectif est général (une seule valeur par catégorie, sans notion de mois).
+    La vue category_detail multiplie ce montant selon le mode de période (1m/3m/1y).
+    """
+    from django.http import HttpResponse
+
+    category_id = request.POST.get("category_id") or request.GET.get("category_id")
+
+    if request.method == "POST":
+        category = get_object_or_404(Category, id=category_id)
+        amount = request.POST.get("amount", "").replace(",", ".")
+        BudgetTarget.objects.update_or_create(
+            category=category,
+            defaults={"amount": amount},
+        )
+        response = HttpResponse()
+        response["HX-Redirect"] = request.META.get("HTTP_REFERER", "/budget/")
+        return response
+
+    # GET sans category_id → liste de toutes les catégories avec leur objectif actuel
+    if not category_id:
+        cats = Category.objects.filter(is_active=True).order_by("name")
+        targets_by_cat = {t.category_id: t for t in BudgetTarget.objects.all()}
+        categories_with_targets = [
+            {"category": cat, "target": targets_by_cat.get(cat.id)} for cat in cats
+        ]
+        return render(
+            request,
+            "budget/_modal_target_list.html",
+            {"categories_with_targets": categories_with_targets},
+        )
+
+    # GET avec category_id → formulaire pour cette catégorie (création ou modification)
+    category = get_object_or_404(Category, id=category_id)
+    existing_amount = None
+    target = BudgetTarget.objects.filter(category=category).first()
+    if target:
+        existing_amount = target.amount
+
+    return render(
+        request,
+        "budget/_modal_target_create.html",
+        {
+            "category": category,
+            "existing_amount": existing_amount,
+        },
+    )
+
+
+# =============================================================================
 # budget_panel_transactions — Partial HTMX : liste transactions (right panel)
 # =============================================================================
 
@@ -1074,24 +1268,76 @@ def budget_categorize_transaction(request):
     tx_display = tx.merchant_name or tx.description_raw[:30]
 
     # Extraction du keyword pour pré-remplir le formulaire de règle.
-    # On split description_raw sur les séparateurs courants (espace, *, +, -, /)
-    # et on garde le premier token de 3+ caractères qui n'est pas un nombre pur.
-    # Exemples : "VIR APPLE.COM/BILL 123" → "VIR", "MIGROS LAUSANNE" → "MIGROS"
-    raw_tokens = re.split(r"[\s\*\+\-\/]+", tx.description_raw.upper())
-    keyword_tokens = [t for t in raw_tokens if len(t) >= 3 and not t.isdigit()]
-    keyword = keyword_tokens[0] if keyword_tokens else tx_display
+    # Même logique que budget_panel_rule_create : on utilise la partie avant "|",
+    # on écarte le bruit banque (_RULE_NOISE_TOKENS), les nombres, et les codes
+    # alphanumériques (lettres + chiffres mélangés comme ESSOF108, PAIEMENT…).
+    # Sans ce filtre, "PAIEMENT" (présent dans TOUTES les lignes CIC) serait
+    # sélectionné en premier et matcherait l'intégralité de la base.
+    description_clean = tx.description_raw.split("|")[0].strip()
+    raw_tokens = re.split(r"[\s\*\+\-\/\.\,\_]+", description_clean.upper())
+    keyword_tokens = [
+        t
+        for t in raw_tokens
+        if len(t) >= 3
+        and not re.search(r"\d", t)  # exclut codes type ESSOF108, 560945
+        and re.search(r"[A-Z]", t)  # doit contenir au moins une lettre
+        and t not in _RULE_NOISE_TOKENS  # exclut PAIEMENT, PSC, CB, CARTE…
+    ]
+    keyword = keyword_tokens[0] if keyword_tokens else ""
 
     response["HX-Trigger"] = json.dumps(
         {
             "categoryChanged": {
                 "tx_name": tx_display,
                 "cat_name": tx.category.name,
+                "cat_id": tx.category.id,
                 "tx_id": tx.id,
                 "keyword": keyword,
             }
         }
     )
     return response
+
+
+# =============================================================================
+# budget_modal_rule_intro — Modal step 1 : "Appliquer [cat] aux transactions similaires"
+# =============================================================================
+
+
+@login_required
+def budget_modal_rule_intro(request):
+    """
+    Modal HTMX — étape 1 du wizard règle intelligente.
+
+    URL    : GET /budget/modal/rule-intro/?tx_id=X&keyword=Y
+    Target : #modal-content (ouverture automatique via body listener htmx:afterSwap)
+
+    Affiche :
+      - La transaction source (nom + montant + icône catégorie)
+      - "Appliquer [catégorie] aux transactions similaires"
+      - Boutons : "Plus tard" (closeModal) | "Suivant" → étape 2 (keyword chips)
+
+    La catégorie est lue depuis tx.category — déjà mise à jour par
+    budget_categorize_transaction avant que le toast n'apparaisse.
+    """
+    tx_id = request.GET.get("tx_id")
+    keyword = request.GET.get("keyword", "")
+
+    tx = get_object_or_404(
+        Transaction.objects.select_related("category", "subcategory"),
+        pk=tx_id,
+    )
+
+    return render(
+        request,
+        "budget/_modal_rule_intro.html",
+        {
+            "tx": tx,
+            "category": tx.category,
+            "subcategory": tx.subcategory,
+            "keyword": keyword,
+        },
+    )
 
 
 # =============================================================================
@@ -1118,42 +1364,56 @@ def budget_panel_rule_create(request):
     """
     tx_id = request.GET.get("tx_id")
     keyword = request.GET.get("keyword", "").strip()
+    cat_id = request.GET.get("cat_id")
+    subcat_id = request.GET.get("subcat_id")
 
     tx = get_object_or_404(
         Transaction.objects.select_related("category", "subcategory"),
         pk=tx_id,
     )
 
-    # Tokens cliquables : on split description_raw (texte brut banque).
-    # C'est le même champ que Finary utilise pour matcher ses règles — on reste
-    # cohérent avec ça. L'user choisit les tokens pertinents parmi tous les mots.
-    #
-    # ⚠️  FORMAT BANQUE — À METTRE À JOUR SI NOUVEAU CONNECTEUR
-    # Yuh (CHF) : "Raja Foods Lausanne | 21303625 0 12 28; PAIEMENT CARTE DE DEBIT NO TRANSACTION: ..."
-    #             → tout ce qui est après "|" = métadonnées de paiement, pas utile pour les règles
-    # CIC (EUR) : format différent — à vérifier quand le connecteur CIC sera implémenté (Phase 1D)
-    #
-    # On ne tokenise que la partie avant "|" pour éviter le bruit (IDs, dates, "PAIEMENT CARTE DE DEBIT"...)
+    # Catégorie cible : passée explicitement depuis l'étape intro, ou fallback sur tx.category.
+    category = get_object_or_404(Category, pk=cat_id) if cat_id else tx.category
+    subcategory = None
+    if subcat_id:
+        subcategory = SubCategory.objects.filter(pk=subcat_id).first()
+    elif tx.subcategory:
+        subcategory = tx.subcategory
+
+    # Tokens cliquables — uniquement la partie avant "|" (évite les métadonnées Yuh).
+    # Filtre agressif : on garde seulement les tokens qui ont une valeur sémantique
+    # (nom de commerce, lieu…) et on écarte le bruit banque (_RULE_NOISE_TOKENS).
     description_clean = tx.description_raw.split("|")[0].strip()
-    raw_tokens = re.split(r"[\s\*\+\-\/\.]+", description_clean.upper())
+    raw_tokens = re.split(r"[\s\*\+\-\/\.\,\_]+", description_clean.upper())
     seen = set()
     tokens = []
     for t in raw_tokens:
-        if len(t) >= 1 and t not in seen:
+        if (
+            len(t) >= 3  # trop court → bruit
+            and not re.search(
+                r"\d", t
+            )  # aucun chiffre → exclut codes type ESSOF108, B560945
+            and re.search(r"[A-Z]", t)  # doit contenir au moins une lettre
+            and t not in _RULE_NOISE_TOKENS  # liste noire métadonnées banque
+            and t not in seen
+        ):
             seen.add(t)
             tokens.append(t)
 
-    # Catégories séparées perso / système — même logique que le picker classique
-    custom_cats = (
-        Category.objects.filter(is_active=True, is_system=False)
-        .prefetch_related("subcategories")
-        .order_by("order")
-    )
-    system_cats = (
-        Category.objects.filter(is_active=True, is_system=True)
-        .prefetch_related("subcategories")
-        .order_by("order")
-    )
+    # Aperçu initial des transactions correspondant au keyword suggéré.
+    # Rechargé via HTMX (budget_rule_live_preview) à chaque clic de chip.
+    initial_txs = []
+    initial_count = 0
+    if keyword:
+        qs = (
+            Transaction.objects.filter(_keyword_q(keyword))
+            .select_related("subcategory")
+            .order_by("-date")
+        )
+        initial_count = qs.count()
+        initial_txs = list(qs)  # toutes les transactions — la zone est scrollable
+
+    cat_display_name = subcategory.name if subcategory else category.name
 
     return render(
         request,
@@ -1162,8 +1422,61 @@ def budget_panel_rule_create(request):
             "tx": tx,
             "keyword": keyword,
             "tokens": tokens,
-            "custom_cats": custom_cats,
-            "system_cats": system_cats,
+            "category": category,
+            "subcategory": subcategory,
+            "cat_display_name": cat_display_name,
+            "initial_txs": initial_txs,
+            "initial_count": initial_count,
+        },
+    )
+
+
+# =============================================================================
+# budget_rule_live_preview — Partial HTMX : liste live des transactions matchées
+# =============================================================================
+
+
+@login_required
+def budget_rule_live_preview(request):
+    """
+    GET → retourne la liste des transactions dont description_raw contient le keyword.
+
+    URL    : GET /budget/transactions/rule-live-preview/?keyword=X&category_id=Y
+    Target : #rule-preview-zone (dans _panel_rule_create.html)
+
+    Déclenché à chaque changement de chip dans le wizard règle.
+    Retourne un fragment HTML (pas une page complète).
+    """
+    keyword = request.GET.get("keyword", "").strip().upper()
+    cat_id = request.GET.get("category_id")
+
+    cat_display_name = ""
+    if cat_id:
+        cat = Category.objects.filter(pk=cat_id).first()
+        if cat:
+            # Si une sous-catégorie est passée, on l'affiche en priorité
+            subcat_id = request.GET.get("subcategory_id")
+            if subcat_id:
+                sub = SubCategory.objects.filter(pk=subcat_id).first()
+                cat_display_name = sub.name if sub else cat.name
+            else:
+                cat_display_name = cat.name
+
+    txs = []
+    count = 0
+    if keyword:
+        qs = Transaction.objects.filter(_keyword_q(keyword)).order_by("-date")
+        count = qs.count()
+        txs = list(qs)  # toutes les transactions — la zone est scrollable
+
+    return render(
+        request,
+        "budget/_rule_live_preview.html",
+        {
+            "txs": txs,
+            "count": count,
+            "keyword": keyword,
+            "cat_display_name": cat_display_name,
         },
     )
 
@@ -1200,13 +1513,10 @@ def budget_rule_preview(request):
     category = get_object_or_404(Category, pk=cat_id)
     subcategory = SubCategory.objects.filter(pk=sub_id).first() if sub_id else None
 
-    # Compter les transactions affectées SANS les modifier
-    # Même filtre que le bulk apply réel — pour que le count soit exact
-    affected_count = (
-        Transaction.objects.filter(description_raw__icontains=keyword)
-        .exclude(categorization_source="manual")
-        .count()
-    )
+    # Compter les transactions affectées SANS les modifier.
+    # Toutes les transactions matchant le keyword sont comptées — sans exclusion.
+    # Une règle explicite doit pouvoir écraser toute catégorisation antérieure.
+    affected_count = Transaction.objects.filter(_keyword_q(keyword)).count()
 
     return render(
         request,
@@ -1254,6 +1564,12 @@ def budget_rule_create_submit(request):
     cat_id = request.POST.get("category_id")
     sub_id = request.POST.get("subcategory_id") or None
 
+    # Garde serveur : keyword vide → refus silencieux (le bouton est déjà désactivé côté UI)
+    if not keyword:
+        from django.http import HttpResponseBadRequest
+
+        return HttpResponseBadRequest("keyword requis")
+
     category = get_object_or_404(Category, pk=cat_id)
     subcategory = SubCategory.objects.filter(pk=sub_id).first() if sub_id else None
 
@@ -1271,21 +1587,15 @@ def budget_rule_create_submit(request):
     )
 
     # Bulk apply : toutes les transactions dont description_raw contient le keyword
-    # en excluant les catégorisations manuelles (décision explicite de l'user)
-    # icontains = case-insensitive LIKE '%keyword%' en SQL → 1 seule query
-    updated_count = (
-        Transaction.objects.filter(
-            description_raw__icontains=keyword,
-        )
-        .exclude(
-            categorization_source="manual",
-        )
-        .update(
-            category=category,
-            subcategory=subcategory,
-            categorization_source="rule",
-            categorization_rule=rule,
-        )
+    # comme MOT ENTIER (word boundary). Aucune exclusion — une règle explicite écrase
+    # toute catégorisation antérieure (import, règle précédente, IA, ou manuelle).
+    updated_count = Transaction.objects.filter(
+        _keyword_q(keyword),
+    ).update(
+        category=category,
+        subcategory=subcategory,
+        categorization_source="rule",
+        categorization_rule=rule,
     )
 
     return render(
@@ -1495,9 +1805,17 @@ def budget_category_detail(request, slug):
     # et utilise des marges de 10% pour ne pas rogner les labels.
     cat_color = category.colour_hex or "#4ade80"
 
+    # U+200B (zero-width space) : rend le nom du nœud source unique même
+    # quand une sous-catégorie porte le même nom que sa catégorie parente
+    # (ex: catégorie "Investissements" avec sous-cat "Investissements").
+    # ECharts identifie les nœuds par `name` — deux nœuds homonymes créent
+    # un self-loop qui rend le chart vide silencieusement.
+    # Le ZWSP est invisible à l'affichage et strippé dans le formatter JS.
+    source_name = category.name + "​"
+
     sankey_nodes = [
         {
-            "name": category.name,
+            "name": source_name,
             "slug": category.slug,
             "itemStyle": {"color": cat_color},
         }
@@ -1529,7 +1847,7 @@ def budget_category_detail(request, slug):
         )
         sankey_links.append(
             {
-                "source": category.name,
+                "source": source_name,
                 "target": sub["subcategory__name"],
                 "value": round(float(abs(sub["total"])), 2),
             }
@@ -1566,6 +1884,41 @@ def budget_category_detail(request, slug):
     tx_count = txs.count()
     avg_amount = (total_amount / tx_count) if tx_count > 0 else None
 
+    # ── KPI tabs — données pour les 3 onglets sélecteurs ─────────────────────
+    # cat_tab : onglet actif en session (par défaut "transactions")
+    cat_tab = request.session.get("budget_cat_tab", "transactions")
+
+    # Nombre de sous-catégories distinctes utilisées sur la période.
+    # distinct() sur subcategory_id évite de compter les doublons si plusieurs
+    # transactions tombent dans la même sous-catégorie.
+    subcat_count = (
+        txs.filter(subcategory__isnull=False)
+        .values("subcategory_id")
+        .distinct()
+        .count()
+    )
+
+    # Objectif mensuel pour cette catégorie — paramètre général, sans notion de mois.
+    # On multiplie par le nombre de mois de la période pour le KPI affiché.
+    period_months = PERIOD_MODE_MONTHS.get(period_mode, 1)
+
+    budget_target = BudgetTarget.objects.filter(category=category).first()
+
+    # Montant cible mis à l'échelle de la période + indicateurs de progression
+    target_amount = None
+    target_pct = None
+    on_track = None
+    if budget_target:
+        from decimal import Decimal
+
+        target_amount = budget_target.amount * Decimal(period_months)
+        spent = abs(total_amount)
+        if target_amount > 0:
+            target_pct = round(float(spent / target_amount) * 100)
+        else:
+            target_pct = 0
+        on_track = spent <= target_amount
+
     return render(
         request,
         "budget/category_detail.html",
@@ -1583,6 +1936,13 @@ def budget_category_detail(request, slug):
             "has_sankey": has_sankey,
             "donut_data": donut_data,
             "has_donut": has_donut,
+            "cat_tab": cat_tab,
+            "subcat_count": subcat_count,
+            "budget_target": budget_target,
+            "target_amount": target_amount,
+            "target_pct": target_pct,
+            "on_track": on_track,
+            "period_months": period_months,
             "period_mode": period_mode,
             "period_display": period_label,
             "can_go_next": can_go_next,

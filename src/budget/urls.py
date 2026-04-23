@@ -65,11 +65,37 @@ urlpatterns = [
     ),
     # /budget/transactions/rule-preview/ → prévisualise l'impact d'une règle (POST)
     path("transactions/rule-preview/", views.budget_rule_preview, name="rule_preview"),
+    # /budget/transactions/rule-live-preview/ → aperçu live des transactions matchées (GET HTMX)
+    path(
+        "transactions/rule-live-preview/",
+        views.budget_rule_live_preview,
+        name="rule_live_preview",
+    ),
     # /budget/transactions/rule-create/ → crée la règle + bulk apply (POST)
     path(
         "transactions/rule-create/",
         views.budget_rule_create_submit,
         name="rule_create_submit",
+    ),
+    # /budget/modal/target-create/ → modal création / modification d'un objectif mensuel
+    path(
+        "modal/target-create/",
+        views.budget_modal_target_create,
+        name="modal_target_create",
+    ),
+    # /budget/modal/rule-intro/ → modal step 1 wizard règle : confirmation avant keyword selection
+    path(
+        "modal/rule-intro/",
+        views.budget_modal_rule_intro,
+        name="modal_rule_intro",
+    ),
+    # /budget/categorie/tab/<tab>/ → bascule l'onglet actif de la page catégorie
+    # tab : "transactions" | "subcategories" | "objectif"
+    # Doit être AVANT categorie/<slug>/ pour éviter que "tab" soit interprété comme un slug.
+    path(
+        "categorie/tab/<str:tab>/",
+        views.budget_set_cat_tab,
+        name="set_cat_tab",
     ),
     # /budget/categorie/<slug>/ → page détail d'une catégorie (Sankey sous-catégories + transactions)
     path(

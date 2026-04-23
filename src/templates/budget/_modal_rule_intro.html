@@ -1,0 +1,98 @@
+{% load budget_filters static %}
+{% comment %}
+budget/_modal_rule_intro.html — Modal step 1 : wizard règle intelligente
+
+Contexte attendu :
+    tx          — Transaction venant d'être catégorisée
+    category    — Category assignée
+    subcategory — SubCategory | None
+    keyword     — str token pré-sélectionné
+
+Flow :
+    Toast "Créer une règle" → ce template (intro)
+    Bouton "Suivant" → _panel_rule_create.html (sélection keyword chips)
+    Bouton "Plus tard" → closeModal()
+
+Ref : cat_flow_06
+{% endcomment %}
+<div class="p-5">
+    {# ── Header : label + close button ── #}
+    <div class="flex items-center justify-between mb-4">
+        <span class="text-[10px] font-bold text-text-disabled uppercase tracking-widest">⚡ Règles intelligentes</span>
+        <button onclick="closeModal()"
+                class="w-6 h-6 rounded-full border border-edge flex items-center justify-center text-text-disabled hover:text-text-muted hover:border-edge-subtle transition-colors">
+            <svg class="w-3 h-3"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="2.5"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+            </svg>
+        </button>
+    </div>
+    {# ── Titre — catégorie en or ── #}
+    <h2 class="text-base font-semibold text-text-base mb-2">
+        Appliquer <span class="text-gold">
+        {% if subcategory %}
+            {{ subcategory.name }}
+        {% else %}
+            {{ category.name }}
+        {% endif %}
+    </span> aux transactions similaires
+</h2>
+{# ── Description ── #}
+<p class="text-xs text-text-muted mb-4 leading-relaxed">
+    Créez des règles basées sur le nom des transactions pour re-catégoriser automatiquement les transactions passées et futures.
+</p>
+{# ── Transaction source ── #}
+<div class="flex items-center gap-3 px-3 py-2.5 bg-surface-hover rounded-xl mb-5">
+    <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center"
+         style="background-color: {{ category.colour_hex|default:'#2d3033' }}">
+        {% if subcategory and subcategory.icon %}
+            {% with icon_path="icons/categories/"|add:subcategory.icon|add:".svg" %}
+                <img src="{% static icon_path %}"
+                     width="16"
+                     height="16"
+                     class="w-4 h-4 brightness-0 invert"
+                     alt="">
+            {% endwith %}
+        {% elif category.icon %}
+            {% with icon_path="icons/categories/"|add:category.icon|add:".svg" %}
+                <img src="{% static icon_path %}"
+                     width="16"
+                     height="16"
+                     class="w-4 h-4 brightness-0 invert"
+                     alt="">
+            {% endwith %}
+        {% endif %}
+    </div>
+    <span class="flex-1 text-xs font-medium text-text-base truncate uppercase tracking-wide">
+        {% if tx.merchant_name %}
+            {{ tx.merchant_name }}
+        {% else %}
+            {{ tx.description_raw|slice:":40" }}
+        {% endif %}
+    </span>
+    <span class="text-xs font-medium {% if tx.amount >= 0 %}text-income{% else %}text-expense{% endif %} tabular-nums flex-shrink-0">
+        {% if tx.amount >= 0 %}
+            +
+        {% else %}
+            −
+        {% endif %}
+        {{ tx.amount|chf_dec }}
+    </span>
+</div>
+{# ── Boutons ── #}
+<div class="flex gap-2">
+    <button onclick="closeModal()"
+            class="flex-1 border border-edge hover:bg-surface-hover text-text-secondary text-sm font-medium rounded-xl px-4 py-2.5 transition-colors">
+        Plus tard
+    </button>
+    <button hx-get="{% url 'budget:panel_rule_create' %}?tx_id={{ tx.id }}&keyword={{ keyword }}&cat_id={{ category.id }}{% if subcategory %}&subcat_id={{ subcategory.id }}{% endif %}"
+            hx-target="#modal-content"
+            hx-swap="innerHTML"
+            class="flex-1 bg-gold hover:bg-gold-hover text-surface-3 font-semibold text-sm rounded-xl px-4 py-2.5 transition-colors">
+        Suivant
+    </button>
+</div>
+</div>

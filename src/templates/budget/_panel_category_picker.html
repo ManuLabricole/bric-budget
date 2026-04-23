@@ -10,9 +10,25 @@ Chargé dans #panel-content par hx-get depuis _panel_tx_row.html.
 Après sélection d'une sous-catégorie : POST → budget_categorize_transaction()
 → retourne _panel_tx_list.html (retour état A) + déclenche toast JS.
 {% endcomment %}
-{% comment %} ── Header : bouton retour + titre ── {% endcomment %}
-<div class="px-4 pt-2 pb-3 flex items-center gap-3 flex-shrink-0">
-    {% comment %} Bouton retour → recharge la liste {% endcomment %}
+{% comment %} ── Ligne titre transaction + bouton × retour liste ── {% endcomment %}
+<div class="px-4 pt-4 pb-1 flex items-center justify-between gap-3 flex-shrink-0">
+    <p class="text-base font-bold text-text-base leading-snug flex-1">{{ tx.merchant_name|default:tx.description_raw }}</p>
+    {# × doré — retourne à la liste des transactions via htmx.ajax (bulletproof sur fragment injecté) #}
+    <button type="button"
+            onclick="htmx.ajax('GET', '{% url 'budget:panel_transactions' %}', {target: '#panel-content', swap: 'innerHTML'})"
+            class="w-7 h-7 rounded-full bg-gold/10 border border-gold/40 flex items-center justify-center text-gold hover:bg-gold/20 hover:border-gold transition-colors flex-shrink-0"
+            title="Retour à la liste">
+        <svg class="w-3.5 h-3.5"
+             fill="none"
+             viewBox="0 0 24 24"
+             stroke-width="2.5"
+             stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+        </svg>
+    </button>
+</div>
+{% comment %} ── Sous-header : bouton retour + titre "Modifier la catégorie" + badge catégorie courante ── {% endcomment %}
+<div class="px-4 pt-1 pb-3 flex items-center gap-3 flex-shrink-0">
     <button hx-get="{% url 'budget:panel_transactions' %}"
             hx-target="#panel-content"
             hx-swap="innerHTML"
@@ -26,9 +42,13 @@ Après sélection d'une sous-catégorie : POST → budget_categorize_transaction
             <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
         </svg>
     </button>
-    <span class="text-base font-semibold text-text-base flex-1">Modifier la catégorie</span>
-    {% comment %} Badge catégorie actuelle {% endcomment %}
-    {% if tx.category %}
+    <span class="text-sm font-medium text-text-muted flex-1">Modifier la catégorie</span>
+    {# Badge : sous-catégorie en priorité, sinon catégorie principale #}
+    {% if tx.subcategory %}
+        <span class="text-[10px] text-text-muted px-2 py-0.5 rounded-full bg-surface-hover flex-shrink-0">
+            {{ tx.subcategory.name }}
+        </span>
+    {% elif tx.category %}
         <span class="text-[10px] text-text-muted px-2 py-0.5 rounded-full bg-surface-hover flex-shrink-0">
             {{ tx.category.name }}
         </span>
