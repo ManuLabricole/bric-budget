@@ -8,19 +8,25 @@ Vue : budget_category_detail
 
 Contexte Django :
     category     — objet Category
+    cat_tab      — str onglet actif : 'transactions' (défaut) | 'subcategories' | 'objectif'
     period_label — str période formatée (ex: "Avril 2026")
     total_amount — Decimal total brut (négatif pour les dépenses)
     tx_count     — int nombre de transactions
     avg_amount   — Decimal|None moyenne par transaction
+    subcat_count — int nombre de sous-catégories distinctes
     txs          — queryset Transaction (avec select_related)
     subcat_list  — list de dicts { subcategory__name, subcategory__slug, total }
+    budget_target — BudgetTarget|None pour cette catégorie
+    target_amount — Decimal montant cible mis à l'échelle de la période
+    target_pct    — int|None pourcentage consommé (0-100+)
+    on_track      — bool True si sous l'objectif
     sankey_data  — dict { nodes, links } pour BricCharts.initSankey
     has_sankey   — bool — True si au moins une sous-catégorie a des transactions
     donut_data   — dict { segments, label, sign, total } pour BricCharts.initDonut
     has_donut    — bool — True si au moins un segment donut
 
 Layout :
-    panel_left  → header + carte Cashflow (Sankey + KPI strip) + liste transactions
+    panel_left  → header + carte Cashflow (Sankey + KPI onglets) + contenu selon cat_tab
     panel_right → carte Distribution (donut + liste sous-catégories)
     Le right panel overlay (de base_app.html) reste disponible pour le détail transaction.
 {% endcomment %}
@@ -79,33 +85,55 @@ Layout :
                 {{ sankey_data|json_script:"sankey-data" }}
             </div>
         {% endif %}
-        {# KPI strip — 3 colonnes informationnelles (non cliquables).                      #}
+        {# KPI strip — 3 onglets cliquables (sélecteurs de tab).                           #}
+        {# Clic → budget:set_cat_tab → session budget_cat_tab → redirect referer.         #}
+        {# Actif : border-b-2 border-gold + label/valeur text-gold.                       #}
         {# Transactions = montant total · Sous-catégories = count distinct · Objectif     #}
         <div class="grid grid-cols-3 divide-x divide-edge border-t border-edge mt-2">
-            {# Montant total sur la période #}
-            <div class="px-5 py-4">
-                <p class="text-[9px] text-text-muted uppercase tracking-wider mb-1">Transactions</p>
+            {# ── Onglet Transactions — montant total sur la période ── #}
+            <a href="{% url 'budget:set_cat_tab' 'transactions' %}"
+               class="px-5 py-4 block border-b-2 transition-colors {% if cat_tab == 'transactions' %}border-gold{% else %}border-transparent hover:border-edge{% endif %}">
+                <p class="text-[9px] uppercase tracking-wider mb-1 {% if cat_tab == 'transactions' %}text-gold{% else %}text-text-muted{% endif %}">
+                    Transactions
+                </p>
                 {% if total_amount >= 0 %}
-                    <p class="text-base font-bold text-income tabular-nums">+{{ total_amount|chf }} CHF</p>
+                    <p class="text-base font-bold tabular-nums {% if cat_tab == 'transactions' %}text-gold{% else %}text-income{% endif %}">
+                        +{{ total_amount|chf }} CHF
+                    </p>
                 {% else %}
-                    <p class="text-base font-bold text-expense tabular-nums">−{{ total_amount|chf }} CHF</p>
+                    <p class="text-base font-bold tabular-nums {% if cat_tab == 'transactions' %}text-gold{% else %}text-expense{% endif %}">
+                        −{{ total_amount|chf }} CHF
+                    </p>
                 {% endif %}
-            </div>
-            {# Nombre de sous-catégories distinctes sur la période #}
-            <div class="px-5 py-4">
-                <p class="text-[9px] text-text-muted uppercase tracking-wider mb-1">Sous-catégories</p>
-                <p class="text-base font-bold text-text-base tabular-nums">{{ subcat_count }}</p>
-            </div>
-            {# Objectif — montant mis à l'échelle de la période + indicateur de progression #}
-            <div class="px-5 py-4">
-                <p class="text-[9px] text-text-muted uppercase tracking-wider mb-1">Objectif</p>
+            </a>
+            {# ── Onglet Sous-catégories — nombre de sous-cats distinctes ── #}
+            <a href="{% url 'budget:set_cat_tab' 'subcategories' %}"
+               class="px-5 py-4 block border-b-2 transition-colors {% if cat_tab == 'subcategories' %}border-gold{% else %}border-transparent hover:border-edge{% endif %}">
+                <p class="text-[9px] uppercase tracking-wider mb-1 {% if cat_tab == 'subcategories' %}text-gold{% else %}text-text-muted{% endif %}">
+                    Sous-catégories
+                </p>
+                <p class="text-base font-bold tabular-nums {% if cat_tab == 'subcategories' %}text-gold{% else %}text-text-base{% endif %}">
+                    {{ subcat_count }}
+                </p>
+            </a>
+            {# ── Onglet Objectif — montant mis à l'échelle + bouton modifier ── #}
+            {# Le bouton ✏️ HTMX est à l'intérieur du <a> → stopPropagation      #}
+            {# pour éviter que son clic déclenche la navigation vers set_cat_tab. #}
+            <a href="{% url 'budget:set_cat_tab' 'objectif' %}"
+               class="px-5 py-4 block border-b-2 transition-colors {% if cat_tab == 'objectif' %}border-gold{% else %}border-transparent hover:border-edge{% endif %}">
+                <p class="text-[9px] uppercase tracking-wider mb-1 {% if cat_tab == 'objectif' %}text-gold{% else %}text-text-muted{% endif %}">
+                    Objectif
+                </p>
                 {% if budget_target %}
                     {# Montant cible mis à l'échelle (×period_months) + bouton modifier #}
                     <div class="flex items-center gap-1.5">
-                        <p class="text-base font-bold text-text-base tabular-nums">{{ target_amount|chf }} CHF</p>
+                        <p class="text-base font-bold tabular-nums {% if cat_tab == 'objectif' %}text-gold{% else %}text-text-base{% endif %}">
+                            {{ target_amount|chf }} CHF
+                        </p>
                         <button hx-get="{% url 'budget:modal_target_create' %}?category_id={{ category.id }}"
                                 hx-target="#modal-content"
                                 hx-swap="innerHTML"
+                                onclick="event.stopPropagation(); event.preventDefault();"
                                 class="w-5 h-5 rounded-full border border-edge/60 flex items-center justify-center text-text-muted hover:text-gold hover:border-gold/50 transition-colors flex-shrink-0"
                                 title="Modifier l'objectif mensuel">
                             <svg class="w-2.5 h-2.5"
@@ -132,6 +160,7 @@ Layout :
                     <button hx-get="{% url 'budget:modal_target_create' %}?category_id={{ category.id }}"
                             hx-target="#modal-content"
                             hx-swap="innerHTML"
+                            onclick="event.stopPropagation(); event.preventDefault();"
                             class="w-8 h-8 rounded-full border border-dashed border-edge/50 hover:border-gold/50 flex items-center justify-center text-text-disabled hover:text-gold transition-colors"
                             title="Définir un objectif mensuel">
                         <svg class="w-3.5 h-3.5"
@@ -143,28 +172,75 @@ Layout :
                         </svg>
                     </button>
                 {% endif %}
-            </div>
+            </a>
         </div>
     </div>
-    {# ── Liste de transactions ────────────────────────────────────────────────── #}
-    {# hx-on::htmx:after-swap : quand HTMX injecte dans #panel-content,          #}
-    {# openPanel() glisse le panneau overlay en visibilité.                       #}
-    <div class="bg-surface-2 border border-edge rounded-xl overflow-hidden"
-         hx-on::htmx:after-swap="if(event.detail.target.id==='panel-content') openPanel()">
-        <div class="flex items-center justify-between px-4 py-3 border-b border-edge">
-            <p class="text-[10px] text-text-muted uppercase tracking-wider">Transactions</p>
-            <span class="text-[10px] text-text-disabled">{{ tx_count }} au total</span>
-        </div>
-        {% if txs %}
-            <div class="divide-y divide-edge/40">
-                {% for tx in txs %}
-                    {% include "budget/_panel_tx_row.html" with tx=tx bank_icon_url=tx.bank_icon_url %}
-                {% endfor %}
+    {# ── Contenu principal — conditionnel selon cat_tab ────────────────────────── #}
+    {# Tab "subcategories" → liste des sous-catégories avec leurs montants.        #}
+    {# Tab "transactions" (défaut) et "objectif" → liste des transactions.         #}
+    {# Les données des deux vues sont toujours calculées côté serveur — seul       #}
+    {# l'affichage change. Pas de requête HTMX supplémentaire.                     #}
+    {% if cat_tab == 'subcategories' %}
+        {# ── Vue Sous-catégories ── #}
+        <div class="bg-surface-2 border border-edge rounded-xl overflow-hidden">
+            <div class="flex items-center justify-between px-4 py-3 border-b border-edge">
+                <p class="text-[10px] text-text-muted uppercase tracking-wider">Sous-catégories</p>
+                <span class="text-[10px] text-text-disabled">{{ subcat_count }} au total</span>
             </div>
-        {% else %}
-            <p class="text-xs text-text-disabled text-center py-8">Aucune transaction sur cette période</p>
-        {% endif %}
-    </div>
+            {% if subcat_list %}
+                <div class="divide-y divide-edge/40">
+                    {% for sub in subcat_list %}
+                        <div class="flex items-center gap-3 px-4 py-3">
+                            {# Cercle icône — même rendu que la liste catégories de index.html #}
+                            <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center"
+                                 style="background-color: {{ category.colour_hex|default:'#2d3033' }}40">
+                                {% if sub.subcategory__icon %}
+                                    {% with icon_path="icons/categories/"|add:sub.subcategory__icon|add:".svg" %}
+                                        <img src="{% static icon_path %}"
+                                             width="14"
+                                             height="14"
+                                             class="w-3.5 h-3.5 brightness-0 invert opacity-80"
+                                             alt="">
+                                    {% endwith %}
+                                {% endif %}
+                            </div>
+                            {# Nom + montant #}
+                            <span class="text-xs text-text-base flex-1 min-w-0 truncate">
+                                {{ sub.subcategory__name|default:"Sans sous-catégorie" }}
+                            </span>
+                            {% if sub.total >= 0 %}
+                                <span class="text-xs font-medium text-income tabular-nums flex-shrink-0">+{{ sub.total|chf }} CHF</span>
+                            {% else %}
+                                <span class="text-xs font-medium text-expense tabular-nums flex-shrink-0">−{{ sub.total|chf }} CHF</span>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="text-xs text-text-disabled text-center py-8">Aucune sous-catégorie sur cette période</p>
+            {% endif %}
+        </div>
+    {% else %}
+        {# ── Vue Transactions (défaut — aussi pour tab "objectif" en attendant Phase 2C) ── #}
+        {# hx-on::htmx:after-swap : quand HTMX injecte dans #panel-content,                #}
+        {# openPanel() glisse le panneau overlay en visibilité.                             #}
+        <div class="bg-surface-2 border border-edge rounded-xl overflow-hidden"
+             hx-on::htmx:after-swap="if(event.detail.target.id==='panel-content') openPanel()">
+            <div class="flex items-center justify-between px-4 py-3 border-b border-edge">
+                <p class="text-[10px] text-text-muted uppercase tracking-wider">Transactions</p>
+                <span class="text-[10px] text-text-disabled">{{ tx_count }} au total</span>
+            </div>
+            {% if txs %}
+                <div class="divide-y divide-edge/40">
+                    {% for tx in txs %}
+                        {% include "budget/_panel_tx_row.html" with tx=tx bank_icon_url=tx.bank_icon_url %}
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="text-xs text-text-disabled text-center py-8">Aucune transaction sur cette période</p>
+            {% endif %}
+        </div>
+    {% endif %}
 {% endblock %}
 {# ══════════════════════════════════════════════════════════════════════════════
    PANEL DROIT — Distribution (donut + liste sous-catégories)

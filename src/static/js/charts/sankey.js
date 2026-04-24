@@ -41,6 +41,38 @@ window.BricCharts = window.BricCharts || {};
     // ── Détection pool + __disponible__ ───────────────────────────────────────
     const hasPool = sankeyData.nodes.some(function (n) { return n.name === "__pool__"; });
 
+    // ── Guard : pas de revenus sur la période ─────────────────────────────────
+    // Quand income = 0, il n'existe aucun lien "xxx → __pool__". ECharts ne peut
+    // pas dimensionner le pool et le chart se brise.
+    // Solution : on injecte un nœud fantôme __no_income__ invisible qui alimente
+    // le pool du même montant que les dépenses totales. Les flux pool→dépenses
+    // continuent de fonctionner normalement. Un label ECharts graphic affiche
+    // "Pas de revenu sur cette période" à la place du côté gauche vide.
+    let noIncomeMessage = false;
+    if (hasPool) {
+      const hasIncomeLinks = sankeyData.links.some(function (l) { return l.target === "__pool__"; });
+      if (!hasIncomeLinks) {
+        noIncomeMessage = true;
+        const totalOut = sankeyData.links
+          .filter(function (l) { return l.source === "__pool__"; })
+          .reduce(function (s, l) { return s + l.value; }, 0);
+        if (totalOut > 0) {
+          sankeyData.nodes.unshift({
+            name: "__no_income__",
+            value: totalOut,
+            itemStyle: { color: "rgba(0,0,0,0)", borderWidth: 0 },
+            label: { show: false },
+          });
+          sankeyData.links.unshift({
+            source: "__no_income__",
+            target: "__pool__",
+            value: totalOut,
+            lineStyle: { color: "rgba(0,0,0,0)", opacity: 0 },
+          });
+        }
+      }
+    }
+
     // ── Positionnement universel des labels — source RIGHT, target LEFT ────────
     //
     // Principe identique pour les deux variantes de Sankey :
@@ -56,7 +88,7 @@ window.BricCharts = window.BricCharts || {};
     // logique fonctionne quelle que soit la structure du graphe.
     //
     // Nœuds invisibles (__pool__, __disponible__) → label masqué.
-    const HIDDEN_NODES = new Set(["__pool__", "__disponible__"]);
+    const HIDDEN_NODES = new Set(["__pool__", "__disponible__", "__no_income__"]);
     const targetNodes  = new Set();
     sankeyData.links.forEach(function (link) {
       if (!HIDDEN_NODES.has(link.target)) targetNodes.add(link.target);
@@ -74,7 +106,7 @@ window.BricCharts = window.BricCharts || {};
     // Gradient : sombre (factor 0.05) à gauche → lumineux (factor 0.7) à droite.
     // Exception : liens __disponible__ gardent opacity:0 du backend.
     sankeyData.links = sankeyData.links.map(function (link) {
-      if (link.target === "__disponible__") return link;
+      if (link.target === "__disponible__" || link.source === "__no_income__") return link;
       // On prend toujours la couleur du target (porteur de la couleur distincte).
       // Si le target est le pool (income→pool), on prend le source à la place.
       const linkColor = HIDDEN_NODES.has(link.target)
@@ -98,6 +130,20 @@ window.BricCharts = window.BricCharts || {};
 
     sankey.setOption({
       backgroundColor: "transparent",
+      // Overlay texte quand aucun revenu — positionné à gauche du chart
+      graphic: noIncomeMessage ? [{
+        type: "text",
+        left: "3%",
+        top: "middle",
+        style: {
+          text: "Pas de revenu\nsur cette période",
+          fill: T["text-muted"],
+          fontSize: 10,
+          fontFamily: FONT,
+          textAlign: "center",
+          lineHeight: 16,
+        },
+      }] : [],
       animation: true,
       animationDuration: 400,
       animationEasing: "cubicOut",
@@ -110,11 +156,12 @@ window.BricCharts = window.BricCharts || {};
           // Strip U+200B (zero-width space) utilisé pour dédupliquer le nœud
           // source quand catégorie et sous-catégorie portent le même nom.
           if (params.dataType === "node") {
-            if (params.name === "__pool__") return "";
+            if (HIDDEN_NODES.has(params.name)) return "";
             const name = params.name.replace(/​/g, "");
             const val = Math.round(Math.abs(params.value)).toLocaleString("fr-CH", { maximumFractionDigits: 0 });
             return `<b>${name}</b><br />${val} CHF`;
           }
+          if (HIDDEN_NODES.has(params.data.source) || HIDDEN_NODES.has(params.data.target)) return "";
           const val = params.value.toLocaleString("fr-CH", { maximumFractionDigits: 0 });
           const src = params.data.source.replace(/​/g, "");
           const tgt = params.data.target.replace(/​/g, "");
@@ -150,7 +197,7 @@ window.BricCharts = window.BricCharts || {};
         lineStyle: { curveness: 0.4 },
         label: {
           fontFamily: FONT,
-          fontSize: 10,
+          fontSize: 8,
           color: T["text-base"],
           formatter: function (params) {
             if (params.name === "__pool__") return "";

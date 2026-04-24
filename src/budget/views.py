@@ -596,48 +596,52 @@ def budget_index(request):
             "global": False,
         }
 
-    if income_categories and expense_categories:
-        for inc in income_categories:
-            color = inc["category__colour_hex"] or "#4ade80"
-            sankey_links.append(
-                {
-                    "source": inc["category__name"],
-                    "target": POOL,
-                    "value": round(float(inc["total"]), 2),
-                    "lineStyle": {"color": _gradient(color, 0.15, 0.55)},
-                }
-            )
-        for exp in expense_categories:
-            color = exp["category__colour_hex"] or "#888888"
-            sankey_links.append(
-                {
-                    "source": POOL,
-                    "target": exp["category__name"],
-                    "value": round(float(abs(exp["total"])), 2),
-                    "lineStyle": {"color": _gradient(color, 0.55, 0.15)},
-                }
-            )
+    # Liens income → pool (seulement si revenus)
+    for inc in income_categories:
+        color = inc["category__colour_hex"] or "#4ade80"
+        sankey_links.append(
+            {
+                "source": inc["category__name"],
+                "target": POOL,
+                "value": round(float(inc["total"]), 2),
+                "lineStyle": {"color": _gradient(color, 0.15, 0.55)},
+            }
+        )
 
-        # Nœud __disponible__ — invisible, en bas, pour équilibrer le pool.
-        # Sans lui : pool reçoit total_income mais n'envoie que total_expenses
-        # → ECharts laisse une barre suspendue dans le pool (forme asymétrique).
-        # Rendu invisible via opacity 0 sur le nœud ET le flux.
-        if total_available > 0:
-            sankey_nodes.append(
-                {
-                    "name": "__disponible__",
-                    "itemStyle": {"color": "rgba(0,0,0,0)", "borderWidth": 0},
-                    "label": {"show": False},
-                }
-            )
-            sankey_links.append(
-                {
-                    "source": POOL,
-                    "target": "__disponible__",
-                    "value": round(float(total_available), 2),
-                    "lineStyle": {"color": "rgba(0,0,0,0)", "opacity": 0},
-                }
-            )
+    # Liens pool → expense (seulement si dépenses)
+    # Séparé du bloc income pour que le Sankey rende les dépenses même sans revenu.
+    # Le JS (sankey.js) détecte l'absence de liens income→pool et injecte un
+    # nœud fantôme invisible pour alimenter le pool et afficher un message.
+    for exp in expense_categories:
+        color = exp["category__colour_hex"] or "#888888"
+        sankey_links.append(
+            {
+                "source": POOL,
+                "target": exp["category__name"],
+                "value": round(float(abs(exp["total"])), 2),
+                "lineStyle": {"color": _gradient(color, 0.55, 0.15)},
+            }
+        )
+
+    # Nœud __disponible__ — invisible, en bas, pour équilibrer le pool.
+    # Uniquement quand income ET expenses existent : sans revenu, le pool est
+    # alimenté par le fantôme JS et l'équilibre est déjà assuré.
+    if income_categories and expense_categories and total_available > 0:
+        sankey_nodes.append(
+            {
+                "name": "__disponible__",
+                "itemStyle": {"color": "rgba(0,0,0,0)", "borderWidth": 0},
+                "label": {"show": False},
+            }
+        )
+        sankey_links.append(
+            {
+                "source": POOL,
+                "target": "__disponible__",
+                "value": round(float(total_available), 2),
+                "lineStyle": {"color": "rgba(0,0,0,0)", "opacity": 0},
+            }
+        )
 
     # On passe des dicts Python (pas des strings JSON) au contexte.
     # json_script dans le template se charge de la sérialisation JSON → une seule fois.
@@ -700,7 +704,43 @@ def budget_index(request):
         TAB_CONFIG["sorties"],  # fallback sorties si valeur invalide
     )
 
-    # ── 11. Contexte → template ───────────────────────────────────────────────
+    # ── 11. Progression budget — arc SVG ────────────────────────────────────
+    #
+    # Pour chaque catégorie de toutes les listes, on calcule target_pct :
+    #   target_pct = abs(total dépensé) / (objectif_mensuel × nb_mois_période) × 100
+    #   cappé à 100 — le template affiche en rouge si >= 100 (dépassement).
+    #
+    # On mutualise la requête BudgetTarget en un seul dict {category_id → amount}
+    # pour éviter N requêtes dans la boucle (pattern "prefetch manuel").
+    #
+    # Pourquoi muter les listes income/expense/recurring et pas juste active_categories ?
+    # → active_categories est une référence vers l'une d'elles (pas une copie).
+    #   On enrichit toutes les listes car le donut les utilise aussi, et pour ne pas
+    #   dépendre de l'ordre d'exécution.
+    _targets_map = {t.category_id: t.amount for t in BudgetTarget.objects.all()}
+    _period_months = PERIOD_MODE_MONTHS[period_mode]
+
+    for _cat_list in (expense_categories, income_categories, recurring_categories):
+        for _cat in _cat_list:
+            _monthly = _targets_map.get(_cat["category__id"])
+            if _monthly and _monthly > 0:
+                _scaled = float(_monthly) * _period_months
+                _spent = float(abs(_cat["total"] or 0))
+                _raw_pct = _spent / _scaled * 100
+                # target_pct : 0-100, pour l'arc SVG (cappé à 100)
+                _cat["target_pct"] = min(round(_raw_pct), 100)
+                # target_raw_pct : non cappé, pour le texte "XX% de l'objectif"
+                _cat["target_raw_pct"] = round(_raw_pct)
+                # target_overspend_chf : montant CHF dépassé (None si sous l'objectif)
+                _cat["target_overspend_chf"] = (
+                    round(_spent - _scaled) if _raw_pct > 100 else None
+                )
+            else:
+                _cat["target_pct"] = None
+                _cat["target_raw_pct"] = None
+                _cat["target_overspend_chf"] = None
+
+    # ── 12. Contexte → template ───────────────────────────────────────────────
     # total_available calculé en section 8 (avant le Sankey JSON)
 
     context = {
@@ -771,24 +811,18 @@ def budget_set_period(request, action):
     current_start = date.fromisoformat(start_str) if start_str else today.replace(day=1)
 
     # ── Changement de mode (1m / 3m / 1y) ───────────────────────────────────
-    # On bascule vers le nouveau mode en gardant la même période de départ si possible.
-    # Si la nouvelle période dépasse le mois courant, on revient au mois courant.
+    # On ancre toujours sur le mois courant comme FIN de période.
+    # Raison UX : quand on change de mode, on veut voir les données les plus
+    # récentes possibles, pas rester bloqué sur un vieux mois de départ.
+    # Exemple : si on est en Mai 2025 (1M) et qu'on passe à 3M,
+    #   ancien comportement → Mai-Juil 2025 (garde le début)
+    #   nouveau comportement → Fév-Avr 2026 (ancre sur aujourd'hui comme fin)
     if action in PERIOD_MODE_MONTHS:
         new_mode = action
-        new_start = current_start  # on tente de garder le même mois de départ
+        n = PERIOD_MODE_MONTHS[new_mode]
 
-        # Calculer la fin avec le nouveau mode
+        new_start = _add_months(today.replace(day=1), -(n - 1))
         new_end = _period_end_from_start(new_start, new_mode)
-
-        # Si la fin déborde dans le futur, recentrer sur le mois courant (comme fin)
-        current_month_end = today.replace(
-            day=calendar.monthrange(today.year, today.month)[1]
-        )
-        if new_end > current_month_end:
-            # Décaler le début pour que la fin = dernier mois courant
-            n = PERIOD_MODE_MONTHS[new_mode]
-            new_start = _add_months(today.replace(day=1), -(n - 1))
-            new_end = _period_end_from_start(new_start, new_mode)
 
     # ── Navigation prev / next ────────────────────────────────────────────────
     # On décale period_start de ±1 mois, puis on recalcule period_end selon le mode.
@@ -1793,7 +1827,12 @@ def budget_category_detail(request, slug):
     # une fois pour le Sankey, une fois pour le donut.
     subcat_list = list(
         txs.filter(subcategory__isnull=False)
-        .values("subcategory__id", "subcategory__name", "subcategory__slug")
+        .values(
+            "subcategory__id",
+            "subcategory__name",
+            "subcategory__slug",
+            "subcategory__icon",
+        )
         .annotate(total=Sum("amount"))
         .order_by("total")
     )

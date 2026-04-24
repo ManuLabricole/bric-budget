@@ -42,7 +42,7 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                              stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
                         </svg>
-                        <span class="absolute -top-1.5 -right-1 text-[8px] font-bold bg-text-muted/30 text-text-muted px-1 rounded-full uppercase tracking-wide leading-4">Soon</span>
+                        {% include "components/badges/soon.html" with extra_class="absolute -top-1.5 -right-1" %}
                     </div>
                     {# Dropdown comptes — Soon #}
                     <div class="relative flex items-center gap-1 px-3 py-1.5 text-xs text-text-disabled bg-surface-hover rounded-full opacity-50 cursor-not-allowed"
@@ -55,7 +55,7 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                              stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
                         </svg>
-                        <span class="absolute -top-1.5 -right-1 text-[8px] font-bold bg-text-muted/30 text-text-muted px-1 rounded-full uppercase tracking-wide leading-4">Soon</span>
+                        {% include "components/badges/soon.html" with extra_class="absolute -top-1.5 -right-1" %}
                     </div>
                     {# Icônes copie + expand — Soon (juste désactivées, pas de badge) #}
                     <button class="w-7 h-7 flex items-center justify-center rounded-full text-text-disabled opacity-30 cursor-not-allowed"
@@ -236,7 +236,7 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                                     </svg>
                                 </span>
                                 <span>Catégorie</span>
-                                <span class="ml-auto text-[8px] font-bold bg-surface-hover text-text-disabled px-1.5 py-0.5 rounded-full uppercase tracking-wide">Soon</span>
+                                {% include "components/badges/soon.html" with extra_class="ml-auto" %}
                             </div>
                         </div>
                     </div>
@@ -260,7 +260,7 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                              stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
                         </svg>
-                        <span class="absolute -top-1.5 -right-1 text-[8px] font-bold bg-text-muted/30 text-text-muted px-1 rounded-full uppercase tracking-wide leading-4">Soon</span>
+                        {% include "components/badges/soon.html" with extra_class="absolute -top-1.5 -right-1" %}
                     </div>
                 </div>
             </div>
@@ -277,24 +277,47 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                         {% for cat in active_categories %}
                             <a href="{% url 'budget:category_detail' cat.category__slug %}"
                                class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-surface-hover/50 cursor-pointer group transition-colors">
-                                {# Carré arrondi coloré + icône SVG Tabler blanche #}
-                                {# Même pattern que le picker et les lignes de transaction #}
+                                {# Cercle icône + arc SVG de progression budget (si BudgetTarget défini).    #}
+                                {# Arc SVG : viewBox 36×36, r=16 → circonférence ≈ 100 → dasharray direct. #}
+                                {# Outer container w-10 h-10 (40px) + icône w-7 h-7 (28px) = gap visible.  #}
+                                {# Couleur = couleur de la catégorie (stroke direct sur hex DB).            #}
                                 {% with icon_path="icons/categories/"|add:cat.category__icon|add:".svg" %}
-                                    <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center"
-                                         style="background-color: {{ cat.category__colour_hex|default:'#2d3033' }}">
-                                        {% if cat.category__icon %}
-                                            <img src="{% static icon_path %}"
-                                                 width="18"
-                                                 height="18"
-                                                 class="w-[18px] h-[18px] brightness-0 invert"
-                                                 alt="">
-                                        {% else %}
-                                            <span class="text-white text-xs font-bold">{{ cat.category__name|slice:":1" }}</span>
+                                    <div class="relative w-10 h-10 flex-shrink-0 flex items-center justify-center">
+                                        {% if cat.target_pct is not None %}
+                                            <svg class="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 36 36">
+                                                {# Track — couleur catégorie à faible opacité #}
+                                                <circle cx="18" cy="18" r="16" fill="none" stroke="{{ cat.category__colour_hex|default:'#4ade80' }}" stroke-opacity="0.2" stroke-width="3.5" stroke-dasharray="100 100" />
+                                                {# Arc de progression — couleur catégorie pleine #}
+                                                <circle cx="18" cy="18" r="16" fill="none" stroke="{{ cat.category__colour_hex|default:'#4ade80' }}" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="{{ cat.target_pct }} 100" />
+                                            </svg>
                                         {% endif %}
+                                        {# Icône légèrement plus petite que le container → espace naturel avec l'arc #}
+                                        <div class="w-7 h-7 rounded-full flex items-center justify-center"
+                                             style="background-color: {{ cat.category__colour_hex|default:'#2d3033' }}">
+                                            {% if cat.category__icon %}
+                                                <img src="{% static icon_path %}"
+                                                     width="16"
+                                                     height="16"
+                                                     class="w-4 h-4 brightness-0 invert"
+                                                     alt="">
+                                            {% else %}
+                                                <span class="text-white text-xs font-bold">{{ cat.category__name|slice:":1" }}</span>
+                                            {% endif %}
+                                        </div>
                                     </div>
                                 {% endwith %}
                                 <div class="flex-1 min-w-0">
                                     <p class="text-sm font-medium text-text-base">{{ cat.category__name }}</p>
+                                    {# Indicateur budget — visible seulement si un objectif est défini #}
+                                    {% if cat.target_raw_pct is not None %}
+                                        {% if cat.target_overspend_chf is not None %}
+                                            {# Dépassement — orange Finary #}
+                                            <p class="text-[10px] text-warning leading-tight mt-0.5">{{ cat.target_overspend_chf }} CHF au-dessus de l'objectif</p>
+                                        {% else %}
+                                            {# Budget respecté — vert #}
+                                            <p class="text-[10px] text-income leading-tight mt-0.5">{{ cat.target_raw_pct }}% de l'objectif</p>
+                                        {% endif %}
+                                    {% endif %}
                                 </div>
                                 {# Montant : signe adapté selon la direction (+ entrées, − sorties/récurrentes) #}
                                 <span class="text-sm font-semibold text-text-base tabular-nums">
