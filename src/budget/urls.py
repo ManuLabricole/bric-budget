@@ -18,6 +18,12 @@ urlpatterns = [
     # /budget/period/<action>/ → navigation temporelle (GET → redirect vers /budget/)
     # action : "prev" | "next" | "1m" | "3m" | "1y"
     path("period/<str:action>/", views.budget_set_period, name="set_period"),
+    # /budget/period/month/<year>/<month>/ → saute vers un mois absolu (bar chart objectif)
+    path(
+        "period/month/<int:year>/<int:month>/",
+        views.budget_set_period_month,
+        name="set_period_month",
+    ),
     # /budget/tab/<tab>/ → bascule l'onglet actif (GET → redirect vers /budget/)
     # tab : "sorties" | "entrees" | "recurrentes"
     path("tab/<str:tab>/", views.budget_set_tab, name="set_tab"),

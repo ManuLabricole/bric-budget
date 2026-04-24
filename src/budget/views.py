@@ -28,8 +28,10 @@ from pathlib import Path
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q, Sum
+from django.db.models.functions import TruncMonth
 from django.shortcuts import get_object_or_404, redirect, render
 from django.templatetags.static import static
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from transactions.models import (
@@ -1752,6 +1754,40 @@ def _vary_color(hex_color, factor):
     return f"#{round(r * factor):02x}{round(g * factor):02x}{round(b * factor):02x}"
 
 
+# =============================================================================
+# budget_set_period_month — Saute vers un mois précis (GET → redirect)
+# =============================================================================
+
+
+@login_required
+def budget_set_period_month(request, year, month):
+    """
+    Saute vers un mois spécifique en écrivant directement period_start/end en session.
+    Utilisé par le bar chart historique de category_detail quand on clique une barre.
+
+    URL : /budget/period/month/<year>/<month>/
+    Même pattern PRG que budget_set_period : GET → session → redirect referer.
+
+    Pourquoi une vue dédiée plutôt que budget_set_period ?
+        budget_set_period prend une action ("prev", "next", "1m"...) et calcule
+        la période relative à aujourd'hui. Ici on veut un mois absolu arbitraire —
+        on écrit donc directement les clés session budget_period_start/end.
+    """
+    try:
+        target_date = date(int(year), int(month), 1)
+    except ValueError:
+        return redirect(request.META.get("HTTP_REFERER", "") or "budget:index")
+
+    last_day = calendar.monthrange(target_date.year, target_date.month)[1]
+    request.session["budget_period_mode"] = "1m"
+    request.session["budget_period_start"] = target_date.isoformat()
+    request.session["budget_period_end"] = target_date.replace(day=last_day).isoformat()
+
+    referer = request.META.get("HTTP_REFERER", "")
+    return redirect(referer or "budget:index")
+
+
+# =============================================================================
 # budget_category_detail — Page détail d'une catégorie
 # =============================================================================
 
@@ -1947,6 +1983,11 @@ def budget_category_detail(request, slug):
     target_amount = None
     target_pct = None
     on_track = None
+    arc_fill_px = None  # longueur de l'arc SVG gauge — approche cercle complet, r=40, demi-périmètre = π×40 = 125.66
+    remaining_chf = (
+        None  # target_amount - spent : positif = marge, négatif = dépassement
+    )
+    remaining_abs_chf = None  # abs(remaining_chf) — pour l'affichage sans signe
     if budget_target:
         from decimal import Decimal
 
@@ -1957,6 +1998,108 @@ def budget_category_detail(request, slug):
         else:
             target_pct = 0
         on_track = spent <= target_amount
+        # arc_fill_px : proportion de l'arc à remplir.
+        # Plafond à 124 (pas 125.5 = périmètre exact) pour laisser un micro-gap :
+        # avec stroke-linecap="round", les deux caps arrondis aux extrémités du
+        # demi-cercle (10,52) et (90,52) se superposent quand l'arc est plein →
+        # deux "oreilles" visibles. En stoppant à 124, le cap de fin n'atteint pas
+        # le cap de départ et il n'y a plus de superposition.
+        # Demi-périmètre exact : π × r = π × 40 = 125.66
+        # Pas besoin de tricher avec 124 — le viewport SVG "0 0 100 52" clippe les oreilles nativement.
+        arc_fill_px = round(min(target_pct, 100) / 100 * 125.66, 1)
+        # remaining_chf : marge restante (positif) ou dépassement (négatif)
+        remaining_chf = round(float(target_amount) - float(spent), 2)
+        # remaining_abs_chf : valeur absolue pour l'affichage (|chf| filtre ne gère pas les négatifs)
+        remaining_abs_chf = abs(remaining_chf)
+
+    # ── Historique mensuel — 12 mois glissants pour le bar chart ─────────────
+    # Indépendant de la période active en session : toujours les 12 derniers mois.
+    # Utilisé uniquement dans le tab "objectif" pour visualiser la tendance.
+    twelve_months_ago = _add_months(today.replace(day=1), -11)
+    monthly_qs = (
+        Transaction.objects.filter(
+            category=category,
+            date__gte=twelve_months_ago,
+            date__lte=today,
+            is_ignored=False,
+        )
+        .annotate(month=TruncMonth("date"))
+        .values("month")
+        .annotate(total=Sum("amount"))
+        .order_by("month")
+    )
+
+    history_months = []
+    history_values = []
+    history_urls = []
+    for row in monthly_qs:
+        m = row["month"]
+        history_months.append(MOIS_FR[m.month][:3])
+        # Valeur absolue — le bar chart affiche toujours positif
+        history_values.append(round(float(abs(row["total"])), 2))
+        history_urls.append(reverse("budget:set_period_month", args=[m.year, m.month]))
+
+    history_chart_data = {
+        "months": history_months,
+        "values": history_values,
+        "urls": history_urls,
+        # Ligne de référence — montant mensuel brut (pas multiplié par period_months)
+        "target": round(float(budget_target.amount), 2) if budget_target else None,
+        # current_month permet à bar.js de colorer la barre active avec la couleur catégorie
+        "current_month": period_start.strftime("%Y-%m"),
+        # Couleur catégorie — barres actives et ligne objectif
+        "cat_color": category.colour_hex or "#4ade80",
+    }
+    has_history = len(history_months) > 0
+
+    # ── KPI stats sous le bar chart ───────────────────────────────────────────
+    # Calculés uniquement si budget_target existe (sinon affichage vide + CTA).
+    # Sont des faits fixes sur 12 mois glissants — indépendants de la période.
+    bar_kpis = None
+    if budget_target and has_history:
+        from decimal import Decimal as D
+
+        target_monthly = float(budget_target.amount)
+
+        # Dépenses moyennes sur les 12 mois de l'historique
+        avg_monthly = sum(history_values) / len(history_values)
+
+        # Meilleure série : nb de mois consécutifs sous objectif (max streak)
+        best_streak = current_streak = 0
+        for v in history_values:
+            if v <= target_monthly:
+                current_streak += 1
+                best_streak = max(best_streak, current_streak)
+            else:
+                current_streak = 0
+
+        # % Dépenses année en cours : total jan→aujourd'hui / (target × mois écoulés)
+        year_start = today.replace(month=1, day=1)
+        year_spent_agg = Transaction.objects.filter(
+            category=category,
+            date__gte=year_start,
+            date__lte=today,
+            is_ignored=False,
+        ).aggregate(total=Sum("amount"))["total"] or D(0)
+        year_months_elapsed = today.month  # nb de mois depuis janvier (inclusif)
+        year_target = target_monthly * year_months_elapsed
+        year_pct = (
+            round(float(abs(year_spent_agg)) / year_target * 100)
+            if year_target > 0
+            else 0
+        )
+
+        # Dépassement d'objectif : % de mois (sur 12) où le budget a été dépassé
+        months_over = sum(1 for v in history_values if v > target_monthly)
+        over_pct = round(months_over / len(history_values) * 100)
+
+        bar_kpis = {
+            "avg_monthly": round(avg_monthly, 0),
+            "best_streak": best_streak,
+            "year_pct": year_pct,
+            "over_pct": over_pct,
+            "year_months_elapsed": year_months_elapsed,
+        }
 
     return render(
         request,
@@ -1981,9 +2124,15 @@ def budget_category_detail(request, slug):
             "target_amount": target_amount,
             "target_pct": target_pct,
             "on_track": on_track,
+            "arc_fill_px": arc_fill_px,
+            "remaining_chf": remaining_chf,
+            "remaining_abs_chf": remaining_abs_chf,
             "period_months": period_months,
             "period_mode": period_mode,
             "period_display": period_label,
             "can_go_next": can_go_next,
+            "history_chart_data": history_chart_data,
+            "has_history": has_history,
+            "bar_kpis": bar_kpis,
         },
     )
