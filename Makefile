@@ -38,6 +38,8 @@ help:
 	@printf "    $(BOLD)make status$(RESET)          Affiche l'état des services et les ports\n"
 	@printf "\n"
 	@printf "  $(CYAN)📥 Import CSV$(RESET)\n"
+	@printf "    $(BOLD)make import-all$(RESET)      Importe tous les fichiers du dossier raw (dry run)\n"
+	@printf "    $(BOLD)make import-all COMMIT=1$(RESET)  Importe tous les fichiers (écriture DB)\n"
 	@printf "    $(BOLD)make import-yuh$(RESET)      Analyse un export Yuh CSV (dry run)\n"
 	@printf "    $(BOLD)make import-ubs$(RESET)      Analyse un export UBS CSV (dry run)\n"
 	@printf "    $(BOLD)make import-cic$(RESET)      Analyse un export CIC Excel (dry run)\n"
@@ -144,6 +146,10 @@ reset-seed:
 	@$(MANAGE) reset_seed --yes
 	@printf "  $(DIM)→ relance make seed pour repeupler$(RESET)\n"
 
+import-all:
+	@printf "  📥 $(CYAN)Import all raw files$(if $(COMMIT), — écriture DB,  — dry run)...$(RESET)\n"
+	@$(MANAGE) import_all --dir assets/private/data/raw $(if $(COMMIT),--commit,)
+
 import-yuh:
 	@if [ -z "$(FILE)" ]; then printf "  ❌ $(RED)Usage: make import-yuh FILE=path/to/export.csv [COMMIT=1]$(RESET)\n"; exit 1; fi
 	@printf "  📥 $(CYAN)Import Yuh$(if $(COMMIT), — écriture DB,  — dry run)...$(RESET)\n"
@@ -214,4 +220,4 @@ restore:
 	@printf "  ✅ $(GREEN)Restauration terminée$(RESET)\n"
 
 # =============================================================================
-.PHONY: help status up down logs run migrate makemigrations shell create-superuser seed reset-seed import-yuh import-ubs import-cic backup restore dev-randomize dev-seed-realistic
+.PHONY: help status up down logs run migrate makemigrations shell create-superuser seed reset-seed import-all import-yuh import-ubs import-cic backup restore dev-randomize dev-seed-realistic

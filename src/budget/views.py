@@ -1928,6 +1928,29 @@ def budget_category_detail(request, slug):
             }
         )
 
+    # Quand aucune sous-catégorie n'existe sur la période mais qu'il y a des
+    # transactions, on construit un lien "pass-through" :
+    #   source_name (avec ZWSP) → category.name (sans ZWSP)
+    # Les deux nœuds ont le même nom visuel (le ZWSP est strippé par le formatter JS)
+    # et la même couleur → le Sankey affiche 100% sans jamais disparaître.
+    # Sans ce fallback, has_sankey=False et le conteneur du graphe est masqué dans
+    # le template, ce qui est trompeur quand des transactions existent.
+    if not sankey_links and total_amount != 0:
+        sankey_nodes.append(
+            {
+                "name": category.name,  # sans ZWSP — nom distinct pour ECharts
+                "slug": category.slug,
+                "itemStyle": {"color": cat_color},
+            }
+        )
+        sankey_links.append(
+            {
+                "source": source_name,  # avec ZWSP
+                "target": category.name,  # sans ZWSP
+                "value": round(float(abs(total_amount)), 2),
+            }
+        )
+
     sankey_data = {"nodes": sankey_nodes, "links": sankey_links}
     has_sankey = len(sankey_links) > 0
 
@@ -1941,6 +1964,17 @@ def budget_category_detail(request, slug):
         }
         for i, sub in enumerate(subcat_list)
     ]
+
+    # Même logique que le fallback Sankey : quand aucune sous-catégorie n'existe,
+    # on affiche un segment unique à 100% plutôt que de masquer le donut.
+    if not donut_segments and total_amount != 0:
+        donut_segments = [
+            {
+                "name": category.name,
+                "value": round(float(abs(total_amount)), 2),
+                "itemStyle": {"color": cat_color},
+            }
+        ]
 
     donut_data = {
         "segments": donut_segments,
