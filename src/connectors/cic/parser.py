@@ -300,7 +300,7 @@ class CICConnector(BaseConnector):
         # row_idx disambiguates identical rows within the same sheet — e.g. two
         # SNCF payments of the same amount on the same day are real distinct events.
         raw = f"{rib}|{row_idx}|{date_str}|{amount}|{description_raw}"
-        import_hash = hashlib.sha1(raw.encode()).hexdigest()
+        import_hash = hashlib.sha256(raw.encode()).hexdigest()
 
         return TransactionDict(
             date=date_str,
@@ -352,7 +352,9 @@ class CICConnector(BaseConnector):
         # On retire tout token final qui contient AU MOINS UN chiffre.
         text = re.sub(r"\s+[A-Z][A-Z0-9]*\d[A-Z0-9]*$", "", text)
 
-        return text.strip().title() or description.title()
+        # 4. Normalize spacing + title-case via the shared base helper
+        result = self._normalize_merchant(text)
+        return result if result else self._normalize_merchant(description)
 
     def _parse_card(self, description: str) -> str | None:
         """

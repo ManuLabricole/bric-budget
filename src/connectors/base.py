@@ -17,6 +17,7 @@ It maps 1-to-1 with the Transaction model fields relevant at import time.
 The import service handles DB insertion, deduplication, and categorisation.
 """
 
+import re
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TypedDict
@@ -41,7 +42,7 @@ class TransactionDict(TypedDict):
     )
     merchant_name: str  # cleaned display name pre-filled from description_raw
     card_last_four: str | None  # "4521" for card transactions, None otherwise
-    import_hash: str  # SHA1 of key fields — used for deduplication across imports
+    import_hash: str  # SHA256 of key fields — used for deduplication across imports
 
 
 class BaseConnector(ABC):
@@ -77,6 +78,21 @@ class BaseConnector(ABC):
             - UBS: line 6 of the metadata block ("Solde final:;7281.45;")
         """
         return None
+
+    def _normalize_merchant(self, text: str) -> str:
+        """
+        Final normalization step shared by all connectors.
+
+        Collapses consecutive spaces (padding artifact in some bank exports),
+        strips leading/trailing whitespace, then title-cases the result.
+
+        Called as the last step in each connector's _clean_merchant() so the
+        output format is consistent regardless of the source bank.
+
+        Example: "FEEL EAT SARL            LA CHAUX-D" → "Feel Eat Sarl La Chaux-D"
+        """
+        collapsed = re.sub(r" {2,}", " ", text).strip()
+        return collapsed.title()
 
     def extract_account_identifier(self, filepath: Path) -> str | None:
         """

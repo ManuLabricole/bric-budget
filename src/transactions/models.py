@@ -373,9 +373,10 @@ class Transaction(models.Model):
 
     # --- Import ---
 
-    # SHA1 hash of the raw row — used at import time to skip duplicates.
+    # SHA256 hash of the raw row — used at import time to skip duplicates.
     # unique=True: Django raises IntegrityError if the same row is imported twice.
-    import_hash = models.CharField(max_length=40, unique=True)
+    # max_length=64: SHA256 hex digest is always 64 characters.
+    import_hash = models.CharField(max_length=64, unique=True)
 
     class Meta:
         verbose_name = "transaction"

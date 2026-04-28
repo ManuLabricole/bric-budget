@@ -198,7 +198,7 @@ class YuhConnector(BaseConnector):
         # line_number is the position in the file (stable across re-imports of the
         # same file — Yuh always exports in chronological order).
         raw = f"{line_number}|{date_str}|{row['ACTIVITY TYPE']}|{amount}|{description_raw}"
-        import_hash = hashlib.sha1(raw.encode()).hexdigest()
+        import_hash = hashlib.sha256(raw.encode()).hexdigest()
 
         return TransactionDict(
             date=date_str,
@@ -275,21 +275,20 @@ class YuhConnector(BaseConnector):
         if activity_type == "CARD_TRANSACTION_OUT":
             recipient = self._strip_quotes(row.get("RECIPIENT", "").strip())
             if recipient:
-                return recipient.title()
+                return self._normalize_merchant(recipient)
 
         if activity_type == "PAYMENT_TRANSACTION_OUT":
             recipient = self._strip_quotes(row.get("RECIPIENT", "").strip())
             if recipient:
-                return recipient.title()
+                return self._normalize_merchant(recipient)
 
         if activity_type == "PAYMENT_TRANSACTION_IN":
             sender = self._strip_quotes(row.get("SENDER", "").strip())
             if sender:
-                return sender.title()
+                return self._normalize_merchant(sender)
 
-        # Fallback: title-case the raw description
-        # title() capitalises first letter of each word: "ANTEIS SA" → "Anteis Sa"
-        return description.title()
+        # Fallback: normalize the raw description
+        return self._normalize_merchant(description)
 
     def _parse_card(self, raw: str) -> str | None:
         """

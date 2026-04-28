@@ -258,7 +258,7 @@ class UBSConnector(BaseConnector):
         # on the same day are realistically different events at different times.
         # No IBAN in the hash — the hash is per-row, account association is external.
         raw = f"{date_str}|{time_str}|{amount}|{description1}"
-        import_hash = hashlib.sha1(raw.encode()).hexdigest()
+        import_hash = hashlib.sha256(raw.encode()).hexdigest()
 
         return TransactionDict(
             date=date_str,
@@ -302,9 +302,7 @@ class UBSConnector(BaseConnector):
             "FEEL EAT SARL            LA CHAUX-D"
         → collapse all consecutive spaces to one, then title-case.
         Result: "Feel Eat Sarl La Chaux-D"
-        """
-        import re
 
-        # Collapse multiple consecutive spaces to a single space
-        collapsed = re.sub(r" {2,}", " ", description1).strip()
-        return collapsed.title()
+        Delegates to the shared _normalize_merchant() base helper.
+        """
+        return self._normalize_merchant(description1)
