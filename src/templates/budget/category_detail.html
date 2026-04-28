@@ -73,7 +73,7 @@ Layout :
     {# ── Carte Cashflow — Sankey + KPI strip ─────────────────────────────────── #}
     {# Même structure que la carte Cashflow de index.html :                       #}
     {#   header "Cashflow" → Sankey → KPI strip collée en bas (divide-x)          #}
-    <div class="bg-surface-3 rounded-xl mb-4">
+    <div id="cashflow-card" class="bg-surface-3 rounded-xl mb-4">
         <div class="flex items-center justify-between px-5 pt-5 pb-2">
             <h2 class="text-sm font-semibold text-text-base">Cashflow</h2>
             <span class="text-[10px] text-text-disabled">{{ period_label }}</span>
@@ -383,7 +383,7 @@ Layout :
             {% if txs %}
                 <div class="divide-y divide-edge/40">
                     {% for tx in txs %}
-                        {% include "budget/_panel_tx_row.html" with tx=tx bank_icon_url=tx.bank_icon_url %}
+                        {% include "budget/_panel_tx_row.html" with tx=tx bank_icon_url=tx.bank_icon_url panel_source="category" panel_target="#cat-tx-detail" %}
                     {% endfor %}
                 </div>
             {% else %}
@@ -462,9 +462,9 @@ Layout :
         </aside>
     {% elif has_donut %}
         {# ── Panel Distribution — tabs transactions + subcategories ─────────────── #}
-        <aside class="flex-[1] min-w-0">
-            <div class="h-8 mb-4"></div>
-            <div class="bg-surface-3 rounded-xl">
+        <aside class="flex-[1] min-w-0 flex flex-col gap-4">
+            <div class="h-8"></div>
+            <div id="donut-card" class="bg-surface-3 rounded-xl">
                 {# Donut ECharts — même pattern que index.html #}
                 <div id="donut-chart" class="w-full px-4" style="height: 220px;"></div>
                 {{ donut_data|json_script:"donut-data" }}
@@ -484,6 +484,18 @@ Layout :
                             {% endif %}
                         </div>
                     {% endfor %}
+                </div>
+            </div>
+            {# ── Div fixe détail transaction — apparaît quand on clique une ligne ── #}
+            {# hx-target="#cat-tx-detail" dans _panel_tx_row.html remplace innerHTML. #}
+            {# Placeholder visible jusqu'au premier clic.                             #}
+            <div id="cat-tx-detail" class="bg-surface-3 rounded-xl overflow-hidden">
+                <div class="flex flex-col items-center justify-center py-8 px-4 text-center">
+                    <p class="text-xs text-text-disabled leading-relaxed">
+                        Cliquez sur une transaction
+                        <br>
+                        pour voir les détails
+                    </p>
                 </div>
             </div>
         </aside>
@@ -524,6 +536,13 @@ Layout :
     BricCharts.initBar(barEl, histData);
   }
   {% endif %}
+  // Align donut card height to cashflow card so both columns share the same row boundary.
+  // Runs after charts are initialized (charts add pixels to the DOM before this executes).
+  var cashflowCard = document.getElementById('cashflow-card');
+  var donutCard = document.getElementById('donut-card');
+  if (cashflowCard && donutCard) {
+    donutCard.style.minHeight = cashflowCard.offsetHeight + 'px';
+  }
         </script>
     {% endif %}
 {% endblock %}

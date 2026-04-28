@@ -26,10 +26,16 @@ Rendu d'une transaction ignorée (is_ignored=True) :
     Zone cliquable colonnes 1-4 : ouvre le picker catégorie.
     flex-1 + min-w-0 : prend tout l'espace disponible sans déborder.
     {% endcomment %}
+    {% comment %}
+    panel_target (optionnel) : ID CSS de la cible HTMX.
+      - Non défini (défaut) → #panel-content (overlay droit) + openPanel() au retour.
+      - Défini (ex: "#cat-tx-detail") → div fixe dans le panel, pas d'overlay.
+    {% endcomment %}
     <div class="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
-         hx-get="{% url 'budget:panel_tx_detail' %}?tx_id={{ tx.id }}"
-         hx-target="#panel-content"
-         hx-swap="innerHTML">
+         hx-get="{% url 'budget:panel_tx_detail' %}?tx_id={{ tx.id }}{% if panel_source %}&source={{ panel_source }}{% endif %}"
+         hx-target="{{ panel_target|default:'#panel-content' }}"
+         hx-swap="innerHTML"
+         {% if not panel_target %}hx-on::after-request="openPanel()"{% endif %}>
         {% comment %}
         COL 1 — Icône catégorie 44px : carré arrondi coloré + SVG Tabler blanc.
         Fallback "?" si pas de catégorie ou pas d'icône.

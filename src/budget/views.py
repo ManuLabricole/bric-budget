@@ -1683,12 +1683,17 @@ def budget_panel_tx_detail(request):
     slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
     bank_icon_url = bank_icon_map.get(slug, "")
 
+    # source="category" → la liste est déjà visible à gauche, le bouton ← doit
+    # fermer l'overlay plutôt que recharger la liste "Tout voir" dans le panel.
+    source = request.GET.get("source", "")
+
     return render(
         request,
         "budget/_panel_tx_detail.html",
         {
             "tx": tx,
             "bank_icon_url": bank_icon_url,
+            "close_on_back": source == "category",
         },
     )
 

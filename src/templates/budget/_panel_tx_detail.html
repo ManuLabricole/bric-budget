@@ -23,22 +23,38 @@ Structure :
 {% comment %} ── Header : bouton retour + titre ── {% endcomment %}
 <div class="px-4 pt-2 pb-3 flex items-center gap-3 flex-shrink-0">
     {% comment %}
-    Bouton ← retour vers la liste des transactions (état A).
-    Même pattern que dans _panel_category_picker.html.
+    Bouton ← retour.
+    - close_on_back=True  : depuis une page où la liste est déjà visible à gauche
+      (category_detail, patrimoine) → ferme l'overlay, pas de rechargement.
+    - close_on_back=False : depuis "Tout voir" → retourne à la liste dans l'overlay.
     {% endcomment %}
-    <button hx-get="{% url 'budget:panel_transactions' %}"
-            hx-target="#panel-content"
-            hx-swap="innerHTML"
-            class="p-1.5 rounded-lg text-text-muted hover:text-text-base hover:bg-surface-hover transition-colors flex-shrink-0"
-            title="Retour à la liste">
-        <svg class="w-4 h-4"
-             fill="none"
-             viewBox="0 0 24 24"
-             stroke-width="2"
-             stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
-        </svg>
-    </button>
+    {% if close_on_back %}
+        <button onclick="closePanel()"
+                class="p-1.5 rounded-lg text-text-muted hover:text-text-base hover:bg-surface-hover transition-colors flex-shrink-0"
+                title="Fermer">
+            <svg class="w-4 h-4"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="2"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+            </svg>
+        </button>
+    {% else %}
+        <button hx-get="{% url 'budget:panel_transactions' %}"
+                hx-target="#panel-content"
+                hx-swap="innerHTML"
+                class="p-1.5 rounded-lg text-text-muted hover:text-text-base hover:bg-surface-hover transition-colors flex-shrink-0"
+                title="Retour à la liste">
+            <svg class="w-4 h-4"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="2"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+            </svg>
+        </button>
+    {% endif %}
     <span class="text-base font-semibold text-text-base flex-1">Détails de la transaction</span>
     <button onclick="closePanel()"
             class="w-6 h-6 rounded-full border border-edge flex items-center justify-center text-text-disabled hover:text-text-muted hover:border-edge-subtle transition-colors flex-shrink-0"
@@ -125,7 +141,7 @@ Pas de fond de fond — la row se distingue via le hover uniquement.
         catégorisée automatiquement par une règle (categorization_source="rule")
         ou par l'IA (categorization_source="ai"). Pas affiché si manuel ou défaut.
         {% endcomment %}
-        {% if tx.categorization_source == "rule" or tx.categorization_source == "ai" %}
+        {% if tx.categorization_source == "rule" %}
             <p class="text-[9px] font-semibold text-gold uppercase tracking-wider mt-0.5">Règle intelligente appliquée</p>
         {% endif %}
     </div>
