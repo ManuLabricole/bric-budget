@@ -24,7 +24,7 @@ from pathlib import Path
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 
-from accounts.models import Account
+from connectors.resolver import detect_connector, resolve_accounts
 from connectors.yuh.parser import YuhConnector
 from transactions.services import ImportService, compute_file_hash
 
@@ -55,17 +55,19 @@ class Command(BaseCommand):
         if not filepath.exists():
             raise CommandError(f"File not found: {filepath}")
 
-        connector = YuhConnector()
-        if not connector.matches_file(filepath):
+        connector = detect_connector(filepath)
+        if not isinstance(connector, YuhConnector):
             raise CommandError(
                 f"{filepath.name} does not look like a Yuh CSV export.\n"
                 "Expected columns: DATE; ACTIVITY TYPE; ACTIVITY NAME; DEBIT; ..."
             )
 
         # ── 2. Find Yuh account ───────────────────────────────────────────────
-        # Yuh CSV files contain no IBAN — we identify the account by bank slug
-        # and account type. Convention: one active Yuh checking account in DB.
-        account = self._find_account()
+        try:
+            matches = resolve_accounts(connector, filepath)
+        except Exception as e:
+            raise CommandError(str(e))
+        account = matches[0].account
 
         # ── 3. Get importing user ─────────────────────────────────────────────
         # DEV/CLI ONLY — management commands have no HTTP request, so no request.user.
@@ -110,30 +112,6 @@ class Command(BaseCommand):
     # =========================================================================
     # Private helpers
     # =========================================================================
-
-    def _find_account(self) -> Account:
-        """
-        Find the active Yuh checking account in the DB.
-
-        Yuh CSV files have no account identifier (no IBAN, no contract number).
-        Convention: exactly one active Yuh checking account must exist in the DB.
-        If 0 or 2+ exist, we raise a clear error rather than guessing.
-        """
-        qs = Account.objects.filter(
-            bank__slug="yuh",
-            account_type=Account.AccountType.CHECKING,
-            is_active=True,
-        )
-        if qs.count() == 0:
-            raise CommandError(
-                "No active Yuh checking account found. Run `make seed` first."
-            )
-        if qs.count() > 1:
-            raise CommandError(
-                f"Multiple active Yuh checking accounts found ({qs.count()}). "
-                "Cannot auto-assign. Please deactivate duplicates in the admin."
-            )
-        return qs.first()
 
     def _print_result(self, result, dry_run: bool):
         """Print a summary of the import result."""

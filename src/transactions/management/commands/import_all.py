@@ -30,20 +30,20 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand
 
 from connectors.cic.parser import CICConnector
+from connectors.resolver import detect_connector
 from connectors.ubs.parser import UBSConnector
 from connectors.yuh.parser import YuhConnector
 
 # Default directory to scan — relative to the project root (where make runs).
 DEFAULT_RAW_DIR = Path("assets/private/data/raw")
 
-# Ordered list of (connector_instance, management_command_name).
-# Order matters: if a file could match multiple connectors (unlikely),
-# the first match wins. Keep the most specific connectors first.
-CONNECTOR_MAP = [
-    (YuhConnector(), "import_yuh"),
-    (UBSConnector(), "import_ubs"),
-    (CICConnector(), "import_cic"),
-]
+# Mapping connecteur → nom de la commande de management.
+# Synchronisé avec CONNECTORS dans connectors/resolver.py.
+CONNECTOR_COMMAND = {
+    YuhConnector: "import_yuh",
+    UBSConnector: "import_ubs",
+    CICConnector: "import_cic",
+}
 
 
 class Command(BaseCommand):
@@ -90,12 +90,9 @@ class Command(BaseCommand):
         skipped = []  # files with no matching connector
 
         for filepath in all_files:
-            command_name = None
-            for connector, cmd in CONNECTOR_MAP:
-                if connector.matches_file(filepath):
-                    command_name = cmd
-                    break
-            if command_name:
+            connector = detect_connector(filepath)
+            if connector is not None:
+                command_name = CONNECTOR_COMMAND.get(type(connector))
                 matched.append((filepath, command_name))
             else:
                 skipped.append(filepath)

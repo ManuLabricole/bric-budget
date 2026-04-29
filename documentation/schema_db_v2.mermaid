@@ -29,6 +29,28 @@ erDiagram
     %% ACCOUNTS — App accounts/
     %% Banking infrastructure. AccountAccess REMOVED (YAGNI — 2-user app).
     %% Who uses what = Card.user, not a permissions table.
+    %%
+    %% ── GUIDE : Ajouter une banque ──────────────────────────────────────────
+    %% 1. Créer Bank en DB (admin ou seed) : name, slug, country, default_currency
+    %% 2. Créer connectors/<slug>/parser.py — implémenter matches_file(), parse()
+    %%    et optionnellement extract_balance(), extract_account_identifier()
+    %% 3. Ajouter le connecteur dans CONNECTORS (connectors/resolver.py)
+    %% 4. Ajouter la logique de matching dans resolve_accounts() (même fichier)
+    %%
+    %% ── GUIDE : Ajouter un compte (banque existante) ─────────────────────────
+    %% 1. Créer Account en DB : bank, name, account_type, currency, is_active=True
+    %% 2. Créer la spécialisation :
+    %%    - CheckingAccount (iban + bic) pour comptes courants
+    %%    - SavingsAccount (interest_rate) pour livrets
+    %% 3. Renseigner Account.contract_number avec l'identifiant du fichier :
+    %%    - UBS  → IBAN sans espaces (ex: "CH93XXXXXXXXXXXXXXXXXXX")
+    %%    - CIC  → RIB sans espaces (ex: "10096XXXXXXXXXXXXXXXXXXX")
+    %%    - Yuh  → laisser vide (convention : 1 seul compte Yuh checking actif)
+    %%
+    %% ── GUIDE : Ajouter une carte ────────────────────────────────────────────
+    %% 1. Créer Card en DB : checking_account, user, last_four, card_type
+    %% Le connecteur lit card_last_four dans chaque ligne et fait le matching
+    %% automatiquement via un dict {last_four: Card} chargé en 1 seule query.
     %% ==========================================================================
 
     Bank {
@@ -53,10 +75,12 @@ erDiagram
         datetime created_at
     }
 
-    %% Specialised table Phase 0A — checking accounts (Yuh, CIC C/C)
-    %% Pattern: 1 Account → 1 specialised table (OneToOne, primary_key=True)
-    %% Phase 4+: SavingsAccount, PensionAccount
-    %% Phase 5+: InvestmentAccount
+    %% Specialised tables — pattern OneToOne (primary_key=True) :
+    %% Account.account_type est le discriminateur → dit quelle table spécialisée lire.
+    %% CheckingAccount : comptes courants (Yuh, UBS, CIC C/C)
+    %% SavingsAccount  : livrets (CIC Livret A, LDDS)
+    %% Phase 4+ : PensionAccount (Finpension 3a, LP)
+    %% Phase 5+ : InvestmentAccount
 
     CheckingAccount {
         bigint account_id PK_FK
@@ -77,11 +101,23 @@ erDiagram
         bigint id PK
         bigint account_id FK
         date date
-        decimal balance
+        decimal balance_nullable
+        decimal computed_balance_nullable
         string currency
         decimal balance_chf
         string source
     }
+
+    %% BalanceSnapshot — deux valeurs complémentaires :
+    %%   balance          = solde extrait du fichier source (nullable)
+    %%                      Yuh : dans le nom de fichier (fragile — URL-encoding macOS)
+    %%                      UBS : metadata ligne 6 (fiable)
+    %%                      CIC : footer de chaque feuille (fiable)
+    %%   computed_balance = prev_snapshot + sum(new_transactions) (nullable)
+    %%                      null sur le 1er import (pas de base de calcul)
+    %%   .authoritative_balance = balance ?? computed_balance (propriété Python)
+    %%   .drift             = balance - computed_balance (propriété Python, None si manquant)
+    %%   Un drift > 0.01 → warning dans les logs → anomalie à investiguer
 
     ExchangeRate {
         bigint id PK
@@ -177,7 +213,7 @@ erDiagram
     %% Transaction.objects.filter(category=c, date__year=y, date__month=m).aggregate(Sum('amount_chf'))
 
     %% ==========================================================================
-    %% PHASE 0A — SavingsAccount (implemented — CIC Livret A / LDDS)
+    %% SavingsAccount (implémenté — CIC Livret A / LDDS)
     %% ==========================================================================
 
     SavingsAccount {

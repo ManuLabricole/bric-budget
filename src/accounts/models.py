@@ -314,9 +314,19 @@ class BalanceSnapshot(models.Model):
 
     date = models.DateField()
 
-    # max_digits=14: supports up to 999 billion — more than enough
-    # decimal_places=2: cent-level precision
-    balance = models.DecimalField(max_digits=14, decimal_places=2)
+    # Solde extrait du fichier source (filename pour Yuh, metadata pour UBS/CIC).
+    # null=True : si le connecteur ne peut pas extraire le solde (ex: Yuh avec
+    # nom de fichier URL-encodé), on crée quand même le snapshot avec computed_balance.
+    balance = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True
+    )
+
+    # Solde recalculé = dernier snapshot connu + somme des nouvelles transactions.
+    # Calculé par ImportService à chaque import. null=True sur le premier import
+    # (pas de snapshot précédent = pas de base de calcul).
+    computed_balance = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True
+    )
 
     # Currency of the raw balance — may differ from account.currency (rare)
     currency = models.CharField(max_length=3)
@@ -349,6 +359,22 @@ class BalanceSnapshot(models.Model):
 
     def __str__(self):
         return f"{self.account.name} — {self.date} : {self.balance} {self.currency}"
+
+    @property
+    def authoritative_balance(self):
+        """Meilleur solde disponible : extrait si présent, sinon calculé."""
+        return self.balance if self.balance is not None else self.computed_balance
+
+    @property
+    def drift(self):
+        """
+        Écart entre solde extrait et solde calculé.
+        None si l'un des deux manque (premier import, ou extraction impossible).
+        Un écart > 0.01 indique une anomalie (transaction manquante, arrondi banque...).
+        """
+        if self.balance is not None and self.computed_balance is not None:
+            return self.balance - self.computed_balance
+        return None
 
 
 # =============================================================================

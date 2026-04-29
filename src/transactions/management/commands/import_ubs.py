@@ -21,7 +21,7 @@ from pathlib import Path
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 
-from accounts.models import Account
+from connectors.resolver import detect_connector, resolve_accounts
 from connectors.ubs.parser import UBSConnector
 from transactions.services import ImportService, compute_file_hash
 
@@ -52,17 +52,19 @@ class Command(BaseCommand):
         if not filepath.exists():
             raise CommandError(f"File not found: {filepath}")
 
-        connector = UBSConnector()
-        if not connector.matches_file(filepath):
+        connector = detect_connector(filepath)
+        if not isinstance(connector, UBSConnector):
             raise CommandError(
                 f"{filepath.name} does not look like a UBS CSV export.\n"
                 "Expected: IBAN on line 2, then standard UBS column headers."
             )
 
         # ── 2. Find UBS account via IBAN ──────────────────────────────────────
-        # UBS embeds the IBAN in line 2 — this is how we identify which account
-        # the file belongs to. Bank-specific logic: stays in this command.
-        account = self._find_account(connector, filepath)
+        try:
+            matches = resolve_accounts(connector, filepath)
+        except Exception as e:
+            raise CommandError(str(e))
+        account = matches[0].account
 
         # ── 3. Get importing user ─────────────────────────────────────────────
         # DEV/CLI ONLY — management commands have no HTTP request, so no request.user.
@@ -107,36 +109,6 @@ class Command(BaseCommand):
     # =========================================================================
     # Private helpers
     # =========================================================================
-
-    def _find_account(self, connector: UBSConnector, filepath: Path):
-        """
-        Extract the account identifier from the file and find the matching Account in DB.
-
-        UBSConnector.extract_account_identifier() returns the IBAN normalized (no spaces).
-        We look it up directly via Account.contract_number — the universal import key.
-
-        Same pattern used by all connectors that embed an identifier in their file.
-        For sources without an identifier (Yuh), the command uses a convention fallback instead.
-        """
-        identifier = connector.extract_account_identifier(filepath)
-        if not identifier:
-            raise CommandError(
-                "Could not extract account identifier (IBAN) from file (expected on line 2).\n"
-                "The file may be corrupted or not a standard UBS export."
-            )
-
-        account = Account.objects.filter(
-            contract_number=identifier,
-            is_active=True,
-        ).first()
-
-        if account is None:
-            raise CommandError(
-                f"No account with contract_number='{identifier}' found in the database.\n"
-                "Run `make seed` first, or set Account.contract_number to this value in the admin."
-            )
-
-        return account
 
     def _print_result(self, result, dry_run: bool):
         """Print a summary of the import result."""

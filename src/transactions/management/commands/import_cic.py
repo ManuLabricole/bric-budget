@@ -24,8 +24,8 @@ from pathlib import Path
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 
-from accounts.models import Account
 from connectors.cic.parser import CICConnector
+from connectors.resolver import AccountMatch, detect_connector, resolve_accounts
 from transactions.services import ImportResult, ImportService, compute_file_hash
 
 User = get_user_model()
@@ -57,8 +57,8 @@ class Command(BaseCommand):
         if not filepath.exists():
             raise CommandError(f"File not found: {filepath}")
 
-        connector = CICConnector()
-        if not connector.matches_file(filepath):
+        connector = detect_connector(filepath)
+        if not isinstance(connector, CICConnector):
             raise CommandError(
                 f"{filepath.name} does not look like a CIC Excel export.\n"
                 "Expected an .xlsx file with a 'Vos comptes' sheet."
@@ -77,11 +77,16 @@ class Command(BaseCommand):
                 "No active superuser found. Run `make create-superuser` first."
             )
 
-        # ── 3. Discover account sheets ────────────────────────────────────────
-        sheets = connector.get_account_sheets(filepath)
+        # ── 3. Discover account sheets via resolver ───────────────────────────
+        # resolve_accounts() retourne 1 AccountMatch par feuille reconnue en DB.
+        # Les feuilles sans compte configuré lèvent Account.DoesNotExist.
+        try:
+            matches = resolve_accounts(connector, filepath)
+        except Exception as e:
+            raise CommandError(str(e))
 
         self.stdout.write(f"\nFile    : {filepath.name}")
-        self.stdout.write(f"Sheets  : {len(sheets)} account(s) found")
+        self.stdout.write(f"Sheets  : {len(matches)} account(s) found")
         self.stdout.write(
             f"Mode    : {'DRY RUN — no DB writes' if dry_run else 'COMMIT — writing to DB'}\n"
         )
@@ -90,16 +95,20 @@ class Command(BaseCommand):
         file_hash = compute_file_hash(filepath)
 
         # ── 4. Process each sheet ─────────────────────────────────────────────
-        # CIC = one file, multiple accounts. Each sheet = one account = one ImportLog.
-        # We suffix the filename with the sheet name so ImportLog.file_hash stays
-        # unique per (file, sheet) — otherwise the same file_hash would appear twice
-        # and the second sheet would be rejected as "already imported".
         total = ImportResult()
 
-        for sheet_info in sheets:
+        # On a besoin du balance par sheet — on le récupère depuis get_account_sheets
+        # (resolve_accounts ne le transmet pas pour rester simple).
+        sheets_info = {
+            s["sheet_name"]: s for s in connector.get_account_sheets(filepath)
+        }
+
+        for match in matches:
+            sheet_info = sheets_info.get(match.sheet_name, {})
             self._process_sheet(
                 filepath=filepath,
-                sheet_info=sheet_info,
+                match=match,
+                balance=sheet_info.get("balance"),
                 connector=connector,
                 user=user,
                 file_hash=file_hash,
@@ -133,7 +142,8 @@ class Command(BaseCommand):
     def _process_sheet(
         self,
         filepath: Path,
-        sheet_info: dict,
+        match: AccountMatch,
+        balance: float | None,
         connector: CICConnector,
         user,
         file_hash: str,
@@ -141,40 +151,20 @@ class Command(BaseCommand):
         total: ImportResult,
     ):
         """
-        Process one account sheet: find account, parse, call service, print.
+        Process one account sheet: parse, call service, print.
 
-        `total` is mutated in place — accumulates counts across all sheets
-        for the global summary printed at the end.
+        `match` vient du resolver — account déjà résolu, sheet_name et parse_kwargs inclus.
+        `balance` vient de get_account_sheets() — extrait du footer de la feuille.
+        `total` est muté en place pour le résumé global.
         """
-        sheet_name = sheet_info["sheet_name"]
-        rib = sheet_info["rib"]
-        rib_raw = sheet_info["rib_raw"]
-        balance = sheet_info["balance"]
+        account = match.account
+        sheet_name = match.sheet_name
 
         self.stdout.write(f"{'─' * 50}")
-        self.stdout.write(f"Sheet   : {sheet_name}  (RIB: {rib_raw})")
-
-        # ── Find matching account ─────────────────────────────────────────────
-        # CIC identifies accounts by contract_number = RIB without spaces.
-        account = Account.objects.filter(
-            bank__slug="cic",
-            is_active=True,
-            contract_number=rib,
-        ).first()
-
-        if account is None:
-            self.stdout.write(
-                self.style.WARNING(
-                    f"  No account found for RIB {rib_raw}\n"
-                    f"  Set Account.contract_number = '{rib}' in the admin."
-                )
-            )
-            self.stdout.write("")
-            return
-
+        self.stdout.write(f"Sheet   : {sheet_name}")
         self.stdout.write(f"Account : {account.name} (id={account.pk})")
         if balance is not None:
-            self.stdout.write(f"Balance : {balance:,.2f} EUR")
+            self.stdout.write(f"Balance : {balance:,.2f} {account.currency}")
 
         # ── Parse this sheet ──────────────────────────────────────────────────
         transactions = connector.parse_sheet(filepath, sheet_name)

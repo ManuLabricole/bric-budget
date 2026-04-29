@@ -289,31 +289,76 @@ class ImportService:
             if transactions_to_create:
                 Transaction.objects.bulk_create(transactions_to_create)
 
-            # BalanceSnapshot: record the account balance at the time of export.
-            # update_or_create: safe to re-run — won't duplicate if same (account, date).
-            if balance is not None and transactions_to_create:
-                # Use the most recent transaction date as the snapshot date.
-                # For Yuh the balance is "current" — matches the export date
-                # which is also the date of the most recent transaction.
+            # BalanceSnapshot : enregistre le solde du compte à la date d'export.
+            # update_or_create : safe à ré-exécuter — pas de doublon si (account, date) identique.
+            #
+            # Deux valeurs complémentaires :
+            #   balance          = solde extrait du fichier (None si le connecteur ne peut pas)
+            #   computed_balance = snapshot précédent + somme des nouvelles transactions
+            #
+            # Même si balance=None (ex: Yuh avec nom de fichier URL-encodé), on crée quand même
+            # le snapshot avec computed_balance pour ne pas perdre la traçabilité.
+            # Si les deux sont disponibles, on vérifie la dérive pour détecter des anomalies.
+            if transactions_to_create:
                 snapshot_date = max(t.date for t in transactions_to_create)
+
+                # Calculer computed_balance à partir du snapshot précédent
+                prev = (
+                    BalanceSnapshot.objects.filter(account=account)
+                    .order_by("-date")
+                    .first()
+                )
+                if prev is not None:
+                    prev_bal = (
+                        prev.balance
+                        if prev.balance is not None
+                        else prev.computed_balance
+                    )
+                    if prev_bal is not None:
+                        computed = prev_bal + sum(
+                            Decimal(str(t.amount)) for t in transactions_to_create
+                        )
+                    else:
+                        computed = None
+                else:
+                    # Premier import pour ce compte : pas de base de calcul
+                    computed = None
 
                 # For CHF accounts, balance_chf = balance directly.
                 # For EUR/GBP accounts, we leave balance_chf=None until exchange
                 # rates are loaded (Phase 1C — frankfurter.app integration).
-                balance_chf = (
-                    Decimal(str(balance)) if account.currency == "CHF" else None
-                )
+                extracted = Decimal(str(balance)) if balance is not None else None
+                balance_chf = extracted if account.currency == "CHF" else None
 
-                BalanceSnapshot.objects.update_or_create(
-                    account=account,
-                    date=snapshot_date,
-                    defaults={
-                        "balance": Decimal(str(balance)),
-                        "currency": account.currency,
-                        "balance_chf": balance_chf,
-                        "source": BalanceSnapshot.Source.IMPORT,
-                    },
-                )
+                if extracted is not None or computed is not None:
+                    BalanceSnapshot.objects.update_or_create(
+                        account=account,
+                        date=snapshot_date,
+                        defaults={
+                            "balance": extracted,
+                            "computed_balance": computed,
+                            "currency": account.currency,
+                            "balance_chf": balance_chf,
+                            "source": BalanceSnapshot.Source.IMPORT,
+                        },
+                    )
+
+                # Alerte si les deux sont disponibles et divergent de plus de 1 centime
+                if extracted is not None and computed is not None:
+                    import logging
+
+                    _log = logging.getLogger(__name__)
+                    drift = abs(extracted - computed)
+                    if drift > Decimal("0.01"):
+                        _log.warning(
+                            "Balance drift %.2f %s on account '%s' "
+                            "(extracted=%.2f, computed=%.2f)",
+                            drift,
+                            account.currency,
+                            account.name,
+                            extracted,
+                            computed,
+                        )
 
             # ImportLog: audit trail — one row per import session.
             # Answers "what file was imported, when, by whom, with what result?"
