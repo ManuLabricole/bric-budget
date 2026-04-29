@@ -1,0 +1,106 @@
+{# Détail d'un ImportLog — chargé dans #panel-content via HTMX #}
+<div class="flex flex-col h-full">
+    {# ── Header #}
+    <div class="flex items-start justify-between px-5 pt-5 pb-4 border-b border-edge flex-shrink-0">
+        <div class="flex items-center gap-3 min-w-0">
+            <div class="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 {% if log.status == 'success' %}bg-income/15{% elif log.status == 'partial' %}bg-warning/15{% else %}bg-expense/15{% endif %}">
+                {% if log.status == 'success' %}
+                    <svg class="w-4 h-4 text-income"
+                         fill="none"
+                         viewBox="0 0 24 24"
+                         stroke-width="2"
+                         stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                    </svg>
+                {% elif log.status == 'partial' %}
+                    <svg class="w-4 h-4 text-warning"
+                         fill="none"
+                         viewBox="0 0 24 24"
+                         stroke-width="2"
+                         stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                    </svg>
+                {% else %}
+                    <svg class="w-4 h-4 text-expense"
+                         fill="none"
+                         viewBox="0 0 24 24"
+                         stroke-width="2"
+                         stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                    </svg>
+                {% endif %}
+            </div>
+            <div class="min-w-0">
+                <p class="text-sm font-semibold text-text-base truncate">{{ log.filename }}</p>
+                <p class="text-xs text-text-muted mt-0.5">{{ log.get_status_display }}</p>
+            </div>
+        </div>
+        <button onclick="closePanel()"
+                class="text-text-disabled hover:text-text-muted transition-colors flex-shrink-0 ml-3 mt-0.5">
+            <svg class="w-4 h-4"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="2"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+            </svg>
+        </button>
+    </div>
+    {# ── Corps #}
+    <div class="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-5">
+        {# Banque + compte #}
+        <div>
+            <p class="text-[10px] font-semibold uppercase tracking-wide text-text-muted mb-2">Compte</p>
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-surface-hover flex items-center justify-center flex-shrink-0">
+                    <span class="text-xs font-bold text-text-secondary">{{ log.account.bank.name|slice:":1" }}</span>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-text-base">{{ log.account.name }}</p>
+                    <p class="text-xs text-text-muted">{{ log.account.bank.name }} · {{ log.account.currency }}</p>
+                </div>
+            </div>
+        </div>
+        {# Stats — 3 tuiles côte à côte #}
+        <div>
+            <p class="text-[10px] font-semibold uppercase tracking-wide text-text-muted mb-2">Résultats</p>
+            <div class="grid grid-cols-3 gap-2">
+                <div class="bg-surface-hover rounded-lg px-3 py-2.5 text-center">
+                    <p class="text-base font-bold text-income tabular-nums">+{{ log.count_created }}</p>
+                    <p class="text-[10px] text-text-muted mt-0.5">nouvelles</p>
+                </div>
+                <div class="bg-surface-hover rounded-lg px-3 py-2.5 text-center">
+                    <p class="text-base font-bold text-text-secondary tabular-nums">{{ log.count_skipped }}</p>
+                    <p class="text-[10px] text-text-muted mt-0.5">doublons</p>
+                </div>
+                <div class="bg-surface-hover rounded-lg px-3 py-2.5 text-center">
+                    <p class="text-base font-bold {% if log.count_errors > 0 %}text-expense{% else %}text-text-secondary{% endif %} tabular-nums">
+                        {{ log.count_errors }}
+                    </p>
+                    <p class="text-[10px] text-text-muted mt-0.5">erreurs</p>
+                </div>
+            </div>
+        </div>
+        {# Méta #}
+        <div>
+            <p class="text-[10px] font-semibold uppercase tracking-wide text-text-muted mb-2">Détails</p>
+            <div class="flex flex-col gap-2">
+                <div class="flex justify-between">
+                    <span class="text-xs text-text-muted">Date d'import</span>
+                    <span class="text-xs text-text-base font-medium tabular-nums">{{ log.imported_at|date:"d M Y à H:i" }}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-xs text-text-muted">Importé par</span>
+                    <span class="text-xs text-text-base font-medium">{{ log.imported_by.get_full_name|default:log.imported_by.username }}</span>
+                </div>
+            </div>
+        </div>
+        {# Erreurs éventuelles #}
+        {% if log.error_detail %}
+            <div>
+                <p class="text-[10px] font-semibold uppercase tracking-wide text-expense mb-2">Erreurs</p>
+                <pre class="text-[10px] text-expense/80 bg-expense/5 border border-expense/20 rounded-lg p-3 whitespace-pre-wrap break-words leading-relaxed">{{ log.error_detail }}</pre>
+            </div>
+        {% endif %}
+    </div>
+</div>

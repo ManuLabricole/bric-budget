@@ -1,27 +1,105 @@
 {% extends "base_app.html" %}
 {% block panel_left %}
-    <div class="bg-surface-3 rounded-xl p-6">
-        <h2 class="text-base font-semibold text-text-base mb-1">Importer un fichier</h2>
-        <p class="text-sm text-text-muted">
-            Glissez un export CSV ou Excel de votre banque — Yuh, UBS ou CIC.
-            Le connecteur est détecté automatiquement.
-        </p>
-        <div class="mt-6 border-2 border-dashed border-edge rounded-xl flex flex-col items-center justify-center py-12 text-center">
-            <svg class="w-10 h-10 text-text-disabled mb-3"
-                 fill="none"
-                 viewBox="0 0 24 24"
-                 stroke-width="1.5"
-                 stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
-            </svg>
-            <p class="text-sm font-medium text-text-secondary">Déposez votre fichier ici</p>
-            <p class="text-xs text-text-disabled mt-1">CSV · Excel — max 10 Mo</p>
-            <p class="text-xs text-text-disabled mt-4 italic">Upload à implémenter — Phase 2F Session 2</p>
+    <div class="flex flex-col gap-4">
+        {# ── Zone upload ─────────────────────────────────────────────────────── #}
+        <div class="bg-surface-3 rounded-xl p-5">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-sm font-semibold text-text-base">Importer un fichier</h2>
+                <span class="text-xs text-text-muted">Yuh · UBS · CIC</span>
+            </div>
+            {# Drop zone — compacte, juste assez pour drag&drop + bouton #}
+            <div class="border-2 border-dashed border-edge rounded-xl flex items-center gap-4 px-5 py-4">
+                <div class="w-10 h-10 rounded-full bg-surface-hover flex items-center justify-center flex-shrink-0">
+                    <svg class="w-5 h-5 text-text-muted"
+                         fill="none"
+                         viewBox="0 0 24 24"
+                         stroke-width="1.5"
+                         stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
+                    </svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-text-base">Déposez votre fichier ici</p>
+                    <p class="text-xs text-text-muted mt-0.5">CSV · Excel — max 10 Mo · détection automatique</p>
+                </div>
+                <button class="px-4 py-2 text-xs font-semibold rounded-lg bg-gold/20 text-gold border border-gold/30 hover:bg-gold/30 transition-colors cursor-not-allowed opacity-50"
+                        disabled
+                        title="Upload à implémenter — Phase 2F Session 2">Parcourir</button>
+            </div>
+        </div>
+        {# ── Historique des imports ───────────────────────────────────────────── #}
+        <div class="bg-surface-3 rounded-xl p-5">
+            <h2 class="text-sm font-semibold text-text-base mb-3">Historique</h2>
+            {% if logs %}
+                <div class="flex flex-col gap-0.5">
+                    {% for log in logs %}
+                        {# Même structure de ligne que les catégories dans Budget :      #}
+                        {# [icône statut] [nom fichier + compte] [date] [nb tx] [→]     #}
+                        <button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-surface-hover/50 cursor-pointer group transition-colors text-left"
+                                hx-get="{% url 'imports:log_detail' log.pk %}"
+                                hx-target="#panel-content"
+                                hx-swap="innerHTML"
+                                hx-on::after-request="openPanel()">
+                            {# Icône statut — cercle coloré #}
+                            <div class="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 {% if log.status == 'success' %}bg-income/15{% elif log.status == 'partial' %}bg-warning/15{% else %}bg-expense/15{% endif %}">
+                                {% if log.status == 'success' %}
+                                    <svg class="w-4 h-4 text-income"
+                                         fill="none"
+                                         viewBox="0 0 24 24"
+                                         stroke-width="2"
+                                         stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                                    </svg>
+                                {% elif log.status == 'partial' %}
+                                    <svg class="w-4 h-4 text-warning"
+                                         fill="none"
+                                         viewBox="0 0 24 24"
+                                         stroke-width="2"
+                                         stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                                    </svg>
+                                {% else %}
+                                    <svg class="w-4 h-4 text-expense"
+                                         fill="none"
+                                         viewBox="0 0 24 24"
+                                         stroke-width="2"
+                                         stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                                    </svg>
+                                {% endif %}
+                            </div>
+                            {# Nom + compte #}
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm font-medium text-text-base truncate">{{ log.filename }}</p>
+                                <p class="text-xs text-text-muted truncate">{{ log.account.bank.name }} · {{ log.account.name }}</p>
+                            </div>
+                            {# Nouvelles tx #}
+                            <span class="text-sm font-semibold text-text-base tabular-nums flex-shrink-0">+{{ log.count_created }}</span>
+                            {# Date #}
+                            <span class="text-xs text-text-muted tabular-nums flex-shrink-0 w-20 text-right">{{ log.imported_at|date:"d M Y" }}</span>
+                            {# Chevron #}
+                            <div class="w-5 h-5 rounded-full border border-edge flex items-center justify-center flex-shrink-0 group-hover:border-gold transition-colors">
+                                <svg class="w-2.5 h-2.5 text-text-muted group-hover:text-gold"
+                                     fill="none"
+                                     viewBox="0 0 24 24"
+                                     stroke-width="2.5"
+                                     stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                                </svg>
+                            </div>
+                        </button>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="text-sm text-text-disabled text-center py-8">Aucun import pour l'instant.</p>
+            {% endif %}
         </div>
     </div>
 {% endblock %}
 {% block panel_right %}
-    <div class="bg-surface-3 rounded-xl p-6">
-        <p class="text-sm text-text-muted">Le résultat de l'import s'affichera ici.</p>
-    </div>
+    <aside class="flex-[1] min-w-0">
+        <div class="bg-surface-3 rounded-xl p-5">
+            <p class="text-sm text-text-muted text-center py-8">Sélectionnez un import pour voir les détails.</p>
+        </div>
+    </aside>
 {% endblock %}

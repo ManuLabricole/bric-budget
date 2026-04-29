@@ -1,33 +1,43 @@
 """
 imports/views.py — Upload et traitement de fichiers bancaires via l'interface web.
 
-Deux vues principales :
+Vues :
 
-    import_upload(request)
-        GET  → formulaire d'upload (drag & drop)
-        POST → dry-run via resolver + ImportService → retourne un fragment HTMX
-               avec le résumé "N transactions à créer, compte détecté : Yuh CHF"
-               + bouton "Confirmer l'import"
+    import_upload(request)   — Page principale : formulaire + liste des imports passés
+    import_log_detail(request, pk) — Fragment HTMX : détail d'un ImportLog (right panel)
 
-    import_confirm(request)
-        POST → ré-exécute l'import avec COMMIT=True → retourne fragment résultat final
-
-Le fichier uploadé est temporairement stocké dans /tmp pendant la session dry-run.
-Il est supprimé après confirmation ou abandon (timeout session).
-
-Phase 2F Session 1 : stub uniquement — vues à implémenter en Session 2.
+Phase 2F Session 1 : vues stub — logique upload à implémenter en Session 2.
 """
 
 from django.contrib.auth.decorators import login_required
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, render
+
+from transactions.models import ImportLog
 
 
 @login_required
 def import_upload(request):
     """
-    Page principale d'import.
+    GET → affiche le formulaire upload + liste des imports passés.
 
-    GET  → affiche le formulaire upload.
-    POST → dry-run (non implémenté — Phase 2F Session 2).
+    Les imports sont triés par date décroissante : le plus récent en tête.
+    select_related("account__bank") évite N+1 : chaque row de la liste
+    affiche account.name et account.bank.name — 2 FK traversées → 1 seule query.
     """
-    return render(request, "imports/upload.html")
+    logs = ImportLog.objects.select_related("account__bank").order_by("-imported_at")
+    return render(request, "imports/upload.html", {"logs": logs})
+
+
+@login_required
+def import_log_detail(request, pk):
+    """
+    Fragment HTMX — chargé dans #panel-content quand on clique sur une ligne.
+
+    get_object_or_404 : retourne 404 si le log n'existe pas (URL tapée à la main).
+    select_related("account__bank", "imported_by") : évite 2 queries supplémentaires
+    pour afficher le nom de la banque et de l'utilisateur dans le panel détail.
+    """
+    log = get_object_or_404(
+        ImportLog.objects.select_related("account__bank", "imported_by"), pk=pk
+    )
+    return render(request, "imports/partials/_import_detail.html", {"log": log})
