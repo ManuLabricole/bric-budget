@@ -64,6 +64,8 @@ INSTALLED_APPS = [
     "accounts",
     "transactions",
     "budget",
+    # imports/ n'a pas de FK vers d'autres apps → déclaré en dernier
+    "imports",
 ]
 
 # MIDDLEWARE: a stack of functions that wrap every request/response.

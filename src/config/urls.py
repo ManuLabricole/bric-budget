@@ -36,4 +36,6 @@ urlpatterns = [
     # URLs de l'app budget — vues + templates de l'interface Budget
     # Toutes les URLs sont préfixées par /budget/
     path("budget/", include("budget.urls")),
+    # URLs de l'app imports — upload et traitement de fichiers bancaires
+    path("import/", include("imports.urls")),
 ]

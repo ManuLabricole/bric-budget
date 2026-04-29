@@ -1,0 +1,27 @@
+{% extends "base_app.html" %}
+{% block panel_left %}
+    <div class="bg-surface-3 rounded-xl p-6">
+        <h2 class="text-base font-semibold text-text-base mb-1">Importer un fichier</h2>
+        <p class="text-sm text-text-muted">
+            Glissez un export CSV ou Excel de votre banque — Yuh, UBS ou CIC.
+            Le connecteur est détecté automatiquement.
+        </p>
+        <div class="mt-6 border-2 border-dashed border-edge rounded-xl flex flex-col items-center justify-center py-12 text-center">
+            <svg class="w-10 h-10 text-text-disabled mb-3"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="1.5"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
+            </svg>
+            <p class="text-sm font-medium text-text-secondary">Déposez votre fichier ici</p>
+            <p class="text-xs text-text-disabled mt-1">CSV · Excel — max 10 Mo</p>
+            <p class="text-xs text-text-disabled mt-4 italic">Upload à implémenter — Phase 2F Session 2</p>
+        </div>
+    </div>
+{% endblock %}
+{% block panel_right %}
+    <div class="bg-surface-3 rounded-xl p-6">
+        <p class="text-sm text-text-muted">Le résultat de l'import s'affichera ici.</p>
+    </div>
+{% endblock %}
