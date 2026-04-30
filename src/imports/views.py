@@ -61,47 +61,78 @@ def import_upload(request):
 
     today = timezone.now().date()
 
-    # ── Sync status par compte ───────────────────────────────────────────────
-    # On affiche tous les comptes actifs avec ou sans import.
-    # Seuil vert : ≤ 7 jours / orange : ≤ 30 jours / rouge : > 30 jours / gris : jamais.
+    # ── Sync status groupé par banque ────────────────────────────────────────
+    # Règles couleur :
+    #   today (days==0)  → badge "ok"     → vert  (text-income)
+    #   < 1 semaine      → badge "recent" → gris  (text-text-muted)
+    #   ≥ 1 semaine      → badge "stale"  → orange (text-warning)
+    #   jamais importé   → badge "never"  → dim   (text-text-disabled)
     active_accounts = (
         Account.objects.filter(is_active=True)
         .select_related("bank")
         .order_by("bank__name", "name")
     )
-    sync_status = []
+    # Construire un dict bank → liste de comptes
+    from collections import defaultdict
+
+    banks_map = defaultdict(list)
     for account in active_accounts:
         last_log = (
             ImportLog.objects.filter(account=account).order_by("-imported_at").first()
         )
         if last_log:
             days = (today - last_log.imported_at.date()).days
-            badge = "ok" if days <= 7 else ("warning" if days <= 30 else "stale")
+            if days == 0:
+                badge = "ok"
+            elif days < 7:
+                badge = "recent"
+            else:
+                badge = "stale"
         else:
             days = None
             badge = "never"
-        sync_status.append(
+        banks_map[account.bank].append(
             {"account": account, "last_log": last_log, "days": days, "badge": badge}
         )
+    bank_groups = [
+        {"bank": bank, "accounts": accounts} for bank, accounts in banks_map.items()
+    ]
 
-    # ── Données chart — 15 derniers imports (ordre chronologique) ───────────
-    recent_logs = list(
-        ImportLog.objects.select_related("account__bank").order_by("-imported_at")[:15]
+    # ── Chart — données brutes journalières sur 12 mois ─────────────────────
+    # On envoie les logs bruts (1 point = 1 import). Le JS agrège selon la période
+    # choisie (1M=jours, 3M=semaines, 1A=mois) et empile par banque.
+    from datetime import timedelta
+
+    cutoff_12m = today - timedelta(days=365)
+    logs_12m = list(
+        ImportLog.objects.filter(imported_at__date__gte=cutoff_12m)
+        .select_related("account__bank")
+        .order_by("imported_at")
     )
-    recent_logs.reverse()
-    import json
 
-    chart_data = json.dumps(
-        [
+    # Banques présentes dans la fenêtre (ordre d'apparition)
+    seen_bank_names = []
+    for log in logs_12m:
+        name = log.account.bank.name
+        if name not in seen_bank_names:
+            seen_bank_names.append(name)
+
+    # NE PAS appeler json.dumps() ici — json_script dans le template sérialise lui-même.
+    # Un dict Python passé à json_script → JSON valide dans le script tag.
+    # Si on pré-sérialise avec json.dumps(), json_script ré-encode la string → double
+    # encodage → raw devient une string JS au lieu d'un objet → raw.banks = undefined.
+    chart_data = {
+        "banks": seen_bank_names,
+        "logs": [
             {
-                "label": log.imported_at.strftime("%-d %b"),
-                "count": log.count_created,
-                "account": log.account.name,
+                "date": log.imported_at.strftime("%Y-%m-%d"),
                 "bank": log.account.bank.name,
+                "created": log.count_created,
+                "total": log.count_created + log.count_skipped,
             }
-            for log in recent_logs
-        ]
-    )
+            for log in logs_12m
+        ],
+    }
 
     # ── Historique groupé par fichier (file_hash) ───────────────────────────
     # Un même fichier CIC génère N ImportLogs (1 par feuille/compte).
@@ -157,7 +188,7 @@ def import_upload(request):
         "imports/upload.html",
         {
             "grouped_logs": grouped_logs,
-            "sync_status": sync_status,
+            "bank_groups": bank_groups,
             "chart_data": chart_data,
         },
     )

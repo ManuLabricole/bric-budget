@@ -37,7 +37,7 @@ Les "cartes" visuelles sont définies par chaque page dans panel_left / panel_ri
             {# les cartes et autour d'elles.                                        #}
             {# panel_left  (flex-[2]) : Cashflow, transactions, catégorie…          #}
             {# panel_right (flex-[1]) : Distribution, stats, détail…               #}
-            <div class="flex-1 flex gap-4 p-4 overflow-y-auto bg-transparent items-start">
+            <div class="flex-1 flex gap-4 p-4 overflow-y-auto bg-transparent {% block panels_align %}items-start{% endblock %}">
                 <main class="flex-[2] min-w-0">
                     {% block panel_left %}{% endblock %}
                 </main>

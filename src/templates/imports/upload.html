@@ -1,180 +1,128 @@
 {% extends "base_app.html" %}
 {% load static %}
+{% block panels_align %}items-start{% endblock %}
 {% block panel_left %}
-    <div class="flex flex-col gap-4">
-        {# ── Sync status ─────────────────────────────────────────────────────── #}
-        <div class="bg-surface-3 rounded-xl p-5">
-            <h2 class="text-sm font-semibold text-text-base mb-3">Synchronisation</h2>
-            <div class="grid grid-cols-2 gap-2">
-                {% for item in sync_status %}
-                    <div class="flex items-center gap-3 bg-surface-hover rounded-xl px-3 py-2.5">
-                        {# Badge couleur selon l'ancienneté du dernier import #}
-                        <div class="w-2 h-2 rounded-full flex-shrink-0 {% if item.badge == 'ok' %}bg-income {% elif item.badge == 'warning' %}bg-warning {% elif item.badge == 'stale' %}bg-expense {% else %}bg-text-disabled{% endif %}">
-                        </div>
-                        <div class="flex-1 min-w-0">
-                            <p class="text-xs font-medium text-text-base truncate">{{ item.account.name }}</p>
-                            <p class="text-[10px] text-text-muted truncate">
-                                {% if item.days == 0 %}
-                                    Aujourd'hui
-                                {% elif item.days == 1 %}
-                                    Il y a 1 jour
-                                {% elif item.days %}
-                                    Il y a {{ item.days }} jours
-                                {% else %}
-                                    Jamais importé
-                                {% endif %}
-                            </p>
-                        </div>
-                        <span class="text-[10px] text-text-muted flex-shrink-0">{{ item.account.bank.name }}</span>
-                    </div>
-                {% endfor %}
-            </div>
-        </div>
-        {# ── Activité d'import ───────────────────────────────────────────────── #}
-        {% if chart_data != "[]" %}
-            <div class="bg-surface-3 rounded-xl p-5">
-                <h2 class="text-sm font-semibold text-text-base mb-3">Activité</h2>
-                {{ chart_data|json_script:"import-chart-data" }}
-                <div id="import-chart" style="height: 140px;"></div>
-            </div>
-        {% endif %}
-        {# ── Historique des imports ───────────────────────────────────────────── #}
-        <div class="bg-surface-3 rounded-xl p-5">
-            {# En-tête avec légende des badges de matching #}
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-sm font-semibold text-text-base">Historique</h2>
-                <div class="flex items-center gap-1.5">
-                    <span class="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-income/10 text-income"
-                          title="IBAN extrait du fichier — fiabilité maximale">IBAN</span>
-                    <span class="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-500/10 text-blue-400"
-                          title="RIB extrait du fichier — fiabilité haute">RIB</span>
-                    <span class="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-warning/10 text-warning"
-                          title="Seul compte actif de cette banque — risque si doublon">CONV</span>
-                    <span class="text-[9px] text-text-disabled">= matching</span>
+    <div class="flex flex-col gap-4 h-full">
+        {# ── Activité — hero section ──────────────────────────────────────────── #}
+        <div class="bg-surface-3 rounded-xl p-5 flex flex-col">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-sm font-semibold text-text-base">Activité</h2>
+                <div class="flex items-center gap-1">
+                    {# Période — style identique aux boutons ronds du Sankey (period_nav) #}
+                    <button id="period-1m"
+                            onclick="activitySetPeriod('1m')"
+                            class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-colors text-text-muted hover:text-gold hover:bg-gold/15">
+                        1M
+                    </button>
+                    <button id="period-3m"
+                            onclick="activitySetPeriod('3m')"
+                            class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-colors text-text-muted hover:text-gold hover:bg-gold/15">
+                        3M
+                    </button>
+                    <button id="period-1a"
+                            onclick="activitySetPeriod('1a')"
+                            class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-colors text-gold bg-gold/15">
+                        1A
+                    </button>
+                    {# Séparateur #}
+                    <span class="w-px h-4 bg-edge mx-1"></span>
+                    {# Métrique #}
+                    <button id="toggle-created"
+                            onclick="activitySetMetric('created')"
+                            class="h-8 px-3 rounded-full flex items-center justify-center text-xs font-medium transition-colors text-gold bg-gold/15">
+                        Nouvelles
+                    </button>
+                    <button id="toggle-total"
+                            onclick="activitySetMetric('total')"
+                            class="h-8 px-3 rounded-full flex items-center justify-center text-xs font-medium transition-colors text-text-muted hover:text-gold hover:bg-gold/15">
+                        Total
+                    </button>
                 </div>
             </div>
+            {{ chart_data|json_script:"import-chart-data" }}
+            <div id="import-chart" style="height: 220px; width: 100%;"></div>
+        </div>
+        {# ── Historique des imports ── table 1 ligne par entrée ─────────────── #}
+        {#                                                                          #}
+        {# Colonnes (CSS grid, largeurs fixes sauf Compte+Relevé qui prennent      #}
+        {# l'espace restant en 2×1fr) :                                            #}
+        {#   Logo · Banque · Compte · Relevé · Match · Transactions · Date · →    #}
+        {# CIC multi-feuilles est aplati : chaque compte = 1 ligne indépendante.   #}
+        <div class="bg-surface-3 rounded-xl p-5">
+            <h2 class="text-sm font-semibold text-text-base mb-4">Historique</h2>
             {% if grouped_logs %}
-                <div class="flex flex-col divide-y divide-edge/30">
+                {# Lignes — on aplatit : pour chaque groupe, pour chaque entrée → 1 row #}
+                <div class="flex flex-col divide-y divide-edge/20">
                     {% for group in grouped_logs %}
-                        <div class="flex flex-col py-2 first:pt-0 last:pb-0">
-                            {% if group.multi %}
-                                {# ── En-tête groupe CIC ── non cliquable, affiche totaux + fichier #}
-                                <div class="flex items-start gap-3 px-1 pb-1.5">
-                                    <div class="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 bg-surface-hover flex items-center justify-center mt-0.5">
-                                        <img src="{% static 'icons/banks/miniature/' %}{{ group.bank.icon_slug|default:group.bank.slug }}.png"
-                                             alt="{{ group.bank.name }}"
-                                             width="24"
-                                             height="24"
-                                             class="w-6 h-6 object-contain"
-                                             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
-                                        <span class="text-xs font-bold text-text-secondary hidden">{{ group.bank.name|slice:":1" }}</span>
-                                    </div>
-                                    <div class="flex-1 min-w-0">
-                                        <p class="text-xs font-semibold text-text-base truncate">{{ group.bank.name }} · {{ group.entries|length }} comptes</p>
-                                        <p class="text-[10px] text-text-disabled truncate mt-0.5">{{ group.filename }}</p>
-                                    </div>
-                                    <div class="flex flex-col items-end flex-shrink-0 gap-0.5">
-                                        <div class="flex items-baseline gap-1">
-                                            <span class="text-sm font-bold text-income tabular-nums">+{{ group.total_created }}</span>
-                                            <span class="text-[10px] text-text-muted tabular-nums">/ {{ group.total_transactions }}</span>
-                                        </div>
-                                        <span class="text-[10px] text-text-disabled tabular-nums">{{ group.imported_at|date:"d M Y" }}</span>
-                                    </div>
+                        {% for entry in group.entries %}
+                            <button class="w-full grid gap-x-3 items-center px-2 py-2.5 rounded-lg hover:bg-surface-hover/50 cursor-pointer group/btn transition-colors text-left first-of-type:mt-0"
+                                    style="grid-template-columns: 32px 4.5rem 1fr 1fr 52px 88px 72px 20px"
+                                    hx-get="{% url 'imports:log_detail' entry.pk %}"
+                                    hx-target="#panel-content"
+                                    hx-swap="innerHTML"
+                                    hx-on::after-request="openPanel()">
+                                {# Col 1 — Logo banque #}
+                                <div class="w-8 h-8 rounded-full overflow-hidden bg-surface-hover flex items-center justify-center flex-shrink-0">
+                                    <img src="{% static 'icons/banks/miniature/' %}{{ group.bank.icon_slug|default:group.bank.slug }}.png"
+                                         alt="{{ group.bank.name }}"
+                                         width="24"
+                                         height="24"
+                                         class="w-6 h-6 object-contain"
+                                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
+                                    <span class="text-xs font-bold text-text-secondary hidden">{{ group.bank.name|slice:":1" }}</span>
                                 </div>
-                                {# Sous-lignes par compte, cliquables #}
-                                <div class="ml-11 border-l border-edge/40 pl-3 flex flex-col gap-0.5">
-                                    {% for entry in group.entries %}
-                                        <button class="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-surface-hover/60 cursor-pointer group/btn transition-colors text-left"
-                                                hx-get="{% url 'imports:log_detail' entry.pk %}"
-                                                hx-target="#panel-content"
-                                                hx-swap="innerHTML"
-                                                hx-on::after-request="openPanel()">
-                                            <div class="flex-1 min-w-0">
-                                                <p class="text-xs text-text-secondary group-hover/btn:text-text-base truncate transition-colors">
-                                                    {{ entry.account.name }}
-                                                </p>
-                                            </div>
-                                            {# Badge matching #}
-                                            {% if entry.match_method == "iban" %}
-                                                <span class="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-income/10 text-income flex-shrink-0">IBAN</span>
-                                            {% elif entry.match_method == "rib" %}
-                                                <span class="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-500/10 text-blue-400 flex-shrink-0">RIB</span>
-                                            {% else %}
-                                                <span class="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-warning/10 text-warning flex-shrink-0">CONV</span>
-                                            {% endif %}
-                                            <div class="flex items-baseline gap-1 flex-shrink-0 w-20 justify-end">
-                                                <span class="text-xs font-semibold text-income tabular-nums">+{{ entry.count_created }}</span>
-                                                {% if entry.count_skipped > 0 %}
-                                                    <span class="text-[9px] text-text-disabled tabular-nums">/{{ entry.count_skipped|add:entry.count_created }}</span>
-                                                {% endif %}
-                                            </div>
-                                            <div class="w-4 h-4 rounded-full border border-edge flex items-center justify-center flex-shrink-0 group-hover/btn:border-gold transition-colors">
-                                                <svg class="w-2 h-2 text-text-muted group-hover/btn:text-gold"
-                                                     fill="none"
-                                                     viewBox="0 0 24 24"
-                                                     stroke-width="2.5"
-                                                     stroke="currentColor">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-                                                </svg>
-                                            </div>
-                                        </button>
-                                    {% endfor %}
+                                {# Col 2 — Nom banque #}
+                                <p class="text-xs text-text-muted truncate group-hover/btn:text-text-base transition-colors">{{ group.bank.name }}</p>
+                                {# Col 3 — Nom compte #}
+                                <p class="text-xs font-medium text-text-base truncate group-hover/btn:text-gold transition-colors">
+                                    {{ entry.account.name }}
+                                </p>
+                                {# Col 4 — Nom du relevé (fichier) #}
+                                <p class="text-[10px] text-text-disabled truncate">{{ group.filename }}</p>
+                                {# Col 5 — Badge matching avec tooltip explicatif #}
+                                <div class="flex justify-center">
+                                    {% if entry.match_method == "iban" %}
+                                        <span class="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-income/10 text-income cursor-help"
+                                              title="Matching automatique — IBAN extrait du fichier source">IBAN</span>
+                                    {% elif entry.match_method == "rib" %}
+                                        <span class="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-500/10 text-blue-400 cursor-help"
+                                              title="Matching automatique — numéro de contrat (RIB) extrait du fichier source">RIB</span>
+                                    {% else %}
+                                        <span class="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-warning/10 text-warning cursor-help"
+                                              title="Matching par convention — unique compte actif de cette banque (risque si un doublon existe en DB)">CONV</span>
+                                    {% endif %}
                                 </div>
-                            {% else %}
-                                {# ── Ligne simple — Yuh, UBS ── cliquable #}
-                                {% with entry=group.entries.0 %}
-                                    <button class="w-full flex items-start gap-3 px-1 py-1 rounded-lg hover:bg-surface-hover/50 cursor-pointer group/btn transition-colors text-left"
-                                            hx-get="{% url 'imports:log_detail' entry.pk %}"
-                                            hx-target="#panel-content"
-                                            hx-swap="innerHTML"
-                                            hx-on::after-request="openPanel()">
-                                        <div class="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 bg-surface-hover flex items-center justify-center mt-0.5">
-                                            <img src="{% static 'icons/banks/miniature/' %}{{ group.bank.icon_slug|default:group.bank.slug }}.png"
-                                                 alt="{{ group.bank.name }}"
-                                                 width="24"
-                                                 height="24"
-                                                 class="w-6 h-6 object-contain"
-                                                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
-                                            <span class="text-xs font-bold text-text-secondary hidden">{{ group.bank.name|slice:":1" }}</span>
-                                        </div>
-                                        {# Texte central #}
-                                        <div class="flex-1 min-w-0">
-                                            <p class="text-xs font-semibold text-text-base truncate group-hover/btn:text-gold transition-colors">
-                                                {{ entry.account.name }}
-                                            </p>
-                                            <p class="text-[10px] text-text-disabled truncate mt-0.5">{{ group.filename }}</p>
-                                        </div>
-                                        {# Colonne droite : badge + chiffres + date #}
-                                        <div class="flex flex-col items-end gap-1 flex-shrink-0">
-                                            <div class="flex items-center gap-2">
-                                                {# Badge matching #}
-                                                {% if entry.match_method == "iban" %}
-                                                    <span class="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-income/10 text-income">IBAN</span>
-                                                {% elif entry.match_method == "rib" %}
-                                                    <span class="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-500/10 text-blue-400">RIB</span>
-                                                {% else %}
-                                                    <span class="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-warning/10 text-warning">CONV</span>
-                                                {% endif %}
-                                                <div class="flex items-baseline gap-1">
-                                                    <span class="text-sm font-bold text-income tabular-nums">+{{ entry.count_created }}</span>
-                                                    <span class="text-[10px] text-text-muted tabular-nums">/ {{ group.total_transactions }}</span>
-                                                </div>
-                                                <div class="w-4 h-4 rounded-full border border-edge flex items-center justify-center group-hover/btn:border-gold transition-colors">
-                                                    <svg class="w-2 h-2 text-text-muted group-hover/btn:text-gold"
-                                                         fill="none"
-                                                         viewBox="0 0 24 24"
-                                                         stroke-width="2.5"
-                                                         stroke="currentColor">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-                                                    </svg>
-                                                </div>
-                                            </div>
-                                            <span class="text-[10px] text-text-disabled tabular-nums">{{ group.imported_at|date:"d M Y" }}</span>
-                                        </div>
-                                    </button>
+                                {# Col 6 — Nouvelles / Total avec info icon #}
+                                {# +created / total = created + skipped #}
+                                {% with total=entry.count_created|add:entry.count_skipped %}
+                                    <div class="flex items-center justify-end gap-1.5"
+                                         title="{{ entry.count_created }} nouvelles transactions importées · {{ entry.count_skipped }} doublon(s) ignoré(s) · {{ total }} dans le fichier">
+                                        <span class="text-xs font-bold text-income tabular-nums">+{{ entry.count_created }}</span>
+                                        <span class="text-[10px] text-text-muted tabular-nums">/ {{ total }}</span>
+                                        {# Icône info — indique que le hover révèle le détail #}
+                                        <svg class="w-3 h-3 text-text-disabled flex-shrink-0"
+                                             fill="none"
+                                             viewBox="0 0 24 24"
+                                             stroke-width="1.5"
+                                             stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" />
+                                        </svg>
+                                    </div>
                                 {% endwith %}
-                            {% endif %}
-                        </div>
+                                {# Col 7 — Date import #}
+                                <p class="text-[10px] text-text-disabled tabular-nums text-right">{{ group.imported_at|date:"d M Y" }}</p>
+                                {# Col 8 — Chevron #}
+                                <div class="w-4 h-4 rounded-full border border-edge flex items-center justify-center group-hover/btn:border-gold transition-colors flex-shrink-0">
+                                    <svg class="w-2 h-2 text-text-muted group-hover/btn:text-gold"
+                                         fill="none"
+                                         viewBox="0 0 24 24"
+                                         stroke-width="2.5"
+                                         stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                                    </svg>
+                                </div>
+                            </button>
+                        {% endfor %}
                     {% endfor %}
                 </div>
             {% else %}
@@ -184,8 +132,8 @@
     </div>
 {% endblock %}
 {% block panel_right %}
-    <aside class="flex-[1] min-w-0">
-        {# ── Upload compact ──────────────────────────────────────────────────── #}
+    <aside class="flex-[1] min-w-0 flex flex-col gap-4">
+        {# ── Upload ──────────────────────────────────────────────────────────── #}
         <div class="bg-surface-3 rounded-xl p-5">
             <h2 class="text-sm font-semibold text-text-base mb-3">Importer</h2>
             <form id="upload-form"
@@ -201,15 +149,14 @@
                        class="hidden"
                        accept=".csv,.xlsx,.xls"
                        onchange="this.form.requestSubmit()">
-                {# Zone drop compacte ─────────────────────────────────────────── #}
-                <div class="border-2 border-dashed border-edge rounded-xl flex flex-col items-center gap-3 px-4 py-5 transition-colors hover:border-gold/40 cursor-pointer"
+                <div class="border-2 border-dashed border-edge rounded-xl flex flex-col items-center justify-center gap-3 px-4 py-5 transition-colors hover:border-gold/40 cursor-pointer"
                      onclick="document.getElementById('file-input').click()"
                      ondragover="event.preventDefault(); this.classList.add('border-gold/60')"
                      ondragleave="this.classList.remove('border-gold/60')"
                      ondrop="event.preventDefault(); this.classList.remove('border-gold/60'); document.getElementById('file-input').files = event.dataTransfer.files; document.getElementById('upload-form').requestSubmit()">
                     <div id="upload-spinner"
-                         class="htmx-indicator w-8 h-8 rounded-full bg-surface-hover flex items-center justify-center">
-                        <svg class="animate-spin w-4 h-4 text-gold"
+                         class="htmx-indicator w-10 h-10 rounded-full bg-surface-hover flex items-center justify-center">
+                        <svg class="animate-spin w-5 h-5 text-gold"
                              fill="none"
                              viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -217,7 +164,7 @@
                             </path>
                         </svg>
                     </div>
-                    <svg class="htmx-settle w-8 h-8 text-text-muted"
+                    <svg class="htmx-settle w-10 h-10 text-text-muted"
                          fill="none"
                          viewBox="0 0 24 24"
                          stroke-width="1.5"
@@ -225,64 +172,109 @@
                         <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
                     </svg>
                     <div class="text-center">
-                        <p class="text-xs font-medium text-text-secondary">Déposer un fichier</p>
-                        <p class="text-[10px] text-text-muted mt-0.5">Yuh · UBS · CIC — CSV ou Excel</p>
+                        <p class="text-sm font-medium text-text-secondary">Déposer un fichier</p>
+                        <p class="text-xs text-text-muted mt-0.5">Yuh · UBS · CIC — CSV ou Excel</p>
                     </div>
                 </div>
             </form>
             {# Résultat dry-run — injecté par HTMX après upload #}
             <div id="import-steps"></div>
         </div>
+        {# ── Synchronisation — groupé par banque ─────────────────────────────── #}
+        <div class="bg-surface-3 rounded-xl p-5">
+            <h2 class="text-sm font-semibold text-text-base mb-3">Synchronisation</h2>
+            {% if bank_groups %}
+                <div class="flex flex-col gap-4">
+                    {% for group in bank_groups %}
+                        <div>
+                            {# En-tête banque : logo + nom #}
+                            <div class="flex items-center gap-2 mb-1.5">
+                                <div class="w-5 h-5 rounded-full overflow-hidden flex-shrink-0 bg-surface-hover flex items-center justify-center">
+                                    <img src="{% static 'icons/banks/miniature/' %}{{ group.bank.icon_slug|default:group.bank.slug }}.png"
+                                         alt="{{ group.bank.name }}"
+                                         width="16"
+                                         height="16"
+                                         class="w-4 h-4 object-contain"
+                                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
+                                    <span class="text-[9px] font-bold text-text-secondary hidden">{{ group.bank.name|slice:":1" }}</span>
+                                </div>
+                                <span class="text-xs font-semibold text-text-secondary">{{ group.bank.name }}</span>
+                            </div>
+                            {# Sous-comptes #}
+                            <div class="flex flex-col gap-0.5 pl-7">
+                                {% for item in group.accounts %}
+                                    <div class="flex items-center gap-2.5 py-1">
+                                        <div class="w-1.5 h-1.5 rounded-full flex-shrink-0 {% if item.badge == 'ok' %}bg-income {% elif item.badge == 'recent' %}bg-text-muted {% elif item.badge == 'stale' %}bg-warning {% else %}bg-text-disabled{% endif %}">
+                                        </div>
+                                        <p class="flex-1 text-xs text-text-base truncate">{{ item.account.name }}</p>
+                                        <p class="text-[10px] flex-shrink-0 {% if item.badge == 'ok' %}text-income {% elif item.badge == 'recent' %}text-text-muted {% elif item.badge == 'stale' %}text-warning font-medium {% else %}text-text-disabled{% endif %}">
+                                            {% if item.days == 0 %}
+                                                Aujourd'hui
+                                            {% elif item.days == 1 %}
+                                                Il y a 1 jour
+                                            {% elif item.days %}
+                                                Il y a {{ item.days }}j
+                                                {% if item.badge == 'stale' %}⚠{% endif %}
+                                            {% else %}
+                                                Jamais
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% if not forloop.last %}<div class="border-t border-edge/30"></div>{% endif %}
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="text-xs text-text-disabled">Aucun compte actif.</p>
+            {% endif %}
+        </div>
     </aside>
 {% endblock %}
 {% block extra_js %}
-    {% if chart_data != "[]" %}
-        <script>
-      (function () {
-        var raw = JSON.parse(document.getElementById('import-chart-data').textContent);
-        var T   = window.BRICBUDGET_TOKENS || {};
-        var chart = echarts.init(document.getElementById('import-chart'), null, { renderer: 'svg' });
+    <script src="{% static 'js/vendor/echarts.min.js' %}"></script>
+    <script src="{% static 'js/charts/utils.js' %}"></script>
+    <script src="{% static 'js/charts/activity.js' %}"></script>
+    <script>
+  (function () {
+    var data = JSON.parse(document.getElementById("import-chart-data").textContent);
+    var el   = document.getElementById("import-chart");
+    if (!el) return;
 
-        chart.setOption({
-          animation: true,
-          animationDuration: 400,
-          animationEasing: 'cubicOut',
-          grid: { top: 8, right: 8, bottom: 24, left: 8, containLabel: true },
-          tooltip: {
-            trigger: 'item',
-            backgroundColor: T.surface2 || '#1c1f22',
-            borderColor: T.edge || '#2d3033',
-            borderWidth: 1,
-            textStyle: { color: T.textBase || '#e8eaed', fontSize: 11 },
-            formatter: function (p) {
-              return p.data.account + '<br /><b>+' + p.data.count + ' tx</b>';
-            }
-          },
-          xAxis: {
-            type: 'category',
-            data: raw.map(function (d) { return d.label; }),
-            axisLine: { show: false },
-            axisTick: { show: false },
-            axisLabel: { color: T.textMuted || '#6b7280', fontSize: 10 }
-          },
-          yAxis: {
-            type: 'value',
-            splitLine: { lineStyle: { color: T.edge || '#2d3033', type: 'dashed' } },
-            axisLabel: { color: T.textMuted || '#6b7280', fontSize: 10 }
-          },
-          series: [{
-            type: 'bar',
-            data: raw.map(function (d) { return { value: d.count, account: d.account, bank: d.bank }; }),
-            itemStyle: {
-              color: T.gold || '#c9a84c',
-              borderRadius: [4, 4, 0, 0],
-              opacity: 0.75
-            },
-            emphasis: { itemStyle: { opacity: 1 } },
-            barMaxWidth: 32
-          }]
-        });
-      })();
-        </script>
-    {% endif %}
+    var ch            = BricCharts.initActivity(el, data);
+    var curPeriod     = "1a";
+    var curMetric     = "created";
+    var PERIOD_IDS    = ["period-1m", "period-3m", "period-1a"];
+    var METRIC_IDS    = ["toggle-created", "toggle-total"];
+
+    function setActive(activeId, allIds) {
+      allIds.forEach(function (id) {
+        var btn = document.getElementById(id);
+        if (!btn) return;
+        if (id === activeId) {
+          btn.classList.remove("text-text-muted", "hover:text-gold", "hover:bg-gold/15");
+          btn.classList.add("text-gold", "bg-gold/15");
+        } else {
+          btn.classList.remove("text-gold", "bg-gold/15");
+          btn.classList.add("text-text-muted", "hover:text-gold", "hover:bg-gold/15");
+        }
+      });
+    }
+
+    window.activitySetPeriod = function (p) {
+      curPeriod = p;
+      ch.renderActivity(curPeriod, curMetric);
+      setActive("period-" + p, PERIOD_IDS);
+    };
+
+    window.activitySetMetric = function (m) {
+      curMetric = m;
+      ch.renderActivity(curPeriod, curMetric);
+      setActive(m === "created" ? "toggle-created" : "toggle-total", METRIC_IDS);
+    };
+
+    window.addEventListener("resize", function () { ch.resize(); });
+  })();
+    </script>
 {% endblock %}
