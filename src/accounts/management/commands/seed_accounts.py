@@ -19,7 +19,6 @@ import getpass
 
 from django.core.management.base import BaseCommand, CommandError
 
-from accounts.banks_config import KNOWN_BANKS
 from accounts.models import Account, Bank, CheckingAccount, SavingsAccount
 
 
@@ -50,7 +49,6 @@ class Command(BaseCommand):
         n_c, n_u = self._wizard_checking(
             bank_slug="yuh",
             default_name="Compte Yuh",
-            default_bic=KNOWN_BANKS["yuh"]["bic"],
             contract_number="",
             iban_label="IBAN Yuh",
             iban_prefill="",
@@ -66,7 +64,6 @@ class Command(BaseCommand):
         n_c, n_u = self._wizard_checking(
             bank_slug="ubs",
             default_name="UBS Compte courant",
-            default_bic=KNOWN_BANKS["ubs"]["bic"],
             contract_number=None,  # sera défini par l'IBAN saisi
             iban_label="IBAN UBS",
             iban_prefill="",
@@ -112,9 +109,8 @@ class Command(BaseCommand):
                 iban = self._prompt_secret(
                     "IBAN (optionnel — peut être ajouté plus tard)"
                 )
-                bic = self._prompt(
-                    f"BIC [{KNOWN_BANKS['cic']['bic']}]",
-                    default=KNOWN_BANKS["cic"]["bic"],
+                bic = self._prompt_secret(
+                    "BIC (optionnel — peut être ajouté plus tard)"
                 )
                 name = self._prompt(
                     f"Nom du compte [{acc['default_name']}]",
@@ -167,7 +163,6 @@ class Command(BaseCommand):
         self,
         bank_slug,
         default_name,
-        default_bic,
         contract_number,
         iban_label,
         iban_prefill,
@@ -180,7 +175,7 @@ class Command(BaseCommand):
         else:
             iban = iban.replace(" ", "")
 
-        bic = self._prompt(f"BIC [{default_bic}]", default=default_bic)
+        bic = self._prompt_secret("BIC (optionnel — peut être ajouté plus tard)")
         name = self._prompt(f"Nom du compte [{default_name}]", default=default_name)
 
         # Pour UBS, le contract_number == IBAN

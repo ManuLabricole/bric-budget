@@ -18,39 +18,36 @@ Structure de chaque entrée
 --------------------------
   name     : nom affiché dans l'UI
   currency : devise principale (ISO 4217) — utilisée comme défaut à la création de compte
-  bic      : BIC/SWIFT de la banque (pas du compte) — pré-rempli sur les CheckingAccounts
   country  : code pays ISO 3166-1 alpha-2
+
+Note : pas de BIC ici — le BIC est propre à chaque compte (CheckingAccount.bic),
+pas à la banque. Il est saisi manuellement via seed_accounts ou l'admin Django.
 """
 
 KNOWN_BANKS = {
     "yuh": {
         "name": "Yuh",
         "currency": "CHF",
-        "bic": "YUHHCHZZ",
         "country": "CH",
     },
     "ubs": {
         "name": "UBS",
         "currency": "CHF",
-        "bic": "UBSWCHZH80A",
         "country": "CH",
     },
     "cic": {
         "name": "CIC",
         "currency": "EUR",
-        "bic": "CMCIFRPP",
         "country": "FR",
     },
     "boursorama": {
         "name": "Boursorama",
         "currency": "EUR",
-        "bic": "BOUSFRPPXXX",
         "country": "FR",
     },
     "finpension": {
         "name": "Finpension",
         "currency": "CHF",
-        "bic": "",
         "country": "CH",
     },
 }
