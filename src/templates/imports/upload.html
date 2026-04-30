@@ -1,70 +1,42 @@
 {% extends "base_app.html" %}
 {% block panel_left %}
     <div class="flex flex-col gap-4">
-        {# ── Zone upload ─────────────────────────────────────────────────────── #}
+        {# ── Sync status ─────────────────────────────────────────────────────── #}
         <div class="bg-surface-3 rounded-xl p-5">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-sm font-semibold text-text-base">Importer un fichier</h2>
-                <span class="text-xs text-text-muted">Yuh · UBS · CIC</span>
+            <h2 class="text-sm font-semibold text-text-base mb-3">Synchronisation</h2>
+            <div class="grid grid-cols-2 gap-2">
+                {% for item in sync_status %}
+                    <div class="flex items-center gap-3 bg-surface-hover rounded-xl px-3 py-2.5">
+                        {# Badge couleur selon l'ancienneté du dernier import #}
+                        <div class="w-2 h-2 rounded-full flex-shrink-0 {% if item.badge == 'ok' %}bg-income {% elif item.badge == 'warning' %}bg-warning {% elif item.badge == 'stale' %}bg-expense {% else %}bg-text-disabled{% endif %}">
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-xs font-medium text-text-base truncate">{{ item.account.name }}</p>
+                            <p class="text-[10px] text-text-muted truncate">
+                                {% if item.days == 0 %}
+                                    Aujourd'hui
+                                {% elif item.days == 1 %}
+                                    Il y a 1 jour
+                                {% elif item.days %}
+                                    Il y a {{ item.days }} jours
+                                {% else %}
+                                    Jamais importé
+                                {% endif %}
+                            </p>
+                        </div>
+                        <span class="text-[10px] text-text-muted flex-shrink-0">{{ item.account.bank.name }}</span>
+                    </div>
+                {% endfor %}
             </div>
-            {# Le form envoie le fichier en multipart via HTMX.                        #}
-            {# hx-encoding="multipart/form-data" est requis pour les uploads de fichiers. #}
-            {# Le résultat (dry-run ou erreur) est injecté dans #import-steps.          #}
-            <form id="upload-form"
-                  hx-post="{% url 'imports:upload' %}"
-                  hx-encoding="multipart/form-data"
-                  hx-target="#import-steps"
-                  hx-swap="innerHTML"
-                  hx-indicator="#upload-spinner">
-                {% csrf_token %}
-                {# Input fichier caché — déclenché par le bouton "Parcourir".           #}
-                {# onchange : soumet le formulaire dès qu'un fichier est sélectionné.   #}
-                {# this.form.requestSubmit() → déclenche la soumission HTMX (pas submit natif). #}
-                <input type="file"
-                       name="file"
-                       id="file-input"
-                       class="hidden"
-                       accept=".csv,.xlsx,.xls"
-                       onchange="this.form.requestSubmit()">
-                <div class="border-2 border-dashed border-edge rounded-xl flex items-center gap-4 px-5 py-4 transition-colors hover:border-gold/40"
-                     ondragover="event.preventDefault(); this.classList.add('border-gold/60')"
-                     ondragleave="this.classList.remove('border-gold/60')"
-                     ondrop="event.preventDefault(); this.classList.remove('border-gold/60'); document.getElementById('file-input').files = event.dataTransfer.files; document.getElementById('upload-form').requestSubmit()">
-                    {# Spinner HTMX — visible pendant la requête (opacity géré par htmx-request class) #}
-                    <div id="upload-spinner"
-                         class="htmx-indicator w-10 h-10 rounded-full bg-surface-hover flex items-center justify-center flex-shrink-0">
-                        <svg class="animate-spin w-5 h-5 text-gold"
-                             fill="none"
-                             viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
-                            </path>
-                        </svg>
-                    </div>
-                    {# Icône upload — masquée pendant le spinner (htmx-request inverse) #}
-                    <div class="htmx-settle w-10 h-10 rounded-full bg-surface-hover flex items-center justify-center flex-shrink-0">
-                        <svg class="w-5 h-5 text-text-muted"
-                             fill="none"
-                             viewBox="0 0 24 24"
-                             stroke-width="1.5"
-                             stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
-                        </svg>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <p class="text-sm font-medium text-text-base">Déposez votre fichier ici</p>
-                        <p class="text-xs text-text-muted mt-0.5">CSV · Excel — max 10 Mo · détection automatique</p>
-                    </div>
-                    <button type="button"
-                            onclick="document.getElementById('file-input').click()"
-                            class="px-4 py-2 text-xs font-semibold rounded-lg bg-gold/20 text-gold border border-gold/30 hover:bg-gold/30 transition-colors flex-shrink-0">
-                        Parcourir
-                    </button>
-                </div>
-            </form>
-            {# Zone résultat du dry-run — vide au chargement, swappée par HTMX après upload #}
-            <div id="import-steps"></div>
         </div>
+        {# ── Activité d'import ───────────────────────────────────────────────── #}
+        {% if chart_data != "[]" %}
+            <div class="bg-surface-3 rounded-xl p-5">
+                <h2 class="text-sm font-semibold text-text-base mb-3">Activité</h2>
+                {{ chart_data|json_script:"import-chart-data" }}
+                <div id="import-chart" style="height: 140px;"></div>
+            </div>
+        {% endif %}
         {# ── Historique des imports ───────────────────────────────────────────── #}
         <div class="bg-surface-3 rounded-xl p-5">
             <h2 class="text-sm font-semibold text-text-base mb-3">Historique</h2>
@@ -129,8 +101,104 @@
 {% endblock %}
 {% block panel_right %}
     <aside class="flex-[1] min-w-0">
+        {# ── Upload compact ──────────────────────────────────────────────────── #}
         <div class="bg-surface-3 rounded-xl p-5">
-            <p class="text-sm text-text-muted text-center py-8">Sélectionnez un import pour voir les détails.</p>
+            <h2 class="text-sm font-semibold text-text-base mb-3">Importer</h2>
+            <form id="upload-form"
+                  hx-post="{% url 'imports:upload' %}"
+                  hx-encoding="multipart/form-data"
+                  hx-target="#import-steps"
+                  hx-swap="innerHTML"
+                  hx-indicator="#upload-spinner">
+                {% csrf_token %}
+                <input type="file"
+                       name="file"
+                       id="file-input"
+                       class="hidden"
+                       accept=".csv,.xlsx,.xls"
+                       onchange="this.form.requestSubmit()">
+                {# Zone drop compacte ─────────────────────────────────────────── #}
+                <div class="border-2 border-dashed border-edge rounded-xl flex flex-col items-center gap-3 px-4 py-5 transition-colors hover:border-gold/40 cursor-pointer"
+                     onclick="document.getElementById('file-input').click()"
+                     ondragover="event.preventDefault(); this.classList.add('border-gold/60')"
+                     ondragleave="this.classList.remove('border-gold/60')"
+                     ondrop="event.preventDefault(); this.classList.remove('border-gold/60'); document.getElementById('file-input').files = event.dataTransfer.files; document.getElementById('upload-form').requestSubmit()">
+                    <div id="upload-spinner"
+                         class="htmx-indicator w-8 h-8 rounded-full bg-surface-hover flex items-center justify-center">
+                        <svg class="animate-spin w-4 h-4 text-gold"
+                             fill="none"
+                             viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                            </path>
+                        </svg>
+                    </div>
+                    <svg class="htmx-settle w-8 h-8 text-text-muted"
+                         fill="none"
+                         viewBox="0 0 24 24"
+                         stroke-width="1.5"
+                         stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
+                    </svg>
+                    <div class="text-center">
+                        <p class="text-xs font-medium text-text-secondary">Déposer un fichier</p>
+                        <p class="text-[10px] text-text-muted mt-0.5">Yuh · UBS · CIC — CSV ou Excel</p>
+                    </div>
+                </div>
+            </form>
+            {# Résultat dry-run — injecté par HTMX après upload #}
+            <div id="import-steps"></div>
         </div>
     </aside>
+{% endblock %}
+{% block extra_js %}
+    {% if chart_data != "[]" %}
+        <script>
+      (function () {
+        var raw = JSON.parse(document.getElementById('import-chart-data').textContent);
+        var T   = window.BRICBUDGET_TOKENS || {};
+        var chart = echarts.init(document.getElementById('import-chart'), null, { renderer: 'svg' });
+
+        chart.setOption({
+          animation: true,
+          animationDuration: 400,
+          animationEasing: 'cubicOut',
+          grid: { top: 8, right: 8, bottom: 24, left: 8, containLabel: true },
+          tooltip: {
+            trigger: 'item',
+            backgroundColor: T.surface2 || '#1c1f22',
+            borderColor: T.edge || '#2d3033',
+            borderWidth: 1,
+            textStyle: { color: T.textBase || '#e8eaed', fontSize: 11 },
+            formatter: function (p) {
+              return p.data.account + '<br /><b>+' + p.data.count + ' tx</b>';
+            }
+          },
+          xAxis: {
+            type: 'category',
+            data: raw.map(function (d) { return d.label; }),
+            axisLine: { show: false },
+            axisTick: { show: false },
+            axisLabel: { color: T.textMuted || '#6b7280', fontSize: 10 }
+          },
+          yAxis: {
+            type: 'value',
+            splitLine: { lineStyle: { color: T.edge || '#2d3033', type: 'dashed' } },
+            axisLabel: { color: T.textMuted || '#6b7280', fontSize: 10 }
+          },
+          series: [{
+            type: 'bar',
+            data: raw.map(function (d) { return { value: d.count, account: d.account, bank: d.bank }; }),
+            itemStyle: {
+              color: T.gold || '#c9a84c',
+              borderRadius: [4, 4, 0, 0],
+              opacity: 0.75
+            },
+            emphasis: { itemStyle: { opacity: 1 } },
+            barMaxWidth: 32
+          }]
+        });
+      })();
+        </script>
+    {% endif %}
 {% endblock %}

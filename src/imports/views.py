@@ -32,15 +32,70 @@ from transactions.services import ImportService, compute_file_hash
 @login_required
 def import_upload(request):
     """
-    GET  → formulaire upload + historique des imports passés.
-    POST → dry-run : détecte le connecteur, résout le compte, calcule les counts
-           sans écrire en DB → retourne le fragment _steps_result.html (HTMX).
+    GET  → page principale : KPIs sync + chart + historique + upload compact.
+    POST → dry-run HTMX → fragment _steps_result.html ou _steps_error.html.
     """
     if request.method == "POST":
         return _handle_dry_run(request)
 
+    from django.utils import timezone
+
+    from accounts.models import Account
+
+    today = timezone.now().date()
+
+    # ── Sync status par compte ───────────────────────────────────────────────
+    # On affiche tous les comptes actifs avec ou sans import.
+    # Seuil vert : ≤ 7 jours / orange : ≤ 30 jours / rouge : > 30 jours / gris : jamais.
+    active_accounts = (
+        Account.objects.filter(is_active=True)
+        .select_related("bank")
+        .order_by("bank__name", "name")
+    )
+    sync_status = []
+    for account in active_accounts:
+        last_log = (
+            ImportLog.objects.filter(account=account).order_by("-imported_at").first()
+        )
+        if last_log:
+            days = (today - last_log.imported_at.date()).days
+            badge = "ok" if days <= 7 else ("warning" if days <= 30 else "stale")
+        else:
+            days = None
+            badge = "never"
+        sync_status.append(
+            {"account": account, "last_log": last_log, "days": days, "badge": badge}
+        )
+
+    # ── Données chart — 15 derniers imports (ordre chronologique) ───────────
+    recent_logs = list(
+        ImportLog.objects.select_related("account__bank").order_by("-imported_at")[:15]
+    )
+    recent_logs.reverse()
+    import json
+
+    chart_data = json.dumps(
+        [
+            {
+                "label": log.imported_at.strftime("%-d %b"),
+                "count": log.count_created,
+                "account": log.account.name,
+                "bank": log.account.bank.name,
+            }
+            for log in recent_logs
+        ]
+    )
+
     logs = ImportLog.objects.select_related("account__bank").order_by("-imported_at")
-    return render(request, "imports/upload.html", {"logs": logs})
+    return render(
+        request,
+        "imports/upload.html",
+        {
+            "logs": logs,
+            "sync_status": sync_status,
+            "chart_data": chart_data,
+        },
+    )
 
 
 def _handle_dry_run(request):
