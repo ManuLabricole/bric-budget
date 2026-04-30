@@ -6,5 +6,6 @@ app_name = "imports"
 
 urlpatterns = [
     path("", views.import_upload, name="upload"),
+    path("confirm/", views.import_confirm, name="confirm"),
     path("<int:pk>/detail/", views.import_log_detail, name="log_detail"),
 ]

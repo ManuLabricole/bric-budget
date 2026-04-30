@@ -1,0 +1,91 @@
+{# Résultat du dry-run — injecté dans #import-steps après upload.              #}
+{# Chaque card apparaît avec un slide-up décalé pour un effet progressif.       #}
+<style>
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .step-card { animation: slide-up 0.3s ease-out both; }
+</style>
+<div class="flex flex-col gap-2 mt-4">
+    {# ── Étape 1 : Format détecté ─────────────────────────────────────────── #}
+    <div class="step-card flex items-center gap-3 bg-surface-hover rounded-xl px-4 py-3"
+         style="animation-delay: 0ms">
+        <div class="w-7 h-7 rounded-full bg-income/15 flex items-center justify-center flex-shrink-0">
+            <svg class="w-3.5 h-3.5 text-income"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="2.5"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+            </svg>
+        </div>
+        <div class="flex-1 min-w-0">
+            <p class="text-xs text-text-muted">Format</p>
+            <p class="text-sm font-semibold text-text-base">{{ connector_label }}</p>
+        </div>
+        <p class="text-xs text-text-muted truncate max-w-[180px] text-right">{{ filename }}</p>
+    </div>
+    {# ── Étape 2 : Compte(s) résolu(s) ───────────────────────────────────── #}
+    {% for item in dry_results %}
+        <div class="step-card flex items-center gap-3 bg-surface-hover rounded-xl px-4 py-3"
+             style="animation-delay: {{ forloop.counter0|add:1 }}50ms">
+            <div class="w-7 h-7 rounded-full bg-income/15 flex items-center justify-center flex-shrink-0">
+                <svg class="w-3.5 h-3.5 text-income"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="2.5"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                </svg>
+            </div>
+            <div class="flex-1 min-w-0">
+                <p class="text-xs text-text-muted">
+                    Compte
+                    {% if dry_results|length > 1 %}{{ forloop.counter }}{% endif %}
+                </p>
+                <p class="text-sm font-semibold text-text-base truncate">{{ item.account.name }}</p>
+            </div>
+            <p class="text-xs text-text-muted flex-shrink-0">{{ item.account.bank.name }} · {{ item.account.currency }}</p>
+        </div>
+    {% endfor %}
+    {# ── Étape 3 : Résultats ─────────────────────────────────────────────── #}
+    <div class="step-card flex items-center gap-3 bg-surface-hover rounded-xl px-4 py-3"
+         style="animation-delay: {{ dry_results|length|add:1 }}50ms">
+        <div class="w-7 h-7 rounded-full {% if total_created > 0 %}bg-income/15{% else %}bg-surface-3{% endif %} flex items-center justify-center flex-shrink-0">
+            <svg class="w-3.5 h-3.5 {% if total_created > 0 %}text-income{% else %}text-text-muted{% endif %}"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="2.5"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+            </svg>
+        </div>
+        <div class="flex-1 min-w-0">
+            <p class="text-xs text-text-muted">Analyse</p>
+            <p class="text-sm font-semibold text-text-base">
+                <span class="text-income">+{{ total_created }} nouvelle{{ total_created|pluralize }}</span>
+                {% if total_skipped > 0 %}
+                    · <span class="text-text-muted">{{ total_skipped }} doublon{{ total_skipped|pluralize }}</span>
+                {% endif %}
+            </p>
+        </div>
+    </div>
+    {# ── Étape 4 : Bouton confirmer (ou message "rien à importer") ─────────── #}
+    <div class="step-card"
+         style="animation-delay: {{ dry_results|length|add:2 }}50ms">
+        {% if total_created > 0 %}
+            <button class="w-full mt-1 px-4 py-2.5 text-sm font-semibold rounded-xl bg-gold/20 text-gold border border-gold/30 hover:bg-gold/30 transition-colors"
+                    hx-post="{% url 'imports:confirm' %}"
+                    hx-target="#import-steps"
+                    hx-swap="innerHTML"
+                    hx-indicator="#upload-spinner">
+                Confirmer l'import — {{ total_created }} transaction{{ total_created|pluralize }}
+            </button>
+        {% else %}
+            <div class="mt-1 px-4 py-2.5 text-sm text-text-muted text-center bg-surface-hover rounded-xl">
+                Aucune nouvelle transaction — tout est déjà importé.
+            </div>
+        {% endif %}
+    </div>
+</div>

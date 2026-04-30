@@ -7,25 +7,63 @@
                 <h2 class="text-sm font-semibold text-text-base">Importer un fichier</h2>
                 <span class="text-xs text-text-muted">Yuh · UBS · CIC</span>
             </div>
-            {# Drop zone — compacte, juste assez pour drag&drop + bouton #}
-            <div class="border-2 border-dashed border-edge rounded-xl flex items-center gap-4 px-5 py-4">
-                <div class="w-10 h-10 rounded-full bg-surface-hover flex items-center justify-center flex-shrink-0">
-                    <svg class="w-5 h-5 text-text-muted"
-                         fill="none"
-                         viewBox="0 0 24 24"
-                         stroke-width="1.5"
-                         stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
-                    </svg>
+            {# Le form envoie le fichier en multipart via HTMX.                        #}
+            {# hx-encoding="multipart/form-data" est requis pour les uploads de fichiers. #}
+            {# Le résultat (dry-run ou erreur) est injecté dans #import-steps.          #}
+            <form id="upload-form"
+                  hx-post="{% url 'imports:upload' %}"
+                  hx-encoding="multipart/form-data"
+                  hx-target="#import-steps"
+                  hx-swap="innerHTML"
+                  hx-indicator="#upload-spinner">
+                {% csrf_token %}
+                {# Input fichier caché — déclenché par le bouton "Parcourir".           #}
+                {# onchange : soumet le formulaire dès qu'un fichier est sélectionné.   #}
+                {# this.form.requestSubmit() → déclenche la soumission HTMX (pas submit natif). #}
+                <input type="file"
+                       name="file"
+                       id="file-input"
+                       class="hidden"
+                       accept=".csv,.xlsx,.xls"
+                       onchange="this.form.requestSubmit()">
+                <div class="border-2 border-dashed border-edge rounded-xl flex items-center gap-4 px-5 py-4 transition-colors hover:border-gold/40"
+                     ondragover="event.preventDefault(); this.classList.add('border-gold/60')"
+                     ondragleave="this.classList.remove('border-gold/60')"
+                     ondrop="event.preventDefault(); this.classList.remove('border-gold/60'); document.getElementById('file-input').files = event.dataTransfer.files; document.getElementById('upload-form').requestSubmit()">
+                    {# Spinner HTMX — visible pendant la requête (opacity géré par htmx-request class) #}
+                    <div id="upload-spinner"
+                         class="htmx-indicator w-10 h-10 rounded-full bg-surface-hover flex items-center justify-center flex-shrink-0">
+                        <svg class="animate-spin w-5 h-5 text-gold"
+                             fill="none"
+                             viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                            </path>
+                        </svg>
+                    </div>
+                    {# Icône upload — masquée pendant le spinner (htmx-request inverse) #}
+                    <div class="htmx-settle w-10 h-10 rounded-full bg-surface-hover flex items-center justify-center flex-shrink-0">
+                        <svg class="w-5 h-5 text-text-muted"
+                             fill="none"
+                             viewBox="0 0 24 24"
+                             stroke-width="1.5"
+                             stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
+                        </svg>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium text-text-base">Déposez votre fichier ici</p>
+                        <p class="text-xs text-text-muted mt-0.5">CSV · Excel — max 10 Mo · détection automatique</p>
+                    </div>
+                    <button type="button"
+                            onclick="document.getElementById('file-input').click()"
+                            class="px-4 py-2 text-xs font-semibold rounded-lg bg-gold/20 text-gold border border-gold/30 hover:bg-gold/30 transition-colors flex-shrink-0">
+                        Parcourir
+                    </button>
                 </div>
-                <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium text-text-base">Déposez votre fichier ici</p>
-                    <p class="text-xs text-text-muted mt-0.5">CSV · Excel — max 10 Mo · détection automatique</p>
-                </div>
-                <button class="px-4 py-2 text-xs font-semibold rounded-lg bg-gold/20 text-gold border border-gold/30 hover:bg-gold/30 transition-colors cursor-not-allowed opacity-50"
-                        disabled
-                        title="Upload à implémenter — Phase 2F Session 2">Parcourir</button>
-            </div>
+            </form>
+            {# Zone résultat du dry-run — vide au chargement, swappée par HTMX après upload #}
+            <div id="import-steps"></div>
         </div>
         {# ── Historique des imports ───────────────────────────────────────────── #}
         <div class="bg-surface-3 rounded-xl p-5">
@@ -33,14 +71,11 @@
             {% if logs %}
                 <div class="flex flex-col gap-0.5">
                     {% for log in logs %}
-                        {# Même structure de ligne que les catégories dans Budget :      #}
-                        {# [icône statut] [nom fichier + compte] [date] [nb tx] [→]     #}
                         <button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-surface-hover/50 cursor-pointer group transition-colors text-left"
                                 hx-get="{% url 'imports:log_detail' log.pk %}"
                                 hx-target="#panel-content"
                                 hx-swap="innerHTML"
                                 hx-on::after-request="openPanel()">
-                            {# Icône statut — cercle coloré #}
                             <div class="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 {% if log.status == 'success' %}bg-income/15{% elif log.status == 'partial' %}bg-warning/15{% else %}bg-expense/15{% endif %}">
                                 {% if log.status == 'success' %}
                                     <svg class="w-4 h-4 text-income"
@@ -68,16 +103,12 @@
                                     </svg>
                                 {% endif %}
                             </div>
-                            {# Nom + compte #}
                             <div class="flex-1 min-w-0">
                                 <p class="text-sm font-medium text-text-base truncate">{{ log.filename }}</p>
                                 <p class="text-xs text-text-muted truncate">{{ log.account.bank.name }} · {{ log.account.name }}</p>
                             </div>
-                            {# Nouvelles tx #}
                             <span class="text-sm font-semibold text-text-base tabular-nums flex-shrink-0">+{{ log.count_created }}</span>
-                            {# Date #}
                             <span class="text-xs text-text-muted tabular-nums flex-shrink-0 w-20 text-right">{{ log.imported_at|date:"d M Y" }}</span>
-                            {# Chevron #}
                             <div class="w-5 h-5 rounded-full border border-edge flex items-center justify-center flex-shrink-0 group-hover:border-gold transition-colors">
                                 <svg class="w-2.5 h-2.5 text-text-muted group-hover:text-gold"
                                      fill="none"
