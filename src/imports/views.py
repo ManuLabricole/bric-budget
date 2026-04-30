@@ -107,7 +107,9 @@ def import_upload(request):
     # Un même fichier CIC génère N ImportLogs (1 par feuille/compte).
     # On les regroupe pour afficher une seule ligne par upload avec sous-lignes.
     all_logs = list(
-        ImportLog.objects.select_related("account__bank").order_by("-imported_at")
+        ImportLog.objects.select_related(
+            "account__bank", "account__checking_account"
+        ).order_by("-imported_at")
     )
     seen_hashes = {}
     grouped_logs = []
@@ -124,14 +126,31 @@ def import_upload(request):
             grouped_logs.append(group)
         seen_hashes[key]["entries"].append(log)
 
-    # Calculer les totaux par groupe
+    # Calculer les totaux par groupe + méthode de matching par entrée
     for group in grouped_logs:
         group["total_created"] = sum(e.count_created for e in group["entries"])
         group["total_skipped"] = sum(e.count_skipped for e in group["entries"])
         group["total_errors"] = sum(e.count_errors for e in group["entries"])
+        # total_transactions = tout ce que le fichier contenait (new + doublons)
+        group["total_transactions"] = group["total_created"] + group["total_skipped"]
         group["multi"] = len(group["entries"]) > 1
-        # Banque : commune à tous les entries du groupe (sauf si multi-banque, impossible)
         group["bank"] = group["entries"][0].account.bank
+        # Méthode de matching par compte — détermine le badge de confiance affiché
+        # iban     : matching par IBAN extrait du fichier      → fiabilité maximale
+        # rib      : matching par RIB/contrat extrait du fichier → fiabilité haute
+        # convention : seul compte actif de cette banque       → risque si doublon
+        for entry in group["entries"]:
+            acc = entry.account
+            try:
+                has_iban = bool(acc.checking_account.iban)
+            except Exception:
+                has_iban = False
+            if has_iban and acc.bank.slug in ("ubs",):
+                entry.match_method = "iban"
+            elif acc.contract_number:
+                entry.match_method = "rib"
+            else:
+                entry.match_method = "convention"
 
     return render(
         request,

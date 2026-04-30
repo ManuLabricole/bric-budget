@@ -40,17 +40,27 @@
         {% endif %}
         {# ── Historique des imports ───────────────────────────────────────────── #}
         <div class="bg-surface-3 rounded-xl p-5">
-            <h2 class="text-sm font-semibold text-text-base mb-3">Historique</h2>
+            {# En-tête avec légende des badges de matching #}
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-sm font-semibold text-text-base">Historique</h2>
+                <div class="flex items-center gap-1.5">
+                    <span class="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-income/10 text-income"
+                          title="IBAN extrait du fichier — fiabilité maximale">IBAN</span>
+                    <span class="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-500/10 text-blue-400"
+                          title="RIB extrait du fichier — fiabilité haute">RIB</span>
+                    <span class="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-warning/10 text-warning"
+                          title="Seul compte actif de cette banque — risque si doublon">CONV</span>
+                    <span class="text-[9px] text-text-disabled">= matching</span>
+                </div>
+            </div>
             {% if grouped_logs %}
-                <div class="flex flex-col gap-0.5">
+                <div class="flex flex-col divide-y divide-edge/30">
                     {% for group in grouped_logs %}
-                        {# Ligne principale : 1 par fichier importé #}
-                        <div class="flex flex-col">
-                            {# Si multi-comptes (CIC), les sous-entrées sont cliquables individuellement #}
+                        <div class="flex flex-col py-2 first:pt-0 last:pb-0">
                             {% if group.multi %}
-                                {# En-tête du groupe — nom fichier + banque + totaux, non cliquable #}
-                                <div class="flex items-center gap-3 px-3 py-2.5 rounded-lg">
-                                    <div class="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 bg-surface-hover flex items-center justify-center">
+                                {# ── En-tête groupe CIC ── non cliquable, affiche totaux + fichier #}
+                                <div class="flex items-start gap-3 px-1 pb-1.5">
+                                    <div class="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 bg-surface-hover flex items-center justify-center mt-0.5">
                                         <img src="{% static 'icons/banks/miniature/' %}{{ group.bank.icon_slug|default:group.bank.slug }}.png"
                                              alt="{{ group.bank.name }}"
                                              width="24"
@@ -60,28 +70,46 @@
                                         <span class="text-xs font-bold text-text-secondary hidden">{{ group.bank.name|slice:":1" }}</span>
                                     </div>
                                     <div class="flex-1 min-w-0">
-                                        <p class="text-xs font-semibold text-text-base truncate">{{ group.filename }}</p>
-                                        <p class="text-[10px] text-text-muted">{{ group.bank.name }} · {{ group.entries|length }} comptes</p>
+                                        <p class="text-xs font-semibold text-text-base truncate">{{ group.bank.name }} · {{ group.entries|length }} comptes</p>
+                                        <p class="text-[10px] text-text-disabled truncate mt-0.5">{{ group.filename }}</p>
                                     </div>
-                                    <div class="flex items-center gap-3 flex-shrink-0">
-                                        <span class="text-sm font-semibold text-income tabular-nums">+{{ group.total_created }}</span>
-                                        <span class="text-[10px] text-text-muted tabular-nums w-16 text-right">{{ group.imported_at|date:"d M Y" }}</span>
+                                    <div class="flex flex-col items-end flex-shrink-0 gap-0.5">
+                                        <div class="flex items-baseline gap-1">
+                                            <span class="text-sm font-bold text-income tabular-nums">+{{ group.total_created }}</span>
+                                            <span class="text-[10px] text-text-muted tabular-nums">/ {{ group.total_transactions }}</span>
+                                        </div>
+                                        <span class="text-[10px] text-text-disabled tabular-nums">{{ group.imported_at|date:"d M Y" }}</span>
                                     </div>
                                 </div>
                                 {# Sous-lignes par compte, cliquables #}
-                                <div class="ml-4 border-l border-edge/50 pl-3 flex flex-col gap-0.5 mb-1">
+                                <div class="ml-11 border-l border-edge/40 pl-3 flex flex-col gap-0.5">
                                     {% for entry in group.entries %}
-                                        <button class="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-surface-hover/50 cursor-pointer group transition-colors text-left"
+                                        <button class="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-surface-hover/60 cursor-pointer group/btn transition-colors text-left"
                                                 hx-get="{% url 'imports:log_detail' entry.pk %}"
                                                 hx-target="#panel-content"
                                                 hx-swap="innerHTML"
                                                 hx-on::after-request="openPanel()">
                                             <div class="flex-1 min-w-0">
-                                                <p class="text-xs font-medium text-text-secondary truncate">{{ entry.account.name }}</p>
+                                                <p class="text-xs text-text-secondary group-hover/btn:text-text-base truncate transition-colors">
+                                                    {{ entry.account.name }}
+                                                </p>
                                             </div>
-                                            <span class="text-xs font-semibold text-income tabular-nums flex-shrink-0">+{{ entry.count_created }}</span>
-                                            <div class="w-4 h-4 rounded-full border border-edge flex items-center justify-center flex-shrink-0 group-hover:border-gold transition-colors">
-                                                <svg class="w-2 h-2 text-text-muted group-hover:text-gold"
+                                            {# Badge matching #}
+                                            {% if entry.match_method == "iban" %}
+                                                <span class="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-income/10 text-income flex-shrink-0">IBAN</span>
+                                            {% elif entry.match_method == "rib" %}
+                                                <span class="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-500/10 text-blue-400 flex-shrink-0">RIB</span>
+                                            {% else %}
+                                                <span class="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-warning/10 text-warning flex-shrink-0">CONV</span>
+                                            {% endif %}
+                                            <div class="flex items-baseline gap-1 flex-shrink-0 w-20 justify-end">
+                                                <span class="text-xs font-semibold text-income tabular-nums">+{{ entry.count_created }}</span>
+                                                {% if entry.count_skipped > 0 %}
+                                                    <span class="text-[9px] text-text-disabled tabular-nums">/{{ entry.count_skipped|add:entry.count_created }}</span>
+                                                {% endif %}
+                                            </div>
+                                            <div class="w-4 h-4 rounded-full border border-edge flex items-center justify-center flex-shrink-0 group-hover/btn:border-gold transition-colors">
+                                                <svg class="w-2 h-2 text-text-muted group-hover/btn:text-gold"
                                                      fill="none"
                                                      viewBox="0 0 24 24"
                                                      stroke-width="2.5"
@@ -93,14 +121,14 @@
                                     {% endfor %}
                                 </div>
                             {% else %}
-                                {# Ligne simple — 1 seul compte (Yuh, UBS) #}
+                                {# ── Ligne simple — Yuh, UBS ── cliquable #}
                                 {% with entry=group.entries.0 %}
-                                    <button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-surface-hover/50 cursor-pointer group transition-colors text-left"
+                                    <button class="w-full flex items-start gap-3 px-1 py-1 rounded-lg hover:bg-surface-hover/50 cursor-pointer group/btn transition-colors text-left"
                                             hx-get="{% url 'imports:log_detail' entry.pk %}"
                                             hx-target="#panel-content"
                                             hx-swap="innerHTML"
                                             hx-on::after-request="openPanel()">
-                                        <div class="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 bg-surface-hover flex items-center justify-center">
+                                        <div class="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 bg-surface-hover flex items-center justify-center mt-0.5">
                                             <img src="{% static 'icons/banks/miniature/' %}{{ group.bank.icon_slug|default:group.bank.slug }}.png"
                                                  alt="{{ group.bank.name }}"
                                                  width="24"
@@ -109,22 +137,39 @@
                                                  onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
                                             <span class="text-xs font-bold text-text-secondary hidden">{{ group.bank.name|slice:":1" }}</span>
                                         </div>
+                                        {# Texte central #}
                                         <div class="flex-1 min-w-0">
-                                            <p class="text-xs font-semibold text-text-base truncate">{{ entry.account.name }}</p>
-                                            <p class="text-[10px] text-text-muted truncate">{{ group.bank.name }}</p>
+                                            <p class="text-xs font-semibold text-text-base truncate group-hover/btn:text-gold transition-colors">
+                                                {{ entry.account.name }}
+                                            </p>
+                                            <p class="text-[10px] text-text-disabled truncate mt-0.5">{{ group.filename }}</p>
                                         </div>
-                                        <div class="flex items-center gap-3 flex-shrink-0">
-                                            <span class="text-sm font-semibold text-income tabular-nums">+{{ entry.count_created }}</span>
-                                            <span class="text-[10px] text-text-muted tabular-nums w-16 text-right">{{ group.imported_at|date:"d M Y" }}</span>
-                                            <div class="w-4 h-4 rounded-full border border-edge flex items-center justify-center group-hover:border-gold transition-colors">
-                                                <svg class="w-2 h-2 text-text-muted group-hover:text-gold"
-                                                     fill="none"
-                                                     viewBox="0 0 24 24"
-                                                     stroke-width="2.5"
-                                                     stroke="currentColor">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-                                                </svg>
+                                        {# Colonne droite : badge + chiffres + date #}
+                                        <div class="flex flex-col items-end gap-1 flex-shrink-0">
+                                            <div class="flex items-center gap-2">
+                                                {# Badge matching #}
+                                                {% if entry.match_method == "iban" %}
+                                                    <span class="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-income/10 text-income">IBAN</span>
+                                                {% elif entry.match_method == "rib" %}
+                                                    <span class="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-500/10 text-blue-400">RIB</span>
+                                                {% else %}
+                                                    <span class="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-warning/10 text-warning">CONV</span>
+                                                {% endif %}
+                                                <div class="flex items-baseline gap-1">
+                                                    <span class="text-sm font-bold text-income tabular-nums">+{{ entry.count_created }}</span>
+                                                    <span class="text-[10px] text-text-muted tabular-nums">/ {{ group.total_transactions }}</span>
+                                                </div>
+                                                <div class="w-4 h-4 rounded-full border border-edge flex items-center justify-center group-hover/btn:border-gold transition-colors">
+                                                    <svg class="w-2 h-2 text-text-muted group-hover/btn:text-gold"
+                                                         fill="none"
+                                                         viewBox="0 0 24 24"
+                                                         stroke-width="2.5"
+                                                         stroke="currentColor">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                                                    </svg>
+                                                </div>
                                             </div>
+                                            <span class="text-[10px] text-text-disabled tabular-nums">{{ group.imported_at|date:"d M Y" }}</span>
                                         </div>
                                     </button>
                                 {% endwith %}
