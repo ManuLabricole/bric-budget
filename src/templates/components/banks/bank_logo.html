@@ -1,0 +1,53 @@
+{% comment %}
+components/banks/bank_logo.html — Cercle logo banque réutilisable
+
+Affiche uniquement l'icône banque dans un cercle, sans texte.
+Pour [icône + nom de compte], utiliser account_badge.html.
+
+Variables requises :
+  icon_url  — URL résolue (depuis {% bank_icon_url bank as icon_url %})
+  bank      — objet Bank Django (pour alt text et initiale de fallback)
+
+Variables optionnelles :
+  size      — classe Tailwind du cercle  (défaut : "w-6 h-6")
+  padding   — padding interne            (défaut : "p-1")
+
+Rendu selon le type d'icône :
+  SVG → fond surface-3 (sombre) + brightness-0 invert → logo blanc sur fond sombre
+  PNG → fond blanc + logo couleurs d'origine
+  vide → fond surface-hover + initiale en texte (fallback dégradé)
+
+Usage :
+  {% load bank_icons %}
+  {% bank_icon_url bank as icon_url %}
+  {% include "components/banks/bank_logo.html" with icon_url=icon_url bank=bank %}
+
+  {% include "components/banks/bank_logo.html" with icon_url=icon_url bank=bank size="w-8 h-8" %}
+  {% include "components/banks/bank_logo.html" with icon_url=icon_url bank=bank size="w-5 h-5" padding="p-0.5" %}
+{% endcomment %}
+{% if icon_url %}
+    {% if icon_url|slice:"-4:" == ".svg" %}
+        {# SVG currentColor — fond sombre, icône rendue blanche via CSS #}
+        <div class="{{ size|default:'w-6 h-6' }} rounded-full bg-surface-3 border border-edge/40 flex-shrink-0 flex items-center justify-center {{ padding|default:'p-1' }}">
+            <img src="{{ icon_url }}"
+                 width="32"
+                 height="32"
+                 class="w-full h-full object-contain brightness-0 invert opacity-80"
+                 alt="{{ bank.name }}">
+        </div>
+    {% else %}
+        {# PNG miniature — fond blanc pour respecter la charte graphique de la banque #}
+        <div class="{{ size|default:'w-6 h-6' }} rounded-full bg-white flex-shrink-0 flex items-center justify-center {{ padding|default:'p-1' }}">
+            <img src="{{ icon_url }}"
+                 width="32"
+                 height="32"
+                 class="w-full h-full object-contain"
+                 alt="{{ bank.name }}">
+        </div>
+    {% endif %}
+{% else %}
+    {# Fallback : initiale du nom de banque #}
+    <div class="{{ size|default:'w-6 h-6' }} rounded-full bg-surface-hover border border-edge flex-shrink-0 flex items-center justify-center">
+        <span class="text-[8px] font-bold text-text-muted">{{ bank.name|slice:":1" }}</span>
+    </div>
+{% endif %}
