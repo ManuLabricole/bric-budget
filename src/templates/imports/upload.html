@@ -1,4 +1,5 @@
 {% extends "base_app.html" %}
+{% load static %}
 {% block panel_left %}
     <div class="flex flex-col gap-4">
         {# ── Sync status ─────────────────────────────────────────────────────── #}
@@ -40,57 +41,95 @@
         {# ── Historique des imports ───────────────────────────────────────────── #}
         <div class="bg-surface-3 rounded-xl p-5">
             <h2 class="text-sm font-semibold text-text-base mb-3">Historique</h2>
-            {% if logs %}
+            {% if grouped_logs %}
                 <div class="flex flex-col gap-0.5">
-                    {% for log in logs %}
-                        <button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-surface-hover/50 cursor-pointer group transition-colors text-left"
-                                hx-get="{% url 'imports:log_detail' log.pk %}"
-                                hx-target="#panel-content"
-                                hx-swap="innerHTML"
-                                hx-on::after-request="openPanel()">
-                            <div class="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 {% if log.status == 'success' %}bg-income/15{% elif log.status == 'partial' %}bg-warning/15{% else %}bg-expense/15{% endif %}">
-                                {% if log.status == 'success' %}
-                                    <svg class="w-4 h-4 text-income"
-                                         fill="none"
-                                         viewBox="0 0 24 24"
-                                         stroke-width="2"
-                                         stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-                                    </svg>
-                                {% elif log.status == 'partial' %}
-                                    <svg class="w-4 h-4 text-warning"
-                                         fill="none"
-                                         viewBox="0 0 24 24"
-                                         stroke-width="2"
-                                         stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
-                                    </svg>
-                                {% else %}
-                                    <svg class="w-4 h-4 text-expense"
-                                         fill="none"
-                                         viewBox="0 0 24 24"
-                                         stroke-width="2"
-                                         stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-                                    </svg>
-                                {% endif %}
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-sm font-medium text-text-base truncate">{{ log.filename }}</p>
-                                <p class="text-xs text-text-muted truncate">{{ log.account.bank.name }} · {{ log.account.name }}</p>
-                            </div>
-                            <span class="text-sm font-semibold text-text-base tabular-nums flex-shrink-0">+{{ log.count_created }}</span>
-                            <span class="text-xs text-text-muted tabular-nums flex-shrink-0 w-20 text-right">{{ log.imported_at|date:"d M Y" }}</span>
-                            <div class="w-5 h-5 rounded-full border border-edge flex items-center justify-center flex-shrink-0 group-hover:border-gold transition-colors">
-                                <svg class="w-2.5 h-2.5 text-text-muted group-hover:text-gold"
-                                     fill="none"
-                                     viewBox="0 0 24 24"
-                                     stroke-width="2.5"
-                                     stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-                                </svg>
-                            </div>
-                        </button>
+                    {% for group in grouped_logs %}
+                        {# Ligne principale : 1 par fichier importé #}
+                        <div class="flex flex-col">
+                            {# Si multi-comptes (CIC), les sous-entrées sont cliquables individuellement #}
+                            {% if group.multi %}
+                                {# En-tête du groupe — nom fichier + banque + totaux, non cliquable #}
+                                <div class="flex items-center gap-3 px-3 py-2.5 rounded-lg">
+                                    <div class="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 bg-surface-hover flex items-center justify-center">
+                                        <img src="{% static 'icons/banks/miniature/' %}{{ group.bank.icon_slug|default:group.bank.slug }}.png"
+                                             alt="{{ group.bank.name }}"
+                                             width="24"
+                                             height="24"
+                                             class="w-6 h-6 object-contain"
+                                             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
+                                        <span class="text-xs font-bold text-text-secondary hidden">{{ group.bank.name|slice:":1" }}</span>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <p class="text-xs font-semibold text-text-base truncate">{{ group.filename }}</p>
+                                        <p class="text-[10px] text-text-muted">{{ group.bank.name }} · {{ group.entries|length }} comptes</p>
+                                    </div>
+                                    <div class="flex items-center gap-3 flex-shrink-0">
+                                        <span class="text-sm font-semibold text-income tabular-nums">+{{ group.total_created }}</span>
+                                        <span class="text-[10px] text-text-muted tabular-nums w-16 text-right">{{ group.imported_at|date:"d M Y" }}</span>
+                                    </div>
+                                </div>
+                                {# Sous-lignes par compte, cliquables #}
+                                <div class="ml-4 border-l border-edge/50 pl-3 flex flex-col gap-0.5 mb-1">
+                                    {% for entry in group.entries %}
+                                        <button class="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-surface-hover/50 cursor-pointer group transition-colors text-left"
+                                                hx-get="{% url 'imports:log_detail' entry.pk %}"
+                                                hx-target="#panel-content"
+                                                hx-swap="innerHTML"
+                                                hx-on::after-request="openPanel()">
+                                            <div class="flex-1 min-w-0">
+                                                <p class="text-xs font-medium text-text-secondary truncate">{{ entry.account.name }}</p>
+                                            </div>
+                                            <span class="text-xs font-semibold text-income tabular-nums flex-shrink-0">+{{ entry.count_created }}</span>
+                                            <div class="w-4 h-4 rounded-full border border-edge flex items-center justify-center flex-shrink-0 group-hover:border-gold transition-colors">
+                                                <svg class="w-2 h-2 text-text-muted group-hover:text-gold"
+                                                     fill="none"
+                                                     viewBox="0 0 24 24"
+                                                     stroke-width="2.5"
+                                                     stroke="currentColor">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                                                </svg>
+                                            </div>
+                                        </button>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                {# Ligne simple — 1 seul compte (Yuh, UBS) #}
+                                {% with entry=group.entries.0 %}
+                                    <button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-surface-hover/50 cursor-pointer group transition-colors text-left"
+                                            hx-get="{% url 'imports:log_detail' entry.pk %}"
+                                            hx-target="#panel-content"
+                                            hx-swap="innerHTML"
+                                            hx-on::after-request="openPanel()">
+                                        <div class="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 bg-surface-hover flex items-center justify-center">
+                                            <img src="{% static 'icons/banks/miniature/' %}{{ group.bank.icon_slug|default:group.bank.slug }}.png"
+                                                 alt="{{ group.bank.name }}"
+                                                 width="24"
+                                                 height="24"
+                                                 class="w-6 h-6 object-contain"
+                                                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
+                                            <span class="text-xs font-bold text-text-secondary hidden">{{ group.bank.name|slice:":1" }}</span>
+                                        </div>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="text-xs font-semibold text-text-base truncate">{{ entry.account.name }}</p>
+                                            <p class="text-[10px] text-text-muted truncate">{{ group.bank.name }}</p>
+                                        </div>
+                                        <div class="flex items-center gap-3 flex-shrink-0">
+                                            <span class="text-sm font-semibold text-income tabular-nums">+{{ entry.count_created }}</span>
+                                            <span class="text-[10px] text-text-muted tabular-nums w-16 text-right">{{ group.imported_at|date:"d M Y" }}</span>
+                                            <div class="w-4 h-4 rounded-full border border-edge flex items-center justify-center group-hover:border-gold transition-colors">
+                                                <svg class="w-2 h-2 text-text-muted group-hover:text-gold"
+                                                     fill="none"
+                                                     viewBox="0 0 24 24"
+                                                     stroke-width="2.5"
+                                                     stroke="currentColor">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                                                </svg>
+                                            </div>
+                                        </div>
+                                    </button>
+                                {% endwith %}
+                            {% endif %}
+                        </div>
                     {% endfor %}
                 </div>
             {% else %}

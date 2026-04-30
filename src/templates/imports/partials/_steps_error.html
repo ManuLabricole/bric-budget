@@ -13,5 +13,19 @@
     <div class="flex-1 min-w-0">
         <p class="text-sm font-semibold text-expense leading-snug">{{ error }}</p>
         {% if hint %}<p class="text-xs text-text-muted mt-1 leading-snug">{{ hint }}</p>{% endif %}
+        {% if admin_url %}
+            <a href="{{ admin_url }}"
+               target="_blank"
+               class="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 text-xs font-semibold rounded-lg bg-surface-hover border border-edge text-text-secondary hover:text-gold hover:border-gold/50 transition-colors">
+                {{ admin_label }}
+                <svg class="w-3 h-3"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="2"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                </svg>
+            </a>
+        {% endif %}
     </div>
 </div>

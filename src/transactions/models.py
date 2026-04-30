@@ -440,8 +440,9 @@ class ImportLog(models.Model):
     # (balance is encoded in the filename: "Activités_2026_03_17 - 33,344.CSV")
     filename = models.CharField(max_length=255)
 
-    # SHA1 of the whole file — prevents importing the exact same file twice
-    file_hash = models.CharField(max_length=40, unique=True)
+    # SHA256 hex digest — prevents importing the exact same file twice.
+    # max_length=64: SHA256 = 64 chars. CIC derived hashes (sha256(file_hash:sheet)) also 64.
+    file_hash = models.CharField(max_length=64, unique=True)
 
     imported_at = models.DateTimeField(auto_now_add=True)
 

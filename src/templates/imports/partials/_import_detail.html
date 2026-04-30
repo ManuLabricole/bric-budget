@@ -1,4 +1,5 @@
 {# Détail d'un ImportLog — chargé dans #panel-content via HTMX #}
+{% load static %}
 <div class="flex flex-col h-full">
     {# ── Header #}
     <div class="flex items-start justify-between px-5 pt-5 pb-4 border-b border-edge flex-shrink-0">
@@ -52,12 +53,24 @@
         <div>
             <p class="text-[10px] font-semibold uppercase tracking-wide text-text-muted mb-2">Compte</p>
             <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-full bg-surface-hover flex items-center justify-center flex-shrink-0">
-                    <span class="text-xs font-bold text-text-secondary">{{ log.account.bank.name|slice:":1" }}</span>
+                <div class="w-10 h-10 rounded-full overflow-hidden bg-surface-hover flex items-center justify-center flex-shrink-0">
+                    <img src="{% static 'icons/banks/miniature/' %}{{ log.account.bank.icon_slug|default:log.account.bank.slug }}.png"
+                         alt="{{ log.account.bank.name }}"
+                         width="28"
+                         height="28"
+                         class="w-7 h-7 object-contain"
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
+                    <span class="text-sm font-bold text-text-secondary hidden">{{ log.account.bank.name|slice:":1" }}</span>
                 </div>
-                <div>
+                <div class="min-w-0">
                     <p class="text-sm font-medium text-text-base">{{ log.account.name }}</p>
                     <p class="text-xs text-text-muted">{{ log.account.bank.name }} · {{ log.account.currency }}</p>
+                    {# Identifiant : IBAN masqué si dispo, sinon numéro de contrat (RIB pour CIC) #}
+                    {% if log.account.checking_account.iban %}
+                        <p class="text-[10px] text-text-disabled font-mono mt-0.5">{{ log.account.checking_account.iban_display }}</p>
+                    {% elif log.account.contract_number %}
+                        <p class="text-[10px] text-text-disabled font-mono mt-0.5">{{ log.account.contract_number }}</p>
+                    {% endif %}
                 </div>
             </div>
         </div>

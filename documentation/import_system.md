@@ -98,10 +98,64 @@ Toujours une liste — le caller peut itérer uniformément sans cas particulier
 | Connecteur | Logique de matching |
 |------------|---------------------|
 | **Yuh** | Convention : 1 seul `Account(bank__slug="yuh", account_type="checking", is_active=True)` |
-| **UBS** | `extract_account_identifier()` → IBAN normalisé → `Account.contract_number` |
+| **UBS** | `extract_account_identifier()` → IBAN normalisé → `CheckingAccount.iban` |
 | **CIC** | `get_account_sheets()` → RIB par feuille → `Account.contract_number` |
 
-Lève `Account.DoesNotExist` ou `Account.MultipleObjectsReturned` si le compte n'est pas configuré.
+Lève `AccountNotFound` (exception custom dans `resolver.py`) si le compte est absent.
+`AccountNotFound` porte : `contract_number`, `contract_number_raw`, `bank_slug`, `sheet_name`.
+La vue catch cette exception et affiche le fragment `_steps_create_account.html` pour créer le compte inline.
+
+---
+
+## Banques supportées — `accounts/banks_config.py`
+
+Source de vérité pour les banques incorporées dans l'app.
+Un seul fichier Python, pas de fixture — idempotent et versionné.
+
+```python
+KNOWN_BANKS = {
+    "yuh":        { "name": "Yuh",        "currency": "CHF", "bic": "YUHHCHZZ",    "country": "CH" },
+    "ubs":        { "name": "UBS",        "currency": "CHF", "bic": "UBSWCHZH80A", "country": "CH" },
+    "cic":        { "name": "CIC",        "currency": "EUR", "bic": "CMCIFRPP",    "country": "FR" },
+    "boursorama": { "name": "Boursorama", "currency": "EUR", "bic": "BOUSFRPPXXX", "country": "FR" },
+    "finpension": { "name": "Finpension", "currency": "CHF", "bic": "",            "country": "CH" },
+}
+```
+
+Commande de seed (idempotente) :
+```bash
+python manage.py seed_banks   # crée ou met à jour les Bank en DB
+```
+
+### Ajouter une nouvelle banque
+1. Ajouter une entrée dans `KNOWN_BANKS` (slug = clé)
+2. Déposer l'icône dans `static/icons/banks/miniature/<slug>.png`
+3. `python manage.py seed_banks`
+4. Créer `connectors/<bank>/parser.py` si un export existe
+5. Ajouter dans `CONNECTORS` + `resolve_accounts()` dans `resolver.py`
+
+---
+
+## Création de compte inline (UI Import)
+
+Quand `resolve_accounts()` lève `AccountNotFound`, la vue affiche `_steps_create_account.html` :
+- Banque pré-sélectionnée (logo + nom depuis `banks_config`)
+- IBAN pré-rempli si UBS (extrait du fichier), vide sinon
+- BIC pré-rempli depuis `banks_config`
+- Nom, type, devise à compléter
+- `contract_number` passé en champ caché (RIB pour CIC, IBAN pour UBS)
+
+Après soumission → vue `import_create_account` :
+1. Crée `Account` + `CheckingAccount` (ou `SavingsAccount`)
+2. Relance le dry-run depuis le fichier toujours en session
+3. Retourne `_steps_result.html` → flux normal
+
+Si CIC a plusieurs feuilles inconnues, `AccountNotFound` est relancée pour la suivante.
+
+### Compte incomplet (`is_complete = False`)
+- `CheckingAccount.is_complete` → `bool(iban and bic)` — alerte si BIC manquant
+- `SavingsAccount.is_complete` → `interest_rate > 0` — alerte si taux non renseigné
+- Le warning sera affiché dans **Patrimoine → Comptes bancaires** (Phase 3A)
 
 ---
 

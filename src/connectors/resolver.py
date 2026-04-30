@@ -45,6 +45,42 @@ from connectors.cic.parser import CICConnector
 from connectors.ubs.parser import UBSConnector
 from connectors.yuh.parser import YuhConnector
 
+
+class AccountNotFound(Exception):
+    """
+    Levée par resolve_accounts() quand un compte est introuvable en DB.
+
+    Porte les métadonnées nécessaires pour construire un lien admin pré-rempli
+    et afficher un message utile à l'utilisateur.
+
+    Attributs :
+        contract_number : identifiant extrait du fichier (RIB/IBAN normalisé)
+        contract_number_raw : identifiant brut tel qu'il apparaît dans le fichier
+        bank_slug : slug de la banque détectée (ex: "cic", "ubs")
+        sheet_name : nom de la feuille CIC, ou None pour les autres banques
+    """
+
+    def __init__(
+        self,
+        contract_number,
+        contract_number_raw,
+        bank_slug,
+        sheet_name=None,
+        account_name_hint=None,
+    ):
+        self.contract_number = contract_number
+        self.contract_number_raw = contract_number_raw
+        self.bank_slug = bank_slug
+        self.sheet_name = sheet_name
+        # Suggestion de nom pré-remplie dans le formulaire de création inline.
+        # Peut être None si le connecteur ne peut pas l'extraire.
+        self.account_name_hint = account_name_hint
+        super().__init__(
+            f"Aucun compte trouvé pour le RIB/IBAN '{contract_number_raw}' "
+            f"(banque : {bank_slug}). Configurez ce compte dans l'admin Django."
+        )
+
+
 # Ordre important : si un fichier peut matcher plusieurs connecteurs (peu probable),
 # le premier gagne. Mettre les connecteurs les plus spécifiques en premier.
 CONNECTORS: list[BaseConnector] = [
@@ -98,25 +134,49 @@ def resolve_accounts(connector: BaseConnector, filepath: Path) -> list[AccountMa
     """
     if isinstance(connector, YuhConnector):
         # Yuh n'expose aucun identifiant dans le fichier.
-        # Convention : exactement 1 compte Yuh checking actif en DB.
-        # Si 0 ou 2+ existent → Account.DoesNotExist / MultipleObjectsReturned.
-        account = Account.objects.filter(
-            bank__slug="yuh",
-            account_type=Account.AccountType.CHECKING,
-            is_active=True,
-        ).get()
+        # Convention : prendre le premier compte Yuh checking actif en DB.
+        # (S'il y en a plusieurs, on prend le plus récent — à affiner via admin.)
+        account = (
+            Account.objects.filter(
+                bank__slug="yuh",
+                account_type=Account.AccountType.CHECKING,
+                is_active=True,
+            )
+            .order_by("-id")
+            .first()
+        )
+        if account is None:
+            raise AccountNotFound(
+                contract_number="",
+                contract_number_raw="",
+                bank_slug="yuh",
+            )
         return [AccountMatch(account=account)]
 
     elif isinstance(connector, UBSConnector):
         # UBS encode l'IBAN en ligne 2 du fichier.
-        # On le normalise (sans espaces) et on matche Account.contract_number.
+        # Matching par CheckingAccount.iban (normalisé sans espaces).
         identifier = connector.extract_account_identifier(filepath)
         if not identifier:
             raise ValueError(
                 "Impossible d'extraire l'IBAN du fichier UBS (attendu en ligne 2). "
                 "Le fichier est peut-être corrompu."
             )
-        account = Account.objects.get(contract_number=identifier, is_active=True)
+        from accounts.models import CheckingAccount
+
+        try:
+            ca = CheckingAccount.objects.select_related("account").get(
+                iban=identifier,
+                account__is_active=True,
+            )
+            account = ca.account
+        except CheckingAccount.DoesNotExist:
+            raise AccountNotFound(
+                contract_number=identifier,
+                contract_number_raw=identifier,
+                bank_slug="ubs",
+                account_name_hint=connector.extract_account_name(filepath),
+            )
         return [AccountMatch(account=account)]
 
     elif isinstance(connector, CICConnector):
@@ -133,10 +193,11 @@ def resolve_accounts(connector: BaseConnector, filepath: Path) -> list[AccountMa
                     is_active=True,
                 )
             except Account.DoesNotExist:
-                # Compte non configuré en DB — on lève avec un message utile
-                raise Account.DoesNotExist(
-                    f"Aucun compte trouvé pour le RIB '{sheet['rib_raw']}'. "
-                    f"Créer un Account avec contract_number='{rib}' dans l'admin."
+                raise AccountNotFound(
+                    contract_number=rib,
+                    contract_number_raw=sheet["rib_raw"],
+                    bank_slug="cic",
+                    sheet_name=sheet["sheet_name"],
                 )
             matches.append(
                 AccountMatch(

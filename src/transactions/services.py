@@ -39,7 +39,7 @@ from django.db import transaction as db_transaction
 
 from accounts.models import Account, BalanceSnapshot, Card, ExchangeRate
 from connectors.base import TransactionDict
-from transactions.models import CategorizationRule, ImportLog, Transaction
+from transactions.models import CategorizationRule, Category, ImportLog, Transaction
 
 # =============================================================================
 # ImportResult — returned by ImportService.run()
@@ -236,15 +236,16 @@ class ImportService:
             )
         )
 
-        # ── 3. Load categorization rules (one query, sorted by priority) ──────
-        # All rules loaded upfront to avoid per-row DB queries.
-        # select_related("category", "subcategory") fetches them in the same query —
-        # otherwise each rule access would trigger a separate SQL SELECT (N+1 problem).
+        # ── 3. Load categorization rules + default categories (one query each) ──
         rules = list(
             CategorizationRule.objects.filter(is_active=True)
             .select_related("category", "subcategory")
             .order_by("-priority")
         )
+        # Default categories when no rule matches — loaded once, used per row.
+        # get() returns None if the category doesn't exist yet (DB not seeded).
+        default_income_category = Category.objects.filter(slug="revenus").first()
+        default_unknown_category = Category.objects.filter(slug="inconnu").first()
 
         # ── 4. Build card map for this account (one query) ───────────────────
         # {last_four: Card} — lets us resolve "8703" → Card object in O(1).
@@ -253,15 +254,31 @@ class ImportService:
 
         # ── 5. Process each transaction ───────────────────────────────────────
         transactions_to_create = []
+        # Garde trace des hashes vus dans CE batch pour dédupliquer les doublons
+        # internes au fichier (ex: deux virements UBS identiques le même jour).
+        # Sans ça, bulk_create lève une IntegrityError sur la contrainte unique import_hash.
+        seen_in_batch = set()
 
         for tx in transactions:
-            # Duplicate check: this hash already exists in the DB → skip silently
+            # Duplicate check contre la DB
             if tx["import_hash"] in existing_hashes:
                 result.count_skipped += 1
                 continue
+            # Duplicate check au sein du fichier courant
+            if tx["import_hash"] in seen_in_batch:
+                result.count_skipped += 1
+                continue
+            seen_in_batch.add(tx["import_hash"])
 
             try:
-                obj = self._build_transaction(tx, account, cards_by_last_four, rules)
+                obj = self._build_transaction(
+                    tx,
+                    account,
+                    cards_by_last_four,
+                    rules,
+                    default_income_category=default_income_category,
+                    default_unknown_category=default_unknown_category,
+                )
                 transactions_to_create.append(obj)
             except Exception as e:
                 # Log the error but keep processing — a bad row shouldn't block the rest
@@ -417,6 +434,8 @@ class ImportService:
         account: Account,
         cards_by_last_four: dict,
         rules: list,
+        default_income_category=None,
+        default_unknown_category=None,
     ) -> Transaction:
         """
         Build a Transaction model instance from a TransactionDict.
@@ -465,11 +484,17 @@ class ImportService:
             nature = subcategory.default_nature if subcategory else ""
             categorization_source = Transaction.CategorizationSource.RULE
         else:
-            # No rule matched → category=None (shown as "Unknown" in UI queries)
-            category = None
+            # No rule matched — assign default category based on sign of amount:
+            #   positive (income)  → "income" category
+            #   negative (expense) → "unknown" category
             subcategory = None
             nature = ""
             categorization_source = Transaction.CategorizationSource.DEFAULT
+            amount = Decimal(str(tx.get("amount", 0)))
+            if amount >= 0:
+                category = default_income_category  # None if not seeded yet
+            else:
+                category = default_unknown_category  # None if not seeded yet
 
         # --- amount_chf ------------------------------------------------------
         # For CHF accounts: amount_chf = amount (no conversion needed).

@@ -13,6 +13,7 @@ Stockage temporaire :
     La session Django stocke le chemin temp + métadonnées (pas le fichier lui-même).
 """
 
+import hashlib
 import os
 import tempfile
 from pathlib import Path
@@ -23,10 +24,26 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
+from accounts.models import Account, CheckingAccount, SavingsAccount
 from connectors.cic.parser import CICConnector
-from connectors.resolver import detect_connector, resolve_accounts
+from connectors.resolver import AccountNotFound, detect_connector, resolve_accounts
 from transactions.models import ImportLog
 from transactions.services import ImportService, compute_file_hash
+
+
+def _account_file_hash(file_hash: str, sheet_name: str | None) -> str:
+    """
+    Retourne un hash unique par (fichier, compte).
+
+    Pour Yuh/UBS : sheet_name=None → file_hash inchangé (1 compte par fichier).
+    Pour CIC     : sheet_name="Compte courant" etc. → hash dérivé = sha256(file_hash:sheet_name).
+
+    Pourquoi ? ImportLog.file_hash est UNIQUE en DB. Un fichier CIC génère N ImportLogs
+    (1 par feuille), chacun a besoin d'un hash distinct pour éviter l'IntegrityError.
+    """
+    if sheet_name is None:
+        return file_hash
+    return hashlib.sha256(f"{file_hash}:{sheet_name}".encode()).hexdigest()
 
 
 @login_required
@@ -86,12 +103,41 @@ def import_upload(request):
         ]
     )
 
-    logs = ImportLog.objects.select_related("account__bank").order_by("-imported_at")
+    # ── Historique groupé par fichier (file_hash) ───────────────────────────
+    # Un même fichier CIC génère N ImportLogs (1 par feuille/compte).
+    # On les regroupe pour afficher une seule ligne par upload avec sous-lignes.
+    all_logs = list(
+        ImportLog.objects.select_related("account__bank").order_by("-imported_at")
+    )
+    seen_hashes = {}
+    grouped_logs = []
+    for log in all_logs:
+        key = log.file_hash or log.pk  # fallback si file_hash NULL (anciens imports)
+        if key not in seen_hashes:
+            group = {
+                "filename": log.filename,
+                "imported_at": log.imported_at,
+                "file_hash": log.file_hash,
+                "entries": [],
+            }
+            seen_hashes[key] = group
+            grouped_logs.append(group)
+        seen_hashes[key]["entries"].append(log)
+
+    # Calculer les totaux par groupe
+    for group in grouped_logs:
+        group["total_created"] = sum(e.count_created for e in group["entries"])
+        group["total_skipped"] = sum(e.count_skipped for e in group["entries"])
+        group["total_errors"] = sum(e.count_errors for e in group["entries"])
+        group["multi"] = len(group["entries"]) > 1
+        # Banque : commune à tous les entries du groupe (sauf si multi-banque, impossible)
+        group["bank"] = group["entries"][0].account.bank
+
     return render(
         request,
         "imports/upload.html",
         {
-            "logs": logs,
+            "grouped_logs": grouped_logs,
             "sync_status": sync_status,
             "chart_data": chart_data,
         },
@@ -158,6 +204,41 @@ def _handle_dry_run(request):
         # ── Résolution du ou des comptes ─────────────────────────────────────
         try:
             matches = resolve_accounts(connector, tmp_path)
+        except AccountNotFound as e:
+            # Compte introuvable → on garde le fichier temp en session et on
+            # propose un formulaire de création inline (fragment HTMX).
+            request.session["pending_import"] = {
+                "filepath": str(tmp_path),
+                "filename": uploaded.name,
+                "file_hash": file_hash,
+            }
+            from accounts.banks_config import KNOWN_BANKS
+            from accounts.models import Bank
+
+            bank_config = KNOWN_BANKS.get(e.bank_slug, {})
+            try:
+                bank = Bank.objects.get(slug=e.bank_slug)
+            except Bank.DoesNotExist:
+                bank = None
+            # Meilleure suggestion de nom : sheet_name pour CIC, account_name_hint pour UBS
+            account_name_hint = e.sheet_name or e.account_name_hint or ""
+            return render(
+                request,
+                "imports/partials/_steps_create_account.html",
+                {
+                    "bank": bank,
+                    "bank_slug": e.bank_slug,
+                    "bank_name": bank_config.get("name", e.bank_slug.upper()),
+                    "bank_bic": bank_config.get("bic", ""),
+                    "iban": e.contract_number if e.bank_slug == "ubs" else "",
+                    "contract_number": e.contract_number,
+                    "contract_number_raw": e.contract_number_raw,
+                    "sheet_name": e.sheet_name,
+                    "account_name_hint": account_name_hint,
+                    "currency": bank_config.get("currency", "EUR"),
+                    "account_types": Account.AccountType.choices,
+                },
+            )
         except Exception as e:
             os.unlink(tmp_path)
             return _error(
@@ -186,7 +267,10 @@ def _handle_dry_run(request):
         dry_results = []
 
         for match in matches:
-            transactions = connector.parse(tmp_path, **match.parse_kwargs)
+            if match.sheet_name is not None:
+                transactions = connector.parse_sheet(tmp_path, match.sheet_name)
+            else:
+                transactions = connector.parse(tmp_path)
             balance = balances.get(match.sheet_name)
 
             result = service.run(
@@ -194,7 +278,7 @@ def _handle_dry_run(request):
                 account=match.account,
                 imported_by=request.user,
                 filename=uploaded.name,
-                file_hash=file_hash,
+                file_hash=_account_file_hash(file_hash, match.sheet_name),
                 balance=balance,
                 dry_run=True,
             )
@@ -282,14 +366,17 @@ def import_confirm(request):
         service = ImportService()
 
         for match in matches:
-            transactions = connector.parse(tmp_path, **match.parse_kwargs)
+            if match.sheet_name is not None:
+                transactions = connector.parse_sheet(tmp_path, match.sheet_name)
+            else:
+                transactions = connector.parse(tmp_path)
             balance = balances.get(match.sheet_name)
             service.run(
                 transactions=transactions,
                 account=match.account,
                 imported_by=request.user,
                 filename=filename,
-                file_hash=file_hash,
+                file_hash=_account_file_hash(file_hash, match.sheet_name),
                 balance=balance,
                 dry_run=False,
             )
@@ -350,10 +437,179 @@ def import_log_delete(request, pk):
     return response
 
 
-def _error(request, message, hint=None):
+@login_required
+@require_POST
+def import_create_account(request):
+    """
+    Crée un Account + CheckingAccount/SavingsAccount depuis le formulaire inline
+    affiché quand resolve_accounts() ne trouve pas le compte.
+
+    Après création, relance le dry-run automatiquement (le fichier temp est
+    toujours en session) et retourne _steps_result.html comme si de rien n'était.
+    """
+    from accounts.models import Bank
+
+    bank_slug = request.POST.get("bank_slug", "")
+    account_name = request.POST.get("account_name", "").strip()
+    account_type = request.POST.get("account_type", "")
+    iban = request.POST.get("iban", "").replace(" ", "").upper()
+    bic = request.POST.get("bic", "").replace(" ", "").upper()
+    contract_number = request.POST.get("contract_number", "")
+    currency = request.POST.get("currency", "")
+
+    # Validations minimales
+    if not account_name:
+        return _error(request, "Le nom du compte est obligatoire.")
+    if not iban and not contract_number:
+        return _error(
+            request,
+            "Un identifiant est obligatoire.",
+            hint="Renseignez l'IBAN ou le numéro de contrat (RIB pour CIC).",
+        )
+    if account_type not in dict(Account.AccountType.choices):
+        return _error(request, "Type de compte invalide.")
+
+    # La banque doit exister en DB (créée via seed_banks)
+    try:
+        bank = Bank.objects.get(slug=bank_slug)
+    except Bank.DoesNotExist:
+        return _error(
+            request,
+            f"Banque « {bank_slug} » introuvable.",
+            hint="Lancez d'abord : python manage.py seed_banks",
+        )
+
+    # Créer l'Account + spécialisation dans une transaction atomique
+    from django.db import transaction as db_transaction
+
+    try:
+        with db_transaction.atomic():
+            account = Account.objects.create(
+                bank=bank,
+                name=account_name,
+                account_type=account_type,
+                currency=currency,
+                contract_number=contract_number,
+                is_active=True,
+            )
+            if account_type == Account.AccountType.CHECKING:
+                CheckingAccount.objects.create(account=account, iban=iban, bic=bic)
+            else:
+                SavingsAccount.objects.create(account=account, interest_rate=0)
+    except Exception as e:
+        return _error(request, f"Erreur lors de la création du compte : {e}")
+
+    # Compte créé — relancer le dry-run avec le fichier toujours en session
+    # On réutilise _handle_dry_run en simulant un POST avec le fichier déjà uploadé.
+    # Mais le fichier est en session (pas re-uploadé) → on relance resolve + dry-run
+    # directement depuis ici.
+    pending = request.session.get("pending_import")
+    if not pending:
+        return _error(request, "Session expirée. Recommencez l'import.")
+
+    tmp_path = Path(pending["filepath"])
+    if not tmp_path.exists():
+        del request.session["pending_import"]
+        return _error(request, "Fichier temporaire introuvable. Recommencez l'import.")
+
+    # Relancer le dry-run complet (même logique que _handle_dry_run)
+    try:
+        connector = detect_connector(tmp_path)
+        matches = resolve_accounts(connector, tmp_path)
+
+        if isinstance(connector, CICConnector):
+            sheets_info = {
+                s["sheet_name"]: s for s in connector.get_account_sheets(tmp_path)
+            }
+            balances = {
+                match.sheet_name: sheets_info.get(match.sheet_name, {}).get("balance")
+                for match in matches
+            }
+        else:
+            raw_balance = connector.extract_balance(tmp_path)
+            balances = {None: raw_balance}
+
+        service = ImportService()
+        dry_results = []
+        file_hash = pending["file_hash"]
+        filename = pending["filename"]
+        connector_label = type(connector).__name__.replace("Connector", "")
+
+        for match in matches:
+            if match.sheet_name is not None:
+                transactions = connector.parse_sheet(tmp_path, match.sheet_name)
+            else:
+                transactions = connector.parse(tmp_path)
+            balance = balances.get(match.sheet_name)
+            result = service.run(
+                transactions=transactions,
+                account=match.account,
+                imported_by=request.user,
+                filename=filename,
+                file_hash=file_hash,
+                balance=balance,
+                dry_run=True,
+            )
+            dry_results.append(
+                {
+                    "account": match.account,
+                    "sheet_name": match.sheet_name,
+                    "result": result,
+                }
+            )
+
+        total_created = sum(r["result"].count_created for r in dry_results)
+        total_skipped = sum(r["result"].count_skipped for r in dry_results)
+
+        return render(
+            request,
+            "imports/partials/_steps_result.html",
+            {
+                "connector_label": connector_label,
+                "dry_results": dry_results,
+                "total_created": total_created,
+                "total_skipped": total_skipped,
+                "filename": filename,
+            },
+        )
+    except AccountNotFound as e:
+        # Un autre compte est encore manquant (CIC multi-feuilles)
+        from accounts.banks_config import KNOWN_BANKS
+
+        bank_config = KNOWN_BANKS.get(e.bank_slug, {})
+        try:
+            bank_obj = Bank.objects.get(slug=e.bank_slug)
+        except Bank.DoesNotExist:
+            bank_obj = None
+        return render(
+            request,
+            "imports/partials/_steps_create_account.html",
+            {
+                "bank": bank_obj,
+                "bank_slug": e.bank_slug,
+                "bank_name": bank_config.get("name", e.bank_slug.upper()),
+                "bank_bic": bank_config.get("bic", ""),
+                "iban": e.contract_number if e.bank_slug == "ubs" else "",
+                "contract_number": e.contract_number,
+                "contract_number_raw": e.contract_number_raw,
+                "sheet_name": e.sheet_name,
+                "currency": bank_config.get("currency", "EUR"),
+                "account_types": Account.AccountType.choices,
+            },
+        )
+    except Exception as e:
+        return _error(request, f"Erreur lors du dry-run : {e}")
+
+
+def _error(request, message, hint=None, admin_url=None, admin_label=None):
     """Retourne le fragment erreur (réutilisable dans toutes les étapes)."""
     return render(
         request,
         "imports/partials/_steps_error.html",
-        {"error": message, "hint": hint},
+        {
+            "error": message,
+            "hint": hint,
+            "admin_url": admin_url,
+            "admin_label": admin_label,
+        },
     )

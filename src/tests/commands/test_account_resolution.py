@@ -11,12 +11,12 @@ commande de management. Elle est maintenant centralisée dans connectors/resolve
 et testée ici directement, sans passer par les commandes.
 
 Comportements testés :
-    Yuh  1. Aucun compte Yuh actif → Account.DoesNotExist
+    Yuh  1. Aucun compte Yuh actif → AccountNotFound
     Yuh  2. 1 compte Yuh actif     → AccountMatch retourné
-    Yuh  3. 2 comptes Yuh actifs   → Account.MultipleObjectsReturned
-    Yuh  4. Compte inactif         → Account.DoesNotExist (ignoré par le filtre)
+    Yuh  3. 2 comptes Yuh actifs   → AccountMatch du plus récent (first() — pas d'erreur)
+    Yuh  4. Compte inactif         → AccountNotFound (ignoré par le filtre)
     UBS  5. IBAN absent du fichier → ValueError
-    UBS  6. IBAN présent mais pas en DB → Account.DoesNotExist
+    UBS  6. IBAN présent mais pas en DB → AccountNotFound
     UBS  7. IBAN présent et compte trouvé → AccountMatch retourné
 """
 
@@ -25,8 +25,8 @@ from unittest.mock import patch
 
 import pytest
 
-from accounts.models import Account, Bank
-from connectors.resolver import AccountMatch, resolve_accounts
+from accounts.models import Account, Bank, CheckingAccount
+from connectors.resolver import AccountMatch, AccountNotFound, resolve_accounts
 from connectors.ubs.parser import UBSConnector
 from connectors.yuh.parser import YuhConnector
 
@@ -77,12 +77,12 @@ def make_yuh_account(bank, name="Yuh CHF", is_active=True) -> Account:
 @pytest.mark.django_db
 def test_yuh_raises_when_no_account(yuh_bank):
     """
-    Aucun compte Yuh checking actif en DB → Account.DoesNotExist.
+    Aucun compte Yuh checking actif en DB → AccountNotFound.
 
     Scénario : première utilisation de l'app, make seed n'a pas encore été lancé.
     """
     connector = YuhConnector()
-    with pytest.raises(Account.DoesNotExist):
+    with pytest.raises(AccountNotFound):
         resolve_accounts(connector, YUH_DUMMY)
 
 
@@ -105,33 +105,34 @@ def test_yuh_returns_single_active_account(yuh_bank):
 
 
 @pytest.mark.django_db
-def test_yuh_raises_when_multiple_accounts(yuh_bank):
+def test_yuh_returns_most_recent_when_multiple_accounts(yuh_bank):
     """
-    2+ comptes Yuh checking actifs → Account.MultipleObjectsReturned.
+    2+ comptes Yuh checking actifs → AccountMatch du plus récent (order_by -id).
 
-    Scénario : doublon accidentel en DB. Sans cette garde, l'import
-    affecterait les transactions au premier compte retourné par l'ORM —
-    non déterministe selon l'ordre d'insertion.
+    Scénario : doublon accidentel en DB. On prend silencieusement le plus récent
+    au lieu de crasher — l'admin peut désactiver le doublon manuellement.
     """
     make_yuh_account(yuh_bank, name="Yuh CHF #1")
-    make_yuh_account(yuh_bank, name="Yuh CHF #2")
+    account2 = make_yuh_account(yuh_bank, name="Yuh CHF #2")
 
     connector = YuhConnector()
-    with pytest.raises(Account.MultipleObjectsReturned):
-        resolve_accounts(connector, YUH_DUMMY)
+    matches = resolve_accounts(connector, YUH_DUMMY)
+
+    assert len(matches) == 1
+    assert matches[0].account.pk == account2.pk
 
 
 @pytest.mark.django_db
 def test_yuh_ignores_inactive_account(yuh_bank):
     """
-    Compte Yuh inactif (is_active=False) → ignoré → Account.DoesNotExist.
+    Compte Yuh inactif (is_active=False) → ignoré → AccountNotFound.
 
     Scénario : compte fermé, marqué inactif dans l'admin.
     """
     make_yuh_account(yuh_bank, name="Yuh CHF Old", is_active=False)
 
     connector = YuhConnector()
-    with pytest.raises(Account.DoesNotExist):
+    with pytest.raises(AccountNotFound):
         resolve_accounts(connector, YUH_DUMMY)
 
 
@@ -157,31 +158,37 @@ def test_ubs_raises_when_no_iban_in_file(ubs_bank):
 @pytest.mark.django_db
 def test_ubs_raises_when_iban_not_in_db(ubs_bank):
     """
-    IBAN extrait du fichier mais aucun Account avec ce contract_number → DoesNotExist.
+    IBAN extrait du fichier mais aucun CheckingAccount avec cet IBAN → AccountNotFound.
 
-    Scénario d'onboarding : le compte a été créé en DB mais Account.contract_number
+    Scénario d'onboarding : le compte a été créé en DB mais CheckingAccount.iban
     n'a pas été renseigné.
     """
     connector = UBSConnector()
 
-    with pytest.raises(Account.DoesNotExist):
+    with pytest.raises(AccountNotFound):
         resolve_accounts(connector, UBS_CSV)
 
 
 @pytest.mark.django_db
 def test_ubs_returns_account_matching_iban(ubs_bank):
     """
-    IBAN extrait + compte avec ce contract_number en DB → AccountMatch retourné.
+    IBAN extrait + CheckingAccount avec cet IBAN en DB → AccountMatch retourné.
 
     L'IBAN dans ubs_sample.csv est 'CH00 0000 0000 0000 0000 0'.
     UBSConnector.extract_account_identifier() normalise → 'CH0000000000000000000'.
+    Le resolver cherche dans CheckingAccount.iban (pas Account.contract_number).
     """
     account = Account.objects.create(
         bank=ubs_bank,
         name="UBS CHF",
         account_type=Account.AccountType.CHECKING,
         currency="CHF",
-        contract_number="CH0000000000000000000",  # IBAN normalisé du fixture
+        is_active=True,
+    )
+    CheckingAccount.objects.create(
+        account=account,
+        iban="CH0000000000000000000",  # IBAN normalisé du fixture
+        bic="UBSWCHZH80A",
     )
 
     connector = UBSConnector()
