@@ -378,6 +378,20 @@ class Transaction(models.Model):
     # max_length=64: SHA256 hex digest is always 64 characters.
     import_hash = models.CharField(max_length=64, unique=True)
 
+    # Lien vers l'import qui a créé cette transaction.
+    # null=True : les transactions existantes avant cette migration restent valides.
+    # SET_NULL : si l'ImportLog est supprimé manuellement depuis l'admin, les
+    #            transactions restent en DB avec import_log=NULL.
+    #            La vue delete_import fait une suppression explicite des tx AVANT
+    #            de supprimer le log — SET_NULL est ici un filet de sécurité.
+    import_log = models.ForeignKey(
+        "ImportLog",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="transactions",
+    )
+
     class Meta:
         verbose_name = "transaction"
         verbose_name_plural = "transactions"

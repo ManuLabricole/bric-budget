@@ -283,9 +283,32 @@ class ImportService:
         # PostgreSQL rolls back ALL writes — no partial imports.
         # "Atomic" = either everything succeeds, or nothing changes.
         with db_transaction.atomic():
-            # bulk_create: one SQL INSERT for all new transactions instead of one per row.
-            # ignore_conflicts=False (default): if a hash slips through the duplicate
-            # check above (rare race condition), let it raise so we notice.
+            # ImportLog créé EN PREMIER pour pouvoir lier chaque transaction via FK.
+            # On crée le log avant bulk_create pour avoir son pk disponible.
+            if result.count_errors == 0:
+                status = ImportLog.Status.SUCCESS
+            elif result.count_created > 0:
+                status = ImportLog.Status.PARTIAL
+            else:
+                status = ImportLog.Status.FAILED
+
+            import_log = ImportLog.objects.create(
+                account=account,
+                imported_by=imported_by,
+                filename=filename,
+                file_hash=file_hash,
+                status=status,
+                count_created=result.count_created,
+                count_skipped=result.count_skipped,
+                count_errors=result.count_errors,
+                error_detail="\n".join(result.error_detail),
+            )
+
+            # Lier chaque transaction à l'import qui la crée.
+            # Ce FK permet de supprimer toutes les transactions d'un import d'un coup.
+            for t in transactions_to_create:
+                t.import_log = import_log
+
             if transactions_to_create:
                 Transaction.objects.bulk_create(transactions_to_create)
 
@@ -359,27 +382,6 @@ class ImportService:
                             extracted,
                             computed,
                         )
-
-            # ImportLog: audit trail — one row per import session.
-            # Answers "what file was imported, when, by whom, with what result?"
-            if result.count_errors == 0:
-                status = ImportLog.Status.SUCCESS
-            elif result.count_created > 0:
-                status = ImportLog.Status.PARTIAL  # some rows worked, some didn't
-            else:
-                status = ImportLog.Status.FAILED  # nothing was created
-
-            ImportLog.objects.create(
-                account=account,
-                imported_by=imported_by,
-                filename=filename,
-                file_hash=file_hash,
-                status=status,
-                count_created=result.count_created,
-                count_skipped=result.count_skipped,
-                count_errors=result.count_errors,
-                error_detail="\n".join(result.error_detail),
-            )
 
         return result
 

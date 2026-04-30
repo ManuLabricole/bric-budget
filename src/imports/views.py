@@ -267,6 +267,34 @@ def import_log_detail(request, pk):
     return render(request, "imports/partials/_import_detail.html", {"log": log})
 
 
+@login_required
+@require_POST
+def import_log_delete(request, pk):
+    """
+    Supprime un ImportLog et toutes ses transactions associées.
+
+    Les transactions liées ont import_log=log (FK settée depuis la migration 0006).
+    Les anciennes transactions (import_log=NULL) ne sont pas touchées.
+
+    Flow :
+        POST /import/<pk>/delete/
+        → Transaction.objects.filter(import_log=log).delete()
+        → log.delete()
+        → HX-Redirect /import/
+    """
+    log = get_object_or_404(ImportLog, pk=pk)
+
+    tx_count = log.transactions.count()
+    log.transactions.all().delete()
+    log.delete()
+
+    response = HttpResponse()
+    response["HX-Redirect"] = reverse("imports:upload")
+    # On passe le count dans un header custom pour un futur toast si besoin
+    response["X-Deleted-Count"] = str(tx_count)
+    return response
+
+
 def _error(request, message, hint=None):
     """Retourne le fragment erreur (réutilisable dans toutes les étapes)."""
     return render(
