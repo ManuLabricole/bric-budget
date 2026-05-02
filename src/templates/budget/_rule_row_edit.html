@@ -115,7 +115,7 @@ Contexte :
                             {# Catégorie principale (pas de sous-cat) #}
                             <button type="button"
                                     onclick="ruleEditSelect('{{ rule.id }}', {{ cat.id }}, '', '{{ cat.name }}', '{{ cat.colour_hex|default:'#2d3033' }}', '{% with p="icons/categories/"|add:cat.icon|add:".svg" %}{% static p %}{% endwith %}', false)"
-                                    class="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-surface-hover transition-colors">
+                                    class="w-full flex items-center gap-3 px-3 py-2 text-sm text-left hover:bg-surface-hover transition-colors">
                                 <span class="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center"
                                       style="background-color: {{ cat.colour_hex|default:'#2d3033' }}">
                                     {% if cat.icon %}
@@ -135,7 +135,7 @@ Contexte :
                             {% for sub in subcats %}
                                 <button type="button"
                                         onclick="ruleEditSelect('{{ rule.id }}', {{ cat.id }}, {{ sub.id }}, '{{ cat.name }} › {{ sub.name }}', '{{ cat.colour_hex|default:'#2d3033' }}', '{% if sub.icon %}{% with p="icons/categories/"|add:sub.icon|add:".svg" %}{% static p %}{% endwith %}{% else %}{% with p="icons/categories/"|add:cat.icon|add:".svg" %}{% static p %}{% endwith %}{% endif %}', true)"
-                                        class="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-surface-hover transition-colors">
+                                        class="w-full flex items-center gap-3 px-3 py-2 text-sm text-left hover:bg-surface-hover transition-colors">
                                     <span class="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center"
                                           style="background-color: {{ cat.colour_hex|default:'#2d3033' }}40">
                                         {% if sub.icon %}
