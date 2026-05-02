@@ -16,17 +16,40 @@ Actions HTMX sur la ligne :
 {% endcomment %}
 <div id="rule-{{ rule.id }}"
      class="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors group {% if rule.is_active %}bg-surface-hover/50 hover:bg-surface-hover{% else %}bg-surface-hover/20 hover:bg-surface-hover/40 opacity-50{% endif %}">
-    {# ── Icône catégorie ── #}
+    {# ── Icône catégorie / sous-catégorie ── #}
+    {# Fond plein = catégorie principale. Fond à 25% (hex40) = sous-catégorie (même pattern que category_detail.html). #}
     <span class="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center"
-          style="background-color: {{ rule.category.colour_hex|default:'#2d3033' }}">
-        {% if rule.category.icon %}
-            {% with icon_path="icons/categories/"|add:rule.category.icon|add:".svg" %}
-                <img src="{% static icon_path %}"
-                     width="14"
-                     height="14"
-                     class="w-3.5 h-3.5 brightness-0 invert"
-                     alt="">
-            {% endwith %}
+          style="background-color: {{ rule.category.colour_hex|default:'#2d3033' }}{% if rule.subcategory %}40{% endif %}">
+        {% if rule.subcategory %}
+            {# Sous-catégorie : son icône propre si elle existe, sinon celle de la catégorie parente #}
+            {% if rule.subcategory.icon %}
+                {% with icon_path="icons/categories/"|add:rule.subcategory.icon|add:".svg" %}
+                    <img src="{% static icon_path %}"
+                         width="14"
+                         height="14"
+                         class="w-3.5 h-3.5 brightness-0 invert opacity-80"
+                         alt="">
+                {% endwith %}
+            {% elif rule.category.icon %}
+                {% with icon_path="icons/categories/"|add:rule.category.icon|add:".svg" %}
+                    <img src="{% static icon_path %}"
+                         width="14"
+                         height="14"
+                         class="w-3.5 h-3.5 brightness-0 invert opacity-80"
+                         alt="">
+                {% endwith %}
+            {% endif %}
+        {% else %}
+            {# Catégorie principale : fond plein, icône normale #}
+            {% if rule.category.icon %}
+                {% with icon_path="icons/categories/"|add:rule.category.icon|add:".svg" %}
+                    <img src="{% static icon_path %}"
+                         width="14"
+                         height="14"
+                         class="w-3.5 h-3.5 brightness-0 invert"
+                         alt="">
+                {% endwith %}
+            {% endif %}
         {% endif %}
     </span>
     {# ── Keyword + catégorie ── #}

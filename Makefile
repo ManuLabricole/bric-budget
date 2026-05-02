@@ -44,6 +44,11 @@ help:
 	@printf "    $(BOLD)make import-ubs$(RESET)      Analyse un export UBS CSV (dry run)\n"
 	@printf "    $(BOLD)make import-cic$(RESET)      Analyse un export CIC Excel (dry run)\n"
 	@printf "\n"
+	@printf "  $(CYAN)🧪 Qualité$(RESET)\n"
+	@printf "    $(BOLD)make lint$(RESET)            Lint Python (ruff) + templates (djlint)\n"
+	@printf "    $(BOLD)make check$(RESET)           Lint + tests (tout en un)\n"
+	@printf "    $(BOLD)make test$(RESET)            Tests unitaires uniquement\n"
+	@printf "\n"
 	@printf "  $(CYAN)🧪 Dev tools$(RESET)\n"
 	@printf "    $(BOLD)make dev-randomize$(RESET)   Catégorisation aléatoire (transactions non catégorisées)\n"
 	@printf "    $(BOLD)make dev-randomize ALL=1$(RESET)  Re-randomiser toutes les transactions\n"
@@ -114,8 +119,21 @@ run:
 
 test:
 	@printf "  🧪 $(CYAN)Lancement des tests...$(RESET)\n"
-	@poetry run pytest --color=yes 
+	@poetry run pytest --color=yes
 	@printf "  ✅ $(GREEN)Tests terminés$(RESET)\n"
+
+lint:
+	@printf "  🔍 $(CYAN)Linting Python (ruff) + templates (djlint)...$(RESET)\n"
+	@poetry run ruff check src/
+	@poetry run djlint src/templates/ --profile=django --lint
+	@printf "  ✅ $(GREEN)Lint OK$(RESET)\n"
+
+check:
+	@printf "  🔍 $(CYAN)Lint + tests...$(RESET)\n"
+	@poetry run ruff check src/
+	@poetry run djlint src/templates/ --profile=django --lint
+	@poetry run pytest --color=yes
+	@printf "  ✅ $(GREEN)Tout est bon$(RESET)\n"
 
 migrate:
 	@printf "  🔄 $(CYAN)Application des migrations...$(RESET)\n"
@@ -229,4 +247,4 @@ restore:
 	@printf "  ✅ $(GREEN)Restauration terminée$(RESET)\n"
 
 # =============================================================================
-.PHONY: help status up down logs run migrate makemigrations shell create-superuser seed reset-seed import-all import-yuh import-ubs import-cic backup restore dev-randomize dev-seed-realistic
+.PHONY: help status up down logs run migrate makemigrations shell create-superuser seed reset-seed import-all import-yuh import-ubs import-cic backup restore dev-randomize dev-seed-realistic lint check test
