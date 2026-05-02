@@ -64,9 +64,9 @@ Layout :
             </div>
             <h1 class="text-sm font-semibold text-text-base">{{ category.name }}</h1>
         </div>
-        {# Period nav — même composant que l'index, utilise budget:set_period #}
-        {# set_period redirige vers HTTP_REFERER → revient sur cette page après le clic #}
-        <div class="ml-auto">
+        {# Dropdown filtre compte + Period nav alignés à droite #}
+        <div class="ml-auto flex items-center gap-2">
+            {% include "components/filters/filter_accounts.html" with accounts=accounts filter_account_ids=filter_account_ids %}
             {% include "components/period/period_nav.html" with period_mode=period_mode period_display=period_display can_go_next=can_go_next nav_url_name="budget:set_period" %}
         </div>
     </div>

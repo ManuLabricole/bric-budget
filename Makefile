@@ -165,6 +165,15 @@ import-cic:
 	@printf "  📥 $(CYAN)Import CIC$(if $(COMMIT), — écriture DB,  — dry run)...$(RESET)\n"
 	@$(MANAGE) import_cic --file "$(FILE)" $(if $(COMMIT),--commit,)
 
+export-rules:
+	@printf "  📤 $(CYAN)Export règles de catégorisation → JSON...$(RESET)\n"
+	@mkdir -p assets/private
+	@$(MANAGE) export_rules --output assets/private/rules_backup_$(shell date +%Y%m%d).json
+
+reset-categories:
+	@printf "  🔄 $(YELLOW)Reset catégories : positif → Revenus, négatif → Inconnu...$(RESET)\n"
+	@$(MANAGE) reset_categories $(if $(DRY),--dry-run,)
+
 # =============================================================================
 # 🧪 Dev tools
 # =============================================================================

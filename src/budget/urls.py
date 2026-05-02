@@ -107,4 +107,26 @@ urlpatterns = [
     path(
         "categorie/<slug:slug>/", views.budget_category_detail, name="category_detail"
     ),
+    # ── Filtres multi-select (T1 + T2) ──────────────────────────────────────
+    # /budget/filter/account/<account_id>/ → toggle compte dans le filtre session
+    # account_id=0 → réinitialise (tous les comptes)
+    path(
+        "filter/account/<int:account_id>/",
+        views.budget_toggle_filter_account,
+        name="toggle_filter_account",
+    ),
+    # /budget/filter/category/<slug>/ → toggle catégorie dans le filtre session
+    # slug="all" → réinitialise (toutes les catégories)
+    path(
+        "filter/category/<slug:slug>/",
+        views.budget_toggle_filter_category,
+        name="toggle_filter_category",
+    ),
+    # ── Export (T4) ─────────────────────────────────────────────────────────
+    # /budget/export/rules/ → télécharge les règles de catégorisation en JSON
+    path(
+        "export/rules/",
+        views.budget_export_rules_download,
+        name="export_rules_download",
+    ),
 ]
