@@ -60,3 +60,39 @@ def chf(value):
 def chf_dec(value):
     """Format monétaire avec 2 décimales : 32232.5 → "32 232,50"."""
     return _format_amount(value, decimal_places=2)
+
+
+# ── Gauge demi-cercle SVG ──────────────────────────────────────────────────────
+# Demi-périmètre = π × r = π × 40 = 125.66 (r=40 dans le viewBox 100×52).
+
+GAUGE_HALF_PERIMETER = 125.66
+GAUGE_COLOR_INCOME = "#4dbf93"  # même valeur que le token Tailwind "income"
+GAUGE_COLOR_WARNING = "#f97316"  # même valeur que le token Tailwind "warning"
+
+
+@register.filter
+def gauge_fill(pct):
+    """Convertit un pourcentage (0–200+) en longueur d'arc SVG (0–125.66).
+    Plafonné à 100% = arc complet.
+    Usage : {{ target_pct|gauge_fill }}
+    """
+    try:
+        return round(min(float(pct), 100) / 100 * GAUGE_HALF_PERIMETER, 1)
+    except (TypeError, ValueError):
+        return 0
+
+
+@register.filter
+def gauge_color(pct, threshold=100):
+    """Retourne la couleur hex income si pct <= threshold, warning sinon.
+    Usage : {{ target_pct|gauge_color }}          → vert si ≤ 100
+            {{ over_pct|gauge_color:0 }}           → vert si = 0
+    """
+    try:
+        return (
+            GAUGE_COLOR_INCOME
+            if float(pct) <= float(threshold)
+            else GAUGE_COLOR_WARNING
+        )
+    except (TypeError, ValueError):
+        return GAUGE_COLOR_INCOME

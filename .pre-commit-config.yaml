@@ -51,12 +51,23 @@ repos:
       #   - RIB CIC    : séquence de 20-22 chiffres consécutifs (numéros de contrat)
       # Les fichiers .env, .env.example, et les migrations sont exclus.
       # Si ce hook bloque un faux positif, ajouter le fichier dans exclude ci-dessous.
+      # Lance la suite de tests pytest avant chaque commit.
+      # pass_filenames: false → pytest reçoit ses args depuis pyproject.toml, pas la liste des fichiers modifiés.
+      # always_run: true → tourne même si aucun fichier Python n'a changé (ex: commit de template seul).
+      # La DB PostgreSQL doit tourner (make up) — si elle est arrêtée, pytest échoue et bloque le commit.
+      - id: pytest
+        name: pytest
+        language: system
+        entry: poetry run pytest --tb=short -q
+        pass_filenames: false
+        always_run: true
+
       - id: no-hardcoded-bank-ids
         name: No hardcoded bank identifiers (IBAN / RIB)
         language: pygrep
         entry: '(CH\d{2}[A-Z0-9]{15,}|FR\d{2}[A-Z0-9]{20,}|\b\d{20,22}\b)'
         types: [python]
-        exclude: ^(src/[^/]+/migrations/|\.env)
+        exclude: ^(src/[^/]+/migrations/|src/tests/|\.env)
 
   # ---------------------------------------------------------------------------
   # Commitizen — enforces Conventional Commits message format

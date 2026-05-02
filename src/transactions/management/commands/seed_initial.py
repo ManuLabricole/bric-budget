@@ -257,7 +257,7 @@ class Command(BaseCommand):
                 "currency": "CHF",
                 "subtype": "checking",
                 "iban": "CH00 0000 0000 0000 0000 Y",
-                "bic": "YUHHCHZZ",
+                "bic": "",
             },
             # ── UBS ──────────────────────────────────────────────────────────
             # Les IBANs UBS sont lus depuis .env — jamais codés en dur.
@@ -273,7 +273,7 @@ class Command(BaseCommand):
                 "subtype": "checking",
                 "contract_number": config("UBS_IBAN_NORMALISED", default=""),
                 "iban": config("UBS_IBAN_DISPLAY", default=""),
-                "bic": "UBSWCHZH",
+                "bic": "",
             },
             {
                 "key": "ubs_epargne",
@@ -300,8 +300,8 @@ class Command(BaseCommand):
                 "currency": "EUR",
                 "contract_number": config("CIC_CC_CONTRACT", default=""),
                 "subtype": "checking",
-                "iban": "",  # IBAN SEPA réel inconnu — à renseigner si besoin
-                "bic": "CMCIFRPP",
+                "iban": "",
+                "bic": "",
             },
             {
                 "key": "cic_livret_a",
@@ -334,7 +334,7 @@ class Command(BaseCommand):
                 "currency": "EUR",
                 "subtype": "checking",
                 "iban": "FR00 0000 0000 0000 0000 B",
-                "bic": "BOUSFRPP",
+                "bic": "",
             },
             {
                 "key": "boursorama_epargne",

@@ -1,0 +1,555 @@
+{% extends "base_app.html" %}
+{% load budget_filters static %}
+{% comment %}
+budget/category_detail.html — Page détail d'une catégorie.
+
+URL : /budget/categorie/<slug>/
+Vue : budget_category_detail
+
+Contexte Django :
+    category     — objet Category
+    cat_tab      — str onglet actif : 'transactions' (défaut) | 'subcategories' | 'objectif'
+    period_label — str période formatée (ex: "Avril 2026")
+    total_amount — Decimal total brut (négatif pour les dépenses)
+    tx_count     — int nombre de transactions
+    avg_amount   — Decimal|None moyenne par transaction
+    subcat_count — int nombre de sous-catégories distinctes
+    txs          — queryset Transaction (avec select_related)
+    subcat_list  — list de dicts { subcategory__name, subcategory__slug, total }
+    budget_target — BudgetTarget|None pour cette catégorie
+    target_amount — Decimal montant cible mis à l'échelle de la période
+    target_pct    — int|None pourcentage consommé (0-100+)
+    on_track      — bool True si sous l'objectif
+    sankey_data  — dict { nodes, links } pour BricCharts.initSankey
+    has_sankey   — bool — True si au moins une sous-catégorie a des transactions
+    donut_data   — dict { segments, label, sign, total } pour BricCharts.initDonut
+    has_donut    — bool — True si au moins un segment donut
+
+Layout :
+    panel_left  → header + carte Cashflow (Sankey + KPI onglets) + contenu selon cat_tab
+    panel_right → carte Distribution (donut + liste sous-catégories)
+    Le right panel overlay (de base_app.html) reste disponible pour le détail transaction.
+{% endcomment %}
+{% block title %}{{ category.name }} — BricBudget{% endblock %}
+{# ══════════════════════════════════════════════════════════════════════════════
+   PANEL GAUCHE
+   ══════════════════════════════════════════════════════════════════════════════ #}
+{% block panel_left %}
+    {# ── Header — breadcrumb + period nav ───────────────────────────────────── #}
+    <div class="flex items-center gap-3 mb-4">
+        {# Breadcrumb ← Budget / icône + nom #}
+        <a href="{% url 'budget:index' %}"
+           class="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-base transition-colors flex-shrink-0">
+            <svg class="w-4 h-4"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="2"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+            </svg>
+        </a>
+        <span class="text-text-disabled text-xs">/</span>
+        <div class="flex items-center gap-2 flex-shrink-0">
+            <div class="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center"
+                 style="background-color: {{ category.colour_hex|default:'#2d3033' }}">
+                {% if category.icon %}
+                    {% with icon_path="icons/categories/"|add:category.icon|add:".svg" %}
+                        <img src="{% static icon_path %}"
+                             width="16"
+                             height="16"
+                             class="w-4 h-4 brightness-0 invert"
+                             alt="">
+                    {% endwith %}
+                {% endif %}
+            </div>
+            <h1 class="text-sm font-semibold text-text-base">{{ category.name }}</h1>
+        </div>
+        {# Dropdown filtre compte + Period nav alignés à droite #}
+        <div class="ml-auto flex items-center gap-2">
+            {% include "components/filters/filter_accounts.html" with accounts=accounts filter_account_ids=filter_account_ids %}
+            {% include "components/period/period_nav.html" with period_mode=period_mode period_display=period_display can_go_next=can_go_next nav_url_name="budget:set_period" %}
+        </div>
+    </div>
+    {# ── Carte Cashflow — Sankey + KPI strip ─────────────────────────────────── #}
+    {# Même structure que la carte Cashflow de index.html :                       #}
+    {#   header "Cashflow" → Sankey → KPI strip collée en bas (divide-x)          #}
+    {# overflow-hidden : clippe le border-b du tab strip aux coins arrondis de la card. #}
+    <div id="cashflow-card"
+         class="bg-surface-3 rounded-xl mb-4 overflow-hidden">
+        <div class="flex items-center justify-between px-5 pt-5 pb-2">
+            <h2 class="text-sm font-semibold text-text-base">Cashflow</h2>
+            <span class="text-[10px] text-text-disabled">{{ period_label }}</span>
+        </div>
+        {% if has_sankey %}
+            <div class="px-5 pb-2">
+                <div id="sankey-chart" class="w-full" style="height: 220px;"></div>
+                {{ sankey_data|json_script:"sankey-data" }}
+            </div>
+        {% endif %}
+        {# KPI strip — 3 onglets cliquables (sélecteurs de tab).                           #}
+        {# Clic → budget:set_cat_tab → session budget_cat_tab → redirect referer.         #}
+        {# Actif : border-b-2 border-gold + label/valeur text-gold.                       #}
+        {# Transactions = montant total · Sous-catégories = count distinct · Objectif     #}
+        {# KPI strip — même pattern que index.html : flex items-end, active = border-b border-gold -mb-px #}
+        <div class="flex items-end gap-0 border-b border-edge px-5 pt-3 mt-2">
+            {# ── Onglet Transactions — montant total sur la période ── #}
+            <a href="{% url 'budget:set_cat_tab' 'transactions' %}"
+               class="group flex flex-col items-start gap-1 pb-3 pr-8 cursor-pointer transition-colors {% if cat_tab == 'transactions' %}text-gold border-b border-gold -mb-px{% else %}text-text-base hover:text-gold{% endif %}">
+                <span class="text-[9px] font-medium uppercase tracking-wide {% if cat_tab == 'transactions' %}text-gold{% else %}text-text-muted group-hover:text-gold{% endif %}">Transactions</span>
+                {% if total_amount >= 0 %}
+                    <span class="text-base font-bold tabular-nums {% if cat_tab != 'transactions' %}text-income{% endif %}">+{{ total_amount|chf }} CHF</span>
+                {% else %}
+                    <span class="text-base font-bold tabular-nums {% if cat_tab != 'transactions' %}text-expense{% endif %}">−{{ total_amount|chf }} CHF</span>
+                {% endif %}
+            </a>
+            {# ── Onglet Sous-catégories — nombre de sous-cats distinctes ── #}
+            <a href="{% url 'budget:set_cat_tab' 'subcategories' %}"
+               class="group flex flex-col items-start gap-1 pb-3 pr-8 cursor-pointer transition-colors {% if cat_tab == 'subcategories' %}text-gold border-b border-gold -mb-px{% else %}text-text-base hover:text-gold{% endif %}">
+                <span class="text-[9px] font-medium uppercase tracking-wide {% if cat_tab == 'subcategories' %}text-gold{% else %}text-text-muted group-hover:text-gold{% endif %}">Sous-catégories</span>
+                <span class="text-base font-bold tabular-nums">{{ subcat_count }}</span>
+            </a>
+            {# ── Onglet Objectif — montant mis à l'échelle + bouton modifier ── #}
+            {# Le bouton ✏️ HTMX est à l'intérieur du <a> → stopPropagation      #}
+            {# pour éviter que son clic déclenche la navigation vers set_cat_tab. #}
+            <a href="{% url 'budget:set_cat_tab' 'objectif' %}"
+               class="group flex flex-col items-start gap-1 pb-3 pr-8 cursor-pointer transition-colors {% if cat_tab == 'objectif' %}text-gold border-b border-gold -mb-px{% else %}text-text-base hover:text-gold{% endif %}">
+                <span class="text-[9px] font-medium uppercase tracking-wide {% if cat_tab == 'objectif' %}text-gold{% else %}text-text-muted group-hover:text-gold{% endif %}">Objectif</span>
+                {% if budget_target %}
+                    <div class="flex items-center gap-2">
+                        <p class="text-base font-bold tabular-nums {% if cat_tab == 'objectif' %}text-gold{% else %}text-text-base{% endif %}">
+                            {{ target_amount|chf }} CHF
+                        </p>
+                        {# Mini gauge inline — couleur catégorie, w-8 #}
+                        {% include "budget/_gauge.html" with gauge_fill_px=arc_fill_px gauge_color=category.colour_hex gauge_class="w-8" %}
+                    </div>
+                {% else %}
+                    <button hx-get="{% url 'budget:modal_target_create' %}?category_id={{ category.id }}"
+                            hx-target="#modal-content"
+                            hx-swap="innerHTML"
+                            onclick="event.stopPropagation(); event.preventDefault();"
+                            class="w-6 h-6 rounded-full border border-dashed border-edge/50 hover:border-gold/50 flex items-center justify-center text-text-disabled hover:text-gold transition-colors"
+                            title="Définir un objectif mensuel">
+                        <svg class="w-3 h-3"
+                             fill="none"
+                             viewBox="0 0 24 24"
+                             stroke-width="2.5"
+                             stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                        </svg>
+                    </button>
+                {% endif %}
+            </a>
+        </div>
+    </div>
+    {# ── Contenu principal — conditionnel selon cat_tab ────────────────────────── #}
+    {# Tab "subcategories" → liste des sous-catégories avec leurs montants.        #}
+    {# Tab "transactions" (défaut) et "objectif" → liste des transactions.         #}
+    {# Les données des deux vues sont toujours calculées côté serveur — seul       #}
+    {# l'affichage change. Pas de requête HTMX supplémentaire.                     #}
+    {% if cat_tab == 'subcategories' %}
+        {# ── Vue Sous-catégories ── #}
+        <div class="bg-surface-2 border border-edge rounded-xl overflow-hidden">
+            <div class="flex items-center justify-between px-4 py-3 border-b border-edge">
+                <p class="text-[10px] text-text-muted uppercase tracking-wider">Sous-catégories</p>
+                <span class="text-[10px] text-text-disabled">{{ subcat_count }} au total</span>
+            </div>
+            {% if subcat_list %}
+                <div class="divide-y divide-edge/40">
+                    {% for sub in subcat_list %}
+                        <div class="flex items-center gap-3 px-4 py-3">
+                            {# Cercle icône — même rendu que la liste catégories de index.html #}
+                            <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center"
+                                 style="background-color: {{ category.colour_hex|default:'#2d3033' }}40">
+                                {% if sub.subcategory__icon %}
+                                    {% with icon_path="icons/categories/"|add:sub.subcategory__icon|add:".svg" %}
+                                        <img src="{% static icon_path %}"
+                                             width="14"
+                                             height="14"
+                                             class="w-3.5 h-3.5 brightness-0 invert opacity-80"
+                                             alt="">
+                                    {% endwith %}
+                                {% endif %}
+                            </div>
+                            {# Nom + montant #}
+                            <span class="text-xs text-text-base flex-1 min-w-0 truncate">
+                                {{ sub.subcategory__name|default:"Sans sous-catégorie" }}
+                            </span>
+                            {% if sub.total >= 0 %}
+                                <span class="text-xs font-medium text-income tabular-nums flex-shrink-0">+{{ sub.total|chf }} CHF</span>
+                            {% else %}
+                                <span class="text-xs font-medium text-expense tabular-nums flex-shrink-0">−{{ sub.total|chf }} CHF</span>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="text-xs text-text-disabled text-center py-8">Aucune sous-catégorie sur cette période</p>
+            {% endif %}
+        </div>
+    {% elif cat_tab == 'objectif' %}
+        {# ── Vue Objectif ─────────────────────────────────────────────────────────── #}
+        {% if budget_target %}
+            {# ── Bar chart historique 12 mois ── #}
+            {# bar.js lit history_chart_data + colore avec la couleur catégorie.      #}
+            {# Clic sur une barre → budget:set_period_month → redirect referer.       #}
+            {# Gauge SVG dans panel_right (remplace le donut Distribution).           #}
+            <div class="bg-surface-2 border border-edge rounded-xl overflow-visible mb-4">
+                <div class="flex items-center justify-between px-4 py-3 border-b border-edge">
+                    <p class="text-xs text-text-base uppercase tracking-wider">Historique</p>
+                    <span class="text-xs text-text-base">Objectif {{ budget_target.amount|chf }} CHF / mois</span>
+                </div>
+                {% if has_history %}
+                    <div id="bar-chart" class="w-full px-2" style="height: 190px;"></div>
+                    {{ history_chart_data|json_script:"history-data" }}
+                {% else %}
+                    <p class="text-xs text-text-disabled text-center py-8">Aucune donnée sur 12 mois</p>
+                {% endif %}
+                {# ── KPI grid — dans la même carte que le chart (layout Finary) ─────── #}
+                {# 2 colonnes : période sélectionnée | 12 mois glissants + année.      #}
+                {# Chaque métrique a une icône ℹ (group-hover → tooltip blur).         #}
+                {% if bar_kpis %}
+                    {# ── KPI grid — layout Finary : 2 sections côte à côte, chaque section = grid 2×N ── #}
+                    {# Section gauche : métriques de la période sélectionnée (2 cards)                     #}
+                    {# Section droite : métriques 12 mois glissants (4 cards en 2×2)                      #}
+                    {# ── KPI grid — 3 colonnes égales, 2 lignes ────────────────────────────── #}
+                    {# En-têtes : col 1 → "En [mois]", col 2-3 → "12 derniers mois" (col-span-2) #}
+                    {# Ligne 1 : Transactions | Dépenses moyennes | % dépenses (année)            #}
+                    {# Ligne 2 : % Dépenses   | Meilleure série   | Dépassement d'objectif        #}
+                    <div class="border-t border-edge mt-1 pt-4 pb-5 px-4 overflow-visible">
+                        {# Ligne d'en-têtes de section #}
+                        <div class="grid grid-cols-3 gap-2 mb-3">
+                            <p class="text-M font-semibold text-text-base uppercase tracking-widest">En {{ period_label }}</p>
+                            <p class="text-M font-semibold text-text-base uppercase tracking-widest col-span-2">12 derniers mois</p>
+                        </div>
+                        {# Grille KPI — 3 colonnes × 2 lignes #}
+                        <div class="grid grid-cols-3 gap-2">
+                            {# ── Ligne 1 ── #}
+                            {# Col 1 : Transactions #}
+                            <div class="relative group bg-surface-hover/20 rounded-xl px-3 py-2.5">
+                                <div class="flex items-center gap-1 mb-1">
+                                    <span class="text-[10px] text-text-disabled leading-none">Transactions</span>
+                                    {% include "budget/_kpi_info_icon.html" %}
+                                </div>
+                                <p class="text-sm text-text-base tabular-nums">{{ tx_count }}</p>
+                                <div class="absolute bottom-full left-0 mb-2 w-52 invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 z-20 pointer-events-none">
+                                    <div class="bg-surface-3/95 backdrop-blur-xl border border-edge/60 rounded-xl px-4 py-3 shadow-2xl">
+                                        <p class="text-xs font-semibold text-white mb-1.5">Transactions</p>
+                                        <p class="text-[11px] text-text-muted leading-relaxed">Nombre de transactions sur la période sélectionnée.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            {# Col 2 : Dépenses moyennes #}
+                            <div class="relative group bg-surface-hover/20 rounded-xl px-3 py-2.5">
+                                <div class="flex items-center gap-1 mb-1">
+                                    <span class="text-[10px] text-text-disabled leading-none">Dépenses moyennes</span>
+                                    {% include "budget/_kpi_info_icon.html" %}
+                                </div>
+                                <p class="text-sm text-text-base tabular-nums">{{ bar_kpis.avg_monthly|floatformat:0 }} CHF</p>
+                                <div class="absolute bottom-full left-0 mb-2 w-60 invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 z-20 pointer-events-none">
+                                    <div class="bg-surface-3/95 backdrop-blur-xl border border-edge/60 rounded-xl px-4 py-3 shadow-2xl">
+                                        <p class="text-xs font-semibold text-white mb-1.5">Dépenses moyennes</p>
+                                        <p class="text-[11px] text-text-muted leading-relaxed">
+                                            Moyenne des dépenses mensuelles sur les 12 derniers mois glissants.
+                                        </p>
+                                        <p class="text-[10px] text-gold mt-2">Total ÷ 12 = {{ bar_kpis.avg_monthly|floatformat:0 }} CHF / mois</p>
+                                    </div>
+                                </div>
+                            </div>
+                            {# Col 3 : % dépenses (année) #}
+                            <div class="relative group bg-surface-hover/20 rounded-xl px-3 py-2.5">
+                                <div class="flex items-center gap-1 mb-1">
+                                    <span class="text-[10px] text-text-disabled leading-none">% dépenses (année en cours)</span>
+                                    {% include "budget/_kpi_info_icon.html" %}
+                                </div>
+                                <div class="flex items-center justify-between gap-2">
+                                    <p class="text-sm tabular-nums {% if bar_kpis.year_pct <= 100 %}text-income{% else %}text-warning{% endif %}">
+                                        {{ bar_kpis.year_pct }} %
+                                    </p>
+                                    {% include "budget/_gauge.html" with gauge_fill_px=bar_kpis.year_pct|gauge_fill gauge_color=bar_kpis.year_pct|gauge_color gauge_class="w-8" %}
+                                </div>
+                                <div class="absolute bottom-full right-0 mb-2 w-60 invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 z-20 pointer-events-none">
+                                    <div class="bg-surface-3/95 backdrop-blur-xl border border-edge/60 rounded-xl px-4 py-3 shadow-2xl">
+                                        <p class="text-xs font-semibold text-white mb-1.5">% Dépenses (année en cours)</p>
+                                        <p class="text-[11px] text-text-muted leading-relaxed">
+                                            Dépenses depuis le 1er janvier ÷ objectif cumulé sur les mois écoulés.
+                                        </p>
+                                        <p class="text-[10px] text-gold mt-2">
+                                            Jan–aujourd'hui ÷ ({{ budget_target.amount|chf }} × {{ bar_kpis.year_months_elapsed }} mois)
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            {# ── Ligne 2 ── #}
+                            {# Col 1 : % Dépenses période #}
+                            <div class="relative group bg-surface-hover/20 rounded-xl px-3 py-2.5">
+                                <div class="flex items-center gap-1 mb-1">
+                                    <span class="text-[10px] text-text-disabled leading-none">% Dépenses</span>
+                                    {% include "budget/_kpi_info_icon.html" %}
+                                </div>
+                                <div class="flex items-center justify-between gap-2">
+                                    <p class="text-sm tabular-nums {% if on_track %}text-income{% else %}text-warning{% endif %}">{{ target_pct }} %</p>
+                                    {% include "budget/_gauge.html" with gauge_fill_px=target_pct|gauge_fill gauge_color=target_pct|gauge_color gauge_class="w-8" %}
+                                </div>
+                                <div class="absolute bottom-full left-0 mb-2 w-56 invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 z-20 pointer-events-none">
+                                    <div class="bg-surface-3/95 backdrop-blur-xl border border-edge/60 rounded-xl px-4 py-3 shadow-2xl">
+                                        <p class="text-xs font-semibold text-white mb-1.5">% Dépenses</p>
+                                        <p class="text-[11px] text-text-muted leading-relaxed">Part de l'objectif consommée sur la période sélectionnée.</p>
+                                        <p class="text-[10px] text-gold mt-2 tabular-nums">
+                                            {{ total_amount|chf }} ÷ {{ target_amount|chf }} = {{ target_pct }}%
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            {# Col 2 : Meilleure série #}
+                            <div class="relative group bg-surface-hover/20 rounded-xl px-3 py-2.5">
+                                <div class="flex items-center gap-1 mb-1">
+                                    <span class="text-[10px] text-text-disabled leading-none">Meilleure série</span>
+                                    {% include "budget/_kpi_info_icon.html" %}
+                                </div>
+                                <p class="text-sm text-text-base tabular-nums">{{ bar_kpis.best_streak }} mois</p>
+                                <div class="absolute bottom-full left-0 mb-2 w-60 invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 z-20 pointer-events-none">
+                                    <div class="bg-surface-3/95 backdrop-blur-xl border border-edge/60 rounded-xl px-4 py-3 shadow-2xl">
+                                        <p class="text-xs font-semibold text-white mb-1.5">Meilleure série</p>
+                                        <p class="text-[11px] text-text-muted leading-relaxed">
+                                            Max de mois consécutifs sous l'objectif sur les 12 derniers mois.
+                                        </p>
+                                        <p class="text-[10px] text-gold mt-2">
+                                            Record : {{ bar_kpis.best_streak }} mois sous {{ budget_target.amount|chf }} CHF
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            {# Col 3 : Dépassement d'objectif #}
+                            <div class="relative group bg-surface-hover/20 rounded-xl px-3 py-2.5">
+                                <div class="flex items-center gap-1 mb-1">
+                                    <span class="text-[10px] text-text-disabled leading-none">Dépassement d'objectif</span>
+                                    {% include "budget/_kpi_info_icon.html" %}
+                                </div>
+                                <div class="flex items-center justify-between gap-2">
+                                    <p class="text-sm tabular-nums {% if bar_kpis.over_pct == 0 %}text-income{% else %}text-warning{% endif %}">
+                                        {{ bar_kpis.over_pct }} %
+                                    </p>
+                                    {% include "budget/_gauge.html" with gauge_fill_px=bar_kpis.over_pct|gauge_fill gauge_color=bar_kpis.over_pct|gauge_color:"0" gauge_class="w-8" %}
+                                </div>
+                                <div class="absolute bottom-full right-0 mb-2 w-60 invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 z-20 pointer-events-none">
+                                    <div class="bg-surface-3/95 backdrop-blur-xl border border-edge/60 rounded-xl px-4 py-3 shadow-2xl">
+                                        <p class="text-xs font-semibold text-white mb-1.5">Dépassement d'objectif</p>
+                                        <p class="text-[11px] text-text-muted leading-relaxed">
+                                            % des 12 derniers mois où les dépenses ont dépassé l'objectif mensuel.
+                                        </p>
+                                        <p class="text-[10px] text-gold mt-2">Mois dépassés ÷ 12 = {{ bar_kpis.over_pct }}%</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                {% endif %}
+            </div>
+            {# /carte bg-surface-2 chart+KPIs #}
+        {% else %}
+            {# ── État vide — objectif non défini ── #}
+            <div class="bg-surface-2 border border-edge rounded-xl">
+                <div class="flex flex-col items-center py-14 gap-4">
+                    <div class="w-12 h-12 rounded-full bg-surface-hover flex items-center justify-center">
+                        <svg class="w-5 h-5 text-text-disabled"
+                             fill="none"
+                             viewBox="0 0 24 24"
+                             stroke-width="1.5"
+                             stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                        </svg>
+                    </div>
+                    <div class="text-center">
+                        <p class="text-sm font-medium text-text-base mb-1">Aucun objectif mensuel</p>
+                        <p class="text-xs text-text-muted">Définissez un budget mensuel pour suivre vos dépenses</p>
+                    </div>
+                    <button hx-get="{% url 'budget:modal_target_create' %}?category_id={{ category.id }}"
+                            hx-target="#modal-content"
+                            hx-swap="innerHTML"
+                            class="flex items-center gap-2 px-4 py-2 text-xs font-medium text-gold border border-gold/30 rounded-lg hover:bg-gold/10 transition-colors">
+                        Définir un objectif mensuel
+                    </button>
+                </div>
+            </div>
+        {% endif %}
+    {% else %}
+        {# ── Vue Transactions (défaut) ── #}
+        {# hx-on::htmx:after-swap : quand HTMX injecte dans #panel-content,                #}
+        {# openPanel() glisse le panneau overlay en visibilité.                             #}
+        <div class="bg-surface-2 border border-edge rounded-xl overflow-hidden"
+             hx-on::htmx:after-swap="if(event.detail.target.id==='panel-content') openPanel()">
+            <div class="flex items-center justify-between px-4 py-3 border-b border-edge">
+                <p class="text-[10px] text-text-muted uppercase tracking-wider">Transactions</p>
+                <span class="text-[10px] text-text-disabled">{{ tx_count }} au total</span>
+            </div>
+            {% if txs %}
+                <div>
+                    {% for tx in txs %}
+                        {% ifchanged tx.date %}
+                            <div class="px-4 py-1.5 border-b border-edge/30">
+                                <span class="text-[10px] font-medium text-text-muted">{{ tx.date|date:"j F Y" }}</span>
+                            </div>
+                        {% endifchanged %}
+                        {% include "budget/_panel_tx_row.html" with tx=tx bank_icon_url=tx.bank_icon_url panel_source="category" panel_target="#cat-tx-detail" %}
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="text-xs text-text-disabled text-center py-8">Aucune transaction sur cette période</p>
+            {% endif %}
+        </div>
+    {% endif %}
+{% endblock %}
+{# ══════════════════════════════════════════════════════════════════════════════
+   PANEL DROIT — conditionnel selon cat_tab
+   Tab "objectif" + budget_target → carte Objectif (gauge SVG)
+   Sinon (transactions, subcategories) → Distribution (donut)
+   ══════════════════════════════════════════════════════════════════════════════ #}
+{% block panel_right %}
+    {% if cat_tab == 'objectif' and budget_target %}
+        {# ── Panel Objectif — gauge SVG + KPI ──────────────────────────────────── #}
+        {# Remplace le donut Distribution quand on est sur l'onglet Objectif.       #}
+        {# Même dimensions que le panel Distribution (flex-[1]).                    #}
+        <aside class="flex-[1] min-w-0">
+            {# Spacer invisible — même hauteur que le header gauche (h-8 mb-4) #}
+            <div class="h-8 mb-4"></div>
+            <div class="bg-surface-3 rounded-xl px-5 pt-5 pb-5">
+                {# Titre + ligne Objectif mensuel + bouton Modifier — tout dans la card   #}
+                <div class="flex items-center justify-between mb-5">
+                    <h2 class="text-sm font-semibold text-text-base">Objectif</h2>
+                </div>
+                <div class="flex items-center justify-between mb-5">
+                    <div>
+                        <p class="text-[10px] text-text-muted uppercase tracking-wider mb-0.5">Objectif mensuel</p>
+                        <p class="text-lg font-bold text-text-base tabular-nums">
+                            {{ budget_target.amount|chf }} CHF
+                            {% if period_months > 1 %}
+                                <span class="text-xs font-normal text-text-disabled ml-1">× {{ period_months }}</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                    <button hx-get="{% url 'budget:modal_target_create' %}?category_id={{ category.id }}"
+                            hx-target="#modal-content"
+                            hx-swap="innerHTML"
+                            class="flex items-center gap-1.5 text-xs text-text-muted hover:text-gold transition-colors px-2 py-1.5 rounded-lg hover:bg-surface-hover/30">
+                        <svg class="w-3 h-3"
+                             fill="none"
+                             viewBox="0 0 24 24"
+                             stroke-width="2"
+                             stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" />
+                        </svg>
+                        Modifier
+                    </button>
+                </div>
+                {# Gauge semi-cercle SVG ─────────────────────────────────────────── #}
+                {# Géométrie : demi-cercle r=40, centre (50,52), périmètre ≈ 125.5  #}
+                {# arc_fill_px = min(target_pct,100)/100 × 125.5 (calculé en vue)   #}
+                {# sweep-flag=0 → arc passe par le HAUT (anti-horaire SVG)          #}
+                {# Couleur arc = category.colour_hex (identique aux barres du chart) #}
+                {# 100%+ → arc complet sans stroke-linecap pour éviter les "oreilles"#}
+                {# Grande gauge — composant _gauge.html, couleur catégorie, w-44 #}
+                <div class="relative flex flex-col items-center pt-2 pb-2">
+                    {% include "budget/_gauge.html" with gauge_fill_px=arc_fill_px gauge_color=category.colour_hex gauge_class="w-44" %}
+                    {# Overlay — montant centré dans la partie basse de l'arc #}
+                    <div class="absolute inset-0 flex flex-col items-center justify-end pb-3">
+                        <p class="text-xl font-bold tabular-nums leading-tight {% if on_track %}text-income{% else %}text-warning{% endif %}">
+                            {{ remaining_abs_chf|chf }} CHF
+                        </p>
+                        <p class="text-[10px] mt-0.5 {% if on_track %}text-text-muted{% else %}text-warning/80{% endif %}">
+                            {% if on_track %}
+                                Restants
+                            {% else %}
+                                Au-dessus de l'objectif
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </aside>
+    {% elif has_donut %}
+        {# ── Panel Distribution — tabs transactions + subcategories ─────────────── #}
+        <aside class="flex-[1] min-w-0 flex flex-col gap-4">
+            {# h-8 (32px) + gap-4 (16px) = 48px = breadcrumb gauche (32px) + mb-4 (16px) #}
+            <div class="h-8"></div>
+            <div id="donut-card" class="bg-surface-3 rounded-xl">
+                {# Donut ECharts — même pattern que index.html #}
+                <div id="donut-chart" class="w-full px-4" style="height: 220px;"></div>
+                {{ donut_data|json_script:"donut-data" }}
+                {# Liste sous-catégories avec montants #}
+                <div class="px-5 pb-4 pt-2 flex flex-col gap-1">
+                    {% for sub in subcat_list %}
+                        <div class="flex items-center justify-between py-1">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <div class="w-2 h-2 rounded-full flex-shrink-0"
+                                     style="background-color: {{ category.colour_hex|default:'#4ade80' }}"></div>
+                                <span class="text-xs text-text-base truncate">{{ sub.subcategory__name }}</span>
+                            </div>
+                            {% if sub.total >= 0 %}
+                                <span class="text-xs font-medium text-income tabular-nums ml-3 flex-shrink-0">+{{ sub.total|chf }} CHF</span>
+                            {% else %}
+                                <span class="text-xs font-medium text-expense tabular-nums ml-3 flex-shrink-0">−{{ sub.total|chf }} CHF</span>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {# ── Div fixe détail transaction — apparaît quand on clique une ligne ── #}
+            {# hx-target="#cat-tx-detail" dans _panel_tx_row.html remplace innerHTML. #}
+            {# Placeholder visible jusqu'au premier clic.                             #}
+            <div id="cat-tx-detail" class="bg-surface-3 rounded-xl overflow-hidden">
+                <div class="flex flex-col items-center justify-center py-8 px-4 text-center">
+                    <p class="text-xs text-text-disabled leading-relaxed">
+                        Cliquez sur une transaction
+                        <br>
+                        pour voir les détails
+                    </p>
+                </div>
+            </div>
+        </aside>
+    {% endif %}
+{% endblock %}
+{% block extra_js %}
+    {% if has_sankey or has_donut or has_history %}
+        <script src="{% static 'js/vendor/echarts.min.js' %}"></script>
+        <script src="{% static 'js/charts/utils.js' %}"></script>
+        {% if has_sankey %}
+            <script src="{% static 'js/charts/sankey.js' %}"></script>
+        {% endif %}
+        {% if has_donut %}
+            <script src="{% static 'js/charts/donut.js' %}"></script>
+        {% endif %}
+        {% if has_history and cat_tab == 'objectif' %}
+            <script src="{% static 'js/charts/bar.js' %}"></script>
+        {% endif %}
+        <script>
+  {% if has_sankey %}
+  var sankeyEl = document.getElementById("sankey-chart");
+  if (sankeyEl) {
+    var sankeyData = JSON.parse(document.getElementById("sankey-data").textContent);
+    BricCharts.initSankey(sankeyEl, sankeyData);
+  }
+  {% endif %}
+  {% if has_donut %}
+  var donutEl = document.getElementById("donut-chart");
+  if (donutEl) {
+    var donutData = JSON.parse(document.getElementById("donut-data").textContent);
+    BricCharts.initDonut(donutEl, donutData);
+  }
+  {% endif %}
+  {% if has_history and cat_tab == 'objectif' %}
+  var barEl = document.getElementById("bar-chart");
+  if (barEl) {
+    var histData = JSON.parse(document.getElementById("history-data").textContent);
+    BricCharts.initBar(barEl, histData);
+  }
+  {% endif %}
+  // Align donut card height to cashflow card so both columns share the same row boundary.
+  // Runs after charts are initialized (charts add pixels to the DOM before this executes).
+  var cashflowCard = document.getElementById('cashflow-card');
+  var donutCard = document.getElementById('donut-card');
+  if (cashflowCard && donutCard) {
+    donutCard.style.minHeight = cashflowCard.offsetHeight + 'px';
+  }
+        </script>
+    {% endif %}
+{% endblock %}

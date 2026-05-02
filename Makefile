@@ -38,6 +38,8 @@ help:
 	@printf "    $(BOLD)make status$(RESET)          Affiche l'état des services et les ports\n"
 	@printf "\n"
 	@printf "  $(CYAN)📥 Import CSV$(RESET)\n"
+	@printf "    $(BOLD)make import-all$(RESET)      Importe tous les fichiers du dossier raw (dry run)\n"
+	@printf "    $(BOLD)make import-all COMMIT=1$(RESET)  Importe tous les fichiers (écriture DB)\n"
 	@printf "    $(BOLD)make import-yuh$(RESET)      Analyse un export Yuh CSV (dry run)\n"
 	@printf "    $(BOLD)make import-ubs$(RESET)      Analyse un export UBS CSV (dry run)\n"
 	@printf "    $(BOLD)make import-cic$(RESET)      Analyse un export CIC Excel (dry run)\n"
@@ -110,6 +112,11 @@ run:
 	@printf "  $(DIM)─────────────────────────────────────────$(RESET)\n\n"
 	@$(MANAGE) runserver
 
+test:
+	@printf "  🧪 $(CYAN)Lancement des tests...$(RESET)\n"
+	@poetry run pytest --color=yes 
+	@printf "  ✅ $(GREEN)Tests terminés$(RESET)\n"
+
 migrate:
 	@printf "  🔄 $(CYAN)Application des migrations...$(RESET)\n"
 	@$(MANAGE) migrate
@@ -139,6 +146,10 @@ reset-seed:
 	@$(MANAGE) reset_seed --yes
 	@printf "  $(DIM)→ relance make seed pour repeupler$(RESET)\n"
 
+import-all:
+	@printf "  📥 $(CYAN)Import all raw files$(if $(COMMIT), — écriture DB,  — dry run)...$(RESET)\n"
+	@$(MANAGE) import_all --dir assets/private/data/raw $(if $(COMMIT),--commit,)
+
 import-yuh:
 	@if [ -z "$(FILE)" ]; then printf "  ❌ $(RED)Usage: make import-yuh FILE=path/to/export.csv [COMMIT=1]$(RESET)\n"; exit 1; fi
 	@printf "  📥 $(CYAN)Import Yuh$(if $(COMMIT), — écriture DB,  — dry run)...$(RESET)\n"
@@ -154,6 +165,15 @@ import-cic:
 	@printf "  📥 $(CYAN)Import CIC$(if $(COMMIT), — écriture DB,  — dry run)...$(RESET)\n"
 	@$(MANAGE) import_cic --file "$(FILE)" $(if $(COMMIT),--commit,)
 
+export-rules:
+	@printf "  📤 $(CYAN)Export règles de catégorisation → JSON...$(RESET)\n"
+	@mkdir -p assets/private
+	@$(MANAGE) export_rules --output assets/private/rules_backup_$(shell date +%Y%m%d).json
+
+reset-categories:
+	@printf "  🔄 $(YELLOW)Reset catégories : positif → Revenus, négatif → Inconnu...$(RESET)\n"
+	@$(MANAGE) reset_categories $(if $(DRY),--dry-run,)
+
 # =============================================================================
 # 🧪 Dev tools
 # =============================================================================
@@ -162,6 +182,11 @@ dev-randomize:
 	@printf "  🎲 $(YELLOW)DEV — Catégorisation aléatoire des transactions...$(RESET)\n"
 	@printf "  $(DIM)→ income → Revenus/Remboursements | dépenses → toutes les autres$(RESET)\n"
 	@$(MANAGE) dev_randomize_categories $(if $(ALL),--all,)
+	@printf "  ✅ $(GREEN)Fait — recharge /budget/ pour voir les données$(RESET)\n"
+
+dev-seed-realistic:
+	@printf "  🌱 $(YELLOW)DEV — Seed réaliste 12 mois (Genève, ratio 1.30)...$(RESET)\n"
+	@$(MANAGE) dev_seed_realistic $(if $(FLUSH),--flush,) $(if $(MONTHS),--months=$(MONTHS),)
 	@printf "  ✅ $(GREEN)Fait — recharge /budget/ pour voir les données$(RESET)\n"
 
 update-bank-logos:
@@ -204,4 +229,4 @@ restore:
 	@printf "  ✅ $(GREEN)Restauration terminée$(RESET)\n"
 
 # =============================================================================
-.PHONY: help status up down logs run migrate makemigrations shell create-superuser seed reset-seed import-yuh import-ubs import-cic backup restore dev-randomize
+.PHONY: help status up down logs run migrate makemigrations shell create-superuser seed reset-seed import-all import-yuh import-ubs import-cic backup restore dev-randomize dev-seed-realistic

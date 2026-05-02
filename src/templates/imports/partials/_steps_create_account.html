@@ -1,0 +1,124 @@
+{% load static bank_icons %}
+{# Fragment affiché quand un compte est introuvable lors du dry-run.             #}
+{# L'utilisateur peut créer le compte directement ici et relancer l'import.     #}
+<style>
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0);    }
+  }
+  .step-card { animation: slide-up 0.3s ease-out both; }
+</style>
+<div class="mt-4 flex flex-col gap-3">
+    {# ── Info banque détectée ── #}
+    <div class="step-card flex items-center gap-3 bg-surface-hover rounded-xl px-4 py-3"
+         style="animation-delay: 0ms">
+        {% if bank %}
+            {% bank_icon_url bank as bicon %}
+            {% include "components/banks/bank_logo.html" with icon_url=bicon bank=bank size="w-9 h-9" padding="p-1.5" %}
+        {% else %}
+            <div class="w-9 h-9 rounded-full bg-surface-hover flex items-center justify-center flex-shrink-0">
+                <span class="text-xs font-bold text-text-muted">{{ bank_name|slice:":1" }}</span>
+            </div>
+        {% endif %}
+        <div class="flex-1 min-w-0">
+            <p class="text-xs font-semibold text-text-base">{{ bank_name }} détecté</p>
+            <p class="text-[10px] text-text-muted truncate">
+                {% if sheet_name %}
+                    Feuille : {{ sheet_name }}
+                {% elif contract_number_raw %}
+                    RIB/IBAN : {{ contract_number_raw }}
+                {% else %}
+                    Convention : 1 seul compte {{ bank_name }} actif
+                {% endif %}
+            </p>
+        </div>
+        <span class="text-[10px] font-medium text-warning bg-warning/10 border border-warning/20 rounded-full px-2 py-0.5 flex-shrink-0">
+            Compte inconnu
+        </span>
+    </div>
+    {# ── Formulaire de création ── #}
+    <form class="step-card flex flex-col gap-3 bg-surface-hover rounded-xl px-4 py-4"
+          style="animation-delay: 150ms"
+          hx-post="{% url 'imports:create_account' %}"
+          hx-target="#import-steps"
+          hx-swap="innerHTML">
+        {% csrf_token %}
+        {# Champs cachés — passés tels quels au serveur #}
+        <input type="hidden" name="bank_slug" value="{{ bank_slug }}">
+        <input type="hidden" name="contract_number" value="{{ contract_number }}">
+        <input type="hidden" name="currency" value="{{ currency }}">
+        <p class="text-xs font-semibold text-text-base">Créer ce compte pour continuer l'import</p>
+        {# Nom du compte #}
+        <div class="flex flex-col gap-1">
+            <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Nom du compte</label>
+            <input type="text"
+                   name="account_name"
+                   value="{{ sheet_name }}"
+                   placeholder="ex: Compte courant, Livret A…"
+                   required
+                   class="w-full bg-surface-3 border border-edge rounded-lg px-3 py-2 text-xs text-text-base placeholder:text-text-disabled focus:outline-none focus:border-gold/50 transition-colors">
+        </div>
+        {# Type de compte #}
+        <div class="flex flex-col gap-1">
+            <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Type</label>
+            <select name="account_type"
+                    class="w-full bg-surface-3 border border-edge rounded-lg px-3 py-2 text-xs text-text-base focus:outline-none focus:border-gold/50 transition-colors">
+                {% for value, label in account_types %}
+                    <option value="{{ value }}"
+                            {% if sheet_name == "Compte courant" and value == "checking" %}selected {% elif sheet_name and value == "savings" %}selected {% elif not sheet_name and value == "checking" %}selected {% endif %}>
+                        {{ label }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        {# IBAN ou N° de contrat — au moins l'un des deux est requis #}
+        <div class="flex flex-col gap-1">
+            <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+                IBAN
+                {% if not contract_number %}<span class="text-expense">*</span>{% endif %}
+            </label>
+            <input type="text"
+                   name="iban"
+                   value="{{ iban }}"
+                   placeholder="FR76 XXXX XXXX XXXX XXXX XXXX XXX"
+                   class="w-full bg-surface-3 border border-edge rounded-lg px-3 py-2 text-xs text-text-base placeholder:text-text-disabled focus:outline-none focus:border-gold/50 transition-colors font-mono">
+        </div>
+        {% if not iban %}
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+                    N° de contrat (RIB…)
+                    {% if not iban %}<span class="text-expense">*</span>{% endif %}
+                </label>
+                <input type="text"
+                       name="contract_number"
+                       value="{{ contract_number }}"
+                       placeholder="10096180270000647646"
+                       class="w-full bg-surface-3 border border-edge rounded-lg px-3 py-2 text-xs text-text-base placeholder:text-text-disabled focus:outline-none focus:border-gold/50 transition-colors font-mono">
+            </div>
+            <p class="text-[10px] text-text-muted -mt-1">IBAN ou N° de contrat — au moins l'un est requis.</p>
+        {% endif %}
+        {# BIC — optionnel, pré-rempli depuis la config banque #}
+        <div class="flex flex-col gap-1">
+            <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+                BIC <span class="text-text-disabled">(optionnel)</span>
+            </label>
+            <input type="text"
+                   name="bic"
+                   value="{{ bank_bic }}"
+                   placeholder="ex: CMCIFRPP"
+                   class="w-full bg-surface-3 border border-edge rounded-lg px-3 py-2 text-xs text-text-base placeholder:text-text-disabled focus:outline-none focus:border-gold/50 transition-colors font-mono">
+        </div>
+        {# Devise — affichage seul, valeur passée en hidden #}
+        <div class="flex items-center justify-between">
+            <span class="text-[10px] text-text-muted">Devise</span>
+            <span class="text-xs font-semibold text-text-base">{{ currency }}</span>
+        </div>
+        <button type="submit"
+                class="w-full mt-1 px-4 py-2.5 text-xs font-semibold rounded-xl bg-gold/15 text-gold border border-gold/30 hover:bg-gold/25 transition-colors">
+            Créer le compte et continuer l'import →
+        </button>
+    </form>
+    <p class="text-[10px] text-text-disabled text-center"
+       style="animation: slide-up 0.3s ease-out both;
+              animation-delay: 250ms">Le taux d'intérêt (épargne) est à compléter dans les paramètres du compte.</p>
+</div>

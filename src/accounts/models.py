@@ -79,6 +79,12 @@ class Account(models.Model):
     Example: account_type="checking" → look up CheckingAccount(account=this)
     """
 
+    class Currency(models.TextChoices):
+        CHF = "CHF", "CHF — Franc suisse"
+        EUR = "EUR", "EUR — Euro"
+        GBP = "GBP", "GBP — Livre sterling"
+        USD = "USD", "USD — Dollar américain"
+
     class AccountType(models.TextChoices):
         # Phase 0A — implemented now
         CHECKING = "checking", "Checking account"
@@ -102,8 +108,11 @@ class Account(models.Model):
         choices=AccountType.choices,
     )
 
-    # ISO 4217 currency code: CHF, EUR, GBP...
-    currency = models.CharField(max_length=3)
+    currency = models.CharField(
+        max_length=3,
+        choices=Currency.choices,
+        default=Currency.CHF,
+    )
 
     # Bank-assigned contract number — used by import connectors to match a file to an account.
     # Each bank uses its own format:
@@ -161,10 +170,15 @@ class CheckingAccount(models.Model):
     )
 
     # IBAN: International Bank Account Number — e.g. CH56 0483 5012 3456 7800 9
-    # blank=True + default="": optional (Finpension accounts may not have one)
-    iban = models.CharField(max_length=34, blank=True, default="")
+    # null=True + unique=True : plusieurs comptes sans IBAN sont autorisés (NULL != NULL en SQL).
+    # blank=True : formulaire admin accepte un champ vide → stocké en NULL.
+    # is_complete = False tant que l'IBAN n'est pas renseigné.
+    iban = models.CharField(
+        max_length=34, unique=True, null=True, blank=True, default=None
+    )
 
     # BIC/SWIFT: bank identifier used in international transfers — e.g. YUHHCHZZ for Yuh
+    # Optionnel : peut être dérivé de la banque, souvent absent des exports.
     bic = models.CharField(max_length=11, blank=True, default="")
 
     class Meta:
@@ -173,6 +187,18 @@ class CheckingAccount(models.Model):
 
     def __str__(self):
         return f"CheckingAccount — {self.account.name}"
+
+    @property
+    def is_complete(self):
+        """True si les champs bancaires essentiels sont renseignés (IBAN + BIC)."""
+        return bool(self.iban and self.bic)
+
+    @property
+    def iban_display(self):
+        """IBAN masqué pour l'affichage : FR76 **** **** **** **** **** 108"""
+        if not self.iban:
+            return None
+        return self.iban[:4] + " **** **** **** **** " + self.iban[-3:]
 
 
 # =============================================================================
@@ -224,6 +250,11 @@ class SavingsAccount(models.Model):
 
     def __str__(self):
         return f"SavingsAccount — {self.account.name} ({self.interest_rate}% APY)"
+
+    @property
+    def is_complete(self):
+        """True si le taux d'intérêt est renseigné (non nul)."""
+        return self.interest_rate is not None and self.interest_rate > 0
 
 
 # =============================================================================
@@ -314,9 +345,19 @@ class BalanceSnapshot(models.Model):
 
     date = models.DateField()
 
-    # max_digits=14: supports up to 999 billion — more than enough
-    # decimal_places=2: cent-level precision
-    balance = models.DecimalField(max_digits=14, decimal_places=2)
+    # Solde extrait du fichier source (filename pour Yuh, metadata pour UBS/CIC).
+    # null=True : si le connecteur ne peut pas extraire le solde (ex: Yuh avec
+    # nom de fichier URL-encodé), on crée quand même le snapshot avec computed_balance.
+    balance = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True
+    )
+
+    # Solde recalculé = dernier snapshot connu + somme des nouvelles transactions.
+    # Calculé par ImportService à chaque import. null=True sur le premier import
+    # (pas de snapshot précédent = pas de base de calcul).
+    computed_balance = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True
+    )
 
     # Currency of the raw balance — may differ from account.currency (rare)
     currency = models.CharField(max_length=3)
@@ -349,6 +390,22 @@ class BalanceSnapshot(models.Model):
 
     def __str__(self):
         return f"{self.account.name} — {self.date} : {self.balance} {self.currency}"
+
+    @property
+    def authoritative_balance(self):
+        """Meilleur solde disponible : extrait si présent, sinon calculé."""
+        return self.balance if self.balance is not None else self.computed_balance
+
+    @property
+    def drift(self):
+        """
+        Écart entre solde extrait et solde calculé.
+        None si l'un des deux manque (premier import, ou extraction impossible).
+        Un écart > 0.01 indique une anomalie (transaction manquante, arrondi banque...).
+        """
+        if self.balance is not None and self.computed_balance is not None:
+            return self.balance - self.computed_balance
+        return None
 
 
 # =============================================================================

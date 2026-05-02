@@ -1,0 +1,13 @@
+Numéro de compte:;0243 00693382.40;
+IBAN:;CH00 0000 0000 0000 0000 0;
+Du:;2026-01-01;
+Au:;2026-03-31;
+Solde initial:;0.00;
+Solde final:;12000.00;
+Évaluation en:;CHF;
+Nombre de transactions dans cette période:;3;
+
+Date de transaction;Heure de transaction;Date de comptabilisation;Date de valeur;Monnaie;Débit;Crédit;Sous-montant;Solde;No de transaction;Description1;Description2;Description3;Notes de bas de page;
+2026-03-17;12:36:26;2026-03-17;2026-03-17;CHF;-75.00;;;12075.00;TX001;FEEL EAT SARL LAUSANNE;Paiement carte de debit;No de transaction TX001;;
+2026-03-17;;2026-03-17;2026-03-17;CHF;-5500.00;;;17575.00;TX002;LANDLORD SA;Ordre e-banking;Ref TX002;;
+2026-03-15;;2026-03-15;2026-03-15;CHF;;7349.70;;25074.70;TX003;EMPLOYER SA;Virement entrant;Ref TX003;;

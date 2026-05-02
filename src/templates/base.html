@@ -41,10 +41,22 @@
               "gold-hover":     "#e8ab6a",
               "income":         "#4dbf93",
               "expense":        "#e5494a",
+              "warning":        "#f97316",
             }
           }
         }
       }
+        </script>
+        {% comment %}
+        Design tokens globaux — SOURCE UNIQUE DE VÉRITÉ pour tous les scripts JS.
+        Principe : tailwind.config contient la palette. On expose les tokens en globaux JS
+        pour éviter de dupliquer les hex dans chaque template.
+        Utilisation : window.BRICBUDGET_TOKENS['gold'] → "#f2c086"
+        RÈGLE : Ne JAMAIS hardcoder couleur/police dans un script JS de template.
+        {% endcomment %}
+        <script>
+      window.BRICBUDGET_TOKENS = tailwind.config.theme.extend.colors;
+      window.BRICBUDGET_FONT   = tailwind.config.theme.extend.fontFamily.sans.join(", ");
         </script>
         {% comment %}
       BACKGROUND FINARY — 3 couches :
@@ -65,6 +77,20 @@
       }
       .search-bar-c input:not(:placeholder-shown) ~ .search-clear-btn { display: flex; }
       .search-clear-btn:hover { color: #edf0f5; }
+
+      /* ── Toast progress bar — se vide en 5s (synchro avec setTimeout hideToast) ── */
+      @keyframes toast-drain {
+        from { width: 100%; }
+        to   { width: 0%; }
+      }
+
+      /* ── Scrollbar fine pour les listes internes (modal rule preview, etc.) ── */
+      .bb-scroll::-webkit-scrollbar { width: 4px; }
+      .bb-scroll::-webkit-scrollbar-track { background: transparent; }
+      .bb-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
+      .bb-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
+      /* Firefox */
+      .bb-scroll { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.12) transparent; }
 
       /* ── .bb-background ──────────────────────────────────────────────────── */
       .bb-background {

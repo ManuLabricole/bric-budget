@@ -26,6 +26,9 @@ No command-specific printing here — only business logic and DB writes.
 """
 
 import hashlib
+import json
+import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
 from datetime import date as date_type
 from datetime import time as time_type
@@ -34,9 +37,9 @@ from pathlib import Path
 
 from django.db import transaction as db_transaction
 
-from accounts.models import Account, BalanceSnapshot, Card
+from accounts.models import Account, BalanceSnapshot, Card, ExchangeRate
 from connectors.base import TransactionDict
-from transactions.models import CategorizationRule, ImportLog, Transaction
+from transactions.models import CategorizationRule, Category, ImportLog, Transaction
 
 # =============================================================================
 # ImportResult — returned by ImportService.run()
@@ -86,6 +89,83 @@ def compute_file_hash(filepath: Path) -> str:
         for chunk in iter(lambda: f.read(65536), b""):
             sha1.update(chunk)
     return sha1.hexdigest()
+
+
+# =============================================================================
+# get_exchange_rate — Récupère le taux de change via DB ou frankfurter.app
+# =============================================================================
+
+
+def get_exchange_rate(
+    date: date_type, from_currency: str, to_currency: str = "CHF"
+) -> Decimal | None:
+    """
+    Retourne le taux de change from_currency → to_currency pour une date donnée.
+
+    Stratégie : DB d'abord, API ensuite.
+        1. Si le taux existe déjà dans ExchangeRate → le retourner directement.
+           (Évite un appel réseau à chaque transaction — un import CIC de 200 lignes
+           ne fera que quelques appels API, les dates se répétant souvent.)
+        2. Si absent → appeler frankfurter.app (API publique, gratuite, pas de clé).
+        3. Stocker le résultat dans ExchangeRate pour les appels futurs.
+        4. En cas d'erreur réseau ou API → retourner None sans crasher l'import.
+
+    Pourquoi NOT get_or_create ?
+        get_or_create passerait le rate=None à la création, puis on devrait le mettre
+        à jour. Deux requêtes au lieu d'une. Plus simple : get() → None → appel API
+        → create().
+
+    API frankfurter.app — exemple :
+        GET https://api.frankfurter.app/2026-03-17?from=EUR&to=CHF
+        → {"amount":1.0,"base":"EUR","date":"2026-03-17","rates":{"CHF":0.9321}}
+
+    ⚠️  NOUVEAU CONNECTEUR (devise non-CHF) :
+        Si tu ajoutes un compte GBP, CAD, USD... → cette fonction le gère automatiquement.
+        frankfurter.app supporte toutes les devises majeures.
+        Vérifier que la devise est supportée : https://api.frankfurter.app/currencies
+    """
+    if from_currency == to_currency:
+        return Decimal("1")
+
+    # ── 1. DB d'abord ────────────────────────────────────────────────────────
+    try:
+        existing = ExchangeRate.objects.get(
+            date=date, from_currency=from_currency, to_currency=to_currency
+        )
+        return existing.rate
+    except ExchangeRate.DoesNotExist:
+        pass  # pas encore en cache → appel API ci-dessous
+
+    # ── 2. Appel API frankfurter.app ─────────────────────────────────────────
+    date_str = date.isoformat()  # "2026-03-17"
+    url = (
+        f"https://api.frankfurter.app/{date_str}?from={from_currency}&to={to_currency}"
+    )
+
+    try:
+        # frankfurter.app bloque les requêtes sans User-Agent (répond 403).
+        # On ajoute un header minimal pour identifier notre client.
+        req = urllib.request.Request(url, headers={"User-Agent": "BricBudget/1.0"})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode())
+            rate = Decimal(str(data["rates"][to_currency]))
+    except (urllib.error.URLError, KeyError, ValueError) as e:
+        # Erreur réseau ou format inattendu → on ne plante pas l'import.
+        # La transaction sera créée avec amount_chf=None — mieux que de tout perdre.
+        print(
+            f"[exchange_rate] WARNING: could not fetch {from_currency}→{to_currency} for {date_str}: {e}"
+        )
+        return None
+
+    # ── 3. Stocker en DB pour les prochains imports ───────────────────────────
+    ExchangeRate.objects.create(
+        date=date,
+        from_currency=from_currency,
+        to_currency=to_currency,
+        rate=rate,
+    )
+
+    return rate
 
 
 # =============================================================================
@@ -156,15 +236,16 @@ class ImportService:
             )
         )
 
-        # ── 3. Load categorization rules (one query, sorted by priority) ──────
-        # All rules loaded upfront to avoid per-row DB queries.
-        # select_related("category", "subcategory") fetches them in the same query —
-        # otherwise each rule access would trigger a separate SQL SELECT (N+1 problem).
+        # ── 3. Load categorization rules + default categories (one query each) ──
         rules = list(
             CategorizationRule.objects.filter(is_active=True)
             .select_related("category", "subcategory")
             .order_by("-priority")
         )
+        # Default categories when no rule matches — loaded once, used per row.
+        # get() returns None if the category doesn't exist yet (DB not seeded).
+        default_income_category = Category.objects.filter(slug="revenus").first()
+        default_unknown_category = Category.objects.filter(slug="inconnu").first()
 
         # ── 4. Build card map for this account (one query) ───────────────────
         # {last_four: Card} — lets us resolve "8703" → Card object in O(1).
@@ -173,15 +254,31 @@ class ImportService:
 
         # ── 5. Process each transaction ───────────────────────────────────────
         transactions_to_create = []
+        # Garde trace des hashes vus dans CE batch pour dédupliquer les doublons
+        # internes au fichier (ex: deux virements UBS identiques le même jour).
+        # Sans ça, bulk_create lève une IntegrityError sur la contrainte unique import_hash.
+        seen_in_batch = set()
 
         for tx in transactions:
-            # Duplicate check: this hash already exists in the DB → skip silently
+            # Duplicate check contre la DB
             if tx["import_hash"] in existing_hashes:
                 result.count_skipped += 1
                 continue
+            # Duplicate check au sein du fichier courant
+            if tx["import_hash"] in seen_in_batch:
+                result.count_skipped += 1
+                continue
+            seen_in_batch.add(tx["import_hash"])
 
             try:
-                obj = self._build_transaction(tx, account, cards_by_last_four, rules)
+                obj = self._build_transaction(
+                    tx,
+                    account,
+                    cards_by_last_four,
+                    rules,
+                    default_income_category=default_income_category,
+                    default_unknown_category=default_unknown_category,
+                )
                 transactions_to_create.append(obj)
             except Exception as e:
                 # Log the error but keep processing — a bad row shouldn't block the rest
@@ -203,48 +300,16 @@ class ImportService:
         # PostgreSQL rolls back ALL writes — no partial imports.
         # "Atomic" = either everything succeeds, or nothing changes.
         with db_transaction.atomic():
-            # bulk_create: one SQL INSERT for all new transactions instead of one per row.
-            # ignore_conflicts=False (default): if a hash slips through the duplicate
-            # check above (rare race condition), let it raise so we notice.
-            if transactions_to_create:
-                Transaction.objects.bulk_create(transactions_to_create)
-
-            # BalanceSnapshot: record the account balance at the time of export.
-            # update_or_create: safe to re-run — won't duplicate if same (account, date).
-            if balance is not None and transactions_to_create:
-                # Use the most recent transaction date as the snapshot date.
-                # For Yuh the balance is "current" — matches the export date
-                # which is also the date of the most recent transaction.
-                snapshot_date = max(t.date for t in transactions_to_create)
-
-                # For CHF accounts, balance_chf = balance directly.
-                # For EUR/GBP accounts, we leave balance_chf=None until exchange
-                # rates are loaded (Phase 1C — frankfurter.app integration).
-                balance_chf = (
-                    Decimal(str(balance)) if account.currency == "CHF" else None
-                )
-
-                BalanceSnapshot.objects.update_or_create(
-                    account=account,
-                    date=snapshot_date,
-                    defaults={
-                        "balance": Decimal(str(balance)),
-                        "currency": account.currency,
-                        "balance_chf": balance_chf,
-                        "source": BalanceSnapshot.Source.IMPORT,
-                    },
-                )
-
-            # ImportLog: audit trail — one row per import session.
-            # Answers "what file was imported, when, by whom, with what result?"
+            # ImportLog créé EN PREMIER pour pouvoir lier chaque transaction via FK.
+            # On crée le log avant bulk_create pour avoir son pk disponible.
             if result.count_errors == 0:
                 status = ImportLog.Status.SUCCESS
             elif result.count_created > 0:
-                status = ImportLog.Status.PARTIAL  # some rows worked, some didn't
+                status = ImportLog.Status.PARTIAL
             else:
-                status = ImportLog.Status.FAILED  # nothing was created
+                status = ImportLog.Status.FAILED
 
-            ImportLog.objects.create(
+            import_log = ImportLog.objects.create(
                 account=account,
                 imported_by=imported_by,
                 filename=filename,
@@ -255,6 +320,85 @@ class ImportService:
                 count_errors=result.count_errors,
                 error_detail="\n".join(result.error_detail),
             )
+
+            # Lier chaque transaction à l'import qui la crée.
+            # Ce FK permet de supprimer toutes les transactions d'un import d'un coup.
+            for t in transactions_to_create:
+                t.import_log = import_log
+
+            if transactions_to_create:
+                Transaction.objects.bulk_create(transactions_to_create)
+
+            # BalanceSnapshot : enregistre le solde du compte à la date d'export.
+            # update_or_create : safe à ré-exécuter — pas de doublon si (account, date) identique.
+            #
+            # Deux valeurs complémentaires :
+            #   balance          = solde extrait du fichier (None si le connecteur ne peut pas)
+            #   computed_balance = snapshot précédent + somme des nouvelles transactions
+            #
+            # Même si balance=None (ex: Yuh avec nom de fichier URL-encodé), on crée quand même
+            # le snapshot avec computed_balance pour ne pas perdre la traçabilité.
+            # Si les deux sont disponibles, on vérifie la dérive pour détecter des anomalies.
+            if transactions_to_create:
+                snapshot_date = max(t.date for t in transactions_to_create)
+
+                # Calculer computed_balance à partir du snapshot précédent
+                prev = (
+                    BalanceSnapshot.objects.filter(account=account)
+                    .order_by("-date")
+                    .first()
+                )
+                if prev is not None:
+                    prev_bal = (
+                        prev.balance
+                        if prev.balance is not None
+                        else prev.computed_balance
+                    )
+                    if prev_bal is not None:
+                        computed = prev_bal + sum(
+                            Decimal(str(t.amount)) for t in transactions_to_create
+                        )
+                    else:
+                        computed = None
+                else:
+                    # Premier import pour ce compte : pas de base de calcul
+                    computed = None
+
+                # For CHF accounts, balance_chf = balance directly.
+                # For EUR/GBP accounts, we leave balance_chf=None until exchange
+                # rates are loaded (Phase 1C — frankfurter.app integration).
+                extracted = Decimal(str(balance)) if balance is not None else None
+                balance_chf = extracted if account.currency == "CHF" else None
+
+                if extracted is not None or computed is not None:
+                    BalanceSnapshot.objects.update_or_create(
+                        account=account,
+                        date=snapshot_date,
+                        defaults={
+                            "balance": extracted,
+                            "computed_balance": computed,
+                            "currency": account.currency,
+                            "balance_chf": balance_chf,
+                            "source": BalanceSnapshot.Source.IMPORT,
+                        },
+                    )
+
+                # Alerte si les deux sont disponibles et divergent de plus de 1 centime
+                if extracted is not None and computed is not None:
+                    import logging
+
+                    _log = logging.getLogger(__name__)
+                    drift = abs(extracted - computed)
+                    if drift > Decimal("0.01"):
+                        _log.warning(
+                            "Balance drift %.2f %s on account '%s' "
+                            "(extracted=%.2f, computed=%.2f)",
+                            drift,
+                            account.currency,
+                            account.name,
+                            extracted,
+                            computed,
+                        )
 
         return result
 
@@ -290,6 +434,8 @@ class ImportService:
         account: Account,
         cards_by_last_four: dict,
         rules: list,
+        default_income_category=None,
+        default_unknown_category=None,
     ) -> Transaction:
         """
         Build a Transaction model instance from a TransactionDict.
@@ -338,16 +484,32 @@ class ImportService:
             nature = subcategory.default_nature if subcategory else ""
             categorization_source = Transaction.CategorizationSource.RULE
         else:
-            # No rule matched → category=None (shown as "Unknown" in UI queries)
-            category = None
+            # No rule matched — assign default category based on sign of amount:
+            #   positive (income)  → "income" category
+            #   negative (expense) → "unknown" category
             subcategory = None
             nature = ""
             categorization_source = Transaction.CategorizationSource.DEFAULT
+            amount = Decimal(str(tx.get("amount", 0)))
+            if amount >= 0:
+                category = default_income_category  # None if not seeded yet
+            else:
+                category = default_unknown_category  # None if not seeded yet
 
         # --- amount_chf ------------------------------------------------------
         # For CHF accounts: amount_chf = amount (no conversion needed).
-        # For EUR/GBP accounts: leave None until exchange rates are loaded (Phase 1C).
-        amount_chf = amount if account.currency == "CHF" else None
+        # For other currencies: fetch the rate from DB or frankfurter.app API,
+        # then multiply. If the API fails, amount_chf stays None — the import
+        # continues, and the field can be backfilled later.
+        if account.currency == "CHF":
+            amount_chf = amount
+        else:
+            rate = get_exchange_rate(parsed_date, account.currency)
+            if rate is not None:
+                # Quantize to 2 decimal places — same precision as amount
+                amount_chf = (amount * rate).quantize(Decimal("0.01"))
+            else:
+                amount_chf = None
 
         # --- Build and return the unsaved object -----------------------------
         return Transaction(
