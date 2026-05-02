@@ -129,4 +129,30 @@ urlpatterns = [
         views.budget_export_rules_download,
         name="export_rules_download",
     ),
+    # ── CRUD Règles (Phase 2G) ───────────────────────────────────────────────
+    # /budget/panel/rules/ → panel liste des règles (fragment HTMX → #modal-content)
+    path("panel/rules/", views.budget_panel_rules_list, name="panel_rules_list"),
+    # /budget/rules/<id>/toggle/ → inverse is_active, retourne la ligne (POST HTMX)
+    path(
+        "rules/<int:rule_id>/toggle/",
+        views.budget_rule_toggle_active,
+        name="rule_toggle_active",
+    ),
+    # /budget/rules/<id>/delete/ → supprime la règle, retourne vide (POST HTMX)
+    path(
+        "rules/<int:rule_id>/delete/",
+        views.budget_rule_delete,
+        name="rule_delete",
+    ),
+    # /budget/rules/<id>/edit/ → GET = formulaire édition, POST = sauvegarde
+    path(
+        "rules/<int:rule_id>/edit/",
+        views.budget_rule_row_edit,
+        name="rule_row_edit",
+    ),
+    path(
+        "rules/<int:rule_id>/edit/submit/",
+        views.budget_rule_edit_submit,
+        name="rule_edit_submit",
+    ),
 ]

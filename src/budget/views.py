@@ -2452,3 +2452,167 @@ def budget_export_rules_download(request):
     )
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
+
+
+# =============================================================================
+# Helpers — CRUD règles
+# =============================================================================
+
+
+def _cats_with_subcats():
+    """
+    Retourne une liste de tuples (Category, [SubCategory, ...]) pour peupler
+    le <select> de sous-catégories groupé par catégorie dans les formulaires d'édition.
+
+    Construit en deux passes Python (pas de N+1) :
+        1. charger toutes les sous-catégories actives avec leur catégorie
+        2. grouper par category_id dans un dict, puis zipper avec les catégories
+    """
+    all_categories = list(
+        Category.objects.filter(is_active=True).order_by("order", "name")
+    )
+    subcat_by_cat: dict[int, list] = {}
+    for sub in (
+        SubCategory.objects.filter(is_active=True)
+        .select_related("category")
+        .order_by("name")
+    ):
+        subcat_by_cat.setdefault(sub.category_id, []).append(sub)
+
+    return all_categories, [
+        (cat, subcat_by_cat.get(cat.id, [])) for cat in all_categories
+    ]
+
+
+# =============================================================================
+# budget_panel_rules_list — Panel CRUD des règles de catégorisation (GET)
+# =============================================================================
+
+
+@login_required
+def budget_panel_rules_list(request):
+    """
+    Charge le panel de gestion des règles dans #modal-content.
+
+    URL : GET /budget/panel/rules/
+    Cible HTMX : #modal-content (openModal() déclenché automatiquement par base_app.html)
+
+    Affiche toutes les règles triées : actives d'abord, puis par priorité desc, puis keyword.
+    """
+    rules = CategorizationRule.objects.select_related(
+        "category", "subcategory__category"
+    ).order_by("-is_active", "-priority", "keyword")
+
+    all_categories, cats_with_subcats = _cats_with_subcats()
+
+    return render(
+        request,
+        "budget/_panel_rules_list.html",
+        {
+            "rules": rules,
+            "all_categories": all_categories,
+            "cats_with_subcats": cats_with_subcats,
+        },
+    )
+
+
+# =============================================================================
+# budget_rule_toggle_active — Toggle is_active sur une règle (POST HTMX)
+# =============================================================================
+
+
+@login_required
+@require_POST
+def budget_rule_toggle_active(request, rule_id):
+    """
+    Inverse is_active d'une règle et retourne la ligne mise à jour.
+
+    URL : POST /budget/rules/<rule_id>/toggle/
+    HTMX : hx-target="#rule-<id>" hx-swap="outerHTML"
+    """
+    rule = get_object_or_404(CategorizationRule, id=rule_id)
+    rule.is_active = not rule.is_active
+    rule.save(update_fields=["is_active"])
+    return render(request, "budget/_rule_row.html", {"rule": rule})
+
+
+# =============================================================================
+# budget_rule_delete — Supprime une règle (POST HTMX)
+# =============================================================================
+
+
+@login_required
+@require_POST
+def budget_rule_delete(request, rule_id):
+    """
+    Supprime la règle et retourne une réponse vide → HTMX retire la ligne du DOM.
+
+    URL : POST /budget/rules/<rule_id>/delete/
+    HTMX : hx-target="#rule-<id>" hx-swap="outerHTML"
+           hx-confirm="Supprimer ?" (confirmation navigateur native)
+    """
+    rule = get_object_or_404(CategorizationRule, id=rule_id)
+    rule.delete()
+    return HttpResponse("")
+
+
+# =============================================================================
+# budget_rule_row_edit — Retourne la ligne en mode édition (GET HTMX)
+# =============================================================================
+
+
+@login_required
+def budget_rule_row_edit(request, rule_id):
+    """
+    Remplace la ligne de lecture par un formulaire d'édition inline.
+
+    URL : GET /budget/rules/<rule_id>/edit/
+    HTMX : hx-target="#rule-<id>" hx-swap="outerHTML"
+
+    ?cancel=1 → retourne la ligne en mode lecture (bouton Annuler du formulaire).
+    """
+    rule = get_object_or_404(CategorizationRule, id=rule_id)
+    if request.GET.get("cancel"):
+        return render(request, "budget/_rule_row.html", {"rule": rule})
+    all_categories, cats_with_subcats = _cats_with_subcats()
+    return render(
+        request,
+        "budget/_rule_row_edit.html",
+        {
+            "rule": rule,
+            "all_categories": all_categories,
+            "cats_with_subcats": cats_with_subcats,
+        },
+    )
+
+
+# =============================================================================
+# budget_rule_edit_submit — Sauvegarde les modifications d'une règle (POST HTMX)
+# =============================================================================
+
+
+@login_required
+@require_POST
+def budget_rule_edit_submit(request, rule_id):
+    """
+    Valide et sauvegarde keyword + category + subcategory d'une règle.
+    Retourne la ligne en mode lecture avec les nouvelles valeurs.
+
+    URL : POST /budget/rules/<rule_id>/edit/
+    HTMX : hx-target="#rule-<id>" hx-swap="outerHTML"
+
+    keyword est normalisé en UPPERCASE (cohérence avec le wizard de création).
+    Si keyword ou category_id manquent, la règle est retournée inchangée.
+    """
+    rule = get_object_or_404(CategorizationRule, id=rule_id)
+    keyword = request.POST.get("keyword", "").strip().upper()
+    category_id = request.POST.get("category_id", "").strip()
+    subcategory_id = request.POST.get("subcategory_id", "").strip() or None
+
+    if keyword and category_id:
+        rule.keyword = keyword
+        rule.category_id = int(category_id)
+        rule.subcategory_id = int(subcategory_id) if subcategory_id else None
+        rule.save(update_fields=["keyword", "category_id", "subcategory_id"])
+
+    return render(request, "budget/_rule_row.html", {"rule": rule})
