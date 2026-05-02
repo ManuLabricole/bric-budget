@@ -35,7 +35,8 @@ Rendu d'une transaction ignorée (is_ignored=True) :
          hx-get="{% url 'budget:panel_tx_detail' %}?tx_id={{ tx.id }}{% if panel_source %}&source={{ panel_source }}{% endif %}"
          hx-target="{{ panel_target|default:'#panel-content' }}"
          hx-swap="innerHTML"
-         {% if not panel_target %}hx-on::after-request="openPanel()"{% endif %}>
+         {% if not panel_target %}hx-on::after-request="openPanel()"{% endif %}
+         {% if panel_target %}hx-on::after-request="document.querySelector('{{ panel_target }}').scrollIntoView({behavior:'smooth',block:'nearest'})"{% endif %}>
         {% comment %}
         COL 1 — Icône catégorie 44px : carré arrondi coloré + SVG Tabler blanc.
         Fallback "?" si pas de catégorie ou pas d'icône.
@@ -85,15 +86,20 @@ Rendu d'une transaction ignorée (is_ignored=True) :
         </div>
         {% comment %} COL 3 — Icône banque + nom compte {% endcomment %}
         {% include "components/banks/account_badge.html" with bank_icon_url=bank_icon_url account=tx.account %}
-        {% comment %} COL 4 — Montant poussé à droite {% endcomment %}
+        {% comment %}
+        COL 4 — Montant en CHF, poussé à droite.
+        amount_chf est renseigné pour les comptes non-CHF (EUR/GBP → taux historique).
+        Pour les comptes CHF, amount_chf est null → fallback sur amount (déjà en CHF).
+        Le signe est lu sur tx.amount (même signe que amount_chf).
+        {% endcomment %}
         <div class="ml-auto flex-shrink-0 text-right min-w-[64px]">
             {% if tx.amount >= 0 %}
                 <span class="text-xs font-semibold text-income tabular-nums{% if tx.is_ignored %} line-through{% endif %}">
-                    +{{ tx.amount|chf_dec }}
+                    +{{ tx.amount_chf|default:tx.amount|chf_dec }}
                 </span>
             {% else %}
                 <span class="text-xs font-medium text-text-secondary tabular-nums{% if tx.is_ignored %} line-through{% endif %}">
-                    −{{ tx.amount|chf_dec }}
+                    −{{ tx.amount_chf|default:tx.amount|chf_dec }}
                 </span>
             {% endif %}
         </div>

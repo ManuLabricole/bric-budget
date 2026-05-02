@@ -73,7 +73,9 @@ Layout :
     {# ── Carte Cashflow — Sankey + KPI strip ─────────────────────────────────── #}
     {# Même structure que la carte Cashflow de index.html :                       #}
     {#   header "Cashflow" → Sankey → KPI strip collée en bas (divide-x)          #}
-    <div id="cashflow-card" class="bg-surface-3 rounded-xl mb-4">
+    {# overflow-hidden : clippe le border-b du tab strip aux coins arrondis de la card. #}
+    <div id="cashflow-card"
+         class="bg-surface-3 rounded-xl mb-4 overflow-hidden">
         <div class="flex items-center justify-between px-5 pt-5 pb-2">
             <h2 class="text-sm font-semibold text-text-base">Cashflow</h2>
             <span class="text-[10px] text-text-disabled">{{ period_label }}</span>
@@ -125,9 +127,9 @@ Layout :
                             hx-target="#modal-content"
                             hx-swap="innerHTML"
                             onclick="event.stopPropagation(); event.preventDefault();"
-                            class="w-8 h-8 rounded-full border border-dashed border-edge/50 hover:border-gold/50 flex items-center justify-center text-text-disabled hover:text-gold transition-colors"
+                            class="w-6 h-6 rounded-full border border-dashed border-edge/50 hover:border-gold/50 flex items-center justify-center text-text-disabled hover:text-gold transition-colors"
                             title="Définir un objectif mensuel">
-                        <svg class="w-3.5 h-3.5"
+                        <svg class="w-3 h-3"
                              fill="none"
                              viewBox="0 0 24 24"
                              stroke-width="2.5"
@@ -408,8 +410,7 @@ Layout :
         {# Remplace le donut Distribution quand on est sur l'onglet Objectif.       #}
         {# Même dimensions que le panel Distribution (flex-[1]).                    #}
         <aside class="flex-[1] min-w-0">
-            {# Spacer invisible — même hauteur que le header gauche (h-8 mb-4)           #}
-            {# → la card démarre au même niveau vertical que la carte Cashflow.           #}
+            {# Spacer invisible — même hauteur que le header gauche (h-8 mb-4) #}
             <div class="h-8 mb-4"></div>
             <div class="bg-surface-3 rounded-xl px-5 pt-5 pb-5">
                 {# Titre + ligne Objectif mensuel + bouton Modifier — tout dans la card   #}
@@ -468,6 +469,7 @@ Layout :
     {% elif has_donut %}
         {# ── Panel Distribution — tabs transactions + subcategories ─────────────── #}
         <aside class="flex-[1] min-w-0 flex flex-col gap-4">
+            {# h-8 (32px) + gap-4 (16px) = 48px = breadcrumb gauche (32px) + mb-4 (16px) #}
             <div class="h-8"></div>
             <div id="donut-card" class="bg-surface-3 rounded-xl">
                 {# Donut ECharts — même pattern que index.html #}

@@ -86,10 +86,16 @@ Structure :
     chf_dec retourne la valeur absolue → on ajoute le signe manuellement.
     text-income (vert) pour les entrées, text-expense (rouge) pour les débits.
     {% endcomment %}
+    {% comment %}
+    Toujours afficher le montant en CHF comme valeur principale.
+    amount_chf est renseigné pour les comptes non-CHF (EUR → taux historique du jour).
+    Pour les comptes CHF, amount_chf est null → fallback sur amount (déjà en CHF).
+    Le filtre chf_dec retourne la valeur absolue — on ajoute le signe manuellement.
+    {% endcomment %}
     {% if tx.amount >= 0 %}
-        <p class="text-3xl font-bold text-income">+{{ tx.amount|chf_dec }} {{ tx.currency }}</p>
+        <p class="text-3xl font-bold text-income">+{{ tx.amount_chf|default:tx.amount|chf_dec }} CHF</p>
     {% else %}
-        <p class="text-3xl font-bold text-expense">−{{ tx.amount|chf_dec }} {{ tx.currency }}</p>
+        <p class="text-3xl font-bold text-expense">−{{ tx.amount_chf|default:tx.amount|chf_dec }} CHF</p>
     {% endif %}
 </div>
 <div class="border-t border-edge mx-4 mb-4 flex-shrink-0"></div>
@@ -98,8 +104,8 @@ Structure :
 Clic → charge _panel_category_picker.html dans #panel-content.
 Pas de fond de fond — la row se distingue via le hover uniquement.
 {% endcomment %}
-<button hx-get="{% url 'budget:panel_category_picker' %}?tx_id={{ tx.id }}"
-        hx-target="#panel-content"
+<button hx-get="{% url 'budget:panel_category_picker' %}?tx_id={{ tx.id }}&source={{ source }}"
+        hx-target="{{ detail_target|default:'#panel-content' }}"
         hx-swap="innerHTML"
         class="mx-4 mb-4 w-[calc(100%-2rem)] flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-hover transition-colors flex-shrink-0 text-left">
     {% comment %}
@@ -171,21 +177,20 @@ Pas de fond de fond — la row se distingue via le hover uniquement.
         </div>
     </div>
     {% comment %}
-    Montant CHF — affiché uniquement si le compte n'est pas en CHF.
-    Pour un compte EUR, on montre à la fois le montant EUR (en haut) et le
-    montant CHF équivalent ici. Si amount_chf est null (pas encore calculé),
-    on n'affiche pas la ligne.
+    Montant natif — affiché uniquement si le compte n'est pas en CHF.
+    Le gros montant en haut montre déjà le CHF converti ; ici on affiche
+    le montant d'origine (EUR, GBP…) pour garder la traçabilité bancaire.
     {% endcomment %}
-    {% if tx.currency != "CHF" and tx.amount_chf %}
+    {% if tx.currency != "CHF" %}
         <div class="flex items-center justify-between">
-            <span class="text-sm text-text-muted">Montant CHF</span>
+            <span class="text-sm text-text-muted">Montant {{ tx.currency }}</span>
             <span class="text-sm text-text-base tabular-nums">
-                {% if tx.amount_chf >= 0 %}
+                {% if tx.amount >= 0 %}
                     +
                 {% else %}
                     −
                 {% endif %}
-                {{ tx.amount_chf|chf_dec }} CHF
+                {{ tx.amount|chf_dec }} {{ tx.currency }}
             </span>
         </div>
     {% endif %}

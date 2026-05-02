@@ -57,10 +57,11 @@ Hiérarchie visuelle des icônes (3 niveaux) :
         {% endcomment %}
         {% with icon_path="icons/categories/"|add:cat.icon|add:".svg" %}
             <form hx-post="{% url 'budget:categorize' %}"
-                  hx-target="#panel-content"
+                  hx-target="{{ detail_target|default:'#panel-content' }}"
                   hx-swap="innerHTML">
                 <input type="hidden" name="tx_id" value="{{ tx.id }}">
                 <input type="hidden" name="category_id" value="{{ cat.id }}">
+                <input type="hidden" name="source" value="{{ source }}">
                 <button type="submit"
                         class="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg mb-0.5 transition-colors hover:brightness-110"
                         style="background: {{ cat.colour_hex|default:'#4a4c55' }}26">
@@ -95,11 +96,12 @@ Hiérarchie visuelle des icônes (3 niveaux) :
                     {% if sub.is_active %}
                         {% with sub_icon_path="icons/categories/"|add:sub.icon|add:".svg" %}
                             <form hx-post="{% url 'budget:categorize' %}"
-                                  hx-target="#panel-content"
+                                  hx-target="{{ detail_target|default:'#panel-content' }}"
                                   hx-swap="innerHTML">
                                 <input type="hidden" name="tx_id" value="{{ tx.id }}">
                                 <input type="hidden" name="category_id" value="{{ cat.id }}">
                                 <input type="hidden" name="subcategory_id" value="{{ sub.id }}">
+                                <input type="hidden" name="source" value="{{ source }}">
                                 <button type="submit"
                                         class="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-text-secondary hover:bg-gold/10 hover:text-gold transition-colors">
                                     {% comment %}

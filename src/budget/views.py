@@ -28,7 +28,7 @@ from pathlib import Path
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q, Sum
-from django.db.models.functions import TruncMonth
+from django.db.models.functions import Coalesce, TruncMonth
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.templatetags.static import static
@@ -370,16 +370,24 @@ def budget_index(request):
     # Sorties = montants négatifs (dépenses) — on garde le signe, on l'affiche abs()
     # Récurrentes = dépenses marquées is_recurring=True (loyer, abo...)
 
-    total_income = qs.filter(amount__gt=0).aggregate(total=Sum("amount"))["total"] or 0
+    total_income = (
+        qs.filter(amount__gt=0).aggregate(total=Sum(Coalesce("amount_chf", "amount")))[
+            "total"
+        ]
+        or 0
+    )
 
     total_expenses = (
-        qs.filter(amount__lt=0).aggregate(total=Sum("amount"))["total"] or 0
+        qs.filter(amount__lt=0).aggregate(total=Sum(Coalesce("amount_chf", "amount")))[
+            "total"
+        ]
+        or 0
     )
 
     total_recurring = (
-        qs.filter(amount__lt=0, is_recurring=True).aggregate(total=Sum("amount"))[
-            "total"
-        ]
+        qs.filter(amount__lt=0, is_recurring=True).aggregate(
+            total=Sum(Coalesce("amount_chf", "amount"))
+        )["total"]
         or 0
     )
 
@@ -411,7 +419,7 @@ def budget_index(request):
             "category__icon",
             "category__order",
         )
-        .annotate(total=Sum("amount"))
+        .annotate(total=Sum(Coalesce("amount_chf", "amount")))
         .order_by("category__order")
     )
 
@@ -448,7 +456,7 @@ def budget_index(request):
             "category__icon",
             "category__order",
         )
-        .annotate(total=Sum("amount"))
+        .annotate(total=Sum(Coalesce("amount_chf", "amount")))
         .order_by("category__order")
     )
     recurring_categories = sorted(
@@ -1253,6 +1261,9 @@ def budget_panel_category_picker(request):
         "order"
     )
 
+    source = request.GET.get("source", "")
+    detail_target = "#cat-tx-detail" if source == "category" else "#panel-content"
+
     return render(
         request,
         "budget/_panel_category_picker.html",
@@ -1260,6 +1271,8 @@ def budget_panel_category_picker(request):
             "tx": tx,
             "system_cats": system_cats,
             "custom_cats": custom_cats,
+            "source": source,
+            "detail_target": detail_target,
         },
     )
 
@@ -1294,42 +1307,28 @@ def budget_categorize_transaction(request):
     tx_id = request.POST.get("tx_id")
     cat_id = request.POST.get("category_id")
     sub_id = request.POST.get("subcategory_id") or None
+    source = request.POST.get("source", "")
 
     tx = get_object_or_404(Transaction, pk=tx_id)
     tx.category = get_object_or_404(Category, pk=cat_id)
-    # subcategory est optionnelle — SET_NULL si non fournie
     tx.subcategory = SubCategory.objects.filter(pk=sub_id).first() if sub_id else None
-    # categorization_source = "manual" : l'utilisateur a choisi lui-même
-    # (distinct de "rule" → règle auto, "ai" → Claude API, "default" → import)
     tx.categorization_source = "manual"
     tx.save(update_fields=["category", "subcategory", "categorization_source"])
 
-    # Retourner le fragment liste (état A du panel)
-    response = budget_panel_transactions(request)
-
-    # HX-Trigger : déclenche l'événement JS "categoryChanged" après swap HTMX
-    # Le JS dans base_app.html écoute cet événement et affiche le toast
+    # Extraction keyword + payload HX-Trigger — commun aux deux branches.
     tx_display = tx.merchant_name or tx.description_raw[:30]
-
-    # Extraction du keyword pour pré-remplir le formulaire de règle.
-    # Même logique que budget_panel_rule_create : on utilise la partie avant "|",
-    # on écarte le bruit banque (_RULE_NOISE_TOKENS), les nombres, et les codes
-    # alphanumériques (lettres + chiffres mélangés comme ESSOF108, PAIEMENT…).
-    # Sans ce filtre, "PAIEMENT" (présent dans TOUTES les lignes CIC) serait
-    # sélectionné en premier et matcherait l'intégralité de la base.
     description_clean = tx.description_raw.split("|")[0].strip()
     raw_tokens = re.split(r"[\s\*\+\-\/\.\,\_]+", description_clean.upper())
     keyword_tokens = [
         t
         for t in raw_tokens
         if len(t) >= 3
-        and not re.search(r"\d", t)  # exclut codes type ESSOF108, 560945
-        and re.search(r"[A-Z]", t)  # doit contenir au moins une lettre
-        and t not in _RULE_NOISE_TOKENS  # exclut PAIEMENT, PSC, CB, CARTE…
+        and not re.search(r"\d", t)
+        and re.search(r"[A-Z]", t)
+        and t not in _RULE_NOISE_TOKENS
     ]
     keyword = keyword_tokens[0] if keyword_tokens else ""
-
-    response["HX-Trigger"] = json.dumps(
+    hx_trigger = json.dumps(
         {
             "categoryChanged": {
                 "tx_name": tx_display,
@@ -1340,6 +1339,37 @@ def budget_categorize_transaction(request):
             }
         }
     )
+
+    # source="category" → le picker était dans #cat-tx-detail.
+    # On retourne le détail mis à jour (ferme le picker, affiche la nouvelle
+    # catégorie) + HX-Trigger pour le toast "Créer une règle intelligente".
+    if source == "category":
+        tx_full = Transaction.objects.select_related(
+            "category", "subcategory", "account", "account__bank"
+        ).get(pk=tx.pk)
+        bank_icon_map = _resolve_bank_icon_map()
+        slug = (
+            tx_full.account.bank.icon_slug
+            if tx_full.account and tx_full.account.bank
+            else ""
+        )
+        response = render(
+            request,
+            "budget/_panel_tx_detail.html",
+            {
+                "tx": tx_full,
+                "bank_icon_url": bank_icon_map.get(slug, ""),
+                "close_on_back": True,
+                "source": "category",
+                "detail_target": "#cat-tx-detail",
+            },
+        )
+        response["HX-Trigger"] = hx_trigger
+        return response
+
+    # source="list" ou vide → retourner le fragment liste dans l'overlay
+    response = budget_panel_transactions(request)
+    response["HX-Trigger"] = hx_trigger
     return response
 
 
@@ -1691,9 +1721,12 @@ def budget_panel_tx_detail(request):
     slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
     bank_icon_url = bank_icon_map.get(slug, "")
 
-    # source="category" → la liste est déjà visible à gauche, le bouton ← doit
-    # fermer l'overlay plutôt que recharger la liste "Tout voir" dans le panel.
+    # source="category" → le détail est chargé dans #cat-tx-detail (page catégorie),
+    # pas dans l'overlay #panel-content.
+    # detail_target est passé au template pour que le bouton catégorie sache
+    # où charger le picker (même conteneur que le détail courant).
     source = request.GET.get("source", "")
+    detail_target = "#cat-tx-detail" if source == "category" else "#panel-content"
 
     return render(
         request,
@@ -1702,6 +1735,8 @@ def budget_panel_tx_detail(request):
             "tx": tx,
             "bank_icon_url": bank_icon_url,
             "close_on_back": source == "category",
+            "source": source,
+            "detail_target": detail_target,
         },
     )
 
@@ -1873,7 +1908,9 @@ def budget_category_detail(request, slug):
     )
     txs_active = base_qs.filter(is_ignored=False)
 
-    total_amount = txs_active.aggregate(total=Sum("amount"))["total"] or 0
+    total_amount = (
+        txs_active.aggregate(total=Sum(Coalesce("amount_chf", "amount")))["total"] or 0
+    )
 
     # ── Sous-totaux par sous-catégorie — pour le Sankey + donut ─────────────
     # list() force l'évaluation du queryset ici — on itère deux fois :
@@ -1886,7 +1923,7 @@ def budget_category_detail(request, slug):
             "subcategory__slug",
             "subcategory__icon",
         )
-        .annotate(total=Sum("amount"))
+        .annotate(total=Sum(Coalesce("amount_chf", "amount")))
         .order_by("total")
     )
 
@@ -1945,33 +1982,36 @@ def budget_category_detail(request, slug):
             }
         )
 
-    # ── Nœud "Sans sous-catégorie" pour les transactions non ventilées ──────────
-    # subcat_list ne contient que les transactions avec une sous-catégorie.
-    # Les transactions sans sous-catégorie ont un total = total_amount - sum(subcat totals).
-    # Si ce reste est significatif (> 1 centime), on l'affiche comme nœud séparé
-    # pour que le Sankey soit toujours exact et somme bien au total de la catégorie.
+    # ── Nœud pour les transactions sans sous-catégorie ─────────────────────────
+    # subcat_list = seulement les transactions avec une sous-catégorie assignée.
+    # Le reste = transactions rattachées à la catégorie principale elle-même
+    # (la catégorie peut jouer le rôle de sous-catégorie pour les transactions
+    # qui n'ont pas besoin d'un niveau de détail supplémentaire).
+    #
+    # Astuce ZWSP : source_name porte un U+200B (zero-width space), category.name non.
+    # ECharts traite ces deux nœuds comme distincts → pas de self-loop.
+    # Le formatter JS strippe le ZWSP → les deux labels affichent "Revenus" visuellement.
     categorized_amount = sum(float(abs(sub["total"])) for sub in subcat_list)
     uncategorized_amount = abs(float(total_amount)) - categorized_amount
-    uncat_color = _vary_color(cat_color, 0.20)  # teinte sombre pour "non ventilé"
+    uncat_color = _vary_color(cat_color, 0.20)  # teinte légèrement plus sombre
 
     if uncategorized_amount > 0.01:
         sankey_nodes.append(
             {
-                "name": "Sans sous-catégorie",
-                "slug": None,
+                "name": category.name,  # sans ZWSP — distinct de source_name pour ECharts
+                "slug": category.slug,
                 "itemStyle": {"color": uncat_color},
             }
         )
         sankey_links.append(
             {
-                "source": source_name,
-                "target": "Sans sous-catégorie",
+                "source": source_name,  # avec ZWSP
+                "target": category.name,  # sans ZWSP
                 "value": round(uncategorized_amount, 2),
             }
         )
 
-    # Fallback "pass-through" : aucune sous-catégorie ET aucune transaction non-ventilée
-    # (cas théoriquement impossible mais garde-fou contre un Sankey vide).
+    # Fallback : aucun lien du tout (cas improbable — garde-fou).
     if not sankey_links and total_amount != 0:
         sankey_nodes.append(
             {
@@ -2002,11 +2042,12 @@ def budget_category_detail(request, slug):
         for i, sub in enumerate(subcat_list)
     ]
 
-    # Ajouter le segment "Sans sous-catégorie" si des transactions ne sont pas ventilées.
+    # Ajouter un segment pour les transactions sans sous-catégorie.
+    # Nommé d'après la catégorie principale elle-même (pas "Sans sous-catégorie").
     if uncategorized_amount > 0.01:
         donut_segments.append(
             {
-                "name": "Sans sous-catégorie",
+                "name": category.name,
                 "value": round(uncategorized_amount, 2),
                 "itemStyle": {"color": uncat_color},
             }
@@ -2105,7 +2146,7 @@ def budget_category_detail(request, slug):
         )
         .annotate(month=TruncMonth("date"))
         .values("month")
-        .annotate(total=Sum("amount"))
+        .annotate(total=Sum(Coalesce("amount_chf", "amount")))
         .order_by("month")
     )
 
@@ -2160,7 +2201,7 @@ def budget_category_detail(request, slug):
             date__gte=year_start,
             date__lte=today,
             is_ignored=False,
-        ).aggregate(total=Sum("amount"))["total"] or D(0)
+        ).aggregate(total=Sum(Coalesce("amount_chf", "amount")))["total"] or D(0)
         year_months_elapsed = today.month  # nb de mois depuis janvier (inclusif)
         year_target = target_monthly * year_months_elapsed
         year_pct = (
