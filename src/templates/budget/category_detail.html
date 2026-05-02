@@ -381,8 +381,13 @@ Layout :
                 <span class="text-[10px] text-text-disabled">{{ tx_count }} au total</span>
             </div>
             {% if txs %}
-                <div class="divide-y divide-edge/40">
+                <div>
                     {% for tx in txs %}
+                        {% ifchanged tx.date %}
+                            <div class="px-4 py-1.5 bg-surface-hover/50 border-b border-edge/30">
+                                <span class="text-[10px] font-medium text-text-muted">{{ tx.date|date:"j F Y" }}</span>
+                            </div>
+                        {% endifchanged %}
                         {% include "budget/_panel_tx_row.html" with tx=tx bank_icon_url=tx.bank_icon_url panel_source="category" panel_target="#cat-tx-detail" %}
                     {% endfor %}
                 </div>
