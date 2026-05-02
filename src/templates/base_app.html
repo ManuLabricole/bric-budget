@@ -7,29 +7,19 @@ LAYOUT GÉNÉRAL — 3 zones côte à côte pleine hauteur :
 Tous les conteneurs intermédiaires sont transparents (bg-transparent).
 Le bb-background (body) doit être visible partout en fond.
 Les "cartes" visuelles sont définies par chaque page dans panel_left / panel_right.
-
-DEV labels : textes font-mono discrets pour identifier les zones — pas de couleurs de fond.
     {% endcomment %}
     <div class="flex h-screen overflow-hidden">
         {# ── SIDEBAR 240px fixe ──────────────────────────────────────── #}
-        <aside class="w-60 flex-shrink-0 flex flex-col border-r border-edge bg-transparent">
-            {# DEV label #}
-            <div class="text-[10px] text-purple-400/40 px-2 pt-1 font-mono select-none leading-none">sidebar.html</div>
+        <aside class="w-60 flex-shrink-0 flex flex-col bg-transparent">
             {% include "components/layout/sidebar.html" %}
         </aside>
         {# ── ZONE PRINCIPALE ─────────────────────────────────────────── #}
         <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
             {# ── TOPBAR — transparent, contenu fixe sur toutes les pages ─────── #}
-            <div class="relative flex items-center justify-between h-[72px] px-5 border-b border-edge flex-shrink-0 bg-transparent">
-                {# DEV label #}
-                <div class="absolute top-0.5 left-1/2 -translate-x-1/2 text-[10px] text-blue-400/30 font-mono select-none leading-none">
-                    topbar
-                </div>
-                <div class="flex items-center gap-4">
-                    {# TODO Phase 2C : jauges circulaires objectifs budget du mois #}
-                    <span class="text-xs text-text-disabled font-mono">[ objectifs du mois ]</span>
-                </div>
-                <button class="flex items-center gap-2 px-3 py-1.5 text-xs font-medium border bg-gold border-gold text-black rounded-full hover:bg-gold/90 transition-colors">
+            <div class="relative flex items-center justify-between h-[72px] px-5 flex-shrink-0 bg-transparent">
+                <div class="flex items-center gap-4">{# TODO Phase 2C : jauges circulaires objectifs budget du mois #}</div>
+                <div class="relative flex items-center gap-2 px-3 py-1.5 text-xs font-medium border bg-gold/30 border-gold/30 text-black/50 rounded-full cursor-not-allowed"
+                     title="Bientôt disponible">
                     <svg class="w-3.5 h-3.5"
                          fill="none"
                          viewBox="0 0 24 24"
@@ -38,7 +28,8 @@ DEV labels : textes font-mono discrets pour identifier les zones — pas de coul
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                     </svg>
                     Compléter mon patrimoine
-                </button>
+                    {% include "components/badges/soon.html" with extra_class="absolute -top-1.5 -right-1" %}
+                </div>
             </div>
             {# ── CONTENU PRINCIPAL ─────────────────────────────────────────────── #}
             {# Padding p-4 autour + gap-4 entre les deux panels.                   #}
@@ -46,13 +37,7 @@ DEV labels : textes font-mono discrets pour identifier les zones — pas de coul
             {# les cartes et autour d'elles.                                        #}
             {# panel_left  (flex-[2]) : Cashflow, transactions, catégorie…          #}
             {# panel_right (flex-[1]) : Distribution, stats, détail…               #}
-            <div class="flex-1 flex gap-4 p-4 overflow-y-auto bg-transparent items-start">
-                {# DEV label #}
-                <div class="absolute text-[10px] text-green-400/30 font-mono select-none leading-none"
-                     style="top:3.75rem;
-                            left:50%;
-                            transform:translateX(-50%)">panel_left · panel_right</div>
-                {# Panel gauche — scrollable via la carte interne définie par la page #}
+            <div class="flex-1 flex gap-4 p-4 overflow-y-auto bg-transparent {% block panels_align %}items-start{% endblock %}">
                 <main class="flex-[2] min-w-0">
                     {% block panel_left %}{% endblock %}
                 </main>
@@ -60,20 +45,223 @@ DEV labels : textes font-mono discrets pour identifier les zones — pas de coul
                 {% block panel_right %}{% endblock %}
             </div>
         </div>
+        {# ── BACKDROP — overlay sombre + flou derrière le right panel ────────── #}
+        {# Invisible par défaut (opacity-0 pointer-events-none).                  #}
+        {# openPanel() → opacity-100 + pointer-events-auto                        #}
+        {# Clic dessus → closePanel() (ferme le panneau en cliquant à côté)       #}
+        <div id="panel-backdrop"
+             onclick="closePanel()"
+             class="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-300">
+        </div>
         {# ── RIGHT PANEL OVERLAY — masqué par défaut, glisse depuis la droite ── #}
+        {# w-[40%] : 40% de la largeur viewport — spec demandée                   #}
+        {# z-40 : au-dessus du backdrop (z-30)                                    #}
         <aside id="right-panel"
-               class="fixed right-0 top-0 h-full w-96 flex-shrink-0 flex flex-col border-l border-edge bg-surface-2 transform translate-x-full transition-transform duration-300 z-40">
-            {# DEV label #}
-            <div class="text-[10px] text-orange-400/40 px-2 pt-1 font-mono select-none leading-none">right_panel.html</div>
+               class="fixed right-3 top-3 h-[calc(100%-1.5rem)] w-[36%] flex-shrink-0 flex flex-col border border-edge/60 bg-surface-2/70 backdrop-blur-xl rounded-2xl transform translate-x-[calc(100%+0.75rem)] transition-transform duration-300 z-40"
+               style="-ms-overflow-style:none;
+                      scrollbar-width:none">
             {% include "components/layout/right_panel.html" %}
         </aside>
+        {# ── MODAL CENTRALE — overlay centré pour actions "Créer" (règle, objectif…) #}
+        {# z-60 : au-dessus du toast (z-50), du right panel (z-40) et backdrop (z-30) #}
+        {# Invisible par défaut (opacity-0 pointer-events-none).                       #}
+        {# openModal() → opacity-100 + pointer-events-auto                             #}
+        {# Clic sur le fond sombre → closeModal() (fermer en cliquant à l'extérieur)   #}
+        <div id="modal"
+             onclick="if(event.target===this) closeModal()"
+             class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-300">
+            <div id="modal-content"
+                 onclick="event.stopPropagation()"
+                 class="bg-surface-3 border border-gold/20 rounded-2xl shadow-2xl w-full max-w-md mx-4 max-h-[85vh] overflow-y-auto">
+            </div>
+        </div>
     </div>
     <script>
   function openPanel() {
-    document.getElementById('right-panel').classList.remove('translate-x-full');
+    // translate-x-[calc(100%+0.75rem)] → translate-x-0 (reste à right-3 grâce au CSS)
+    const panel = document.getElementById('right-panel');
+    panel.classList.remove('translate-x-[calc(100%+0.75rem)]');
+    panel.classList.add('translate-x-0');
+    // Backdrop : rendre visible + interactif
+    const bd = document.getElementById('panel-backdrop');
+    bd.classList.remove('opacity-0', 'pointer-events-none');
+    bd.classList.add('opacity-100', 'pointer-events-auto');
   }
   function closePanel() {
-    document.getElementById('right-panel').classList.add('translate-x-full');
+    const panel = document.getElementById('right-panel');
+    panel.classList.remove('translate-x-0');
+    panel.classList.add('translate-x-[calc(100%+0.75rem)]');
+    // Backdrop : masquer + désactiver les clics
+    const bd = document.getElementById('panel-backdrop');
+    bd.classList.remove('opacity-100', 'pointer-events-auto');
+    bd.classList.add('opacity-0', 'pointer-events-none');
+    // Vider le contenu après la transition (300ms = durée du slide)
+    setTimeout(() => {
+      document.getElementById('panel-content').innerHTML = '';
+    }, 300);
   }
+
+  // ── Modal centrale — overlay centré pour les actions "Créer" ──────────────
+  //
+  // Même principe que le right panel mais centré et statique (pas de slide).
+  // openModal() et closeModal() gèrent la visibilité via opacity + pointer-events.
+  // Escape ferme aussi la modal via le keydown listener plus bas.
+  function openModal() {
+    var modal = document.getElementById('modal');
+    modal.classList.remove('opacity-0', 'pointer-events-none');
+    modal.classList.add('opacity-100', 'pointer-events-auto');
+  }
+  function closeModal() {
+    var modal = document.getElementById('modal');
+    modal.classList.remove('opacity-100', 'pointer-events-auto');
+    modal.classList.add('opacity-0', 'pointer-events-none');
+    // Vider le contenu après la transition pour réinitialiser l'état interne
+    setTimeout(function() {
+      var content = document.getElementById('modal-content');
+      if (content) content.innerHTML = '';
+    }, 300);
+  }
+  // Touche Escape → ferme la modal si ouverte
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      var modal = document.getElementById('modal');
+      if (modal && modal.classList.contains('pointer-events-auto')) closeModal();
+    }
+  });
+
+  // Ouverture automatique de la modal — écoute tout swap HTMX sur #modal-content.
+  // Cela évite de câbler hx-on::after-request sur chaque bouton qui cible la modal.
+  // htmx:afterSwap fire sur l'ÉLÉMENT CIBLE (pas sur le déclencheur), donc on écoute
+  // sur body et on filtre par e.target.id.
+  document.body.addEventListener('htmx:afterSwap', function(e) {
+    if (e.target && e.target.id === 'modal-content') openModal();
+  });
+
+  // ── Toast "Catégorie modifiée" ─────────────────────────────────────────────
+  //
+  // Déclenché par l'événement HTMX "categoryChanged" — émis via le header
+  // HX-Trigger retourné par budget_categorize_transaction() après le POST.
+  //
+  // Comment ça marche :
+  //   1. HTMX reçoit la réponse du POST /budget/transactions/categorize/
+  //   2. Il lit le header "HX-Trigger: {"categoryChanged": {...}}"
+  //   3. Il émet un CustomEvent "categoryChanged" sur document.body
+  //   4. On écoute cet événement ici et on affiche le toast
+  //
+  // Le toast est un div positionné en fixed (overlay par-dessus tout),
+  // z-50 > z-40 (right panel) > z-30 (backdrop).
+  // Il disparaît automatiquement après 5s via setTimeout.
+  //
+  // Pourquoi JS pur et pas HTMX ?
+  //   Le toast n'est pas dans le DOM initial — il serait complexe à gérer
+  //   avec HTMX seul (hx-swap sur un élément absent). JS + CustomEvent
+  //   est la solution recommandée par la doc HTMX pour ce cas.
+
+  var _toastTimer = null;
+
+  function showToast(txName, catName) {
+    var toast = document.getElementById('cat-toast');
+    if (!toast) return;
+
+    // Mettre à jour le texte
+    document.getElementById('cat-toast-msg').textContent =
+      '"' + txName + '" classée en ' + catName + '.';
+
+    // Redémarrer la barre de progression :
+    //   1. On retire l'animation (none) pour forcer un reflow
+    //   2. On la remet, ce qui relance l'animation depuis le début
+    var bar = document.getElementById('toast-progress-bar');
+    if (bar) {
+      bar.style.animation = 'none';
+      bar.offsetHeight; // force reflow — sans ça, le navigateur optimise et ignore le reset
+      bar.style.animation = 'toast-drain 5s linear forwards';
+    }
+
+    // Afficher
+    toast.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
+    toast.classList.add('opacity-100', 'pointer-events-auto', 'translate-y-0');
+
+    // Reset le timer si déjà en cours
+    if (_toastTimer) clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(hideToast, 5000);
+  }
+
+  function hideToast() {
+    var toast = document.getElementById('cat-toast');
+    if (!toast) return;
+    toast.classList.remove('opacity-100', 'pointer-events-auto', 'translate-y-0');
+    toast.classList.add('opacity-0', 'pointer-events-none', 'translate-y-2');
+  }
+
+  // Écoute l'événement HTMX "categoryChanged" émis par HX-Trigger
+  document.body.addEventListener('categoryChanged', function (e) {
+    var detail = e.detail || {};
+    showToast(detail.tx_name || '…', detail.cat_name || '');
+
+    // Mettre à jour le bouton "Créer une règle" avec les données de la transaction.
+    // On injecte tx_id et keyword dans l'attribut hx-get du bouton, puis on
+    // ré-initialise HTMX sur ce bouton pour qu'il prenne en compte la nouvelle URL.
+    var btn = document.getElementById('toast-rule-btn');
+    if (btn && detail.tx_id && detail.keyword) {
+      // Pointe vers l'étape intro (step 1) du wizard règle — cat_id permet de
+      // pré-charger la catégorie sans refaire un SELECT sur la transaction.
+      var url = '/budget/modal/rule-intro/?tx_id=' + detail.tx_id
+              + '&keyword=' + encodeURIComponent(detail.keyword)
+              + (detail.cat_id ? '&cat_id=' + detail.cat_id : '');
+      btn.setAttribute('hx-get', url);
+      btn.setAttribute('hx-target', '#modal-content');
+      btn.setAttribute('hx-swap', 'innerHTML');
+      // htmx.process() ré-initialise les attributs hx-* sur cet élément
+      htmx.process(btn);
+    }
+  });
     </script>
+    {# ── Toast overlay "Catégorie modifiée" ─────────────────────────────────── #}
+    {# z-50 : au-dessus du right panel (z-40) et du backdrop (z-30).            #}
+    {# Fond vert sombre (income/10) + barre de progression qui se vide en 5s.   #}
+    <div id="cat-toast"
+         class="fixed top-4 right-4 z-50 w-80 pointer-events-none opacity-0 translate-y-2 transition-all duration-300">
+        <div class="rounded-xl shadow-2xl overflow-hidden border border-income/25 bg-surface-2">
+            <div class="flex items-start gap-3 px-4 pt-4 pb-3.5">
+                {# Cercle vert avec checkmark — plus visible qu'une icône seule #}
+                <div class="w-7 h-7 rounded-full bg-income/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <svg class="w-3.5 h-3.5 text-income"
+                         fill="none"
+                         viewBox="0 0 24 24"
+                         stroke-width="2.5"
+                         stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                    </svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="text-xs font-semibold text-text-base leading-snug">Catégorie modifiée</p>
+                    <p id="cat-toast-msg"
+                       class="text-[11px] text-text-muted mt-0.5 leading-snug break-words"></p>
+                    {# CTA — hx-get injecté dynamiquement par categoryChanged #}
+                    <button id="toast-rule-btn"
+                            hx-get=""
+                            hx-target="#modal-content"
+                            hx-swap="innerHTML"
+                            hx-on::before-request="hideToast()"
+                            class="mt-2.5 text-[11px] font-semibold text-gold hover:text-gold-hover transition-colors pointer-events-auto">
+                        Créer une règle intelligente →
+                    </button>
+                </div>
+                <button onclick="hideToast()"
+                        class="text-text-disabled hover:text-text-muted transition-colors flex-shrink-0 pointer-events-auto mt-0.5">
+                    <svg class="w-3.5 h-3.5"
+                         fill="none"
+                         viewBox="0 0 24 24"
+                         stroke-width="2"
+                         stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            {# Barre de progression verte — se vide en 5s via l'animation toast-drain #}
+            <div class="h-[3px] w-full bg-income/20">
+                <div id="toast-progress-bar" class="h-full bg-income/70 rounded-full"></div>
+            </div>
+        </div>
+    </div>
 {% endblock %}

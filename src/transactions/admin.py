@@ -9,6 +9,7 @@ Usage during Phase 0B → Phase 1B:
 - set budget targets per category per month
 """
 
+from django import forms
 from django.contrib import admin
 
 from .models import (
@@ -74,8 +75,44 @@ class SubCategoryAdmin(admin.ModelAdmin):
 # =============================================================================
 
 
+class CategorizationRuleForm(forms.ModelForm):
+    """
+    Formulaire custom pour CategorizationRule.
+
+    Pourquoi un custom form ?
+        L'admin Django ne filtre pas automatiquement subcategory en fonction
+        de category — il montre toutes les sous-catégories. Ce formulaire
+        ajoute une validation clean() qui bloque la sauvegarde si la
+        sous-catégorie n'appartient pas à la catégorie sélectionnée.
+    """
+
+    class Meta:
+        model = CategorizationRule
+        fields = [
+            "keyword",
+            "category",
+            "subcategory",
+            "target_field",
+            "priority",
+            "is_active",
+        ]
+
+    def clean(self):
+        cleaned_data = super().clean()
+        category = cleaned_data.get("category")
+        subcategory = cleaned_data.get("subcategory")
+        # Validation : subcategory doit appartenir à category
+        if subcategory and category and subcategory.category != category:
+            raise forms.ValidationError(
+                f"La sous-catégorie « {subcategory.name} » n'appartient pas "
+                f"à la catégorie « {category.name} »."
+            )
+        return cleaned_data
+
+
 @admin.register(CategorizationRule)
 class CategorizationRuleAdmin(admin.ModelAdmin):
+    form = CategorizationRuleForm
     list_display = (
         "keyword",
         "target_field",
@@ -87,6 +124,33 @@ class CategorizationRuleAdmin(admin.ModelAdmin):
     list_filter = ("target_field", "category", "is_active")
     search_fields = ("keyword",)
     ordering = ("-priority", "keyword")
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        """
+        Filtre le dropdown subcategory quand on édite une règle existante.
+
+        formfield_for_foreignkey() est appelé pour chaque FK du formulaire.
+        On intercepte uniquement "subcategory" et, si l'objet en cours d'édition
+        a déjà une catégorie, on restreint le queryset à ses sous-catégories.
+
+        Limitation : fonctionne seulement à l'édition (object_id connu).
+        À la création (nouveau formulaire vide), toutes les sous-cats sont affichées
+        mais clean() bloque la sauvegarde si le choix est incohérent.
+        """
+        if db_field.name == "subcategory":
+            object_id = request.resolver_match.kwargs.get("object_id")
+            if object_id:
+                try:
+                    rule = CategorizationRule.objects.select_related("category").get(
+                        pk=object_id
+                    )
+                    if rule.category:
+                        kwargs["queryset"] = SubCategory.objects.filter(
+                            category=rule.category, is_active=True
+                        ).order_by("name")
+                except CategorizationRule.DoesNotExist:
+                    pass
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
 
 # =============================================================================
@@ -164,7 +228,6 @@ class ImportLogAdmin(admin.ModelAdmin):
 
 @admin.register(BudgetTarget)
 class BudgetTargetAdmin(admin.ModelAdmin):
-    list_display = ("period", "category", "amount")
+    list_display = ("category", "amount")
     list_filter = ("category",)
-    date_hierarchy = "period"
-    ordering = ("-period", "category__order")
+    ordering = ("category__order",)

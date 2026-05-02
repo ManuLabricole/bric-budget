@@ -1,0 +1,42 @@
+{% comment %}
+components/banks/bank_logo.html — Cercle logo banque réutilisable
+
+Affiche uniquement l'icône banque dans un cercle blanc, sans texte.
+Pour [icône + nom de compte], utiliser account_badge.html.
+
+Règle d'affichage — fond blanc dans tous les cas :
+  SVG currentColor (ex: Yuh) → rendu noir via comportement navigateur par défaut ✅
+  SVG couleur native (ex: Finpension #1c2a48) → rendu en couleur de marque ✅
+  PNG miniature (ex: CIC, UBS, Boursorama) → rendu couleur d'origine ✅
+  ⚠️  NE PAS utiliser de SVG avec fill="white" — invisible sur fond blanc.
+      Si un SVG problématique existe : renommer en .bak et laisser le PNG prendre le relais.
+
+Variables requises :
+  icon_url  — URL résolue (depuis {% bank_icon_url bank as icon_url %})
+  bank      — objet Bank Django (pour alt text et initiale de fallback)
+
+Variables optionnelles :
+  size      — classe Tailwind du cercle  (défaut : "w-6 h-6")
+  padding   — padding interne            (défaut : "p-1")
+
+Usage :
+  {% load bank_icons %}
+  {% bank_icon_url bank as icon_url %}
+  {% include "components/banks/bank_logo.html" with icon_url=icon_url bank=bank %}
+
+  {% include "components/banks/bank_logo.html" with icon_url=icon_url bank=bank size="w-8 h-8" padding="p-1.5" %}
+  {% include "components/banks/bank_logo.html" with icon_url=icon_url bank=bank size="w-5 h-5" padding="p-0.5" %}
+{% endcomment %}
+{% if icon_url %}
+    <div class="{{ size|default:'w-6 h-6' }} rounded-full bg-white ring-1 ring-black/8 flex-shrink-0 flex items-center justify-center {{ padding|default:'p-1' }}">
+        <img src="{{ icon_url }}"
+             width="32"
+             height="32"
+             class="w-full h-full object-contain"
+             alt="{{ bank.name }}">
+    </div>
+{% else %}
+    <div class="{{ size|default:'w-6 h-6' }} rounded-full bg-surface-hover border border-edge flex-shrink-0 flex items-center justify-center">
+        <span class="text-[8px] font-bold text-text-muted">{{ bank.name|slice:":1" }}</span>
+    </div>
+{% endif %}

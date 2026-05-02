@@ -1,0 +1,26 @@
+{% comment %}
+budget/_gauge.html — Gauge demi-cercle SVG réutilisable.
+
+Technique : <circle> complet avec stroke-dasharray + rotate(180).
+  r=40, demi-périmètre = π×40 = 125.66.
+  viewBox "0 0 100 52" clippe nativement les caps ronds sous y=52 (zéro oreille).
+
+Variables (toutes via {% include ... with %}) :
+  gauge_fill_px  — float  : longueur d'arc à remplir (0–125.66).
+                            Utiliser le filtre |gauge_fill : {{ pct|gauge_fill }}
+  gauge_color    — str    : couleur hex de l'arc de progression.
+                            Utiliser le filtre |gauge_color ou passer un hex direct.
+  gauge_class    — str    : classe Tailwind de taille (défaut : "w-16").
+                            Exemples : "w-8", "w-10", "w-44"
+
+Exemples d'appel :
+  {% include "budget/_gauge.html" with gauge_fill_px=target_pct|gauge_fill gauge_color=category.colour_hex gauge_class="w-44" %}
+  {% include "budget/_gauge.html" with gauge_fill_px=target_pct|gauge_fill gauge_color=target_pct|gauge_color gauge_class="w-10" %}
+  {% include "budget/_gauge.html" with gauge_fill_px=over_pct|gauge_fill gauge_color=over_pct|gauge_color:"0" gauge_class="w-10" %}
+{% endcomment %}
+<svg viewBox="0 0 100 52" class="{{ gauge_class|default:'w-16' }}">
+    {# Track — demi-cercle complet en fond sombre #}
+    <circle cx="50" cy="50" r="40" fill="none" stroke="#2a2a2e" stroke-width="10" stroke-linecap="round" stroke-dasharray="125.66 999" transform="rotate(180, 50, 50)" />
+    {# Fill — arc proportionnel au pourcentage, couleur paramétrable #}
+    <circle cx="50" cy="50" r="40" fill="none" stroke="{{ gauge_color }}" stroke-width="10" stroke-linecap="round" stroke-dasharray="{{ gauge_fill_px }} 999" transform="rotate(180, 50, 50)" />
+</svg>

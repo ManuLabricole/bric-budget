@@ -39,7 +39,7 @@ import random
 from django.core.management.base import BaseCommand
 from django.db.models import Count
 
-from transactions.models import Category, Transaction
+from transactions.models import Category, SubCategory, Transaction
 
 # Slugs of categories that should NEVER be assigned to expense transactions.
 # - Revenus / Remboursements : income-only by semantic definition
@@ -93,6 +93,17 @@ class Command(BaseCommand):
         )
         self.stdout.write(f"  Expense pool: {len(expense_pool)} categories")
 
+        # ── Pré-charger les sous-catégories par catégorie ─────────────────
+        # Un dict category_id → [SubCategory, ...] pour éviter les N+1 au moment
+        # d'assigner une sous-catégorie aléatoire à chaque transaction.
+        # Si une catégorie n'a pas de sous-catégorie active, subcat_map[id] = []
+        # et subcategory sera laissé à None (comportement attendu).
+        subcat_map: dict[int, list] = {}
+        for sub in SubCategory.objects.filter(is_active=True).select_related(
+            "category"
+        ):
+            subcat_map.setdefault(sub.category_id, []).append(sub)
+
         # ── 3. Select transactions to update ──────────────────────────────
         # --all : re-randomize every transaction, even already categorized ones.
         # default: only NULL category or "Inconnu".
@@ -120,11 +131,18 @@ class Command(BaseCommand):
             BATCH_SIZE = 500
 
             for tx in qs.iterator():
-                tx.category = (
+                chosen_cat = (
                     random.choice(income_pool)
                     if tx.amount > 0
                     else random.choice(expense_pool)
                 )
+                tx.category = chosen_cat
+
+                # Assigner une sous-catégorie aléatoire parmi celles de la catégorie.
+                # None si la catégorie n'a pas de sous-catégorie active.
+                subcats = subcat_map.get(chosen_cat.id, [])
+                tx.subcategory = random.choice(subcats) if subcats else None
+
                 # "ai" badge = visual marker that this was dev-randomized
                 tx.categorization_source = Transaction.CategorizationSource.AI
                 batch.append(tx)
@@ -132,14 +150,14 @@ class Command(BaseCommand):
 
                 if len(batch) >= BATCH_SIZE:
                     Transaction.objects.bulk_update(
-                        batch, ["category", "categorization_source"]
+                        batch, ["category", "subcategory", "categorization_source"]
                     )
                     batch = []
                     self.stdout.write(f"    {updated}/{total}...")
 
             if batch:
                 Transaction.objects.bulk_update(
-                    batch, ["category", "categorization_source"]
+                    batch, ["category", "subcategory", "categorization_source"]
                 )
 
             self.stdout.write(
@@ -208,6 +226,8 @@ class Command(BaseCommand):
                 )
                 if tx:
                     tx.category = missing_cat
+                    subcats = subcat_map.get(missing_cat.id, [])
+                    tx.subcategory = random.choice(subcats) if subcats else None
                     tx.categorization_source = Transaction.CategorizationSource.AI
                     steal_batch.append(tx)
                     self.stdout.write(
@@ -216,7 +236,7 @@ class Command(BaseCommand):
 
             if steal_batch:
                 Transaction.objects.bulk_update(
-                    steal_batch, ["category", "categorization_source"]
+                    steal_batch, ["category", "subcategory", "categorization_source"]
                 )
 
             # Also cover income categories
@@ -228,8 +248,16 @@ class Command(BaseCommand):
                     tx = Transaction.objects.filter(amount__gt=0).order_by("?").first()
                     if tx:
                         tx.category = inc_cat
+                        subcats = subcat_map.get(inc_cat.id, [])
+                        tx.subcategory = random.choice(subcats) if subcats else None
                         tx.categorization_source = Transaction.CategorizationSource.AI
-                        tx.save(update_fields=["category", "categorization_source"])
+                        tx.save(
+                            update_fields=[
+                                "category",
+                                "subcategory",
+                                "categorization_source",
+                            ]
+                        )
                         self.stdout.write(
                             f"    ✓ '{inc_cat.name}' — income transaction assigned"
                         )

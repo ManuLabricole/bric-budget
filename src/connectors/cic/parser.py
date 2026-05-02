@@ -300,7 +300,7 @@ class CICConnector(BaseConnector):
         # row_idx disambiguates identical rows within the same sheet — e.g. two
         # SNCF payments of the same amount on the same day are real distinct events.
         raw = f"{rib}|{row_idx}|{date_str}|{amount}|{description_raw}"
-        import_hash = hashlib.sha1(raw.encode()).hexdigest()
+        import_hash = hashlib.sha256(raw.encode()).hexdigest()
 
         return TransactionDict(
             date=date_str,
@@ -345,11 +345,16 @@ class CICConnector(BaseConnector):
         # Remove RETRAIT DAB prefix (ATM, includes 4-digit date)
         text = re.sub(r"^RETRAIT DAB \d{4} ", "", text)
 
-        # 3. Strip trailing internal reference codes: long alphanumeric strings
-        # e.g. "I20V23091L036457", "C20W26081W003325" — starts with letter, 10+ chars
-        text = re.sub(r"\s+[A-Z][A-Z0-9]{9,}$", "", text)
+        # 3. Strip trailing internal reference codes.
+        # Heuristic : un code de station/terminal contient toujours des chiffres mélangés
+        # aux lettres (ex: ESSOF108, ESSO31761ROC1, I20V23091L036457).
+        # Un nom de marchand est pure-lettres (GRENOBLE, CERTAS, BIVIERS).
+        # On retire tout token final qui contient AU MOINS UN chiffre.
+        text = re.sub(r"\s+[A-Z][A-Z0-9]*\d[A-Z0-9]*$", "", text)
 
-        return text.strip().title() or description.title()
+        # 4. Normalize spacing + title-case via the shared base helper
+        result = self._normalize_merchant(text)
+        return result if result else self._normalize_merchant(description)
 
     def _parse_card(self, description: str) -> str | None:
         """

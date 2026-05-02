@@ -1,0 +1,136 @@
+{% load budget_filters static %}
+{% comment %}
+budget/_panel_rule_create.html — Modal step 2 : sélection keyword + aperçu live
+
+Contexte attendu :
+    tx               — Transaction source
+    keyword          — Token initial pré-sélectionné
+    tokens           — list[str] tokens filtrés (sans bruit banque)
+    category         — Category cible
+    subcategory      — SubCategory | None
+    cat_display_name — str nom affiché (subcategory.name ou category.name)
+    initial_txs      — list Transaction : aperçu initial (max 25)
+    initial_count    — int total transactions matchant le keyword initial
+
+Flow :
+    _modal_rule_intro.html → ce template (step 2)
+    Clic chip → HTMX GET rule_live_preview → met à jour #rule-preview-zone
+    "Valider" → POST rule_create_submit → _panel_rule_confirm.html
+
+Ref : cat_flow_08
+{% endcomment %}
+{# ── Structure flex : header fixe + liste scrollable + bouton fixe ── #}
+<div class="flex flex-col" style="max-height: 82vh">
+    {# ── Header : label + titre + chips ── #}
+    <div class="flex-shrink-0 px-5 pt-5 pb-4">
+        <div class="flex items-center justify-between mb-1.5">
+            <span class="text-[10px] font-bold text-text-disabled uppercase tracking-widest">Créer une règle intelligente</span>
+            <button onclick="closeModal()"
+                    class="w-6 h-6 rounded-full border border-edge flex items-center justify-center text-text-disabled hover:text-text-muted hover:border-edge-subtle transition-colors">
+                <svg class="w-3 h-3"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="2.5"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+        <h2 class="text-base font-semibold text-text-base mb-3">
+            Nouvelle règle pour <span class="text-gold">{{ cat_display_name }}</span>
+        </h2>
+        <p class="text-xs text-text-muted mb-3 leading-relaxed">
+            Sélectionnez le(s) mot-clé(s) à rechercher pour re-catégoriser ces transactions dans
+            <span class="text-text-secondary">{{ cat_display_name }}</span> :
+        </p>
+        {# ── Chips ── #}
+        <div class="flex flex-wrap gap-1.5" id="rule-chips">
+            {% for token in tokens %}
+                <button type="button"
+                        data-token="{{ token }}"
+                        onclick="ruleToggleChip(this)"
+                        class="rule-chip px-2.5 py-1 rounded-full text-xs font-medium border transition-colors {% if token == keyword %}bg-gold text-surface-3 border-gold chip-selected{% else %}bg-surface-hover text-text-muted border-edge hover:border-gold/50 hover:text-text-base{% endif %}">
+                    {{ token }}
+                </button>
+            {% endfor %}
+        </div>
+        {# Inputs partagés — lus par le live preview (hx-include) et le formulaire final #}
+        <input type="hidden" id="rule-keyword" name="keyword" value="{{ keyword }}">
+        <input type="hidden"
+               id="rule-cat-id"
+               name="category_id"
+               value="{{ category.id }}">
+        {% if subcategory %}
+            <input type="hidden"
+                   id="rule-subcat-id"
+                   name="subcategory_id"
+                   value="{{ subcategory.id }}">
+        {% endif %}
+        <input type="hidden" id="rule-tx-id" value="{{ tx.id }}">
+    </div>
+    {# ── Zone live preview — rechargée via htmx.ajax() dans ruleToggleChip() ── #}
+    {# data-preview-url : URL résolue côté serveur, lue par le JS ci-dessous     #}
+    <div id="rule-preview-zone"
+         class="flex-1 overflow-y-auto border-t border-edge/50 bb-scroll"
+         data-preview-url="{% url 'budget:rule_live_preview' %}"
+         data-cat-id="{{ category.id }}"
+         {% if subcategory %}data-subcat-id="{{ subcategory.id }}"{% endif %}>
+        {% include "budget/_rule_live_preview.html" with txs=initial_txs count=initial_count keyword=keyword cat_display_name=cat_display_name %}
+    </div>
+    {# ── Bouton Valider — POST direct vers rule_create_submit (sans étape preview) ── #}
+    <div class="flex-shrink-0 px-5 py-4 border-t border-edge/50">
+        <form hx-post="{% url 'budget:rule_create_submit' %}"
+              hx-target="#modal-content"
+              hx-swap="innerHTML">
+            {# keyword lu au clic depuis l'input partagé — reflète la sélection de chips #}
+            <input type="hidden" id="form-keyword" name="keyword" value="{{ keyword }}">
+            <input type="hidden" name="category_id" value="{{ category.id }}">
+            {% if subcategory %}<input type="hidden" name="subcategory_id" value="{{ subcategory.id }}">{% endif %}
+            <input type="hidden" name="tx_id" value="{{ tx.id }}">
+            {# Désactivé si aucun chip sélectionné — mis à jour par ruleToggleChip() #}
+            <button type="submit"
+                    id="rule-submit-btn"
+                    onclick="document.getElementById('form-keyword').value = document.getElementById('rule-keyword').value"
+                    {% if not keyword %}disabled{% endif %}
+                    class="w-full bg-gold hover:bg-gold-hover text-surface-3 font-semibold text-sm rounded-xl px-4 py-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                Valider et appliquer
+            </button>
+        </form>
+    </div>
+</div>
+<script>
+(function () {
+    // Renommé ruleToggleChip pour éviter toute collision si la page recharge plusieurs fragments.
+    window.ruleToggleChip = function (btn) {
+        btn.classList.toggle('chip-selected');
+        if (btn.classList.contains('chip-selected')) {
+            btn.classList.remove('bg-surface-hover', 'text-text-muted', 'border-edge', 'hover:border-gold/50', 'hover:text-text-base');
+            btn.classList.add('bg-gold', 'text-surface-3', 'border-gold');
+        } else {
+            btn.classList.remove('bg-gold', 'text-surface-3', 'border-gold');
+            btn.classList.add('bg-surface-hover', 'text-text-muted', 'border-edge', 'hover:border-gold/50', 'hover:text-text-base');
+        }
+
+        // Recomposer le keyword depuis tous les chips sélectionnés (ordre d'affichage)
+        var selected = Array.from(document.querySelectorAll('#rule-chips .chip-selected'))
+            .map(function (c) { return c.dataset.token; });
+        var keyword = selected.join(' ');
+        document.getElementById('rule-keyword').value = keyword;
+
+        // Activer/désactiver le bouton Valider selon qu'un chip est sélectionné
+        var submitBtn = document.getElementById('rule-submit-btn');
+        if (submitBtn) submitBtn.disabled = !keyword;
+
+        // Recharger la zone preview via htmx.ajax() — plus fiable que hx-trigger
+        // sur du contenu injecté dans une modal, car évite les problèmes d'init HTMX.
+        var zone = document.getElementById('rule-preview-zone');
+        if (!zone) return;
+        var params = new URLSearchParams({ keyword: keyword, category_id: zone.dataset.catId });
+        if (zone.dataset.subcatId) params.set('subcategory_id', zone.dataset.subcatId);
+        htmx.ajax('GET', zone.dataset.previewUrl + '?' + params.toString(), {
+            target: '#rule-preview-zone',
+            swap: 'innerHTML'
+        });
+    };
+})();
+</script>

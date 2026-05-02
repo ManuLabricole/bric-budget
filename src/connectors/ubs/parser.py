@@ -99,14 +99,26 @@ class UBSConnector(BaseConnector):
         skipped = 0
 
         with open(filepath, encoding="utf-8-sig") as f:
-            # Skip the 9 metadata lines (8 info lines + 1 blank separator)
-            # These lines are NOT part of the CSV — they use a different structure
-            # (colon-delimited key:;value; pairs) so we skip them manually.
-            for _ in range(METADATA_LINE_COUNT):
-                f.readline()
+            # Skip metadata lines until we find the column header.
+            # UBS has two variants: checking (9 lines) and savings (8 lines).
+            # We scan up to 12 lines and stop as soon as we see the header row.
+            header_line = None
+            for _ in range(12):
+                line = f.readline()
+                cols = [c.strip() for c in line.strip().split(";") if c.strip()]
+                if cols == self.COLUMN_SIGNATURE:
+                    header_line = line
+                    break
 
-            # Now the next line is the column header — DictReader reads it as field names
-            reader = csv.DictReader(f, delimiter=";")
+            if header_line is None:
+                return []  # format inattendu — pas de header trouvé
+
+            # DictReader avec le header déjà lu — on passe fieldnames explicitement
+            reader = csv.DictReader(
+                f,
+                fieldnames=[c.strip() for c in header_line.strip().split(";")],
+                delimiter=";",
+            )
 
             # start=11: line 1-9 = metadata, line 10 = header, data starts at line 11
             for line_number, row in enumerate(reader, start=11):
@@ -126,6 +138,26 @@ class UBSConnector(BaseConnector):
             f"  [UBS] Parsed {len(transactions)} transactions, {skipped} rows skipped"
         )
         return transactions
+
+    def extract_account_name(self, filepath: Path) -> str | None:
+        """
+        Extracts a human-readable account name hint from line 1 of the UBS file.
+
+        Line 1 format: "Numéro de compte:;0243 00693382.40;"
+        Returns e.g. "UBS 0243 00693382.40", or None if not parseable.
+
+        This is only a suggestion — the user can override it in the creation form.
+        """
+        try:
+            with open(filepath, encoding="utf-8-sig") as f:
+                line1 = f.readline()
+            parts = line1.strip().split(";")
+            # parts[0] = "Numéro de compte:", parts[1] = "0243 00693382.40"
+            if len(parts) >= 2 and parts[1].strip():
+                return f"UBS {parts[1].strip()}"
+        except Exception:
+            pass
+        return None
 
     def extract_account_identifier(self, filepath: Path) -> str | None:
         """
@@ -185,29 +217,33 @@ class UBSConnector(BaseConnector):
         Strategy:
         1. Must be a .csv file
         2. Line 2 must start with "IBAN:;" — unique to UBS exports
-        3. Line 10 must match our COLUMN_SIGNATURE
+        3. COLUMN_SIGNATURE must appear somewhere in lines 3-12
 
-        Check (2) first — it's fast (reads 2 lines) and avoids loading the
-        full header for non-UBS files.
+        Why scan lines 3-12 instead of assuming line 10?
+        UBS has two metadata formats depending on the account type:
+          - Checking : 8 metadata lines + 1 blank = header on line 10
+          - Savings   : 7 metadata lines + 1 blank = header on line 9
+        Scanning a small window handles both without hardcoding the line number.
         """
         if filepath.suffix.lower() != ".csv":
             return False
         try:
             with open(filepath, encoding="utf-8-sig") as f:
-                f.readline()  # line 1: skip account number
-                line2 = f.readline()  # line 2: IBAN line
-                # Fast check: does line 2 start with "IBAN:;"?
+                f.readline()  # line 1: account number
+                line2 = f.readline()  # line 2: IBAN
                 if not line2.strip().startswith("IBAN:;"):
                     return False
-                # Skip lines 3-9 (7 more metadata lines)
-                for _ in range(7):
-                    f.readline()
-                # Line 10 is the column header
-                header_line = f.readline().strip()
-            columns = [col.strip() for col in header_line.split(";") if col.strip()]
-            return columns == cls.COLUMN_SIGNATURE
+                # Scan lines 3-12 for the column header
+                for _ in range(10):
+                    line = f.readline()
+                    columns = [
+                        col.strip() for col in line.strip().split(";") if col.strip()
+                    ]
+                    if columns == cls.COLUMN_SIGNATURE:
+                        return True
         except Exception:
-            return False
+            pass
+        return False
 
     # =========================================================================
     # Private helpers
@@ -253,12 +289,12 @@ class UBSConnector(BaseConnector):
         # not the visible card number. TODO: match via contract number in Phase 2.
         card_last_four = None
 
-        # import_hash: SHA1 of the fields that uniquely identify this transaction.
-        # We include time because two card payments to the same merchant at the same amount
-        # on the same day are realistically different events at different times.
-        # No IBAN in the hash — the hash is per-row, account association is external.
-        raw = f"{date_str}|{time_str}|{amount}|{description1}"
-        import_hash = hashlib.sha1(raw.encode()).hexdigest()
+        # import_hash: SHA256 of the fields that uniquely identify this transaction.
+        # description2 added to reduce collisions on same-day same-amount transfers
+        # (e.g. two salary advances with identical date/time/amount/description1).
+        description2 = row.get("Description2", "").strip()
+        raw = f"{date_str}|{time_str}|{amount}|{description1}|{description2}"
+        import_hash = hashlib.sha256(raw.encode()).hexdigest()
 
         return TransactionDict(
             date=date_str,
@@ -302,9 +338,7 @@ class UBSConnector(BaseConnector):
             "FEEL EAT SARL            LA CHAUX-D"
         → collapse all consecutive spaces to one, then title-case.
         Result: "Feel Eat Sarl La Chaux-D"
-        """
-        import re
 
-        # Collapse multiple consecutive spaces to a single space
-        collapsed = re.sub(r" {2,}", " ", description1).strip()
-        return collapsed.title()
+        Delegates to the shared _normalize_merchant() base helper.
+        """
+        return self._normalize_merchant(description1)

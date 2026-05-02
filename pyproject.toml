@@ -26,6 +26,25 @@ package-mode = false
 ruff = "^0.15.8"
 djlint = "^1.36.4"
 commitizen = "^4.13.9"
+pytest = "^9.0"
+pytest-django = "^4.12"
+
+
+# =============================================================================
+# pytest — test runner
+# Docs: https://docs.pytest.org + https://pytest-django.readthedocs.io
+#
+# DJANGO_SETTINGS_MODULE : même settings que prod — pytest-django crée un DB de test
+#   vide (test_bricbudget) au lancement, le supprime après.
+# pythonpath = ["src"] : ajoute src/ à sys.path → "from connectors.yuh.parser import ..."
+#   fonctionne sans package install ni PYTHONPATH manuel.
+# testpaths : limite la découverte à src/tests/ pour ne pas scanner tout le projet.
+# =============================================================================
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+pythonpath = ["src"]
+testpaths = ["src/tests"]
 
 
 # =============================================================================

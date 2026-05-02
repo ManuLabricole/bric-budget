@@ -1,0 +1,59 @@
+{% load budget_filters %}
+{% comment %}
+budget/_rule_live_preview.html — Partial HTMX : liste des transactions qui seront modifiées
+
+Contexte attendu :
+    txs             — list Transaction (toutes, ordered by -date)
+    count           — int total
+    keyword         — str keyword courant (uppercase)
+    cat_display_name — str nom catégorie ou sous-catégorie cible
+
+Utilisé de deux façons :
+    1. Rendu initial côté serveur depuis budget_panel_rule_create ({% include %})
+    2. Rechargé via HTMX par budget_rule_live_preview à chaque clic de chip
+{% endcomment %}
+{% if not keyword %}
+    <p class="px-5 py-4 text-xs text-text-disabled italic">
+        Sélectionnez un ou plusieurs mots-clés pour voir les transactions correspondantes.
+    </p>
+{% elif txs %}
+    <div class="px-5 pb-2 pt-1">
+        <p class="text-[10px] text-text-muted leading-relaxed">
+            Les
+            <span class="text-gold font-semibold">{{ count }}</span>
+            transaction
+            {% if count > 1 %}s{% endif %}
+            ci-dessous seront catégorisées en
+            <span class="text-text-secondary font-medium">{{ cat_display_name }}</span>
+        </p>
+    </div>
+    <div class="divide-y divide-edge/30">
+        {% for tx in txs %}
+            <div class="flex items-center gap-2 px-5 py-2 hover:bg-surface-hover/40 transition-colors">
+                <span class="text-[10px] text-text-disabled tabular-nums flex-shrink-0 w-9 leading-none">
+                    {{ tx.date|date:"d/m" }}
+                </span>
+                <span class="flex-1 text-[11px] text-text-muted uppercase tracking-wide truncate leading-none">
+                    {% if tx.merchant_name %}
+                        {{ tx.merchant_name|upper|slice:":45" }}
+                    {% else %}
+                        {{ tx.description_raw|slice:":45" }}
+                    {% endif %}
+                </span>
+                <span class="text-[11px] font-medium tabular-nums flex-shrink-0 leading-none {% if tx.amount >= 0 %}text-income{% else %}text-expense{% endif %}">
+                    {% if tx.amount >= 0 %}
+                        +
+                    {% else %}
+                        −
+                    {% endif %}
+                    {{ tx.amount|chf_dec }}
+                </span>
+            </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <p class="px-5 py-4 text-xs text-text-disabled italic">
+        Aucune transaction similaire détectée pour « {{ keyword }} ».
+        La règle s'appliquera aux prochains imports.
+    </p>
+{% endif %}
