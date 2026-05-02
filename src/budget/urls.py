@@ -122,10 +122,6 @@ urlpatterns = [
         views.budget_toggle_filter_category,
         name="toggle_filter_category",
     ),
-    # ── Préférences d'affichage (T3) ────────────────────────────────────────
-    # /budget/pref/<pref_name>/ → inverse un booléen de préférence en session
-    # pref_name valides : "decimals"
-    path("pref/<str:pref_name>/", views.budget_toggle_pref, name="toggle_pref"),
     # ── Export (T4) ─────────────────────────────────────────────────────────
     # /budget/export/rules/ → télécharge les règles de catégorisation en JSON
     path(

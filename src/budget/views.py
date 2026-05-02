@@ -357,7 +357,6 @@ def budget_index(request):
     #   all_categories → toutes les catégories actives (pour le sélecteur catégories)
     filter_account_ids = request.session.get("budget_filter_accounts", [])
     filter_cat_slugs = request.session.get("budget_filter_categories", [])
-    pref_decimals = request.session.get("budget_pref_decimals", False)
     accounts = (
         Account.objects.filter(is_active=True)
         .select_related("bank")
@@ -817,8 +816,6 @@ def budget_index(request):
         "filter_account_ids": filter_account_ids,
         "all_categories": all_categories,
         "filter_cat_slugs": filter_cat_slugs,
-        # Préférences d'affichage
-        "pref_decimals": pref_decimals,
     }
 
     return render(request, "budget/index.html", context)
@@ -1946,7 +1943,6 @@ def budget_category_detail(request, slug):
     # Sur category_detail : restreint les transactions affichées ET les calculs
     # (Sankey, KPIs) au(x) compte(s) sélectionné(s).
     filter_account_ids = request.session.get("budget_filter_accounts", [])
-    pref_decimals = request.session.get("budget_pref_decimals", False)
     accounts = (
         Account.objects.filter(is_active=True)
         .select_related("bank")
@@ -2323,8 +2319,6 @@ def budget_category_detail(request, slug):
             # Filtres compte — partagés avec budget_index via la session
             "accounts": accounts,
             "filter_account_ids": filter_account_ids,
-            # Préférences d'affichage
-            "pref_decimals": pref_decimals,
         },
     )
 
@@ -2392,34 +2386,6 @@ def budget_toggle_filter_category(request, slug):
     request.session["budget_filter_categories"] = slugs
     # Redirige toujours vers budget_index — le filtre catégorie n'existe que là.
     return redirect("budget:index")
-
-
-# =============================================================================
-# budget_toggle_pref — Toggle une préférence d'affichage (GET)
-# =============================================================================
-
-
-@login_required
-def budget_toggle_pref(request, pref_name):
-    """
-    Inverse un booléen de préférence UI stocké en session.
-
-    URL : /budget/pref/<pref_name>/
-    pref_name valides : "decimals"
-
-    Préférences supportées :
-        decimals → True = montants avec centimes (|chf_dec), False = entiers (|chf)
-
-    Redirige vers HTTP_REFERER → fonctionne depuis index et category_detail.
-    """
-    # Liste blanche explicite — évite qu'un slug arbitraire écrase n'importe quelle clé session.
-    allowed = {"decimals"}
-    if pref_name not in allowed:
-        return redirect(request.META.get("HTTP_REFERER", "budget:index"))
-
-    key = f"budget_pref_{pref_name}"
-    request.session[key] = not request.session.get(key, False)
-    return redirect(request.META.get("HTTP_REFERER", "budget:index"))
 
 
 # =============================================================================
