@@ -1849,25 +1849,29 @@ def budget_category_detail(request, slug):
     can_go_next = period_end < current_month_end
 
     # ── Transactions de la catégorie sur la période ──────────────────────────
-    # On exclut les transactions ignorées — même logique que budget_index.
-    txs = (
-        Transaction.objects.filter(
-            category=category,
-            date__gte=period_start,
-            date__lte=period_end,
-            is_ignored=False,
-        )
-        .select_related("subcategory", "account", "account__bank")
-        .order_by("-date", "-id")
+    #
+    # txs         = toutes les transactions (affichage) — les ignorées apparaissent
+    #               en grisé via _panel_tx_row.html (opacity-40 + line-through).
+    # txs_active  = transactions non-ignorées seulement — utilisées pour les calculs
+    #               budget (total, Sankey, donut) car les ignorées sont exclues de
+    #               l'analyse, exactement comme dans budget_index.
+    base_qs = Transaction.objects.filter(
+        category=category,
+        date__gte=period_start,
+        date__lte=period_end,
     )
+    txs = base_qs.select_related("subcategory", "account", "account__bank").order_by(
+        "-date", "-id"
+    )
+    txs_active = base_qs.filter(is_ignored=False)
 
-    total_amount = txs.aggregate(total=Sum("amount"))["total"] or 0
+    total_amount = txs_active.aggregate(total=Sum("amount"))["total"] or 0
 
     # ── Sous-totaux par sous-catégorie — pour le Sankey + donut ─────────────
     # list() force l'évaluation du queryset ici — on itère deux fois :
     # une fois pour le Sankey, une fois pour le donut.
     subcat_list = list(
-        txs.filter(subcategory__isnull=False)
+        txs_active.filter(subcategory__isnull=False)
         .values(
             "subcategory__id",
             "subcategory__name",
@@ -1995,7 +1999,7 @@ def budget_category_detail(request, slug):
         icon_slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
         tx.bank_icon_url = bank_icon_map.get(icon_slug, "")
 
-    tx_count = txs.count()
+    tx_count = txs_active.count()
     avg_amount = (total_amount / tx_count) if tx_count > 0 else None
 
     # ── KPI tabs — données pour les 3 onglets sélecteurs ─────────────────────
@@ -2006,7 +2010,7 @@ def budget_category_detail(request, slug):
     # distinct() sur subcategory_id évite de compter les doublons si plusieurs
     # transactions tombent dans la même sous-catégorie.
     subcat_count = (
-        txs.filter(subcategory__isnull=False)
+        txs_active.filter(subcategory__isnull=False)
         .values("subcategory_id")
         .distinct()
         .count()
