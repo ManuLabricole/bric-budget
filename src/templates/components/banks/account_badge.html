@@ -2,6 +2,7 @@
 components/banks/account_badge.html — Badge compte bancaire réutilisable
 
 Affiche : [cercle blanc avec logo banque] [nom du compte]
+Le cercle logo est délégué à bank_logo.html — toujours fond blanc, même règle partout.
 
 Variables requises :
   bank_icon_url  — URL résolue de l'icône (string, peut être vide)
@@ -9,46 +10,17 @@ Variables requises :
 
 Variables optionnelles :
   icon_size   — taille du cercle Tailwind (défaut : "w-6 h-6")
-  text_size   — taille du texte Tailwind  (défaut : "text-[11px]")
-  text_color  — couleur du texte Tailwind (défaut : "text-text-base")
+  icon_pad    — padding interne du cercle   (défaut : "p-1")
+  text_size   — taille du texte Tailwind    (défaut : "text-[11px]")
+  text_color  — couleur du texte Tailwind   (défaut : "text-text-base")
 
 Usage :
   {% include "components/banks/account_badge.html" with bank_icon_url=tx.bank_icon_url account=tx.account %}
 
-  {% include "components/banks/account_badge.html" with bank_icon_url=tx.bank_icon_url account=tx.account icon_size="w-8 h-8" text_size="text-xs" %}
+  {% include "components/banks/account_badge.html" with bank_icon_url=tx.bank_icon_url account=tx.account icon_size="w-8 h-8" %}
 {% endcomment %}
 <div class="flex items-center gap-1.5 flex-shrink-0">
-    {% if bank_icon_url %}
-        {% comment %}
-        Les SVG banque utilisent fill="currentColor" — pas de fond intégré.
-        On force brightness-0 invert pour les rendre blancs sur fond sombre,
-        exactement comme les icônes de catégories.
-        Les PNG (fallback miniature/) sont affichés tels quels sur bg-white.
-        ⚠️  Si un nouveau logo s'affiche mal : vérifier que le SVG n'a pas de fond
-            hardcodé (fill="white" ou rect de fond) — à supprimer dans Inkscape.
-        {% endcomment %}
-        {% if bank_icon_url|slice:"-4:" == ".svg" %}
-            <div class="{{ icon_size|default:'w-6 h-6' }} rounded-full bg-surface-3 border border-edge/40 flex-shrink-0 flex items-center justify-center p-1">
-                <img src="{{ bank_icon_url }}"
-                     width="32"
-                     height="32"
-                     class="w-full h-full object-contain brightness-0 invert opacity-80"
-                     alt="{{ account.bank.name }}">
-            </div>
-        {% else %}
-            <div class="{{ icon_size|default:'w-6 h-6' }} rounded-full bg-white flex-shrink-0 flex items-center justify-center p-1">
-                <img src="{{ bank_icon_url }}"
-                     width="32"
-                     height="32"
-                     class="w-full h-full object-contain"
-                     alt="{{ account.bank.name }}">
-            </div>
-        {% endif %}
-    {% else %}
-        <div class="{{ icon_size|default:'w-6 h-6' }} rounded-full bg-surface-hover border border-edge flex items-center justify-center flex-shrink-0">
-            <span class="text-[8px] font-bold text-text-muted">{{ account.bank.name|slice:":1" }}</span>
-        </div>
-    {% endif %}
+    {% include "components/banks/bank_logo.html" with icon_url=bank_icon_url bank=account.bank size=icon_size padding=icon_pad %}
     <span class="{{ text_size|default:'text-[11px]' }} {{ text_color|default:'text-text-base' }} whitespace-nowrap">
         {{ account.name }}
     </span>
