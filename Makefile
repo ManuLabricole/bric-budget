@@ -170,6 +170,10 @@ export-rules:
 	@mkdir -p assets/private
 	@$(MANAGE) export_rules --output assets/private/rules_backup_$(shell date +%Y%m%d).json
 
+reset-categories:
+	@printf "  🔄 $(YELLOW)Reset catégories : positif → Revenus, négatif → Inconnu...$(RESET)\n"
+	@$(MANAGE) reset_categories $(if $(DRY),--dry-run,)
+
 # =============================================================================
 # 🧪 Dev tools
 # =============================================================================
