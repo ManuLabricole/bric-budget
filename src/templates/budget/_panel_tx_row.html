@@ -114,6 +114,7 @@ Rendu d'une transaction ignorée (is_ignored=True) :
                    classes conditionnelles (opacity-40, line-through) soient appliquées.
         {% endcomment %}
         <button hx-post="{% url 'budget:toggle_ignore' tx.id %}"
+                hx-vals='{"source": "{{ panel_source|default:"list" }}"}'
                 hx-target="#tx-{{ tx.id }}"
                 hx-swap="outerHTML"
                 title="{% if tx.is_ignored %}Réactiver la transaction{% else %}Ignorer la transaction{% endif %}"

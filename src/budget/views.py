@@ -29,6 +29,7 @@ from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q, Sum
 from django.db.models.functions import TruncMonth
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.templatetags.static import static
 from django.urls import reverse
@@ -933,8 +934,6 @@ def budget_modal_target_create(request):
     L'objectif est général (une seule valeur par catégorie, sans notion de mois).
     La vue category_detail multiplie ce montant selon le mode de période (1m/3m/1y).
     """
-    from django.http import HttpResponse
-
     category_id = request.POST.get("category_id") or request.GET.get("category_id")
 
     if request.method == "POST":
@@ -1202,7 +1201,16 @@ def budget_toggle_ignore(request, tx_id):
             {"tx": tx, "bank_icon_url": bank_icon_url},
         )
 
-    # source=list (défaut) → appelé depuis la liste → retourner juste la ligne
+    # source=category → appelé depuis category_detail.html.
+    # On ne peut pas mettre à jour KPIs + Sankey + donut en partiel —
+    # on recharge la page complète via HX-Redirect vers la même URL.
+    # HTMX suit la redirection → category_detail recalcule tout avec les données fraîches.
+    if request.POST.get("source") == "category":
+        response = HttpResponse()
+        response["HX-Redirect"] = request.META.get("HTTP_REFERER", "/budget/")
+        return response
+
+    # source=list (défaut) → appelé depuis la liste panel → retourner juste la ligne
     return render(
         request,
         "budget/_panel_tx_row.html",
