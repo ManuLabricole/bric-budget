@@ -29,12 +29,13 @@ from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q, Sum
 from django.db.models.functions import Coalesce, TruncMonth
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.templatetags.static import static
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
+from accounts.models import Account
 from transactions.models import (
     BudgetTarget,
     CategorizationRule,
@@ -341,6 +342,29 @@ def budget_index(request):
     # Stocké en session. Default : "sorties".
     active_tab = request.session.get("budget_active_tab", "sorties")
 
+    # ── 2b. Filtres multi-select actifs ──────────────────────────────────────
+    #
+    # Deux filtres stockés en session (vide = pas de filtre = tout afficher) :
+    #   budget_filter_accounts   → list[int]  : IDs des comptes sélectionnés
+    #   budget_filter_categories → list[str]  : slugs des catégories sélectionnées
+    #
+    # La liste vide est le cas "aucun filtre" : le queryset n'est pas restreint.
+    # Quand au moins un ID/slug est présent, seul ce sous-ensemble est affiché dans
+    # le Sankey, le Donut et la liste des catégories.
+    #
+    # On charge aussi les données pour les dropdowns du template :
+    #   accounts       → tous les comptes actifs (pour le sélecteur "Tous les comptes")
+    #   all_categories → toutes les catégories actives (pour le sélecteur catégories)
+    filter_account_ids = request.session.get("budget_filter_accounts", [])
+    filter_cat_slugs = request.session.get("budget_filter_categories", [])
+    pref_decimals = request.session.get("budget_pref_decimals", False)
+    accounts = (
+        Account.objects.filter(is_active=True)
+        .select_related("bank")
+        .order_by("bank__name", "name")
+    )
+    all_categories = Category.objects.filter(is_active=True).order_by("order", "name")
+
     # ── 3. Queryset de base ───────────────────────────────────────────────────
     #
     # Les transactions exclues systématiquement du budget :
@@ -360,6 +384,11 @@ def budget_index(request):
         is_ignored=False,
         is_internal_transfer=False,
     )
+    # Appliquer les filtres multi-select si actifs (vide = tout afficher)
+    if filter_account_ids:
+        qs = qs.filter(account_id__in=filter_account_ids)
+    if filter_cat_slugs:
+        qs = qs.filter(category__slug__in=filter_cat_slugs)
 
     # ── 4. KPIs ───────────────────────────────────────────────────────────────
     #
@@ -783,6 +812,13 @@ def budget_index(request):
         "donut_data": donut_data,
         # Toujours passer expense_categories pour les calculs de % déjà présents ailleurs
         "expense_categories": expense_categories,
+        # Filtres actifs (multi-select) — pour les dropdowns dans le template
+        "accounts": accounts,
+        "filter_account_ids": filter_account_ids,
+        "all_categories": all_categories,
+        "filter_cat_slugs": filter_cat_slugs,
+        # Préférences d'affichage
+        "pref_decimals": pref_decimals,
     }
 
     return render(request, "budget/index.html", context)
@@ -1037,6 +1073,14 @@ def budget_panel_transactions(request):
     # icontains = insensible à la casse.
     q = request.GET.get("q", "").strip()
 
+    # ── Filtre compte actif (même session que budget_index) ──────────────────
+    filter_account_ids = request.session.get("budget_filter_accounts", [])
+    accounts = (
+        Account.objects.filter(is_active=True)
+        .select_related("bank")
+        .order_by("bank__name", "name")
+    )
+
     # ── Queryset transactions ─────────────────────────────────────────────────
     #
     # list() force l'évaluation du queryset pour pouvoir annoter les objets.
@@ -1051,6 +1095,8 @@ def budget_panel_transactions(request):
         date__lte=period_end,
         is_internal_transfer=False,
     )
+    if filter_account_ids:
+        qs = qs.filter(account_id__in=filter_account_ids)
     if q:
         qs = qs.filter(Q(merchant_name__icontains=q) | Q(description_raw__icontains=q))
     tx_list = list(
@@ -1092,6 +1138,9 @@ def budget_panel_transactions(request):
             "period_mode": period_mode,
             "period_label": period_label,
             "can_go_next": can_go_next,
+            # Filtre compte — partagé via la session
+            "accounts": accounts,
+            "filter_account_ids": filter_account_ids,
         },
     )
 
@@ -1891,6 +1940,19 @@ def budget_category_detail(request, slug):
     )
     can_go_next = period_end < current_month_end
 
+    # ── Filtre compte actif (même session que budget_index) ──────────────────
+    #
+    # Le filtre compte est partagé entre toutes les vues budget via la session.
+    # Sur category_detail : restreint les transactions affichées ET les calculs
+    # (Sankey, KPIs) au(x) compte(s) sélectionné(s).
+    filter_account_ids = request.session.get("budget_filter_accounts", [])
+    pref_decimals = request.session.get("budget_pref_decimals", False)
+    accounts = (
+        Account.objects.filter(is_active=True)
+        .select_related("bank")
+        .order_by("bank__name", "name")
+    )
+
     # ── Transactions de la catégorie sur la période ──────────────────────────
     #
     # txs         = toutes les transactions (affichage) — les ignorées apparaissent
@@ -1903,6 +1965,9 @@ def budget_category_detail(request, slug):
         date__gte=period_start,
         date__lte=period_end,
     )
+    # Appliquer le filtre compte si actif (vide = tous les comptes)
+    if filter_account_ids:
+        base_qs = base_qs.filter(account_id__in=filter_account_ids)
     txs = base_qs.select_related("subcategory", "account", "account__bank").order_by(
         "-date", "-id"
     )
@@ -2255,5 +2320,169 @@ def budget_category_detail(request, slug):
             "history_chart_data": history_chart_data,
             "has_history": has_history,
             "bar_kpis": bar_kpis,
+            # Filtres compte — partagés avec budget_index via la session
+            "accounts": accounts,
+            "filter_account_ids": filter_account_ids,
+            # Préférences d'affichage
+            "pref_decimals": pref_decimals,
         },
     )
+
+
+# =============================================================================
+# budget_toggle_filter_account — Toggle multi-select filtre compte (GET)
+# =============================================================================
+
+
+@login_required
+def budget_toggle_filter_account(request, account_id):
+    """
+    Toggle un compte dans le filtre multi-select stocké en session.
+
+    URL : /budget/filter/account/<account_id>/
+    account_id=0 → vide la liste (afficher tous les comptes)
+
+    Principe :
+        La session stocke une liste d'IDs. Ce endpoint ajoute ou retire l'ID.
+        Vide = pas de filtre = tout afficher.
+        Après la mise à jour, on redirige vers la page appelante (HTTP_REFERER)
+        pour que la page se recharge avec le nouveau filtre appliqué.
+    """
+    ids = request.session.get("budget_filter_accounts", [])
+
+    if account_id == 0:
+        # Réinitialiser → tous les comptes
+        ids = []
+    elif account_id in ids:
+        # Décocher
+        ids = [i for i in ids if i != account_id]
+    else:
+        # Cocher
+        ids = ids + [account_id]
+
+    request.session["budget_filter_accounts"] = ids
+    return redirect(request.META.get("HTTP_REFERER", "budget:index"))
+
+
+# =============================================================================
+# budget_toggle_filter_category — Toggle multi-select filtre catégorie (GET)
+# =============================================================================
+
+
+@login_required
+def budget_toggle_filter_category(request, slug):
+    """
+    Toggle une catégorie dans le filtre multi-select stocké en session.
+
+    URL : /budget/filter/category/<slug>/
+    slug="all" → vide la liste (afficher toutes les catégories)
+
+    Principe : même pattern que budget_toggle_filter_account.
+    Seule différence : stocké comme list[str] (slugs) au lieu de list[int] (ids).
+    """
+    slugs = request.session.get("budget_filter_categories", [])
+
+    if slug == "all":
+        slugs = []
+    elif slug in slugs:
+        slugs = [s for s in slugs if s != slug]
+    else:
+        slugs = slugs + [slug]
+
+    request.session["budget_filter_categories"] = slugs
+    # Redirige toujours vers budget_index — le filtre catégorie n'existe que là.
+    return redirect("budget:index")
+
+
+# =============================================================================
+# budget_toggle_pref — Toggle une préférence d'affichage (GET)
+# =============================================================================
+
+
+@login_required
+def budget_toggle_pref(request, pref_name):
+    """
+    Inverse un booléen de préférence UI stocké en session.
+
+    URL : /budget/pref/<pref_name>/
+    pref_name valides : "decimals"
+
+    Préférences supportées :
+        decimals → True = montants avec centimes (|chf_dec), False = entiers (|chf)
+
+    Redirige vers HTTP_REFERER → fonctionne depuis index et category_detail.
+    """
+    # Liste blanche explicite — évite qu'un slug arbitraire écrase n'importe quelle clé session.
+    allowed = {"decimals"}
+    if pref_name not in allowed:
+        return redirect(request.META.get("HTTP_REFERER", "budget:index"))
+
+    key = f"budget_pref_{pref_name}"
+    request.session[key] = not request.session.get(key, False)
+    return redirect(request.META.get("HTTP_REFERER", "budget:index"))
+
+
+# =============================================================================
+# budget_export_rules_download — Télécharge les règles de catégorisation en JSON
+# =============================================================================
+
+
+@login_required
+def budget_export_rules_download(request):
+    """
+    Retourne les CategorizationRule actives sous forme de fichier JSON téléchargeable.
+
+    URL : /budget/export/rules/
+    Response : application/json avec Content-Disposition: attachment
+
+    Format du fichier :
+        {
+            "exported_at": "YYYY-MM-DD",
+            "count": N,
+            "rules": [
+                {"keyword": "...", "category_slug": "...", "subcategory_slug": "...",
+                 "target_field": "...", "priority": N},
+                ...
+            ]
+        }
+
+    Pourquoi exporter via le navigateur et pas seulement via make export-rules ?
+        - Accessible depuis l'UI Paramètres sans ouvrir un terminal.
+        - Utile avant la session de classification manuelle pour faire un backup rapide.
+    """
+    rules = list(
+        CategorizationRule.objects.filter(is_active=True)
+        .values(
+            "keyword",
+            "category__slug",
+            "subcategory__slug",
+            "target_field",
+            "priority",
+        )
+        .order_by("priority", "keyword")
+    )
+
+    # Renommer les clés pour un JSON lisible (category__slug → category_slug)
+    clean_rules = [
+        {
+            "keyword": r["keyword"],
+            "category_slug": r["category__slug"],
+            "subcategory_slug": r["subcategory__slug"],
+            "target_field": r["target_field"],
+            "priority": r["priority"],
+        }
+        for r in rules
+    ]
+
+    data = {
+        "exported_at": str(date.today()),
+        "count": len(clean_rules),
+        "rules": clean_rules,
+    }
+
+    filename = f"rules_{date.today()}.json"
+    response = JsonResponse(
+        data, json_dumps_params={"indent": 2, "ensure_ascii": False}
+    )
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
