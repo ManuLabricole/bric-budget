@@ -1945,13 +1945,33 @@ def budget_category_detail(request, slug):
             }
         )
 
-    # Quand aucune sous-catégorie n'existe sur la période mais qu'il y a des
-    # transactions, on construit un lien "pass-through" :
-    #   source_name (avec ZWSP) → category.name (sans ZWSP)
-    # Les deux nœuds ont le même nom visuel (le ZWSP est strippé par le formatter JS)
-    # et la même couleur → le Sankey affiche 100% sans jamais disparaître.
-    # Sans ce fallback, has_sankey=False et le conteneur du graphe est masqué dans
-    # le template, ce qui est trompeur quand des transactions existent.
+    # ── Nœud "Sans sous-catégorie" pour les transactions non ventilées ──────────
+    # subcat_list ne contient que les transactions avec une sous-catégorie.
+    # Les transactions sans sous-catégorie ont un total = total_amount - sum(subcat totals).
+    # Si ce reste est significatif (> 1 centime), on l'affiche comme nœud séparé
+    # pour que le Sankey soit toujours exact et somme bien au total de la catégorie.
+    categorized_amount = sum(float(abs(sub["total"])) for sub in subcat_list)
+    uncategorized_amount = abs(float(total_amount)) - categorized_amount
+    uncat_color = _vary_color(cat_color, 0.20)  # teinte sombre pour "non ventilé"
+
+    if uncategorized_amount > 0.01:
+        sankey_nodes.append(
+            {
+                "name": "Sans sous-catégorie",
+                "slug": None,
+                "itemStyle": {"color": uncat_color},
+            }
+        )
+        sankey_links.append(
+            {
+                "source": source_name,
+                "target": "Sans sous-catégorie",
+                "value": round(uncategorized_amount, 2),
+            }
+        )
+
+    # Fallback "pass-through" : aucune sous-catégorie ET aucune transaction non-ventilée
+    # (cas théoriquement impossible mais garde-fou contre un Sankey vide).
     if not sankey_links and total_amount != 0:
         sankey_nodes.append(
             {
@@ -1982,8 +2002,17 @@ def budget_category_detail(request, slug):
         for i, sub in enumerate(subcat_list)
     ]
 
-    # Même logique que le fallback Sankey : quand aucune sous-catégorie n'existe,
-    # on affiche un segment unique à 100% plutôt que de masquer le donut.
+    # Ajouter le segment "Sans sous-catégorie" si des transactions ne sont pas ventilées.
+    if uncategorized_amount > 0.01:
+        donut_segments.append(
+            {
+                "name": "Sans sous-catégorie",
+                "value": round(uncategorized_amount, 2),
+                "itemStyle": {"color": uncat_color},
+            }
+        )
+
+    # Fallback : aucune sous-catégorie → segment unique à 100% pour ne pas masquer le donut.
     if not donut_segments and total_amount != 0:
         donut_segments = [
             {
