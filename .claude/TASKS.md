@@ -1,6 +1,6 @@
 # TASKS — BricBudget
 > Rythme : ~3h le samedi matin
-> Mis à jour : 2026-05-06 (session 22 — Phase 2G T2 règle standalone livré)
+> Mis à jour : 2026-05-06 (session 23 — display_name champ stocké + cleanup UI legacy)
 > Détail opérationnel → GitHub Issues / Milestones
 
 ---
@@ -187,7 +187,7 @@
 
 - [x] Icônes catégories : `Category.icon` → `static/icons/categories/<name>.svg` — ✅ livré Phase 1C (2026-04-14)
 - [ ] `components/ui/spinner.html` — loader HTMX (utile en Phase 1C seulement)
-- [ ] `merchant_name` en uppercase à l'import (actuellement uppercase dans le template seulement)
+- ~~`merchant_name` en uppercase à l'import~~ — **YAGNI** : `display_name` remplace `merchant_name` dans toute l'UI (session 23)
 
 ---
 
@@ -386,7 +386,7 @@
 - [x] ~~Modale Step 1~~ — panel HTMX `_panel_rule_create.html` : chips tokens depuis `description_raw.split("|")[0]`
 - [x] ~~Modale Step 2~~ — picker catégorie accordéon avec icônes (`_rule_cat_picker_row.html`) + preview count (`_panel_rule_preview.html`)
 - [x] ~~Modale Step 3~~ — confirmation + bulk update via `budget_rule_create_submit()` (`_panel_rule_confirm.html`)
-  - `target_field="description_raw"` forcé dans `defaults` du `get_or_create`
+  - ~~`target_field="description_raw"`~~ → `"display_name"` depuis session 23
 - [x] Toast intégré dans le panel de confirmation
 
 ---
@@ -572,6 +572,18 @@
 
 ### T2 — Créer une règle standalone (Issue #33) ✅ (2026-05-06)
 - [x] Formulaire de création dans le dropdown "Créer" — chips keywords, preview live, warning overwrite, confirmation
+
+### T2b — display_name champ stocké + cleanup UI legacy ✅ (2026-05-06)
+- [x] **`Transaction.display_name`** — `CharField(max_length=300)` stocké (migration 0013)
+- [x] **`TransactionDict`** — champ `display_name: str` ajouté
+- [x] **`_clean_description()`** dans `BaseConnector` — 6 règles bank-agnostic (split `|`, strip préfixes, geocode, ATM amount, ref tokens, doublons)
+- [x] **3 connectors mis à jour** — Yuh, UBS, CIC utilisent `_clean_description` et populent `display_name`
+- [x] **`recalculate_display_names`** management command — backfill 4104 tx existantes
+- [x] **`CategorizationRule.TargetField.DISPLAY_NAME`** — nouvelle valeur, default changé (migration 0014)
+- [x] **`_match_rule()`** — utilise `display_name` pour DISPLAY_NAME + MERCHANT_NAME (legacy)
+- [x] **6 templates** nettoyés de tout `merchant_name`/`description_raw` display legacy
+- [x] **Recherche + chips** depuis `display_name` (plus `description_raw`)
+- [x] **171 tests passent**
 
 ### T3 — Créer une catégorie (Issue #34)
 - [ ] Modal "Créer catégorie" depuis le dropdown "Créer" (actuellement SOON badge)

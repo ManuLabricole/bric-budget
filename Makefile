@@ -183,6 +183,10 @@ import-cic:
 	@printf "  📥 $(CYAN)Import CIC$(if $(COMMIT), — écriture DB,  — dry run)...$(RESET)\n"
 	@$(MANAGE) import_cic --file "$(FILE)" $(if $(COMMIT),--commit,)
 
+recalculate-display-names:
+	@printf "  🧹 $(CYAN)Recalcul display_name pour toutes les transactions...$(RESET)\n"
+	@$(MANAGE) recalculate_display_names
+
 export-rules:
 	@printf "  📤 $(CYAN)Export règles de catégorisation → JSON...$(RESET)\n"
 	@mkdir -p assets/private

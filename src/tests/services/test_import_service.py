@@ -197,16 +197,21 @@ def test_find_rule_matches_keyword_in_description_raw(db):
     )
 
     service = ImportService()
-    tx = {"description_raw": "MIGROS LAUSANNE", "merchant_name": "Migros Lausanne"}
+    tx = {
+        "description_raw": "MIGROS LAUSANNE",
+        "merchant_name": "Migros Lausanne",
+        "display_name": "Migros Lausanne",
+    }
     assert service._find_rule(tx, [rule]) == rule
 
 
 @pytest.mark.django_db
 def test_find_rule_matches_keyword_in_merchant_name(db):
     """
-    Règle sur merchant_name : keyword 'coop' dans 'Coop Lausanne' → match.
+    Règle sur merchant_name (legacy) : keyword 'coop' dans display_name → match.
 
-    target_field="merchant_name" → on cherche dans le nom nettoyé affiché dans l'UI.
+    merchant_name est un alias de display_name depuis Phase 2G — _find_rule
+    utilise display_name pour les deux.
     """
     category = Category.objects.create(name="Grocery", slug="grocery")
     rule = CategorizationRule.objects.create(
@@ -218,7 +223,11 @@ def test_find_rule_matches_keyword_in_merchant_name(db):
     )
 
     service = ImportService()
-    tx = {"description_raw": "COOP 2347 LAUSANNE VD", "merchant_name": "Coop Lausanne"}
+    tx = {
+        "description_raw": "COOP 2347 LAUSANNE VD",
+        "merchant_name": "Coop Lausanne",
+        "display_name": "Coop Lausanne",
+    }
     assert service._find_rule(tx, [rule]) == rule
 
 
@@ -239,7 +248,11 @@ def test_find_rule_is_case_insensitive(db):
     )
 
     service = ImportService()
-    tx = {"description_raw": "migros lausanne", "merchant_name": "Migros"}
+    tx = {
+        "description_raw": "migros lausanne",
+        "merchant_name": "Migros",
+        "display_name": "Migros",
+    }
     assert service._find_rule(tx, [rule]) == rule
 
 
@@ -251,7 +264,11 @@ def test_find_rule_returns_none_for_empty_rules_list():
     Aucun décorateur @pytest.mark.django_db → exécution plus rapide.
     """
     service = ImportService()
-    tx = {"description_raw": "RANDOM SHOP", "merchant_name": "Random Shop"}
+    tx = {
+        "description_raw": "RANDOM SHOP",
+        "merchant_name": "Random Shop",
+        "display_name": "Random Shop",
+    }
     assert service._find_rule(tx, []) is None
 
 
@@ -260,13 +277,14 @@ def test_find_rule_no_match_returns_none():
     Règle existante mais keyword absent de la transaction → None.
 
     On utilise SimpleNamespace pour simuler une règle sans accès à la DB.
-    SimpleNamespace(keyword="migros", target_field="description_raw") se comporte
-    exactement comme un objet CategorizationRule pour _find_rule() — qui n'accède
-    qu'à ces deux attributs.
     """
     service = ImportService()
     rule = SimpleNamespace(keyword="migros", target_field="description_raw")
-    tx = {"description_raw": "SNCF PARIS", "merchant_name": "Sncf Paris"}
+    tx = {
+        "description_raw": "SNCF PARIS",
+        "merchant_name": "Sncf Paris",
+        "display_name": "Sncf Paris",
+    }
     assert service._find_rule(tx, [rule]) is None
 
 

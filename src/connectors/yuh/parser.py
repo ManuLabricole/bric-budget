@@ -199,7 +199,22 @@ class YuhConnector(BaseConnector):
         date_str = self._parse_date(row["DATE"].strip())
         amount, currency = self._parse_amount(row)
         description_raw = self._strip_quotes(row["ACTIVITY NAME"].strip())
-        merchant_name = self._clean_merchant(description_raw, row)
+        # Yuh RECIPIENT/SENDER columns are already clean names — use as display_name
+        # when available (better than cleaning ACTIVITY NAME which is already clean).
+        # Fall back to _clean_description(description_raw) for unrecognised types.
+        activity_type = row.get("ACTIVITY TYPE", "").strip()
+        recipient = self._strip_quotes(row.get("RECIPIENT", "").strip())
+        sender = self._strip_quotes(row.get("SENDER", "").strip())
+        if (
+            activity_type in ("CARD_TRANSACTION_OUT", "PAYMENT_TRANSACTION_OUT")
+            and recipient
+        ):
+            display_name = self._normalize_merchant(recipient)
+        elif activity_type == "PAYMENT_TRANSACTION_IN" and sender:
+            display_name = self._normalize_merchant(sender)
+        else:
+            display_name = self._clean_description(description_raw)
+        merchant_name = display_name  # pre-fill override with same value
         card_last_four = self._parse_card(row.get("CARD NUMBER", "").strip())
 
         # import_hash — see CONTRACT in base.py.
@@ -230,11 +245,10 @@ class YuhConnector(BaseConnector):
             amount=amount,
             currency=currency,
             description_raw=description_raw,
+            display_name=display_name,
             merchant_name=merchant_name,
             card_last_four=card_last_four,
             import_hash=import_hash,
-            # Yuh provides a single balance in the filename (e.g. "33,344.CSV"),
-            # not a per-row running balance. Daily BalanceSnapshots use that file-level value.
             balance_after=None,
         )
 

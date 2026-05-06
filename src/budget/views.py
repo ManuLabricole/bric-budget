@@ -27,7 +27,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
-from django.db.models import Q, Sum
+from django.db.models import Sum
 from django.db.models.functions import Coalesce, TruncMonth
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -120,31 +120,27 @@ _RULE_NOISE_TOKENS = {
 
 def _keyword_q(keyword: str):
     r"""
-    Retourne un Q filtre Django pour description_raw basé sur le keyword.
+    Retourne un Q filtre Django basé sur le keyword, appliqué sur display_name.
+
+    display_name est le champ stocké nettoyé (bank-agnostic) — c'est lui que
+    l'utilisateur voit et sur lequel les règles doivent matcher. description_raw
+    reste l'audit trail immuable mais n'est plus la cible du matching.
 
     Règles :
-      - Chaque mot du keyword doit apparaître comme MOT ENTIER dans description_raw.
-        Ex : keyword="ESSO" ne match pas "ESSOF108" car \y (word boundary PostgreSQL)
-        sépare les tokens alphanumériques.
-      - Plusieurs mots → condition AND (toutes les parties doivent être présentes).
-      - Keyword vide → retourne Q(pk__in=[]) pour ne matcher aucune transaction.
-
-    Pourquoi iregex et pas icontains ?
-        icontains correspond à LIKE '%mot%' — ne respecte pas les frontières de mots.
-        iregex utilise le moteur regex PostgreSQL qui supporte \y (word boundary),
-        ce qui correspond exactement à un token complet.
+      - Chaque mot du keyword doit apparaître comme MOT ENTIER dans display_name.
+        Ex : keyword="ESSO" ne match pas "ESSOF108" (word boundary \y PostgreSQL).
+      - Plusieurs mots → condition AND.
+      - Keyword vide → Q(pk__in=[]) pour ne matcher aucune transaction.
     """
     from django.db.models import Q
 
     words = [w for w in keyword.upper().split() if w]
     if not words:
-        # Aucun mot → on ne veut matcher rien (protection anti-apply-all)
         return Q(pk__in=[])
     q = Q()
     for word in words:
-        # \y = word boundary dans PostgreSQL. re.escape protège les caractères spéciaux.
         pattern = r"\y" + re.escape(word) + r"\y"
-        q &= Q(description_raw__iregex=pattern)
+        q &= Q(display_name__iregex=pattern)
     return q
 
 
@@ -1066,7 +1062,7 @@ def budget_panel_transactions(request):
     # ── Recherche texte libre (filtre live) ──────────────────────────────────
     #
     # "q" est envoyé par le composant search_bar.html via hx-get avec name="q".
-    # On cherche dans merchant_name ET description_raw (OR).
+    # On cherche dans display_name — le champ nettoyé canonical (Phase 2G).
     # icontains = insensible à la casse.
     q = request.GET.get("q", "").strip()
 
@@ -1095,7 +1091,7 @@ def budget_panel_transactions(request):
     if filter_account_ids:
         qs = qs.filter(account_id__in=filter_account_ids)
     if q:
-        qs = qs.filter(Q(merchant_name__icontains=q) | Q(description_raw__icontains=q))
+        qs = qs.filter(display_name__icontains=q)
     tx_list = list(
         qs.select_related(
             "category", "subcategory", "account", "account__bank"
@@ -1362,9 +1358,9 @@ def budget_categorize_transaction(request):
     tx.save(update_fields=["category", "subcategory", "categorization_source"])
 
     # Extraction keyword + payload HX-Trigger — commun aux deux branches.
-    tx_display = tx.merchant_name or tx.description_raw[:30]
-    description_clean = tx.description_raw.split("|")[0].strip()
-    raw_tokens = re.split(r"[\s\*\+\-\/\.\,\_]+", description_clean.upper())
+    tx_display = tx.display_name
+    # Tokenize from display_name — already cleaned by _clean_description at import.
+    raw_tokens = re.split(r"[\s\*\+\-\/\.\,\_]+", tx.display_name.upper())
     keyword_tokens = [
         t
         for t in raw_tokens
@@ -1500,11 +1496,10 @@ def budget_panel_rule_create(request):
     elif tx.subcategory:
         subcategory = tx.subcategory
 
-    # Tokens cliquables — uniquement la partie avant "|" (évite les métadonnées Yuh).
+    # Tokens cliquables depuis display_name — déjà nettoyé par _clean_description à l'import.
     # Filtre agressif : on garde seulement les tokens qui ont une valeur sémantique
     # (nom de commerce, lieu…) et on écarte le bruit banque (_RULE_NOISE_TOKENS).
-    description_clean = tx.description_raw.split("|")[0].strip()
-    raw_tokens = re.split(r"[\s\*\+\-\/\.\,\_]+", description_clean.upper())
+    raw_tokens = re.split(r"[\s\*\+\-\/\.\,\_]+", tx.display_name.upper())
     seen = set()
     tokens = []
     for t in raw_tokens:
@@ -1751,7 +1746,7 @@ def budget_rule_create_standalone_submit(request):
         category=category,
         defaults={
             "subcategory": subcategory,
-            "target_field": "description_raw",
+            "target_field": "display_name",
             "priority": 10,
             "is_active": True,
         },
@@ -1967,7 +1962,7 @@ def budget_rule_create_submit(request):
         category=category,
         defaults={
             "subcategory": subcategory,
-            "target_field": "description_raw",
+            "target_field": "display_name",
             "priority": 10,
             "is_active": True,
         },
@@ -2619,6 +2614,9 @@ def budget_toggle_filter_account(request, account_id):
         ids = ids + [account_id]
 
     request.session["budget_filter_accounts"] = ids
+    # HTMX request → retourne le fragment panel directement (pas de redirect pleine page)
+    if request.headers.get("HX-Request"):
+        return budget_panel_transactions(request)
     return redirect(request.META.get("HTTP_REFERER", "budget:index"))
 
 

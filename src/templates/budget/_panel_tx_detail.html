@@ -74,13 +74,11 @@ Structure :
     merchant_name = nom nettoyé (ex: "MIGROS LAUSANNE"). Si absent, tronque description_raw.
     UPPERCASE + tracking pour l'aspect "données bancaires brutes".
     {% endcomment %}
-    <p class="text-xs text-text-muted uppercase tracking-wider truncate mb-2">
-        {% if tx.merchant_name %}
-            {{ tx.merchant_name }}
-        {% else %}
-            {{ tx.description_raw|slice:":50" }}
-        {% endif %}
-    </p>
+    <p class="text-xs text-text-muted uppercase tracking-wider mb-2 leading-relaxed">{{ tx.display_name }}</p>
+    {# description_raw — audit trail complet, visible en secondaire #}
+    {% if tx.description_raw != tx.display_name %}
+        <p class="text-[10px] text-text-disabled mt-1 leading-relaxed font-mono">{{ tx.description_raw }}</p>
+    {% endif %}
     {% comment %}
     Montant principal — gros affichage style relevé bancaire.
     chf_dec retourne la valeur absolue → on ajoute le signe manuellement.

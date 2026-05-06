@@ -607,6 +607,7 @@ class ImportService:
             currency=tx["currency"],
             amount_chf=amount_chf,
             description_raw=tx["description_raw"],
+            display_name=tx["display_name"],
             merchant_name=tx["merchant_name"],
             # note, is_reconciled, is_ignored, is_recurring, is_internal_transfer:
             # all left at their model defaults (blank / False) — user fills them later
@@ -625,16 +626,18 @@ class ImportService:
             rule.keyword = "migros" matches "DEMIGROS" → True (intentional — simpler)
 
         target_field determines which transaction field to search:
-            "merchant_name"   → the cleaned display name (default)
-            "description_raw" → the unmodified bank text (for tricky patterns)
+            "display_name"    → the stored clean bank-agnostic name (canonical since Phase 2G)
+            "merchant_name"   → legacy alias for display_name (same value at import time)
+            "description_raw" → the unmodified bank text (kept for backward compat with old rules)
 
         Returns None if no rule matches → caller sets category=None ("Unknown").
         """
         for rule in rules:
-            if rule.target_field == CategorizationRule.TargetField.MERCHANT_NAME:
-                text = tx["merchant_name"]
-            else:
+            if rule.target_field == CategorizationRule.TargetField.DESCRIPTION_RAW:
                 text = tx["description_raw"]
+            else:
+                # display_name and merchant_name (legacy) both map to the clean name.
+                text = tx["display_name"]
 
             if rule.keyword.lower() in text.lower():
                 return rule

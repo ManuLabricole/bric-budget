@@ -44,6 +44,7 @@ def make_tx_with_balance(seed, date_str, balance_after=None, amount=-10.0):
         amount=amount,
         currency="EUR",
         description_raw=f"TX {seed}",
+        display_name=f"Shop {seed}",
         merchant_name=f"Shop {seed}",
         card_last_four=None,
         import_hash=import_hash,

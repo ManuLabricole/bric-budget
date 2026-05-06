@@ -40,11 +40,7 @@ Pas d'HTMX — lecture seule.
     </div>
     {# COL 4 — Description ── flex-1 = prend tout l'espace restant, truncate #}
     <span class="flex-1 min-w-0 text-[11px] font-semibold text-text-base uppercase tracking-wide truncate">
-        {% if tx.merchant_name %}
-            {{ tx.merchant_name }}
-        {% else %}
-            {{ tx.description_raw }}
-        {% endif %}
+        {{ tx.display_name }}
     </span>
     {# COL 5 — Montant ── fixe w-20, tabular-nums, right-aligned #}
     <span class="w-20 flex-shrink-0 text-right text-[11px] font-medium tabular-nums {% if tx.amount >= 0 %}text-income{% else %}text-text-secondary{% endif %}">

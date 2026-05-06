@@ -1,5 +1,86 @@
 # CHANGELOG — BudgetTracker
 
+## 2026-05-06 — Session 23 : Phase 2G — display_name champ stocké + cleanup UI legacy (VSCode)
+
+**Contexte**
+Refactoring architectural majeur : `display_name` devient un champ stocké en DB (pas une property), calculé à l'import par `_clean_description()` bank-agnostic dans `BaseConnector`. Objectif : les règles de catégorisation matchent sur un texte propre et uniforme, indépendant de la banque source. Migration + backfill 4104 transactions + nettoyage complet de l'UI legacy (`merchant_name`/`description_raw`).
+
+**Livré**
+
+*Champ display_name — modèle + migration + backfill*
+- `Transaction.display_name` — `CharField(max_length=300, blank=True, default="")`, stocké (pas une property), queryable par l'ORM
+- Migration `0013_transaction_display_name.py`
+- `TransactionDict` TypedDict : champ `display_name: str` ajouté entre `description_raw` et `merchant_name`
+- `ImportService.run()` : `display_name=tx["display_name"]` à la création des transactions
+- Management command `recalculate_display_names` — backfill de tous les transactions existants (`bulk_update` par batch de 500), flags `--dry-run` et `--limit` — **4104 transactions mises à jour**
+- `make recalculate-display-names` ajouté au Makefile
+
+*`_clean_description()` — fonction bank-agnostic dans BaseConnector*
+6 règles appliquées dans l'ordre :
+1. Split avant ` | ` (artefact UBS multi-champs)
+2. Strip préfixes bancaires français + date DDMM (PAIEMENT PSC, VIR SEPA, RETRAIT DAB...)
+3. Strip `CARTE XXXX` et tout ce qui suit (CIC)
+4. Strip géocode UBS (`;0102 Lonay` ou `;CH 1228 Ouates`)
+4b. Strip montant ATM en tête (après RETRAIT DAB : `280,00 CHF FILIALE...`)
+5. Strip tokens référence en fin (contiennent chiffre + 4+ chars : `HIR082612500020475`)
+6. Supprimer mots consécutifs doublons (`LONAY LONAY` → `LONAY`)
+→ Fallback sur raw normalisé si résultat vide
+
+*Connectors mis à jour*
+- `connectors/yuh/parser.py` : utilise RECIPIENT/SENDER en priorité, `_clean_description` en fallback
+- `connectors/ubs/parser.py` : description1 seulement (description2 supprimée) → `_clean_description`
+- `connectors/cic/parser.py` : `_clean_merchant` remplacé par `_clean_description`
+- Tous retournent `display_name=display_name` + `merchant_name=display_name` (pré-fill override)
+
+*Règles de catégorisation — display_name comme cible canonique*
+- `CategorizationRule.TargetField.DISPLAY_NAME = "display_name"` — nouvelle valeur dans les choices
+- Default `target_field` → `DISPLAY_NAME` (était `MERCHANT_NAME`)
+- Migration `0014_categorization_rule_display_name_target.py`
+- `_match_rule()` dans `services.py` : branche sur `DISPLAY_NAME` et `MERCHANT_NAME` (legacy) → `tx["display_name"]`, `DESCRIPTION_RAW` → `tx["description_raw"]` (backward compat)
+- `_keyword_q()` dans `views.py` : déjà sur `display_name__iregex` ✓
+- Les 2 vues `rule_create_submit` et `rule_create_standalone_submit` : `"target_field": "display_name"` (était `"description_raw"`)
+- Recherche libre dans panel transactions : `display_name__icontains` (était `merchant_name | description_raw`)
+- Tokenisation chips règles : depuis `tx.display_name` (était `tx.description_raw.split("|")[0]`)
+
+*Nettoyage UI — merchant_name/description_raw legacy supprimé*
+- `_panel_tx_row.html` : `tx.display_name` ✓ (déjà OK)
+- `_panel_tx_detail.html` : `tx.display_name` ✓ (déjà OK)
+- `_rule_standalone_preview_row.html` : `tx.display_name` (était `merchant_name or description_raw`)
+- `_panel_category_picker.html` : `tx.display_name` (était `merchant_name|default:description_raw`)
+- `_modal_rule_intro.html` : `tx.display_name` (était `{% if merchant_name %}...{% else %}description_raw{% endif %}`)
+- `_rule_live_preview.html` : `tx.display_name|upper` (était `merchant_name|upper or description_raw`)
+
+*Fixes UI divers (début de session)*
+- Filtre compte dans panel "Tout voir" — HTMX partial swap au lieu de full page reload (vue HTMX-aware)
+- Dropdown compte clippé — `min-w-[200px]` → `w-56` fixe (overflow-y: auto créait un stacking context qui clippait le dropdown)
+
+*Tests*
+- Tous les dicts `tx` minimaux dans `test_import_service.py` : `display_name` ajouté
+- **171 tests passent, ruff OK**
+
+**Décisions**
+| Sujet | Décision | Pourquoi |
+|-------|----------|----------|
+| display_name stocké ou property | Champ stocké (`CharField`) | ORM filtering pour les règles — une property ne peut pas être filtrée avec `Q()` |
+| merchant_name | Conservé en DB, pré-rempli = display_name | Override manuel utilisateur (Phase future) — la séparation reste utile |
+| target_field MERCHANT_NAME | Legacy, alias de display_name | Existing rules continuent de fonctionner sans migration de données |
+| description_raw | Intouché, immuable | Audit trail banque — on ne touche jamais au raw |
+| UBS description2 | Supprimée | description1 seule suffit + `_clean_description` produit un résultat propre |
+
+**Bugs rencontrés**
+- Règle 4 UBS manquait les géocodes `;CH 1228` (country code + postal) → regex étendue `(?:[A-Z]{2}\s+)?`
+- RETRAIT DAB laissait `280,00 CHF` après strip du préfixe → ajout règle 4b strip montant ATM
+- `LONAY LONAY` artefact UBS → ajout règle 6 dédoublonnage mots consécutifs
+- `Q` import top-level dans views.py devenu unused → F401 ruff → supprimé
+
+**Reste à faire (Phase 2G)**
+- T3 : Créer catégorie depuis dropdown Créer (issue #34)
+- T4 : `apply_rules` management command (issue #32)
+- Session classification manuelle (~4h)
+- Merge → development → main + tag v0.1.0
+
+---
+
 ## 2026-05-06 — Session 22 : Phase 2G T2 — Règle standalone + UI fixes (VSCode)
 
 **Contexte**

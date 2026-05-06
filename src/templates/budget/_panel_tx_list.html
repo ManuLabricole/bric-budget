@@ -58,10 +58,12 @@ Données :
                         <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
                     </svg>
                 </summary>
-                <div class="absolute right-0 top-full mt-2 min-w-[200px] bg-surface-3 border border-edge/70 rounded-2xl shadow-2xl z-20 py-1.5 overflow-hidden">
+                <div class="absolute right-0 top-full mt-2 w-56 bg-surface-3 border border-edge/70 rounded-2xl shadow-2xl z-20 py-1.5 overflow-hidden">
                     {% if active_count > 0 %}
-                        <a href="{% url 'budget:toggle_filter_account' 0 %}"
-                           class="flex items-center gap-2 px-4 py-2 text-xs text-gold hover:bg-gold/10 transition-colors">
+                        <a hx-get="{% url 'budget:toggle_filter_account' 0 %}"
+                           hx-target="#panel-content"
+                           hx-swap="innerHTML"
+                           class="flex items-center gap-2 px-4 py-2 text-xs text-gold hover:bg-gold/10 transition-colors cursor-pointer">
                             <svg class="w-3 h-3"
                                  fill="none"
                                  viewBox="0 0 24 24"
@@ -76,8 +78,10 @@ Données :
                     <p class="px-4 pt-1.5 pb-1 text-[9px] font-bold text-text-disabled uppercase tracking-widest">Comptes</p>
                     {% for account in accounts %}
                         {% bank_icon_url account.bank as bicon %}
-                        <a href="{% url 'budget:toggle_filter_account' account.id %}"
-                           class="flex items-center gap-3 px-4 py-2 text-sm hover:bg-surface-hover transition-colors">
+                        <a hx-get="{% url 'budget:toggle_filter_account' account.id %}"
+                           hx-target="#panel-content"
+                           hx-swap="innerHTML"
+                           class="flex items-center gap-3 px-4 py-2 text-sm hover:bg-surface-hover transition-colors cursor-pointer">
                             <span class="w-4 h-4 rounded-full border flex-shrink-0 flex items-center justify-center {% if account.id in filter_account_ids %}bg-gold border-gold{% else %}border-edge{% endif %}">
                                 {% if account.id in filter_account_ids %}
                                     <svg class="w-2.5 h-2.5 text-black"
@@ -89,9 +93,9 @@ Données :
                                     </svg>
                                 {% endif %}
                             </span>
-                            <span class="flex items-center gap-2 flex-1 min-w-0">
+                            <span class="flex items-center gap-2 flex-1 min-w-0 overflow-hidden">
                                 {% include "components/banks/bank_logo.html" with icon_url=bicon bank=account.bank size="w-5 h-5" padding="p-0.5" %}
-                                <span class="text-xs text-text-base truncate">{{ account.name }}</span>
+                                <span class="text-xs text-text-base truncate min-w-0">{{ account.name }}</span>
                                 <span class="text-[10px] text-text-disabled ml-auto flex-shrink-0">{{ account.currency }}</span>
                             </span>
                         </a>

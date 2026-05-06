@@ -312,7 +312,8 @@ class CICConnector(BaseConnector):
             raise ValueError(f"Both Débit and Crédit are None for row: {libelle}")
 
         description_raw = str(libelle).strip() if libelle else ""
-        merchant_name = self._clean_merchant(description_raw)
+        display_name = self._clean_description(description_raw)
+        merchant_name = display_name  # pre-fill override
         card_last_four = self._parse_card(description_raw)
 
         # occurrence_index : 0 pour la 1ère occurrence de (rib, date, amount, desc)
@@ -340,6 +341,7 @@ class CICConnector(BaseConnector):
             amount=amount,
             currency=curr,
             description_raw=description_raw,
+            display_name=display_name,
             merchant_name=merchant_name,
             card_last_four=card_last_four,
             import_hash=import_hash,

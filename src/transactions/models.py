@@ -163,7 +163,9 @@ class CategorizationRule(models.Model):
 
     class TargetField(models.TextChoices):
         DESCRIPTION_RAW = "description_raw", "Raw description"
-        MERCHANT_NAME = "merchant_name", "Merchant name"
+        MERCHANT_NAME = "merchant_name", "Merchant name (legacy)"
+        # display_name is the stored cleaned bank-agnostic name — canonical target since Phase 2G.
+        DISPLAY_NAME = "display_name", "Display name (clean)"
 
     keyword = models.CharField(max_length=200)
 
@@ -185,7 +187,7 @@ class CategorizationRule(models.Model):
     target_field = models.CharField(
         max_length=20,
         choices=TargetField.choices,
-        default=TargetField.MERCHANT_NAME,
+        default=TargetField.DISPLAY_NAME,
     )
 
     # Higher priority = checked first. Rules with the same priority are checked
@@ -335,11 +337,16 @@ class Transaction(models.Model):
 
     # --- Description ---
 
-    # Raw text from the bank export — never modified, used for audit and rule matching
+    # Raw text from the bank export — never modified, used for audit trail only.
     description_raw = models.CharField(max_length=500)
 
-    # Cleaned merchant name — editable by the user, shown in the UI
-    # Pre-filled from description_raw at import time (basic cleanup)
+    # Bank-agnostic cleaned description — computed at import by _clean_description()
+    # in connectors/base.py. Stored so the ORM can filter on it (categorization rules,
+    # search, keyword_q). Recomputable via `make recalculate-display-names`.
+    display_name = models.CharField(max_length=300, blank=True, default="")
+
+    # User-editable override — shown instead of display_name when set.
+    # Pre-filled from display_name at import; user can rename ("Loyer Robert" etc.).
     merchant_name = models.CharField(max_length=200, blank=True, default="")
 
     # Free-text note added by the user — e.g. "January rent", "wedding gift"

@@ -278,10 +278,11 @@ class UBSConnector(BaseConnector):
             part for part in [description1, description2, description3] if part
         )
 
-        # Merchant name: Description1 is usually the best source.
-        # It's already a clean merchant name (UBS provides "FEEL EAT SARL LA CHAUX-D")
-        # We collapse multiple spaces (padding artifact) and title-case it.
-        merchant_name = self._clean_merchant(description1)
+        # display_name: apply shared bank-agnostic cleaning to description_raw.
+        # _clean_description() takes the first " | " segment (= description1) then
+        # strips UBS geocode artifacts (";0102 Lonay"), ref tokens, normalizes.
+        display_name = self._clean_description(description_raw)
+        merchant_name = display_name  # pre-fill override
 
         # Card last four: UBS doesn't use "**** XXXX" format.
         # Description2 contains "21303625-0 12/28; Paiement carte de debit" for card tx.
@@ -311,6 +312,7 @@ class UBSConnector(BaseConnector):
             amount=amount,
             currency=currency,
             description_raw=description_raw,
+            display_name=display_name,
             merchant_name=merchant_name,
             card_last_four=card_last_four,
             import_hash=import_hash,
