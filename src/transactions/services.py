@@ -63,6 +63,13 @@ class ImportResult:
     count_errors: int = 0  # rows that couldn't be processed
     error_detail: list[str] = field(default_factory=list)  # one message per error
 
+    # PK de l'ImportLog créé lors de l'écriture en DB.
+    # None si dry_run=True (pas d'écriture) ou si une erreur précoce a bloqué
+    # la création du log (ex: fichier déjà importé → return early).
+    # Utilisé par import_confirm pour retrouver les transactions insérées et
+    # déclencher le stockage permanent du fichier source.
+    log_pk: int | None = None
+
 
 # =============================================================================
 # File hash helper
@@ -252,7 +259,25 @@ class ImportService:
         # Savings accounts have no checking_account → returns {} (no cards).
         cards_by_last_four = self._load_cards(account)
 
-        # ── 5. Process each transaction ───────────────────────────────────────
+        # ── 5. Extract daily end-of-day balances from balance_after ──────────
+        # Populated only for CIC (column F — Solde après transaction).
+        # Yuh and UBS always return balance_after=None, so this dict stays empty
+        # and has no effect on those connectors.
+        #
+        # CIC exports antichronologically (newest first) → the FIRST tx_dict seen
+        # for a given date is the chronologically LAST transaction of that day
+        # → its balance_after is the end-of-day balance. "first seen wins" gives
+        # the correct end-of-day value for each date without any sorting.
+        #
+        # We scan the FULL transactions list (not just new ones) because
+        # balance_after is authoritative bank data regardless of dedup status.
+        daily_balances: dict[str, Decimal] = {}
+        for _tx in transactions:
+            _ba = _tx.get("balance_after")
+            if _ba is not None and _tx["date"] not in daily_balances:
+                daily_balances[_tx["date"]] = Decimal(str(_ba))
+
+        # ── 6. Process each transaction ───────────────────────────────────────
         transactions_to_create = []
         # Garde trace des hashes vus dans CE batch pour dédupliquer les doublons
         # internes au fichier (ex: deux virements UBS identiques le même jour).
@@ -289,12 +314,12 @@ class ImportService:
 
         result.count_created = len(transactions_to_create)
 
-        # ── 6. Dry run: stop here, return counts ──────────────────────────────
+        # ── 7. Dry run: stop here, return counts ──────────────────────────────
         # The caller (management command) can print the result without any DB writes.
         if dry_run:
             return result
 
-        # ── 7. Write to DB — all in one atomic transaction ───────────────────
+        # ── 8. Write to DB — all in one atomic transaction ───────────────────
         # db_transaction.atomic() is a context manager that wraps all writes in
         # a single SQL transaction. If anything inside raises an exception,
         # PostgreSQL rolls back ALL writes — no partial imports.
@@ -328,6 +353,41 @@ class ImportService:
 
             if transactions_to_create:
                 Transaction.objects.bulk_create(transactions_to_create)
+                # Persist the transaction date range on the ImportLog for display.
+                dates = [t.date for t in transactions_to_create]
+                ImportLog.objects.filter(pk=import_log.pk).update(
+                    date_min=min(dates),
+                    date_max=max(dates),
+                )
+
+            # ── Daily BalanceSnapshots from per-row balance_after (CIC only) ──
+            # For each date in the file where the bank provides a running balance,
+            # we persist an end-of-day BalanceSnapshot. This builds a full balance
+            # history curve (one point per day) rather than a single closing value.
+            #
+            # update_or_create: safe on re-import of overlapping date ranges.
+            # We do NOT touch computed_balance here — that's managed by the
+            # single-snapshot block below (which adds the "derived" running total).
+            #
+            # Guard: only run if there are new transactions. If all transactions
+            # are duplicates (skipped), we skip snapshot creation too — a pure-
+            # duplicate import shouldn't silently update balance history.
+            import datetime as _dt
+
+            if daily_balances and transactions_to_create:
+                for _snap_date_str, _snap_balance in daily_balances.items():
+                    BalanceSnapshot.objects.update_or_create(
+                        account=account,
+                        date=_dt.date.fromisoformat(_snap_date_str),
+                        defaults={
+                            "balance": _snap_balance,
+                            "currency": account.currency,
+                            "balance_chf": _snap_balance
+                            if account.currency == "CHF"
+                            else None,
+                            "source": BalanceSnapshot.Source.IMPORT,
+                        },
+                    )
 
             # BalanceSnapshot : enregistre le solde du compte à la date d'export.
             # update_or_create : safe à ré-exécuter — pas de doublon si (account, date) identique.
@@ -342,9 +402,16 @@ class ImportService:
             if transactions_to_create:
                 snapshot_date = max(t.date for t in transactions_to_create)
 
-                # Calculer computed_balance à partir du snapshot précédent
+                # Calculer computed_balance à partir du snapshot précédent.
+                # IMPORTANT : date__lt=snapshot_date filtre UNIQUEMENT les snapshots
+                # antérieurs à la date qu'on insère. Sans ce filtre, un import
+                # rétroactif (ex : fichier CIC de janvier importé en mai) prendrait
+                # le snapshot le plus récent en DB comme base, ce qui donne un
+                # computed_balance complètement faux.
                 prev = (
-                    BalanceSnapshot.objects.filter(account=account)
+                    BalanceSnapshot.objects.filter(
+                        account=account, date__lt=snapshot_date
+                    )
                     .order_by("-date")
                     .first()
                 )
@@ -371,16 +438,26 @@ class ImportService:
                 balance_chf = extracted if account.currency == "CHF" else None
 
                 if extracted is not None or computed is not None:
+                    # Build defaults carefully: never overwrite an existing
+                    # bank-provided balance with None.
+                    # This matters for CIC: the daily loop above may have already
+                    # written balance for snapshot_date (from balance_after col F).
+                    # If footer extraction failed (extracted=None), we don't want
+                    # to erase that good value.
+                    snap_defaults: dict = {
+                        "currency": account.currency,
+                        "source": BalanceSnapshot.Source.IMPORT,
+                    }
+                    if extracted is not None:
+                        snap_defaults["balance"] = extracted
+                        snap_defaults["balance_chf"] = balance_chf
+                    if computed is not None:
+                        snap_defaults["computed_balance"] = computed
+
                     BalanceSnapshot.objects.update_or_create(
                         account=account,
                         date=snapshot_date,
-                        defaults={
-                            "balance": extracted,
-                            "computed_balance": computed,
-                            "currency": account.currency,
-                            "balance_chf": balance_chf,
-                            "source": BalanceSnapshot.Source.IMPORT,
-                        },
+                        defaults=snap_defaults,
                     )
 
                 # Alerte si les deux sont disponibles et divergent de plus de 1 centime
@@ -399,6 +476,10 @@ class ImportService:
                             extracted,
                             computed,
                         )
+
+            # Exposer le PK de l'ImportLog au caller (views.py) pour pouvoir
+            # retrouver les transactions insérées et déclencher le stockage du fichier.
+            result.log_pk = import_log.pk
 
         return result
 

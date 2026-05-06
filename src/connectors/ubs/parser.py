@@ -289,11 +289,20 @@ class UBSConnector(BaseConnector):
         # not the visible card number. TODO: match via contract number in Phase 2.
         card_last_four = None
 
-        # import_hash: SHA256 of the fields that uniquely identify this transaction.
-        # description2 added to reduce collisions on same-day same-amount transfers
+        # import_hash — see CONTRACT in base.py.
+        #
+        # UBS assigns a globally unique "No de transaction" per row (e.g. "9999125BN1308361").
+        # When present, it's the most stable identifier possible: guaranteed unique by the bank,
+        # immune to column reordering or description changes across re-exports.
+        #
+        # Fallback (should never happen with modern UBS exports) : date+time+amount+descriptions.
+        # The fallback uses description2 to reduce collisions on same-day same-amount transfers
         # (e.g. two salary advances with identical date/time/amount/description1).
-        description2 = row.get("Description2", "").strip()
-        raw = f"{date_str}|{time_str}|{amount}|{description1}|{description2}"
+        no_transaction = row.get("No de transaction", "").strip()
+        if no_transaction:
+            raw = f"ubs_tx|{no_transaction}"
+        else:
+            raw = f"{date_str}|{time_str}|{amount}|{description1}|{description2}"
         import_hash = hashlib.sha256(raw.encode()).hexdigest()
 
         return TransactionDict(
@@ -305,6 +314,9 @@ class UBSConnector(BaseConnector):
             merchant_name=merchant_name,
             card_last_four=card_last_four,
             import_hash=import_hash,
+            # UBS provides a single closing balance in the file header (Solde final),
+            # not a per-row running balance. Daily BalanceSnapshots will use that header value.
+            balance_after=None,
         )
 
     def _parse_amount(self, row: dict) -> tuple[float, str]:

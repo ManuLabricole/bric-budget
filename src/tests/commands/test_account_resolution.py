@@ -13,7 +13,7 @@ et testée ici directement, sans passer par les commandes.
 Comportements testés :
     Yuh  1. Aucun compte Yuh actif → AccountNotFound
     Yuh  2. 1 compte Yuh actif     → AccountMatch retourné
-    Yuh  3. 2 comptes Yuh actifs   → AccountMatch du plus récent (first() — pas d'erreur)
+    Yuh  3. 2 comptes Yuh actifs   → AccountAmbiguous (picker UI requis)
     Yuh  4. Compte inactif         → AccountNotFound (ignoré par le filtre)
     UBS  5. IBAN absent du fichier → ValueError
     UBS  6. IBAN présent mais pas en DB → AccountNotFound
@@ -25,8 +25,13 @@ from unittest.mock import patch
 
 import pytest
 
-from accounts.models import Account, Bank, CheckingAccount
-from connectors.resolver import AccountMatch, AccountNotFound, resolve_accounts
+from accounts.models import Account, Bank
+from connectors.resolver import (
+    AccountAmbiguous,
+    AccountMatch,
+    AccountNotFound,
+    resolve_accounts,
+)
 from connectors.ubs.parser import UBSConnector
 from connectors.yuh.parser import YuhConnector
 
@@ -105,21 +110,19 @@ def test_yuh_returns_single_active_account(yuh_bank):
 
 
 @pytest.mark.django_db
-def test_yuh_returns_most_recent_when_multiple_accounts(yuh_bank):
+def test_yuh_raises_ambiguous_when_multiple_accounts(yuh_bank):
     """
-    2+ comptes Yuh checking actifs → AccountMatch du plus récent (order_by -id).
+    2+ comptes Yuh checking actifs → AccountAmbiguous levée (picker UI requis).
 
-    Scénario : doublon accidentel en DB. On prend silencieusement le plus récent
-    au lieu de crasher — l'admin peut désactiver le doublon manuellement.
+    L'ancien comportement retournait silencieusement le plus récent. La nouvelle
+    logique lève AccountAmbiguous pour que l'utilisateur choisisse via le picker.
     """
     make_yuh_account(yuh_bank, name="Yuh CHF #1")
-    account2 = make_yuh_account(yuh_bank, name="Yuh CHF #2")
+    make_yuh_account(yuh_bank, name="Yuh CHF #2")
 
     connector = YuhConnector()
-    matches = resolve_accounts(connector, YUH_DUMMY)
-
-    assert len(matches) == 1
-    assert matches[0].account.pk == account2.pk
+    with pytest.raises(AccountAmbiguous):
+        resolve_accounts(connector, YUH_DUMMY)
 
 
 @pytest.mark.django_db
@@ -172,11 +175,11 @@ def test_ubs_raises_when_iban_not_in_db(ubs_bank):
 @pytest.mark.django_db
 def test_ubs_returns_account_matching_iban(ubs_bank):
     """
-    IBAN extrait + CheckingAccount avec cet IBAN en DB → AccountMatch retourné.
+    IBAN extrait + Account.iban correspondant en DB → AccountMatch retourné.
 
     L'IBAN dans ubs_sample.csv est 'CH00 0000 0000 0000 0000 0'.
     UBSConnector.extract_account_identifier() normalise → 'CH0000000000000000000'.
-    Le resolver cherche dans CheckingAccount.iban (pas Account.contract_number).
+    Le resolver cherche dans Account.iban (champ universel sur Account, pas CheckingAccount.iban).
     """
     account = Account.objects.create(
         bank=ubs_bank,
@@ -184,11 +187,7 @@ def test_ubs_returns_account_matching_iban(ubs_bank):
         account_type=Account.AccountType.CHECKING,
         currency="CHF",
         is_active=True,
-    )
-    CheckingAccount.objects.create(
-        account=account,
-        iban="CH0000000000000000000",  # IBAN normalisé du fixture
-        bic="UBSWCHZH80A",
+        iban="CH0000000000000000000",  # IBAN normalisé du fixture, sur Account directement
     )
 
     connector = UBSConnector()

@@ -162,6 +162,7 @@ class CategorizationRuleAdmin(admin.ModelAdmin):
 class TransactionAdmin(admin.ModelAdmin):
     list_display = (
         "date",
+        "account",
         "merchant_name",
         "amount",
         "currency",
@@ -202,9 +203,10 @@ class ImportLogAdmin(admin.ModelAdmin):
         "count_created",
         "count_skipped",
         "count_errors",
+        "is_encrypted",
     )
-    list_filter = ("account", "status")
-    search_fields = ("filename", "file_hash")
+    list_filter = ("account", "status", "is_encrypted")
+    search_fields = ("filename", "file_hash", "stored_filename")
     # readonly_fields: everything is auto-generated at import time — nothing editable
     readonly_fields = (
         "account",
@@ -217,6 +219,9 @@ class ImportLogAdmin(admin.ModelAdmin):
         "count_skipped",
         "count_errors",
         "error_detail",
+        "stored_filename",
+        "stored_path",
+        "is_encrypted",
     )
     ordering = ("-imported_at",)
 

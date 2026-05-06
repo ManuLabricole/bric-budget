@@ -379,16 +379,13 @@ class Transaction(models.Model):
     import_hash = models.CharField(max_length=64, unique=True)
 
     # Lien vers l'import qui a créé cette transaction.
-    # null=True : les transactions existantes avant cette migration restent valides.
-    # SET_NULL : si l'ImportLog est supprimé manuellement depuis l'admin, les
-    #            transactions restent en DB avec import_log=NULL.
-    #            La vue delete_import fait une suppression explicite des tx AVANT
-    #            de supprimer le log — SET_NULL est ici un filet de sécurité.
+    # null=True : permet aux transactions créées en CLI (sans ImportLog) de rester valides.
+    # CASCADE : supprimer un ImportLog supprime automatiquement toutes ses transactions.
     import_log = models.ForeignKey(
         "ImportLog",
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=models.CASCADE,
         related_name="transactions",
     )
 
@@ -461,6 +458,28 @@ class ImportLog(models.Model):
 
     # Optional error detail for debugging — populated when status != SUCCESS
     error_detail = models.TextField(blank=True, default="")
+
+    # ── Stockage permanent du fichier source ──────────────────────────────────
+    # Renseigné après confirmation de l'import (vide pour les imports CLI).
+    #
+    # stored_filename : nom canonique calculé depuis les métadonnées du fichier.
+    #   Convention : {bank}_{account}_{date_min}_{date_max}[_b{balance}]_{n}tx{ext}
+    #   Exemple    : yuh_checking_20260101_20260430_b12345.67_42tx.csv
+    #
+    # stored_path : chemin RELATIF à settings.IMPORT_STORAGE_ROOT.
+    #   On ne stocke jamais de chemin absolu en DB — non portable entre machines.
+    #   Exemple    : yuh/2026/yuh_checking_20260101_20260430_b12345.67_42tx.csv.enc
+    #
+    # is_encrypted : True si le fichier est chiffré avec Fernet.
+    #   Tous les nouveaux imports web sont chiffrés (clé dans .env).
+    stored_filename = models.CharField(max_length=255, blank=True, default="")
+    stored_path = models.CharField(max_length=500, blank=True, default="")
+    is_encrypted = models.BooleanField(default=False)
+
+    # Date range of the transactions in this import — populated after bulk_create.
+    # None for failed imports (0 transactions created) or legacy CLI imports.
+    date_min = models.DateField(null=True, blank=True)
+    date_max = models.DateField(null=True, blank=True)
 
     class Meta:
         verbose_name = "import log"

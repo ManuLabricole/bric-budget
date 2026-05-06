@@ -88,12 +88,25 @@ class Account(models.Model):
     class AccountType(models.TextChoices):
         # Phase 0A — implemented now
         CHECKING = "checking", "Checking account"
-        # Phase 4 — specialised tables to be created later
+        # Phase 2G — already exists as SavingsAccount specialisation
         SAVINGS = "savings", "Savings account"
+        # Phase 4 — pension accounts (Finpension 3a + LP)
         PENSION_3A = "pension_3a", "3rd pillar (3a)"
         PENSION_LP = "pension_lp", "Vested benefits (LP)"
-        # Phase 5
-        INVESTMENT = "investment", "Investment account"
+        # Phase 5 — investment & trading (titres, ETF...)
+        INVESTMENT = "investment", "Investment account / Titres"
+        # Phase 6 — payment cards (debit + credit)
+        # Import: matched by Card.last_four extracted from statement
+        CARD = "card", "Credit / Debit card"
+        # Phase 7 — insurance & assurance vie
+        # Import: PDF relevé de valeur ou CSV de rachat. Identifier = policy number.
+        # Pas de transactions au sens bancaire — on enregistre des snapshots de valeur.
+        # Le connecteur lira le numéro de police depuis le relevé pour le matching.
+        INSURANCE = "insurance", "Life insurance / Assurance vie"
+        # Phase 7 — standalone brokerage (Swissquote, Degiro, IBKR...)
+        # Import: CSV relevé mensuel. Transactions = achats/ventes de titres.
+        # Matching par numéro de compte courtier (ex: "SQ-XXXXXXXX").
+        BROKERAGE = "brokerage", "Brokerage / Compte titres"
 
     bank = models.ForeignKey(
         Bank,
@@ -117,10 +130,24 @@ class Account(models.Model):
     # Bank-assigned contract number — used by import connectors to match a file to an account.
     # Each bank uses its own format:
     #   CIC : "10096XXXXXXXXXXXXXXXXXXX" (RIB without spaces)
-    #   UBS : not needed (IBAN in export file, stored in CheckingAccount.iban)
-    #   Yuh : not needed (single account, matched by bank slug)
+    #   Yuh : not needed (single active account matched by bank slug)
     # blank=True: optional — not all banks expose a contract number in their exports.
     contract_number = models.CharField(max_length=100, blank=True, default="")
+
+    # IBAN universel au niveau Account — identifiant de résolution pour tous les types de comptes.
+    # Pourquoi ici et pas dans CheckingAccount seulement ?
+    #   UBS exporte des relevés d'épargne (SavingsAccount) qui contiennent un IBAN en ligne 2.
+    #   En stockant l'IBAN ici, le resolver peut faire Account.objects.get(iban=..., bank__slug="ubs")
+    #   sans connaître le sous-type — propre pour les futures cartes, assurances, etc.
+    # CheckingAccount.iban reste pour la rétrocompatibilité et l'affichage de iban_display.
+    # NULL != NULL en SQL → unique=True avec null=True autorise plusieurs comptes sans IBAN.
+    iban = models.CharField(
+        max_length=34,
+        unique=True,
+        null=True,
+        blank=True,
+        default=None,
+    )
 
     is_active = models.BooleanField(default=True)
 
@@ -135,6 +162,13 @@ class Account(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.currency}) — {self.bank.name}"
+
+    @property
+    def iban_display(self):
+        """IBAN masqué : CH56 **** **** **** **** *  (4 premiers + 3 derniers visibles)."""
+        if not self.iban:
+            return None
+        return self.iban[:4] + " **** **** **** **** " + self.iban[-3:]
 
 
 # =============================================================================

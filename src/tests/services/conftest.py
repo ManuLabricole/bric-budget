@@ -137,6 +137,7 @@ def make_tx(
         merchant_name=merchant_name,
         card_last_four=None,
         import_hash=import_hash,
+        balance_after=None,
     )
 
 
