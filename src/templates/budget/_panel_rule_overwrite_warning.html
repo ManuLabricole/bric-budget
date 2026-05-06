@@ -1,0 +1,115 @@
+{% load budget_filters static %}
+{% comment %}
+budget/_panel_rule_overwrite_warning.html — Warning avant écrasement de règles existantes
+
+Contexte attendu :
+    txs               — list Transaction (avec .bank_icon_url attaché par la vue)
+    overwritten_count — int nombre de transactions concernées
+    keyword           — str keyword composé "MOT1 MOT2"
+    category          — Category cible
+    subcategory       — SubCategory | None
+    tx_id             — int | None (wizard flow, None pour standalone)
+    form_action       — str URL de soumission forcée
+
+Affiché quand des transactions sont déjà catégorisées par une règle différente
+et vont être recatégorisées par la nouvelle règle.
+
+Flow :
+    POST rule_create_submit / rule_create_standalone_submit (sans force)
+    → ce template (si overwrites détectés)
+    Bouton "Confirmer" → POST form_action avec force=1 → _panel_rule_confirm.html
+    Bouton "Annuler"   → closeModal()
+{% endcomment %}
+<div class="flex flex-col" style="max-height: 82vh">
+    {# ── Header ── #}
+    <div class="flex-shrink-0 px-5 pt-5 pb-4">
+        <div class="flex items-center justify-between mb-3">
+            <span class="text-[10px] font-bold text-text-disabled uppercase tracking-widest">Règle intelligente</span>
+            <button onclick="closeModal()"
+                    class="w-6 h-6 rounded-full border border-edge flex items-center justify-center text-text-disabled hover:text-text-muted hover:border-edge-subtle transition-colors">
+                <svg class="w-3 h-3"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="2.5"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+        {# ── Icône warning ── #}
+        <div class="flex flex-col items-center text-center mb-4">
+            <div class="w-12 h-12 rounded-full bg-amber-500/15 flex items-center justify-center mb-3">
+                <svg class="w-6 h-6 text-amber-400"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="2"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                </svg>
+            </div>
+            <p class="text-sm font-semibold text-text-base">
+                {{ overwritten_count }} transaction
+                {% if overwritten_count > 1 %}s{% endif %}
+                déjà catégorisée
+                {% if overwritten_count > 1 %}s{% endif %}
+            </p>
+            <p class="text-xs text-text-muted mt-1 leading-relaxed">
+                Ces transactions ont déjà une règle. En confirmant, elles seront recatégorisées en <span class="text-text-secondary font-medium">
+                {% if subcategory %}
+                    {{ subcategory.name }}
+                {% else %}
+                    {{ category.name }}
+                {% endif %}
+            </span>.
+        </p>
+    </div>
+    {# ── Résumé de la règle ── #}
+    <div class="px-3 py-2.5 rounded-xl bg-surface-hover border border-amber-500/20 mb-1 flex-shrink-0">
+        <p class="text-[10px] text-text-muted uppercase tracking-wider mb-1.5">Règle à créer</p>
+        <p class="text-xs text-text-secondary">
+            SI le nom comprend <span class="font-semibold text-text-base">"{{ keyword }}"</span>
+        </p>
+        <p class="text-xs text-text-secondary mt-0.5">
+            → {{ category.name }}
+            {% if subcategory %}› <span class="text-text-base">{{ subcategory.name }}</span>{% endif %}
+        </p>
+    </div>
+</div>
+{# ── Liste des transactions concernées ── #}
+<div class="flex-1 overflow-y-auto border-t border-edge/50 bb-scroll">
+    <p class="px-5 pt-2 pb-1 text-[10px] text-text-disabled uppercase tracking-wider font-semibold">
+        Transactions qui seront recatégorisées
+    </p>
+    <div class="divide-y divide-edge/30">
+        {% for tx in txs %}
+            {# Réutilise le même composant rangée que la preview standalone #}
+            {% include "budget/_rule_standalone_preview_row.html" %}
+        {% endfor %}
+    </div>
+</div>
+{# ── Boutons ── #}
+<div class="flex-shrink-0 px-5 py-4 border-t border-edge/50">
+    <form hx-post="{{ form_action }}"
+          hx-target="#modal-content"
+          hx-swap="innerHTML">
+        {% csrf_token %}
+        {# Repasse tous les paramètres originaux + force=1 #}
+        <input type="hidden" name="keyword" value="{{ keyword }}">
+        <input type="hidden" name="category_id" value="{{ category.id }}">
+        {% if subcategory %}<input type="hidden" name="subcategory_id" value="{{ subcategory.id }}">{% endif %}
+        {% if tx_id %}<input type="hidden" name="tx_id" value="{{ tx_id }}">{% endif %}
+        <input type="hidden" name="force" value="1">
+        <div class="flex gap-2">
+            <button type="button"
+                    onclick="closeModal()"
+                    class="flex-1 border border-edge hover:bg-surface-hover text-text-secondary text-sm font-medium rounded-xl px-4 py-2.5 transition-colors">
+                Annuler
+            </button>
+            <button type="submit"
+                    class="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-semibold text-sm rounded-xl px-4 py-2.5 transition-colors">
+                Confirmer quand même
+            </button>
+        </div>
+    </form>
+</div>
+</div>

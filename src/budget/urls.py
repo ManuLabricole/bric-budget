@@ -69,6 +69,24 @@ urlpatterns = [
     path(
         "panel/rule-create/", views.budget_panel_rule_create, name="panel_rule_create"
     ),
+    # /budget/panel/rule-create-standalone/ → formulaire création règle sans transaction source (fragment HTMX)
+    path(
+        "panel/rule-create-standalone/",
+        views.budget_panel_rule_create_standalone,
+        name="panel_rule_create_standalone",
+    ),
+    # /budget/panel/rule-standalone-preview/ → aperçu live multi-keywords (GET HTMX)
+    path(
+        "panel/rule-standalone-preview/",
+        views.budget_rule_standalone_preview,
+        name="rule_standalone_preview",
+    ),
+    # /budget/transactions/rule-create-standalone/ → crée N règles + bulk apply (POST)
+    path(
+        "transactions/rule-create-standalone/",
+        views.budget_rule_create_standalone_submit,
+        name="rule_create_standalone_submit",
+    ),
     # /budget/transactions/rule-preview/ → prévisualise l'impact d'une règle (POST)
     path("transactions/rule-preview/", views.budget_rule_preview, name="rule_preview"),
     # /budget/transactions/rule-live-preview/ → aperçu live des transactions matchées (GET HTMX)

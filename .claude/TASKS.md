@@ -1,6 +1,6 @@
 # TASKS — BricBudget
 > Rythme : ~3h le samedi matin
-> Mis à jour : 2026-05-06 (session 21 — Audit import + fix computed_balance + merge fix/import-storage-ux)
+> Mis à jour : 2026-05-06 (session 22 — Phase 2G T2 règle standalone livré)
 > Détail opérationnel → GitHub Issues / Milestones
 
 ---
@@ -570,8 +570,8 @@
 - [x] **`make lint` + `make check`** ajoutés au Makefile
 - [x] **Icônes sous-catégories dans `_rule_row.html`** — fond light `colour_hex+40` comme `category_detail.html`
 
-### T2 — Créer une règle standalone (Issue #33)
-- [ ] Formulaire de création dans le dropdown "Créer" (actuellement SOON badge)
+### T2 — Créer une règle standalone (Issue #33) ✅ (2026-05-06)
+- [x] Formulaire de création dans le dropdown "Créer" — chips keywords, preview live, warning overwrite, confirmation
 
 ### T3 — Créer une catégorie (Issue #34)
 - [ ] Modal "Créer catégorie" depuis le dropdown "Créer" (actuellement SOON badge)

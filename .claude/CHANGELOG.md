@@ -1,5 +1,56 @@
 # CHANGELOG — BudgetTracker
 
+## 2026-05-06 — Session 22 : Phase 2G T2 — Règle standalone + UI fixes (VSCode)
+
+**Contexte**
+Implémentation complète de T2 : créer une règle de catégorisation directement depuis le dropdown "Créer", sans passer par une transaction existante. Système de chips keywords, preview live, warning overwrite, confirmation. Petits fixes UI découverts en cours.
+
+**Livré**
+
+*T2 — Règle standalone*
+- **3 nouvelles vues** dans `budget/views.py` :
+  - `budget_panel_rule_create_standalone` : formulaire chips + picker catégorie
+  - `budget_rule_standalone_preview` : preview live (count + 5 premières tx) via `GET ?kw[]=…`
+  - `budget_rule_create_standalone_submit` : flow 2 étapes (overwrite check → create + bulk apply)
+- **4 nouveaux templates** :
+  - `_panel_rule_create_standalone.html` — chips input (Enter = ajoute, Backspace = retire), picker catégorie, `standaloneFirePreview()` JS
+  - `_rule_standalone_preview.html` — count + liste 5 premières + "et X autres · Voir plus"
+  - `_rule_standalone_preview_row.html` — rangée 5 colonnes alignées : date | logo banque | icône cat | description truncate | montant
+  - `_panel_rule_overwrite_warning.html` — liste transactions écrasées, "Confirmer quand même" (force=1)
+- **Logique AND-cumulatif** : chips "MIGROS" + "CAROUGE" = keyword composé "MIGROS CAROUGE" → `_keyword_q()` existant gère nativement
+- **Warning overwrite** : check `categorization_source="rule"` avant création, affichage spécifique si conflits, skip sur `force=1`
+- **Wizard existant** (`budget_rule_create_submit`) : même flow force ajouté pour cohérence
+- **Dropdown "Créer"** : bouton "Nouvelle règle intelligente" activé (était SOON), `openModal()` inline
+
+*Fixes UI*
+- Modal élargie `max-w-md → max-w-xl` dans `base_app.html`
+- "_panel_rule_confirm.html" : bouton "Retour à la liste" → "Fermer" (closeModal() → budget, pas une liste)
+- Bouton "Créer" aligné sur "Tout voir" et "Paramètres" (suppression border gold + font-medium superflus)
+- "Nouvel objectif de dépense" : `text-left` ajouté (était centré)
+- `hover:text-gold` ajouté sur les 3 boutons toolbar (Tout voir / Créer / Paramètres) — cohérence avec onglets
+
+*Bugs rencontrés*
+- Django 6 multiline `{# ... #}` comments rendus comme texte visible → fix : `{% comment %}{% endcomment %}` ou `{# single line #}`
+- Ruff W605 invalid escape `\y` dans docstring → `ruff check --fix`
+- djlint T002 single quotes dans template tag → remplacé par double quotes
+- `account_badge.html` hardcode `whitespace-nowrap` → débordement nom compte → inliné avec `max-w-[90px] truncate`
+- Layout 2 lignes rejeté → remplacé par 5 colonnes strictes (`flex-shrink-0` widths fixes)
+
+**Décisions**
+| Sujet | Décision | Pourquoi |
+|-------|----------|----------|
+| Chips = compound keyword | Un seul keyword composé ("MIGROS CAROUGE"), pas N règles séparées | `_keyword_q()` AND natif, UX plus claire |
+| "13 Migros" mystère | CIC 2023 = Grenoble FR (pas de Migros en France), CHF data seulement depuis 2024-2025 | Confirmé SQL — le parser est correct |
+| Force flow | Check overwrite avant création, `force=1` skip le check | Évite d'écraser silencieusement des règles manuelles |
+
+**Reste à faire (Phase 2G)**
+- T3 : Créer catégorie depuis dropdown Créer (issue #34)
+- T4 : `apply_rules` management command (issue #32)
+- Session classification manuelle (~4h)
+- Merge → development → main + tag v0.1.0
+
+---
+
 ## 2026-05-06 — Session 21 : Audit import + fix computed_balance + merge fix/import-storage-ux (Cowork)
 
 **Contexte**

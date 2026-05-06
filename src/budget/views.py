@@ -1552,6 +1552,233 @@ def budget_panel_rule_create(request):
 
 
 # =============================================================================
+# budget_panel_rule_create_standalone — Formulaire création règle sans source tx
+# =============================================================================
+
+
+@login_required
+def budget_panel_rule_create_standalone(request):
+    """
+    Partial HTMX — panneau "Créer une règle intelligente" en mode standalone.
+
+    URL      : GET /budget/panel/rule-create-standalone/
+    Target   : #modal-content
+    Template : budget/_panel_rule_create_standalone.html
+
+    Déclenché depuis le dropdown "Créer" → bouton "Nouvelle règle intelligente".
+    Contrairement à budget_panel_rule_create, aucun tx_id n'est requis.
+    L'utilisateur saisit le keyword manuellement et choisit la catégorie.
+
+    Différence clé avec le wizard transaction-first :
+        - Pas de tx source → pas de chips extraits d'une description
+        - Keyword libre (input texte) → même live preview via rule_live_preview
+        - Picker catégorie identique à _rule_row_edit.html (réutilise ruleEditSelect)
+        - Submit → budget_rule_create_submit (même vue, même payload)
+    """
+    _, cats_with_subcats = _cats_with_subcats()
+    return render(
+        request,
+        "budget/_panel_rule_create_standalone.html",
+        {
+            "cats_with_subcats": cats_with_subcats,
+        },
+    )
+
+
+# =============================================================================
+# budget_rule_standalone_preview — Preview multi-chips (GET HTMX)
+# =============================================================================
+
+
+@login_required
+def budget_rule_standalone_preview(request):
+    r"""
+    Partial HTMX — aperçu des transactions matchant un keyword composé.
+
+    URL      : GET /budget/panel/rule-standalone-preview/?kw=MIGROS&kw=CAROUGE&category_id=5
+    Target   : #rule-preview-zone
+    Template : budget/_rule_standalone_preview.html
+
+    Les chips du formulaire standalone s'accumulent en AND :
+        kw=MIGROS            → transactions contenant "MIGROS"
+        kw=MIGROS&kw=CAROUGE → transactions contenant "MIGROS" ET "CAROUGE"
+
+    L'opérateur AND est géré par _keyword_q(combined) : les mots sont séparés par
+    un espace et chacun est matché comme word boundary (\y) dans description_raw.
+    Même règle que la catégorisation automatique à l'import — cohérence garantie.
+
+    La vue résout les icônes banque (bank_icon_map) pour la rangée compacte,
+    charge les 25 premières transactions pour la preview scrollable.
+    """
+    kw_list = [kw.strip().upper() for kw in request.GET.getlist("kw") if kw.strip()]
+    cat_id = request.GET.get("category_id")
+    subcat_id = request.GET.get("subcategory_id")
+
+    # Keyword composé : "MIGROS CAROUGE" → _keyword_q AND-e les deux mots
+    combined_keyword = " ".join(kw_list)
+
+    cat_display_name = ""
+    if cat_id:
+        cat = Category.objects.filter(pk=cat_id).first()
+        if cat:
+            sub = (
+                SubCategory.objects.filter(pk=subcat_id).first() if subcat_id else None
+            )
+            cat_display_name = sub.name if sub else cat.name
+
+    txs = []
+    total_count = 0
+
+    if combined_keyword:
+        qs = (
+            Transaction.objects.filter(_keyword_q(combined_keyword))
+            .select_related("account", "account__bank", "category", "subcategory")
+            .order_by("-date")
+        )
+        total_count = qs.count()
+        # On charge toutes les tx pour la zone scrollable (limit visuelle = template)
+        txs = list(qs)
+        bank_icon_map = _resolve_bank_icon_map()
+        for tx in txs:
+            slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
+            tx.bank_icon_url = bank_icon_map.get(slug, "")
+
+    return render(
+        request,
+        "budget/_rule_standalone_preview.html",
+        {
+            "txs": txs,
+            "total_count": total_count,
+            "kw_list": kw_list,
+            "combined_keyword": combined_keyword,
+            "cat_display_name": cat_display_name,
+        },
+    )
+
+
+# =============================================================================
+# budget_rule_create_standalone_submit — Crée 1 règle composée + bulk apply (POST)
+# =============================================================================
+
+
+@login_required
+@require_POST
+def budget_rule_create_standalone_submit(request):
+    """
+    Crée une CategorizationRule avec keyword composé + bulk apply.
+
+    URL      : POST /budget/transactions/rule-create-standalone/
+    Target   : #modal-content
+
+    Flow en deux étapes si des transactions seront écrasées :
+        Étape 1 (force absent) :
+            - Vérifie si des transactions ont déjà une règle différente → keyword
+            - Si oui : retourne _panel_rule_overwrite_warning.html (SANS créer la règle)
+            - Si non : passe directement à l'étape 2
+        Étape 2 (force=1 dans POST) :
+            - Crée la règle + bulk apply → _panel_rule_confirm.html (succès)
+
+    Le keyword composé est transmis en deux variantes :
+        - Chips initiales : POST multi-value kw[] = ["MIGROS", "CAROUGE"]
+        - Re-confirmation après warning : POST single keyword = "MIGROS CAROUGE"
+    La vue accepte les deux — keyword single prend priorité.
+    """
+    from django.urls import reverse
+
+    # Accepte soit un keyword déjà joint (re-confirmation) soit des chips kw[]
+    keyword_single = request.POST.get("keyword", "").strip().upper()
+    if keyword_single:
+        keyword = keyword_single
+    else:
+        kw_list = [
+            kw.strip().upper() for kw in request.POST.getlist("kw") if kw.strip()
+        ]
+        if not kw_list:
+            from django.http import HttpResponseBadRequest
+
+            return HttpResponseBadRequest("Au moins un mot-clé requis")
+        keyword = " ".join(kw_list)
+
+    cat_id = request.POST.get("category_id")
+    sub_id = request.POST.get("subcategory_id") or None
+    force = request.POST.get("force") == "1"
+
+    category = get_object_or_404(Category, pk=cat_id)
+    subcategory = SubCategory.objects.filter(pk=sub_id).first() if sub_id else None
+
+    if not force:
+        # Étape 1 — chercher les transactions qui seront écrasées AVANT de créer la règle.
+        # On vérifie les tx avec source="rule" et une règle différente de celle qu'on va créer.
+        # existing_rule peut être None si la règle n'existe pas encore.
+        existing_rule = CategorizationRule.objects.filter(
+            keyword=keyword, category=category
+        ).first()
+        overwrite_qs = Transaction.objects.filter(
+            _keyword_q(keyword), categorization_source="rule"
+        )
+        if existing_rule:
+            overwrite_qs = overwrite_qs.exclude(categorization_rule=existing_rule)
+
+        if overwrite_qs.exists():
+            txs = list(
+                overwrite_qs.select_related(
+                    "account", "account__bank", "category", "subcategory"
+                ).order_by("-date")
+            )
+            bank_icon_map = _resolve_bank_icon_map()
+            for tx in txs:
+                slug = (
+                    tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
+                )
+                tx.bank_icon_url = bank_icon_map.get(slug, "")
+
+            return render(
+                request,
+                "budget/_panel_rule_overwrite_warning.html",
+                {
+                    "txs": txs,
+                    "overwritten_count": len(txs),
+                    "keyword": keyword,
+                    "category": category,
+                    "subcategory": subcategory,
+                    "form_action": reverse("budget:rule_create_standalone_submit"),
+                },
+            )
+
+    # Étape 2 — créer la règle + bulk apply
+    rule, created = CategorizationRule.objects.get_or_create(
+        keyword=keyword,
+        category=category,
+        defaults={
+            "subcategory": subcategory,
+            "target_field": "description_raw",
+            "priority": 10,
+            "is_active": True,
+        },
+    )
+
+    updated_count = Transaction.objects.filter(_keyword_q(keyword)).update(
+        category=category,
+        subcategory=subcategory,
+        categorization_source="rule",
+        categorization_rule=rule,
+    )
+
+    return render(
+        request,
+        "budget/_panel_rule_confirm.html",
+        {
+            "rule": rule,
+            "created": created,
+            "updated_count": updated_count,
+            "keyword": keyword,
+            "category": category,
+            "subcategory": subcategory,
+        },
+    )
+
+
+# =============================================================================
 # budget_rule_live_preview — Partial HTMX : liste live des transactions matchées
 # =============================================================================
 
@@ -1680,11 +1907,14 @@ def budget_rule_create_submit(request):
         Seules les transactions "default" (import), "rule" (autre règle) ou
         "ai" (Claude) sont recatégorisables.
     """
+    from django.urls import reverse
+
     keyword = request.POST.get("keyword", "").strip().upper()
     cat_id = request.POST.get("category_id")
     sub_id = request.POST.get("subcategory_id") or None
+    tx_id = request.POST.get("tx_id")
+    force = request.POST.get("force") == "1"
 
-    # Garde serveur : keyword vide → refus silencieux (le bouton est déjà désactivé côté UI)
     if not keyword:
         from django.http import HttpResponseBadRequest
 
@@ -1693,22 +1923,56 @@ def budget_rule_create_submit(request):
     category = get_object_or_404(Category, pk=cat_id)
     subcategory = SubCategory.objects.filter(pk=sub_id).first() if sub_id else None
 
-    # Créer la règle — get_or_create évite les doublons si même keyword + catégorie
-    # update_fields non applicable ici : on veut l'objet complet pour le contexte
+    if not force:
+        # Étape 1 — vérifier les transactions déjà catégorisées par UNE AUTRE règle.
+        existing_rule = CategorizationRule.objects.filter(
+            keyword=keyword, category=category
+        ).first()
+        overwrite_qs = Transaction.objects.filter(
+            _keyword_q(keyword), categorization_source="rule"
+        )
+        if existing_rule:
+            overwrite_qs = overwrite_qs.exclude(categorization_rule=existing_rule)
+
+        if overwrite_qs.exists():
+            txs = list(
+                overwrite_qs.select_related(
+                    "account", "account__bank", "category", "subcategory"
+                ).order_by("-date")
+            )
+            bank_icon_map = _resolve_bank_icon_map()
+            for tx in txs:
+                slug = (
+                    tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
+                )
+                tx.bank_icon_url = bank_icon_map.get(slug, "")
+
+            return render(
+                request,
+                "budget/_panel_rule_overwrite_warning.html",
+                {
+                    "txs": txs,
+                    "overwritten_count": len(txs),
+                    "keyword": keyword,
+                    "category": category,
+                    "subcategory": subcategory,
+                    "tx_id": tx_id,
+                    "form_action": reverse("budget:rule_create_submit"),
+                },
+            )
+
+    # Étape 2 — créer la règle + bulk apply
     rule, created = CategorizationRule.objects.get_or_create(
         keyword=keyword,
         category=category,
         defaults={
             "subcategory": subcategory,
-            "target_field": "description_raw",  # wizard UI → toujours description_raw
+            "target_field": "description_raw",
             "priority": 10,
             "is_active": True,
         },
     )
 
-    # Bulk apply : toutes les transactions dont description_raw contient le keyword
-    # comme MOT ENTIER (word boundary). Aucune exclusion — une règle explicite écrase
-    # toute catégorisation antérieure (import, règle précédente, IA, ou manuelle).
     updated_count = Transaction.objects.filter(
         _keyword_q(keyword),
     ).update(
