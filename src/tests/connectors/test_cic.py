@@ -171,13 +171,12 @@ def test_parse_sheet_card_none_for_transfer(cic_file):
 def test_parse_sheet_merchant_cleaned(cic_file):
     """
     'PAIEMENT PSC 1703 LAUSANNE MIGROS CARTE 8703'
-    → préfixe 'PAIEMENT PSC 1703 ' supprimé, suffixe 'CARTE 8703' supprimé
-    → title-cased.
+    → préfixe structurel CIC retiré, suffixe CARTE retiré, uppercase.
+    → "LAUSANNE MIGROS"
     """
     connector = CICConnector()
     transactions = connector.parse_sheet(cic_file, "Cpt CC")
-    # "LAUSANNE MIGROS" → "Lausanne Migros"
-    assert transactions[0]["merchant_name"] == "Lausanne Migros"
+    assert transactions[0]["merchant_name"] == "LAUSANNE MIGROS"
 
 
 def test_parse_sheet_import_hashes_are_unique(cic_file):

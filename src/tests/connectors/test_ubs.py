@@ -97,12 +97,12 @@ def test_parse_description_raw_combines_descriptions(ubs_csv_path):
     assert "Paiement carte de debit" in transactions[0]["description_raw"]
 
 
-def test_parse_merchant_name_is_title_cased(ubs_csv_path):
-    """merchant_name = Description1 avec espaces multiples réduits + title-case."""
+def test_parse_merchant_name_is_normalized(ubs_csv_path):
+    """merchant_name = Description1 avec espaces multiples réduits + uppercase."""
     connector = UBSConnector()
     transactions = connector.parse(ubs_csv_path)
-    # "FEEL EAT SARL LAUSANNE" → "Feel Eat Sarl Lausanne"
-    assert transactions[0]["merchant_name"] == "Feel Eat Sarl Lausanne"
+    # "FEEL EAT SARL            LAUSANNE" → "FEEL EAT SARL LAUSANNE"
+    assert transactions[0]["merchant_name"] == "FEEL EAT SARL LAUSANNE"
 
 
 # =============================================================================

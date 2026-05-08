@@ -162,75 +162,28 @@ class BaseConnector(ABC):
 
     def _normalize_merchant(self, text: str) -> str:
         """
-        Shared normalization: collapse spaces, strip, title-case.
+        Minimal normalization: remove ; and :, collapse whitespace, uppercase.
 
-        Example: "FEEL EAT SARL            LA CHAUX-D" → "Feel Eat Sarl La Chaux-D"
+        We stay close to the raw bank text — no prefix stripping, no title-case.
+        Example: "FEEL EAT SARL;0102 LONAY" → "FEEL EAT SARL 0102 LONAY"
         """
-        collapsed = re.sub(r" {2,}", " ", text).strip()
-        return collapsed.title()
+        text = text.replace(";", " ").replace(":", " ")
+        return re.sub(r" {2,}", " ", text).strip().upper()
 
     def _clean_description(self, raw: str) -> str:
         """
-        Bank-agnostic cleaned description — single source of truth for all connectors.
+        Minimal cleaning to produce display_name from raw bank text.
 
-        Applied once at import to produce display_name (stored in DB, queryable by rules).
-        description_raw is never touched — this function reads it, never modifies it.
+        Rules (in order):
+          1. Take first segment before " | " — UBS stores multi-field values separated by " | "
+          2. Remove ; and : characters, collapse whitespace, uppercase
 
-        Rules (applied in order, all case-insensitive):
-
-        1. Take first segment before " | "
-           UBS stores "Merchant | CardContract | TxRef" — only first part is useful.
-
-        2. Strip French banking verb prefixes + 4-digit DDMM date (CIC)
-           "PAIEMENT PSC 0305 ...", "VIR SEPA ...", "RETRAIT DAB 0305 ..."
-
-        3. Strip "CARTE XXXX" and everything after (CIC card suffix)
-
-        4. Strip ";CODE_POSTAL City" UBS geocode artifact
-           "Denner Lonay;0102 Lonay" → "Denner Lonay"
-
-        5. Strip trailing alphanumeric reference tokens (terminal IDs, tx refs)
-           Heuristic: a final token that contains at least one digit AND 4+ chars.
-           "CHATILLON NORD M HIR082612500020475" → "CHATILLON NORD M"
-           Preserves pure-letter tokens like "NORD M".
-
-        6. Collapse whitespace + title-case via _normalize_merchant.
-           Fallback to normalized raw if result is empty.
+        We do NOT strip prefixes (PAIEMENT, VIR SEPA...), reference codes, or
+        geocodes — that is interpretation, not cleaning. The raw bank text is the truth.
         """
-        text = raw
-
-        # 1. First segment before " | " (UBS multi-field artifact)
-        text = text.split(" | ")[0]
-
-        # 2. Strip French banking prefixes with optional DDMM date
-        text = re.sub(
-            r"^(?:PAIEMENT\s+(?:PSC|CB)\s+\d{4}\s+|VIR\s+(?:SEPA|INST|PERM)\s+|RETRAIT\s+DAB\s+\d{4}\s+)",
-            "",
-            text,
-            flags=re.IGNORECASE,
-        )
-
-        # 3. Strip "CARTE XXXX" and everything after
-        text = re.sub(r"\s+CARTE\s+\d{4}.*$", "", text, flags=re.IGNORECASE)
-
-        # 4. Strip UBS geocode — two formats:
-        #    ";0102 Lonay"         → ";NNNN City"
-        #    ";CH 1228 Ouates"     → ";CC NNNN City"  (country code + postal code)
-        text = re.sub(r";(?:[A-Z]{2}\s+)?[\d]{4,5}\s+\S.*$", "", text)
-
-        # 4b. Strip leading ATM amount after RETRAIT DAB (CIC: "280,00 CHF FILIALE...")
-        text = re.sub(
-            r"^\d[\d.,]*\s+(?:CHF|EUR|GBP|USD)\s+", "", text, flags=re.IGNORECASE
-        )
-
-        # 5. Strip trailing reference tokens (contain digit + 4+ chars)
-        text = re.sub(r"\s+[A-Z0-9]*\d[A-Z0-9]{3,}$", "", text)
-
-        # 6. Remove duplicate consecutive word (UBS artifact: "LONAY LONAY" → "LONAY")
-        text = re.sub(r"\b(\w{3,})\s+\1\b", r"\1", text, flags=re.IGNORECASE)
-
-        result = self._normalize_merchant(text)
-        return result if result else self._normalize_merchant(raw)
+        # UBS stores "Merchant | CardContract | TxRef" — only the first part is useful.
+        text = raw.split(" | ")[0]
+        return self._normalize_merchant(text)
 
     def extract_account_name(self, filepath: Path) -> str | None:
         """

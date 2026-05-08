@@ -25,8 +25,10 @@ This separation means the same service can later be called from:
 No command-specific printing here — only business logic and DB writes.
 """
 
+import datetime as _dt
 import hashlib
 import json
+import logging
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -40,6 +42,8 @@ from django.db import transaction as db_transaction
 from accounts.models import Account, BalanceSnapshot, Card, ExchangeRate
 from connectors.base import TransactionDict
 from transactions.models import CategorizationRule, Category, ImportLog, Transaction
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # ImportResult — returned by ImportService.run()
@@ -159,17 +163,23 @@ def get_exchange_rate(
     except (urllib.error.URLError, KeyError, ValueError) as e:
         # Erreur réseau ou format inattendu → on ne plante pas l'import.
         # La transaction sera créée avec amount_chf=None — mieux que de tout perdre.
-        print(
-            f"[exchange_rate] WARNING: could not fetch {from_currency}→{to_currency} for {date_str}: {e}"
+        logger.warning(
+            "exchange_rate: could not fetch %s→%s for %s: %s",
+            from_currency,
+            to_currency,
+            date_str,
+            e,
         )
         return None
 
     # ── 3. Stocker en DB pour les prochains imports ───────────────────────────
-    ExchangeRate.objects.create(
+    # get_or_create évite une IntegrityError si deux imports simultanés appellent
+    # cette fonction pour la même date/devise en même temps (race condition).
+    ExchangeRate.objects.get_or_create(
         date=date,
         from_currency=from_currency,
         to_currency=to_currency,
-        rate=rate,
+        defaults={"rate": rate},
     )
 
     return rate
@@ -372,8 +382,6 @@ class ImportService:
             # Guard: only run if there are new transactions. If all transactions
             # are duplicates (skipped), we skip snapshot creation too — a pure-
             # duplicate import shouldn't silently update balance history.
-            import datetime as _dt
-
             if daily_balances and transactions_to_create:
                 for _snap_date_str, _snap_balance in daily_balances.items():
                     BalanceSnapshot.objects.update_or_create(

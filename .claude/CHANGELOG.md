@@ -1,5 +1,44 @@
 # CHANGELOG — BudgetTracker
 
+## 2026-05-08 — Session 24 : Code review + fixes services.py + refacto _clean_description (VSCode)
+
+**Contexte**
+Session de revue et polish avant merge de `feature/phase-2g-rules-crud`. Pas de feature nouvelle — corrections ciblées issues de la code review + décision architecturale sur le nettoyage des descriptions bancaires.
+
+**Livré**
+
+*Prompt audit CTO*
+- `.claude/commands/audit_cto.md` — nouveau prompt `/audit_cto` mode CTO agressif : 9 étapes (sécurité exploitable, atomicité, migrations, performance, Bandit, observabilité, résilience, conformité, tests), CVE Django actives, exploit scenarios obligatoires sur 🔴/🟠, référence cookiecutter-django
+
+*Fixes `services.py` (issues code review)*
+- `import datetime as _dt` + `import logging` déplacés en tête de module (était `import datetime as _dt` en milieu de fonction)
+- `logger = logging.getLogger(__name__)` ajouté — plus de `print()` dans le code de prod
+- `print(...)` → `logger.warning(...)` dans `get_exchange_rate()` (format `%s` idiomatique)
+- `ExchangeRate.objects.create()` → `get_or_create(defaults={"rate": rate})` — protection race condition si deux imports simultanés sur même date/devise
+
+*Refacto `_clean_description()` — décision architecturale*
+- **Décision** : ne nettoyer que ce qui est structurellement du bruit bancaire, jamais ce qui est sémantiquement ambigu
+- `_normalize_merchant()` simplifié : retire `;` et `:`, collapse espaces, uppercase (plus de title-case)
+- `_clean_description()` réduit à 2 lignes : split ` | ` (UBS) + normalize. Intentionnellement minimal.
+- `CIC._clean_merchant()` : 2 regexes structurelles certaines (préfixe verbe+DDMM imposé norme FR + `CARTE XXXX`) — rien d'autre
+- 4 tests connectors mis à jour (uppercase au lieu de title-case)
+- **171 tests passent, ruff OK**
+
+**Décisions**
+
+| Sujet | Décision | Pourquoi |
+|-------|----------|----------|
+| `_clean_description` agressivité | Nettoyage minimal — seulement bruit structurel certain | Les regexes de strip (codes ref, géocodes, ATM) supprimaient de l'information potentiellement utile pour les règles. Risque de faux positifs. |
+| `print()` → `logging` | `logger.warning()` dans tout le code de service | `print()` invisible derrière Gunicorn en prod |
+| `ExchangeRate.objects.create` → `get_or_create` | Thread-safe par défaut | Race condition si 2 imports simultanés sur même date/devise |
+| title-case → uppercase | `_normalize_merchant()` retourne uppercase | Plus proche de la donnée banque réelle, pas d'interprétation |
+
+**Reste à faire**
+- T3 : Créer catégorie depuis dropdown "Créer" (issue #34)
+- T4 : `apply_rules` management command (issue #32)
+- Session classification manuelle (~4h)
+- Merge `feature/phase-2g-rules-crud` → development → main
+
 ## 2026-05-06 — Session 23 : Phase 2G — display_name champ stocké + cleanup UI legacy (VSCode)
 
 **Contexte**

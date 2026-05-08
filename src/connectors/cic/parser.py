@@ -312,7 +312,7 @@ class CICConnector(BaseConnector):
             raise ValueError(f"Both Débit and Crédit are None for row: {libelle}")
 
         description_raw = str(libelle).strip() if libelle else ""
-        display_name = self._clean_description(description_raw)
+        display_name = self._clean_merchant(description_raw)
         merchant_name = display_name  # pre-fill override
         card_last_four = self._parse_card(description_raw)
 
@@ -350,46 +350,22 @@ class CICConnector(BaseConnector):
 
     def _clean_merchant(self, description: str) -> str:
         """
-        Produce a readable merchant name from the CIC raw description.
+        Remove structurally guaranteed CIC noise — nothing else.
 
-        CIC descriptions are uppercase with structured prefixes:
-          "PAIEMENT PSC 3003 MONTBONNOT ST TABAC PRESSE CARTE 8703"
-          "PAIEMENT CB 0504 PARIS 12 SNCF WEB MOBILE CARTE 8703"
-          "VIR SEPA PRET VOITURE I20V23091L036457"
-          "RETRAIT DAB 2703 GRENOBLE"
+        These two patterns are imposed by the French banking norm, never merchant names:
+          - Verb prefix + optional DDMM date: "PAIEMENT PSC 1703 ", "VIR SEPA ", "RETRAIT DAB 2703 "
+          - Card suffix: "CARTE 8703" and anything after (always terminal noise)
 
-        Strategy:
-        1. Strip card suffix "CARTE XXXX" at the end
-        2. Strip known verb prefixes (PAIEMENT PSC/CB DDMM, VIR SEPA, RETRAIT DAB DDMM)
-           We do NOT try to isolate the city name — it's 1 or 2 words with no separator.
-           Keeping city + merchant is more useful than risking a bad split.
-        3. Strip trailing internal reference codes (long alphanumeric sequences)
-        4. Title-case
+        Everything else (city names, reference codes, amounts) is left intact
+        because it is ambiguous — removing it would lose information.
         """
-        text = description
-
-        # 1. Remove card reference suffix: "CARTE 8703" and anything after
-        text = re.sub(r"\s+CARTE\s+\d{4}.*$", "", text, flags=re.IGNORECASE)
-
-        # 2. Remove known CIC prefixes (PAIEMENT PSC or CB + 4-digit date)
-        text = re.sub(r"^PAIEMENT (?:PSC|CB) \d{4} ", "", text)
-
-        # Remove VIR prefixes
-        text = re.sub(r"^VIR (?:SEPA|INST|PERM) ", "", text)
-
-        # Remove RETRAIT DAB prefix (ATM, includes 4-digit date)
-        text = re.sub(r"^RETRAIT DAB \d{4} ", "", text)
-
-        # 3. Strip trailing internal reference codes.
-        # Heuristic : un code de station/terminal contient toujours des chiffres mélangés
-        # aux lettres (ex: ESSOF108, ESSO31761ROC1, I20V23091L036457).
-        # Un nom de marchand est pure-lettres (GRENOBLE, CERTAS, BIVIERS).
-        # On retire tout token final qui contient AU MOINS UN chiffre.
-        text = re.sub(r"\s+[A-Z][A-Z0-9]*\d[A-Z0-9]*$", "", text)
-
-        # 4. Normalize spacing + title-case via the shared base helper
-        result = self._normalize_merchant(text)
-        return result if result else self._normalize_merchant(description)
+        text = re.sub(
+            r"^(?:PAIEMENT (?:PSC|CB) \d{4}|VIR (?:SEPA|INST|PERM)|RETRAIT DAB \d{4}) ",
+            "",
+            description,
+        )
+        text = re.sub(r"\s+CARTE \d{4}.*$", "", text)
+        return self._normalize_merchant(text)
 
     def _parse_card(self, description: str) -> str | None:
         """

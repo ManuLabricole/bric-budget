@@ -1,6 +1,6 @@
 # TASKS — BricBudget
 > Rythme : ~3h le samedi matin
-> Mis à jour : 2026-05-06 (session 23 — display_name champ stocké + cleanup UI legacy)
+> Mis à jour : 2026-05-08 (session 24 — code review + fixes services.py + _clean_description refacto)
 > Détail opérationnel → GitHub Issues / Milestones
 
 ---
@@ -573,11 +573,13 @@
 ### T2 — Créer une règle standalone (Issue #33) ✅ (2026-05-06)
 - [x] Formulaire de création dans le dropdown "Créer" — chips keywords, preview live, warning overwrite, confirmation
 
-### T2b — display_name champ stocké + cleanup UI legacy ✅ (2026-05-06)
+### T2b — display_name champ stocké + cleanup UI legacy ✅ (2026-05-06, refacto session 24)
 - [x] **`Transaction.display_name`** — `CharField(max_length=300)` stocké (migration 0013)
 - [x] **`TransactionDict`** — champ `display_name: str` ajouté
-- [x] **`_clean_description()`** dans `BaseConnector` — 6 règles bank-agnostic (split `|`, strip préfixes, geocode, ATM amount, ref tokens, doublons)
-- [x] **3 connectors mis à jour** — Yuh, UBS, CIC utilisent `_clean_description` et populent `display_name`
+- [x] **`_normalize_merchant()`** dans `BaseConnector` — strip `;`/`:`, collapse espaces, uppercase
+- [x] **`_clean_description()`** dans `BaseConnector` — split ` | ` (UBS) + normalize. Minimal intentionnel.
+- [x] **`CIC._clean_merchant()`** — 2 regexes structurelles CIC (préfixe verbe+date + CARTE XXXX). Rien d'autre.
+- [x] **3 connectors mis à jour** — Yuh, UBS, CIC populent `display_name`
 - [x] **`recalculate_display_names`** management command — backfill 4104 tx existantes
 - [x] **`CategorizationRule.TargetField.DISPLAY_NAME`** — nouvelle valeur, default changé (migration 0014)
 - [x] **`_match_rule()`** — utilise `display_name` pour DISPLAY_NAME + MERCHANT_NAME (legacy)
