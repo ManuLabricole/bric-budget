@@ -147,6 +147,45 @@ urlpatterns = [
         views.budget_export_rules_download,
         name="export_rules_download",
     ),
+    # ── Gestion Catégories — liste + détail (Phase 2G T3) ───────────────────────
+    # /budget/panel/category-manage/ → liste de toutes les catégories (fragment HTMX → #modal-content)
+    path(
+        "panel/category-manage/",
+        views.budget_panel_category_manage,
+        name="panel_category_manage",
+    ),
+    # /budget/panel/category-manage/<slug>/ → détail d'une catégorie (sous-cats + règles)
+    path(
+        "panel/category-manage/<slug:slug>/",
+        views.budget_panel_category_manage_detail,
+        name="panel_category_manage_detail",
+    ),
+    # ── Création / Suppression Catégories (Phase 2G T3) ────────────────────────
+    # /budget/panel/category-create/ → panel création catégorie ou sous-catégorie (fragment HTMX → #modal-content)
+    path(
+        "panel/category-create/",
+        views.budget_panel_category_create,
+        name="panel_category_create",
+    ),
+    # /budget/category/create/submit/ → crée la catégorie ou sous-catégorie en DB (POST HTMX)
+    path(
+        "category/create/submit/",
+        views.budget_category_create_submit,
+        name="category_create_submit",
+    ),
+    # /budget/category/<obj_type>/<slug>/delete-confirm/ → panel warning avant suppression (GET HTMX)
+    # obj_type : "category" | "subcategory"
+    path(
+        "category/<str:obj_type>/<slug:slug>/delete-confirm/",
+        views.budget_panel_category_delete_confirm,
+        name="category_delete_confirm",
+    ),
+    # /budget/category/<obj_type>/<slug>/delete/ → supprime l'objet en DB (POST HTMX)
+    path(
+        "category/<str:obj_type>/<slug:slug>/delete/",
+        views.budget_category_delete,
+        name="category_delete",
+    ),
     # ── CRUD Règles (Phase 2G) ───────────────────────────────────────────────
     # /budget/panel/rules/ → panel liste des règles (fragment HTMX → #modal-content)
     path("panel/rules/", views.budget_panel_rules_list, name="panel_rules_list"),

@@ -1,5 +1,72 @@
 # CHANGELOG — BudgetTracker
 
+## 2026-05-12 — Session 26 : Phase 2G T3 — Catégories CRUD + panel Gestion + tests (VSCode)
+
+**Contexte**
+Livraison de T3 (issue #34) : créer et supprimer des catégories/sous-catégories depuis l'UI sans passer par l'admin Django. Également : panel "Gérer les catégories", 3 nouveaux fichiers de tests, fix priorité règles, fix Z-index, click-outside dropdowns, et redesign UI (cartes vs tableau, suppression des abréviations).
+
+**Livré**
+
+*Catégories CRUD — nouvelles vues (6)*
+- `budget_panel_category_create` — GET : panel création, grille 40 icônes curated (`_CURATED_ICONS` module-level, pas de filtre "déjà utilisé"), palette 8 colonnes
+- `budget_category_create_submit` — POST : catégorie principale ou sous-catégorie, validation doublon, slug auto-généré
+- `budget_panel_category_delete_confirm` — GET : modal warning avec counts (transactions, sous-catégories, règles) impactés
+- `budget_category_delete` — POST : suppression + `HX-Redirect /budget/`
+- `budget_panel_category_manage` — GET : liste toutes catégories annotées (subcat_count, tx_count, rules_count)
+- `budget_panel_category_manage_detail` — GET : détail catégorie (sous-cats + règles)
+
+*Nouveaux templates (4)*
+- `_panel_category_create.html` — steps JS show/hide (type → icône → couleur → nom)
+- `_panel_category_delete_confirm.html` — warning + confirmation suppression
+- `_panel_category_manage.html` — liste catégories avec stats et chevron
+- `_panel_category_manage_detail.html` — cartes individuelles sous-cats + règles, badge "perso", hover-reveal delete
+
+*UI index.html*
+- Dropdown "Créer" : entrée "Nouvelle catégorie" (SOON → fonctionnel)
+- Dropdown "Paramètres" : lien admin Django → HTMX "Gérer les catégories"
+- Fix Z-index : `relative z-[1]` sur `panel_left` — dropdown "Tous les comptes" ne passe plus derrière le donut
+- Click-outside handler `document.addEventListener('click', ...)` pour les `<details>` catégories et comptes
+
+*`_cat_picker_row.html`*
+- Bouton suppression sous-catégorie perso : sibling `<div class="group/subrow flex">` + delete button `opacity-0 group-hover/subrow:opacity-100` — évite le nesting button-in-button (HTML invalide)
+
+*Fix priorité règles*
+- `Max("priority")` depuis `django.db.models` dans les 2 vues de création de règles (était hardcodé `10`)
+- Les 5 règles existantes re-numérotées 1→5 via shell Django
+
+*3 nouveaux fichiers de tests*
+- `test_categorization_priority.py` — 5 tests : règle priorité haute gagne, seul match, inactive ignorée, no match, case-insensitive
+- `test_rule_priority_autoincrement.py` — 4 tests : première règle = priorité 1, séquentiel croissant, max+1, get_or_create n'écrase pas
+- `test_import_decimal_precision.py` — 6 tests : 0.01 CHF exact, standard 2 déc, CHF=amount, EUR×taux, None si API down, zéro sans crash
+- **186 tests passent**
+
+*Convention UI*
+- Zéro abréviation : "tx" → "transactions", "sous-cat" → "sous-catégories" dans tous les templates de gestion
+- Style liste → cartes individuelles (`space-y-1.5`, `bg-surface-2/50 border border-edge/30 rounded-xl`) au lieu de `divide-y`
+
+**Décisions**
+
+| Sujet | Décision | Pourquoi |
+|-------|----------|----------|
+| Icônes categories | 40 icônes curated, aucun filtre "déjà utilisé" | 139 catégories pour 115 icônes max → unicité impossible. Une icône peut servir à plusieurs catégories. |
+| Stacking context Z-index | `relative z-[1]` sur panel gauche | `backdrop-blur-xl` crée un nouveau stacking context, l'ordre DOM seul détermine la priorité. Fix minimal, pas de restructuration DOM. |
+| `<details>` click-outside | `document.addEventListener('click', ...)` avec `!el.contains(e.target)` | Comportement natif absent. Ajout minimal JS, pas de lib externe. |
+| Style détail catégorie | Cartes individuelles plutôt que tableau/dividers | Plus cohérent avec le style général de l'app (liste transactions), moins rigide visuellement. |
+| Abréviations UI | Banni : "tx", "sous-cat" → mots complets | Convention explicite demandée par Emmanuel. |
+
+**Bugs rencontrés**
+- `Count("transaction")` → FieldError : le `related_name` dans Django ORM est `"transactions"` (pas le nom du modèle). Même pattern pour `Count("rules")` (pas `"categorizationrule"`)
+- Icon picker : 1 seule icône affichée → le filtre `used_icons` excluait les 40 curated (toutes déjà utilisées). Fix : supprimer tout filtrage.
+- Imports ruff dans tests : ordre stdlib/third-party/local incorrect → `ruff check --fix`
+- `<button>` imbriqué dans `<form><button>` pour delete → HTML invalide. Fix : wrapper `<div class="group/subrow flex">` + form `flex-1` + delete button sibling.
+
+**Reste à faire**
+- T4 : `apply_rules` management command (issue #32)
+- T5 : QA fixes (issue #29)
+- T6 : Budget Paramètres dropdown (issue #30)
+- Session classification manuelle (~4h)
+- Merge `feature/phase-2g-rules-crud` → development → main + tag v0.1.0
+
 ## 2026-05-08 — Session 24 : Code review + fixes services.py + refacto _clean_description (VSCode)
 
 **Contexte**

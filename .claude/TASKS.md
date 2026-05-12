@@ -1,6 +1,6 @@
 # TASKS — BricBudget
 > Rythme : ~3h le samedi matin
-> Mis à jour : 2026-05-08 (session 24 — code review + fixes services.py + _clean_description refacto)
+> Mis à jour : 2026-05-12 (session 26 — Phase 2G T3 livré : catégories CRUD + panel gestion + tests)
 > Détail opérationnel → GitHub Issues / Milestones
 
 ---
@@ -587,12 +587,34 @@
 - [x] **Recherche + chips** depuis `display_name` (plus `description_raw`)
 - [x] **171 tests passent**
 
-### T3 — Créer une catégorie (Issue #34)
-- [ ] Modal "Créer catégorie" depuis le dropdown "Créer" (actuellement SOON badge)
+### T3 — Créer une catégorie (Issue #34) ✅ (2026-05-12)
+- [x] Panel "Nouvelle catégorie" depuis le dropdown "Créer" — grille 40 icônes curated + palette 8 cols + steps JS
+- [x] Panel "Gérer les catégories" — liste annotée (subcat_count, tx_count, rules_count) + détail (sous-cats, règles)
+- [x] Bouton "Supprimer" sur catégories/sous-catégories personnalisées + modal warning (counts impactés)
+- [x] Bouton delete sous-catégorie dans `_cat_picker_row.html` (hover-reveal sur badge "perso", `group/subrow`)
+- [x] Fix priorité règles : `Max("priority")` auto-increment (était hardcodé `10`)
+- [x] Fix Z-index dropdown derrière panel Distribution : `relative z-[1]` sur `panel_left`
+- [x] Click-outside handler `<details>` dropdowns (catégories + comptes) — `document.addEventListener('click'...)`
+- [x] Convention UI : zéro abréviation ("transactions", "sous-catégories" — plus de "tx", "sous-cat")
+- [x] Style liste → cartes individuelles (`space-y-1.5`, `bg-surface-2/50 border border-edge/30`)
+- [x] 3 nouveaux fichiers tests : `test_categorization_priority`, `test_rule_priority_autoincrement`, `test_import_decimal_precision`
+- [x] **186 tests passent**
 
 ### T4 — apply_rules management command (Issue #32)
 - [ ] `transactions/management/commands/apply_rules.py` — applique toutes les règles actives en batch
 - [ ] `make apply-rules`
+
+### T5 — QA fixes pré-classification (Issue #29)
+- [ ] Logos restants : `_steps_create_account.html` + `_import_detail.html` → migrer vers `{% bank_icon_url %}` + `bank_logo.html`
+- [ ] Fichiers importés archivés avec UUID : `ImportLog.file_path` (nullable CharField) + migration
+- [ ] Toggle virement interne : filtrer les virements internes du total dépenses
+- [ ] Descriptions UBS : nettoyer les descriptions parasites UBS
+
+### T6 — Budget Paramètres dropdown (Issue #30)
+- [ ] Activer le bouton Paramètres (actuellement disabled + badge SOON)
+- [ ] Toggle montants entiers / avec décimales
+- [ ] Exporter les règles de catégorisation → JSON téléchargeable
+- [ ] Lien ⚙ Gérer les catégories → admin Django
 
 ### Classification + déploiement
 - [ ] **Session classification** : catégoriser toutes les transactions Yuh + CIC (~4h)
@@ -601,6 +623,49 @@
 - [ ] **Merge `feature/phase-2g-rules-crud` → development → main** (PR GitHub)
 - [ ] **Tag v0.1.0** — premier déploiement utilisable
 - [ ] `make backup` → snapshot DB avant mise en prod
+
+---
+
+## 🔒 Phase 2H — Sécurité & Déploiement Railway (Milestone #18)
+> Branche : `feature/phase-2h-deploy`
+> Prérequis : Phase 2G mergée sur main
+> Critères : app accessible sur Railway, login protégé, CSS/JS chargés, /admin/ caché
+
+### T1 — Settings HTTPS prod (Issue #36) 🔴 BLOQUANT
+- [ ] Section `# 11. Production security` dans `settings.py`
+- [ ] `SECURE_SSL_REDIRECT`, `SECURE_HSTS_SECONDS`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`
+- [ ] `SESSION_COOKIE_AGE = 60 * 60 * 8` (expire après 8h d'inactivité)
+- [ ] `.env.example` mis à jour avec les nouvelles variables
+
+### T2 — Static files + Whitenoise (Issue #39) 🔴 BLOQUANT
+- [ ] `pip install whitenoise`
+- [ ] `STATIC_ROOT` défini dans `settings.py`
+- [ ] `WhiteNoiseMiddleware` après `SecurityMiddleware`
+- [ ] `STORAGES` avec `CompressedManifestStaticFilesStorage`
+- [ ] `make collectstatic` dans Makefile
+
+### T3 — Rate limiting login — django-axes (Issue #37) 🟠 IMPORTANT
+- [ ] `pip install django-axes`
+- [ ] `INSTALLED_APPS`, `MIDDLEWARE`, `AUTHENTICATION_BACKENDS` mis à jour
+- [ ] `python manage.py migrate axes`
+- [ ] Lockout après 5 tentatives, débloqué après 1h
+
+### T4 — URL /admin/ cachée (Issue #38) 🟠 IMPORTANT
+- [ ] `ADMIN_URL = config("ADMIN_URL", default="admin/")` dans `settings.py`
+- [ ] `urls.py` mis à jour : `path(settings.ADMIN_URL, admin.site.urls)`
+- [ ] Variable Railway : `ADMIN_URL=<valeur secrète>`
+
+### T5 — Logging prod stdout (Issue #40) 🟡 UTILE
+- [ ] `LOGGING` configuré dans `settings.py` (stdout → Railway dashboard)
+- [ ] `LOG_LEVEL` en variable d'env
+
+### T6 — Setup Railway + déploiement initial (Issue #41)
+- [ ] Compte Railway créé, projet connecté au repo GitHub
+- [ ] Toutes les variables d'env positionnées
+- [ ] `gunicorn` installé + `Procfile` créé
+- [ ] Build command : `collectstatic` + `migrate`
+- [ ] App accessible sur `https://<projet>.railway.app`
+- [ ] Login, import CSV, /admin/ secret → tout testé
 
 ---
 

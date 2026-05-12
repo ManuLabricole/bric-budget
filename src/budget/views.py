@@ -27,7 +27,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
-from django.db.models import Sum
+from django.db.models import Count, Max, Sum
 from django.db.models.functions import Coalesce, TruncMonth
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -116,6 +116,114 @@ _RULE_NOISE_TOKENS = {
     "NUMERO",
     "CODE",
 }
+
+
+# =============================================================================
+# Palette de couleurs pour les catégories créées par l'utilisateur
+# =============================================================================
+#
+# 16 pastels harmonieux sur fond très sombre (#131314).
+# Les 5 premières sont les couleurs déjà utilisées par les catégories système —
+# on les inclut car l'utilisateur peut vouloir s'en inspirer ou les réutiliser.
+# Stockée ici (pas dans Tailwind) car c'est une donnée métier, pas un token UI.
+CATEGORY_COLOR_PALETTE = [
+    {"hex": "#eed8b4", "name": "Ocre"},
+    {"hex": "#deab5e", "name": "Caramel"},
+    {"hex": "#e77f79", "name": "Corail"},
+    {"hex": "#5abdc5", "name": "Cyan"},
+    {"hex": "#63e096", "name": "Menthe"},
+    {"hex": "#b09be8", "name": "Lavande"},
+    {"hex": "#f09e5a", "name": "Orange"},
+    {"hex": "#7ec8e3", "name": "Ciel"},
+    {"hex": "#f0c878", "name": "Miel"},
+    {"hex": "#e8a0b0", "name": "Rose"},
+    {"hex": "#95d4b4", "name": "Sauge"},
+    {"hex": "#d4a0d0", "name": "Lilas"},
+    {"hex": "#c8d87c", "name": "Citron"},
+    {"hex": "#a0c8f8", "name": "Bleu"},
+    {"hex": "#98d8d8", "name": "Turquoise"},
+    {"hex": "#e8c8a8", "name": "Sable"},
+]
+
+
+# 40 icônes disponibles dans le picker de création de catégorie.
+# Ordonnées par thème pour un affichage cohérent en grille 8 colonnes.
+# Les icônes déjà attribuées à une catégorie/sous-catégorie existante
+# sont filtrées côté vue — elles n'apparaissent pas dans le picker.
+_CURATED_ICONS = [
+    # Alimentation (4)
+    "burger",
+    "coffee",
+    "chef-hat",
+    "tools-kitchen",
+    # Transports (6)
+    "car",
+    "bus",
+    "train",
+    "plane",
+    "bike",
+    "parking",
+    # Shopping & style (3)
+    "basket",
+    "shirt",
+    "tag",
+    # Santé (3)
+    "pill",
+    "stethoscope",
+    "first-aid-kit",
+    # Logement (5)
+    "home",
+    "key",
+    "bolt",
+    "flame",
+    "tool",
+    # Finance & travail (7)
+    "wallet",
+    "coin",
+    "pig-money",
+    "briefcase",
+    "file-invoice",
+    "receipt",
+    "percentage",
+    # Loisirs & culture (7)
+    "movie",
+    "music",
+    "ball-football",
+    "beach",
+    "luggage",
+    "gift",
+    "book",
+    # Famille, animaux & divers (5)
+    "device-laptop",
+    "wifi",
+    "users",
+    "baby-carriage",
+    "paw",
+]
+
+
+def _generate_unique_slug(name: str, model_class) -> str:
+    """
+    Génère un slug unique pour une catégorie ou sous-catégorie.
+
+    Processus :
+    1. slugify(name) → minuscules + ASCII + hyphens (ex: "Alimentation et Boissons" → "alimentation-et-boissons")
+    2. Remplace les hyphens par underscores pour cohérence avec les slugs système existants
+    3. Si le slug existe déjà en DB, ajoute un suffixe numérique (_1, _2, …)
+
+    Paramètres :
+        name        : nom saisi par l'utilisateur
+        model_class : Category ou SubCategory (les deux ont un champ slug unique)
+    """
+    from django.utils.text import slugify
+
+    base_slug = slugify(name, allow_unicode=False).replace("-", "_")
+    slug = base_slug
+    counter = 1
+    while model_class.objects.filter(slug=slug).exists():
+        slug = f"{base_slug}_{counter}"
+        counter += 1
+    return slug
 
 
 def _keyword_q(keyword: str):
@@ -1741,13 +1849,17 @@ def budget_rule_create_standalone_submit(request):
             )
 
     # Étape 2 — créer la règle + bulk apply
+    # Priorité = max existant + 1 → la dernière règle créée gagne toujours en cas de conflit
+    next_priority = (
+        CategorizationRule.objects.aggregate(m=Max("priority"))["m"] or 0
+    ) + 1
     rule, created = CategorizationRule.objects.get_or_create(
         keyword=keyword,
         category=category,
         defaults={
             "subcategory": subcategory,
             "target_field": "display_name",
-            "priority": 10,
+            "priority": next_priority,
             "is_active": True,
         },
     )
@@ -1957,13 +2069,16 @@ def budget_rule_create_submit(request):
             )
 
     # Étape 2 — créer la règle + bulk apply
+    next_priority = (
+        CategorizationRule.objects.aggregate(m=Max("priority"))["m"] or 0
+    ) + 1
     rule, created = CategorizationRule.objects.get_or_create(
         keyword=keyword,
         category=category,
         defaults={
             "subcategory": subcategory,
             "target_field": "display_name",
-            "priority": 10,
+            "priority": next_priority,
             "is_active": True,
         },
     )
@@ -2242,6 +2357,7 @@ def budget_category_detail(request, slug):
             "subcategory__name",
             "subcategory__slug",
             "subcategory__icon",
+            "subcategory__is_system",  # nécessaire pour afficher/masquer le bouton Supprimer
         )
         .annotate(total=Sum(Coalesce("amount_chf", "amount")))
         .order_by("total")
@@ -2878,3 +2994,298 @@ def budget_rule_edit_submit(request, rule_id):
         rule.save(update_fields=["keyword", "category_id", "subcategory_id"])
 
     return render(request, "budget/_rule_row.html", {"rule": rule})
+
+
+# =============================================================================
+# Catégories — Gestion (panel liste + détail) — Phase 2G T3
+# =============================================================================
+
+
+@login_required
+def budget_panel_category_manage(request):
+    """
+    Panel de gestion des catégories : liste toutes les catégories avec leurs stats.
+
+    URL  : GET /budget/panel/category-manage/
+    HTMX : hx-target="#modal-content" hx-swap="innerHTML"
+
+    Chaque catégorie est annotée avec :
+    - subcat_count : nombre de sous-catégories
+    - tx_count     : nombre de transactions directement liées
+    - rules_count  : nombre de règles liées
+    """
+    cats = (
+        Category.objects.filter(is_active=True)
+        .annotate(
+            subcat_count=Count("subcategories", distinct=True),
+            tx_count=Count("transactions", distinct=True),
+            rules_count=Count("rules", distinct=True),
+        )
+        .order_by("order", "name")
+    )
+    return render(request, "budget/_panel_category_manage.html", {"cats": cats})
+
+
+@login_required
+def budget_panel_category_manage_detail(request, slug):
+    """
+    Panel de détail d'une catégorie : sous-catégories + règles liées.
+
+    URL  : GET /budget/panel/category-manage/<slug>/
+    HTMX : hx-target="#modal-content" hx-swap="innerHTML"
+    Bouton ← : hx-get vers budget_panel_category_manage (retour à la liste).
+    """
+    cat = get_object_or_404(Category, slug=slug, is_active=True)
+
+    subcats = cat.subcategories.annotate(
+        tx_count=Count("transactions", distinct=True),
+        rules_count=Count("rules", distinct=True),
+    ).order_by("name")
+
+    # Règles directement liées à cette catégorie principale
+    rules = (
+        CategorizationRule.objects.filter(category=cat)
+        .select_related("subcategory")
+        .order_by("-priority", "keyword")
+    )
+
+    # Comptage global transactions (directes + via sous-catégories)
+    tx_direct = Transaction.objects.filter(category=cat).count()
+    tx_via_subcats = Transaction.objects.filter(subcategory__category=cat).count()
+
+    return render(
+        request,
+        "budget/_panel_category_manage_detail.html",
+        {
+            "cat": cat,
+            "subcats": subcats,
+            "rules": rules,
+            "tx_direct": tx_direct,
+            "tx_via_subcats": tx_via_subcats,
+        },
+    )
+
+
+# =============================================================================
+# Catégories — Création (Phase 2G T3)
+# =============================================================================
+
+
+@login_required
+def budget_panel_category_create(request):
+    """
+    Charge le panel de création de catégorie ou sous-catégorie dans #modal-content.
+
+    URL  : GET /budget/panel/category-create/
+    HTMX : hx-target="#modal-content" hx-swap="innerHTML"
+
+    Passe au template :
+    - icon_names    : liste triée des noms de fichiers SVG disponibles (sans extension)
+    - cats_with_subcats : pour le picker de catégorie parente (sous-cat uniquement)
+    - color_palette : CATEGORY_COLOR_PALETTE — 16 couleurs pastels
+    """
+    _, cats_with_subcats = _cats_with_subcats()
+
+    return render(
+        request,
+        "budget/_panel_category_create.html",
+        {
+            "available_icons": _CURATED_ICONS,
+            "cats_with_subcats": cats_with_subcats,
+            "color_palette": CATEGORY_COLOR_PALETTE,
+        },
+    )
+
+
+@login_required
+@require_POST
+def budget_category_create_submit(request):
+    """
+    Crée une Category ou SubCategory depuis le formulaire du panel.
+
+    URL  : POST /budget/category/create/submit/
+    HTMX : hx-target="#modal-content" hx-swap="innerHTML"
+
+    Champs POST :
+        cat_type    : "main" (Category) | "sub" (SubCategory)
+        name        : nom affiché (ex : "Médecine douce")
+        icon        : nom fichier SVG sans extension (ex : "heartbeat")
+        colour_hex  : ex "#e77f79" — obligatoire si cat_type="main"
+        parent_id   : id Category parente — obligatoire si cat_type="sub"
+
+    En cas d'erreur : re-render le panel avec les erreurs et valeurs pré-remplies.
+    En cas de succès : render le même template en mode "success" (écran de confirmation).
+    """
+    cat_type = request.POST.get("cat_type", "main")
+    name = request.POST.get("name", "").strip()
+    icon = request.POST.get("icon", "")
+    errors = []
+
+    if not name:
+        errors.append("Le nom est obligatoire.")
+    if not icon:
+        errors.append("Choisissez une icône.")
+
+    obj_label = ""
+    obj_type_label = ""
+
+    if not errors:
+        if cat_type == "main":
+            colour_hex = request.POST.get("colour_hex", "")
+            if not colour_hex:
+                errors.append("Choisissez une couleur.")
+            else:
+                if Category.objects.filter(name__iexact=name).exists():
+                    errors.append(f"Une catégorie « {name} » existe déjà.")
+                else:
+                    slug = _generate_unique_slug(name, Category)
+                    Category.objects.create(
+                        name=name,
+                        slug=slug,
+                        icon=icon,
+                        colour_hex=colour_hex,
+                        order=100,  # placée en fin de liste par défaut
+                        is_system=False,
+                    )
+                    obj_label = name
+                    obj_type_label = "catégorie principale"
+
+        elif cat_type == "sub":
+            parent_id = request.POST.get("parent_id", "").strip()
+            if not parent_id:
+                errors.append("Choisissez une catégorie parente.")
+            else:
+                parent = get_object_or_404(Category, id=parent_id)
+                if SubCategory.objects.filter(
+                    category=parent, name__iexact=name
+                ).exists():
+                    errors.append(
+                        f"Une sous-catégorie « {name} » existe déjà dans {parent.name}."
+                    )
+                else:
+                    slug = _generate_unique_slug(name, SubCategory)
+                    SubCategory.objects.create(
+                        category=parent,
+                        name=name,
+                        slug=slug,
+                        icon=icon,
+                        is_system=False,
+                    )
+                    obj_label = f"{name} (sous {parent.name})"
+                    obj_type_label = "sous-catégorie"
+
+    if errors:
+        # Re-render avec erreurs + pré-remplissage (posted = dict des valeurs soumises)
+        _, cats_with_subcats = _cats_with_subcats()
+        return render(
+            request,
+            "budget/_panel_category_create.html",
+            {
+                "available_icons": _CURATED_ICONS,
+                "cats_with_subcats": cats_with_subcats,
+                "color_palette": CATEGORY_COLOR_PALETTE,
+                "errors": errors,
+                "posted": request.POST,
+            },
+        )
+
+    # Succès — même template, branche {% if success %} activée côté HTML
+    return render(
+        request,
+        "budget/_panel_category_create.html",
+        {
+            "success": True,
+            "obj_label": obj_label,
+            "obj_type_label": obj_type_label,
+        },
+    )
+
+
+# =============================================================================
+# Catégories — Suppression (Phase 2G T3)
+# =============================================================================
+
+
+@login_required
+def budget_panel_category_delete_confirm(request, obj_type, slug):
+    """
+    Affiche le panel de confirmation de suppression avec les counts d'impact.
+
+    URL  : GET /budget/category/<obj_type>/<slug>/delete-confirm/
+    HTMX : hx-target="#modal-content" hx-swap="innerHTML"
+
+    obj_type : "category"    → supprime une Category (+ sous-cats CASCADE)
+               "subcategory" → supprime une SubCategory (transactions → SET_NULL)
+
+    Les catégories/sous-catégories système (is_system=True) retournent 403.
+    """
+    if obj_type == "category":
+        obj = get_object_or_404(Category, slug=slug)
+        if obj.is_system:
+            return HttpResponse(
+                "Catégorie système — suppression interdite.", status=403
+            )
+        tx_count = Transaction.objects.filter(category=obj).count()
+        subcat_count = obj.subcategories.count()
+        rules_count = CategorizationRule.objects.filter(category=obj).count()
+
+    elif obj_type == "subcategory":
+        obj = get_object_or_404(SubCategory, slug=slug)
+        if obj.is_system:
+            return HttpResponse(
+                "Sous-catégorie système — suppression interdite.", status=403
+            )
+        tx_count = Transaction.objects.filter(subcategory=obj).count()
+        subcat_count = 0
+        rules_count = CategorizationRule.objects.filter(subcategory=obj).count()
+
+    else:
+        return HttpResponse("Type invalide.", status=400)
+
+    delete_url = reverse("budget:category_delete", args=[obj_type, slug])
+
+    return render(
+        request,
+        "budget/_panel_category_delete_confirm.html",
+        {
+            "obj": obj,
+            "obj_type": obj_type,
+            "tx_count": tx_count,
+            "subcat_count": subcat_count,
+            "rules_count": rules_count,
+            "delete_url": delete_url,
+        },
+    )
+
+
+@login_required
+@require_POST
+def budget_category_delete(request, obj_type, slug):
+    """
+    Supprime une Category ou SubCategory non-système.
+
+    URL  : POST /budget/category/<obj_type>/<slug>/delete/
+    HTMX : hx-target="#modal-content" hx-swap="innerHTML"
+
+    Django exécute automatiquement toutes les cascades définies sur les ForeignKey :
+    - Category supprimée → SubCategories CASCADE, BudgetTarget CASCADE,
+      CategorizationRules CASCADE, Transaction.category SET_NULL
+    - SubCategory supprimée → Transaction.subcategory SET_NULL,
+      CategorizationRule.subcategory SET_NULL
+
+    Après suppression, HTMX recharge /budget/ via l'en-tête HX-Redirect.
+    """
+    if obj_type == "category":
+        obj = get_object_or_404(Category, slug=slug, is_system=False)
+    elif obj_type == "subcategory":
+        obj = get_object_or_404(SubCategory, slug=slug, is_system=False)
+    else:
+        return HttpResponse("Type invalide.", status=400)
+
+    obj.delete()
+
+    # HX-Redirect demande à HTMX de naviguer vers /budget/ après la suppression.
+    # Le modal se fermera automatiquement car la page se recharge entièrement.
+    response = HttpResponse("")
+    response["HX-Redirect"] = reverse("budget:index")
+    return response

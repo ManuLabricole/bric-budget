@@ -4,7 +4,7 @@
 {% block panel_left %}
     <div class="flex flex-col gap-4 h-full">
         {# ── Activité — hero section ──────────────────────────────────────────── #}
-        <div class="bg-surface-3 rounded-xl p-5 flex flex-col">
+        <div class="bg-surface-3/70 backdrop-blur-xl border border-edge/60 rounded-xl p-5 flex flex-col">
             <div class="flex items-center justify-between mb-3">
                 <h2 class="text-sm font-semibold text-text-base">Activité</h2>
                 <div class="flex items-center gap-1">
@@ -48,7 +48,7 @@
         {# l'espace restant en 2×1fr) :                                            #}
         {#   Logo · Banque · Compte · Relevé · Match · Transactions · Date · →    #}
         {# CIC multi-feuilles est aplati : chaque compte = 1 ligne indépendante.   #}
-        <div class="bg-surface-3 rounded-xl p-5">
+        <div class="bg-surface-3/70 backdrop-blur-xl border border-edge/60 rounded-xl p-5">
             <h2 class="text-sm font-semibold text-text-base mb-4">Historique</h2>
             {% if grouped_logs %}
                 {# Lignes — on aplatit : pour chaque groupe, pour chaque entrée → 1 row #}
@@ -137,7 +137,7 @@
 {% block panel_right %}
     <aside class="flex-[1] min-w-0 flex flex-col gap-4">
         {# ── Upload ──────────────────────────────────────────────────────────── #}
-        <div class="bg-surface-3 rounded-xl p-5">
+        <div class="bg-surface-3/70 backdrop-blur-xl border border-edge/60 rounded-xl p-5">
             <h2 class="text-sm font-semibold text-text-base mb-3">Importer</h2>
             <form id="upload-form"
                   hx-post="{% url 'imports:upload' %}"
@@ -184,7 +184,7 @@
             <div id="import-steps"></div>
         </div>
         {# ── Synchronisation — groupé par banque ─────────────────────────────── #}
-        <div class="bg-surface-3 rounded-xl p-5">
+        <div class="bg-surface-3/70 backdrop-blur-xl border border-edge/60 rounded-xl p-5">
             <h2 class="text-sm font-semibold text-text-base mb-3">Synchronisation</h2>
             {% if bank_groups %}
                 <div class="flex flex-col gap-4">
