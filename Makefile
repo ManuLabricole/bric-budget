@@ -187,6 +187,10 @@ recalculate-display-names:
 	@printf "  🧹 $(CYAN)Recalcul display_name pour toutes les transactions...$(RESET)\n"
 	@$(MANAGE) recalculate_display_names
 
+apply-rules:
+	@printf "  ⚡ $(CYAN)Application des règles de catégorisation...$(RESET)\n"
+	@$(MANAGE) apply_rules $(if $(DRY),--dry-run,) $(if $(RESET),--reset,)
+
 export-rules:
 	@printf "  📤 $(CYAN)Export règles de catégorisation → JSON...$(RESET)\n"
 	@mkdir -p assets/private
