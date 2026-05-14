@@ -1340,7 +1340,7 @@ def budget_toggle_ignore(request, tx_id):
         Le champ source=detail dans le formulaire HTMX indique quel fragment retourner.
     """
     tx = get_object_or_404(
-        Transaction.objects.select_related(
+        Transaction.objects.for_user(request.user).select_related(
             "category", "subcategory", "account", "account__bank"
         ),
         pk=tx_id,
@@ -1410,7 +1410,9 @@ def budget_panel_category_picker(request):
     """
     tx_id = request.GET.get("tx_id")
     tx = get_object_or_404(
-        Transaction.objects.select_related("category", "subcategory"),
+        Transaction.objects.for_user(request.user).select_related(
+            "category", "subcategory"
+        ),
         pk=tx_id,
     )
     # Catégories système = seedées à l'init, non supprimables (ex: Alimentation, Transport...)
@@ -1470,7 +1472,7 @@ def budget_categorize_transaction(request):
     sub_id = request.POST.get("subcategory_id") or None
     source = request.POST.get("source", "")
 
-    tx = get_object_or_404(Transaction, pk=tx_id)
+    tx = get_object_or_404(Transaction.objects.for_user(request.user), pk=tx_id)
     tx.category = get_object_or_404(Category, pk=cat_id)
     tx.subcategory = SubCategory.objects.filter(pk=sub_id).first() if sub_id else None
     tx.categorization_source = "manual"
@@ -1569,7 +1571,9 @@ def budget_modal_rule_intro(request):
     keyword = request.GET.get("keyword", "")
 
     tx = get_object_or_404(
-        Transaction.objects.select_related("category", "subcategory"),
+        Transaction.objects.for_user(request.user).select_related(
+            "category", "subcategory"
+        ),
         pk=tx_id,
     )
 
@@ -1613,7 +1617,9 @@ def budget_panel_rule_create(request):
     subcat_id = request.GET.get("subcat_id")
 
     tx = get_object_or_404(
-        Transaction.objects.select_related("category", "subcategory"),
+        Transaction.objects.for_user(request.user).select_related(
+            "category", "subcategory"
+        ),
         pk=tx_id,
     )
 
@@ -2167,7 +2173,7 @@ def budget_panel_tx_detail(request):
     """
     tx_id = request.GET.get("tx_id")
     tx = get_object_or_404(
-        Transaction.objects.select_related(
+        Transaction.objects.for_user(request.user).select_related(
             "category", "subcategory", "account", "account__bank"
         ),
         pk=tx_id,
@@ -2218,7 +2224,7 @@ def budget_toggle_reconcile(request, tx_id):
     Appelé uniquement depuis le panneau détail — pas de source à détecter.
     """
     tx = get_object_or_404(
-        Transaction.objects.select_related(
+        Transaction.objects.for_user(request.user).select_related(
             "category", "subcategory", "account", "account__bank"
         ),
         pk=tx_id,

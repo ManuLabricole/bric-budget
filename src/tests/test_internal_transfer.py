@@ -183,7 +183,7 @@ def test_sync_internal_no_category_is_not_internal(account):
 
 
 @pytest.fixture
-def superuser(db):
+def test_user(db):
     from django.contrib.auth import get_user_model
 
     User = get_user_model()
@@ -192,7 +192,7 @@ def superuser(db):
 
 
 @pytest.fixture
-def auth_client(superuser):
+def auth_client(test_user):
     c = Client()
     c.login(email="test@bricbudget.ch", password="pass")
     return c
@@ -200,12 +200,13 @@ def auth_client(superuser):
 
 @pytest.mark.django_db
 def test_categorize_to_virements_sets_internal_flags(
-    auth_client, cat_virements, account
+    auth_client, test_user, cat_virements, account
 ):
     """
     Via la vue budget_categorize_transaction :
     catégoriser une tx en "Virements" → is_internal_transfer=True, is_ignored=True.
     """
+    account.members.add(test_user)
     tx = make_tx(account, "TRANSFERT EMMANUEL BARRIOL", seed="t1")
 
     auth_client.post(
@@ -221,12 +222,13 @@ def test_categorize_to_virements_sets_internal_flags(
 
 @pytest.mark.django_db
 def test_categorize_away_from_virements_resets_flags(
-    auth_client, cat_virements, cat_alim, account
+    auth_client, test_user, cat_virements, cat_alim, account
 ):
     """
     Tx déjà en virements (flags=True) → recatégoriser en Alimentation
     → les deux flags repassent à False.
     """
+    account.members.add(test_user)
     tx = make_tx(account, "TRANSFERT", category=cat_virements, seed="t2")
     tx.is_internal_transfer = True
     tx.is_ignored = True
@@ -244,13 +246,14 @@ def test_categorize_away_from_virements_resets_flags(
 
 @pytest.mark.django_db
 def test_manual_toggle_ignore_does_not_change_internal_transfer_flag(
-    auth_client, cat_virements, account
+    auth_client, test_user, cat_virements, account
 ):
     """
     Le toggle manuel "Inclure dans l'analyse budgétaire" (toggle_ignore view)
     NE doit PAS modifier is_internal_transfer.
     Invariant : is_internal_transfer = booléen catégorie, pas du toggle manuel.
     """
+    account.members.add(test_user)
     tx = make_tx(account, "VIREMENT INTERNE", category=cat_virements, seed="t3")
     tx.is_internal_transfer = True
     tx.is_ignored = True
