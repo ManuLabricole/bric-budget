@@ -1,7 +1,7 @@
 # ─── Fichier .gitignore pour BudgetTracker ─────────────────────────────
 
 # --- Claude & documentation ---
-.claude/
+.claude/*
 assets/private/
 
 # ─── Environnement Python ───────────────────────────────────────
@@ -59,3 +59,14 @@ backups/
 .coverage
 htmlcov/
 .pytest_cache/
+
+# ─── Agent logs — activité locale uniquement (sauf LOGS.md index) ────────────
+.claude/logs/*.md
+!.claude/logs/LOGS.md
+
+# ─── Agent prompts — versionnés localement dans .claude/.git uniquement ──────
+# (ne jamais pousser sur GitHub)
+.claude/agents/
+
+# ─── MCP config — chemins absolus machine-spécifiques, ne pas partager ───────
+.mcp.json
