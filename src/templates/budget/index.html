@@ -159,7 +159,7 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                         </svg>
                         Entrées
                     </span>
-                    <span class="text-base font-bold">+{{ total_income|chf }} CHF</span>
+                    <span class="text-base font-bold">+{{ total_income|chf_pref:show_decimals }} CHF</span>
                 </a>
                 {# Sorties #}
                 <a href="{% url 'budget:set_tab' 'sorties' %}"
@@ -174,7 +174,7 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                         </svg>
                         Sorties
                     </span>
-                    <span class="text-base font-bold">−{{ total_expenses_abs|chf }} CHF</span>
+                    <span class="text-base font-bold">−{{ total_expenses_abs|chf_pref:show_decimals }} CHF</span>
                 </a>
                 {# Disponible — non cliquable, toujours gris #}
                 <div class="flex flex-col items-start gap-1 pb-3 pr-8 cursor-default text-text-muted">
@@ -189,9 +189,9 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                         Disponible
                     </span>
                     {% if total_available >= 0 %}
-                        <span class="text-base font-bold text-income">+{{ total_available|chf }} CHF</span>
+                        <span class="text-base font-bold text-income">+{{ total_available|chf_pref:show_decimals }} CHF</span>
                     {% else %}
-                        <span class="text-base font-bold text-expense">−{{ total_available|chf }} CHF</span>
+                        <span class="text-base font-bold text-expense">−{{ total_available|chf_pref:show_decimals }} CHF</span>
                     {% endif %}
                 </div>
                 {# Récurrentes — cliquable, même pattern que Entrées/Sorties #}
@@ -207,7 +207,7 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                         </svg>
                         Récurrentes
                     </span>
-                    <span class="text-base font-bold">−{{ total_recurring|chf }} CHF</span>
+                    <span class="text-base font-bold">−{{ total_recurring|chf_pref:show_decimals }} CHF</span>
                 </a>
                 {# Boutons actions — alignés à droite, même ligne que les KPIs #}
                 <div class="ml-auto flex items-center gap-1.5 pb-3">
@@ -331,6 +331,37 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                         </button>
                         <div id="params-menu"
                              class="hidden absolute right-0 top-full mt-2 w-80 bg-surface-3 border border-edge/70 rounded-2xl shadow-2xl z-20 py-1.5 overflow-hidden">
+                            {# Section AFFICHAGE #}
+                            <p class="px-4 pt-2 pb-1 text-[9px] font-bold text-text-disabled uppercase tracking-widest">Affichage</p>
+                            {# Toggle décimales — POST → redirect /budget/ (full reload car montants dispersés dans plusieurs zones) #}
+                            <form method="post"
+                                  action="{% url 'budget:toggle_decimals' %}"
+                                  class="contents">
+                                {% csrf_token %}
+                                <button type="submit"
+                                        onclick="document.getElementById('params-menu').classList.add('hidden')"
+                                        class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-text-base hover:bg-surface-hover transition-colors">
+                                    <span class="w-6 h-6 rounded-lg bg-surface-hover border border-edge/50 flex items-center justify-center flex-shrink-0">
+                                        <svg class="w-3 h-3"
+                                             fill="none"
+                                             viewBox="0 0 24 24"
+                                             stroke-width="2"
+                                             stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 14.25v2.25m3-4.5v4.5m3-6.75v6.75m3-9v9M6 20.25h12A2.25 2.25 0 0 0 20.25 18V6A2.25 2.25 0 0 0 18 3.75H6A2.25 2.25 0 0 0 3.75 6v12A2.25 2.25 0 0 0 6 20.25Z" />
+                                        </svg>
+                                    </span>
+                                    <span class="flex-1 text-left">Afficher les décimales</span>
+                                    {% if show_decimals %}
+                                        <svg class="w-3.5 h-3.5 text-gold"
+                                             fill="none"
+                                             viewBox="0 0 24 24"
+                                             stroke-width="2.5"
+                                             stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                                        </svg>
+                                    {% endif %}
+                                </button>
+                            </form>
                             {# Section DONNÉES #}
                             <p class="px-4 pt-2 pb-1 text-[9px] font-bold text-text-disabled uppercase tracking-widest">Données</p>
                             {# Gérer les règles → panel CRUD #}
@@ -474,11 +505,11 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                                 {# Montant : signe adapté selon la direction (+ entrées, − sorties/récurrentes) #}
                                 <span class="text-sm font-semibold text-text-base tabular-nums">
                                     {% if cat.total >= 0 %}
-                                        +{{ cat.total|chf }}
+                                        +
                                     {% else %}
-                                        −{{ cat.total|chf }}
+                                        −
                                     {% endif %}
-                                    CHF
+                                    {{ cat.total|chf_pref:show_decimals }} CHF
                                 </span>
                                 <div class="w-5 h-5 rounded-full border border-edge flex items-center justify-center flex-shrink-0 group-hover:border-gold transition-colors">
                                     <svg class="w-2.5 h-2.5 text-text-muted group-hover:text-gold"

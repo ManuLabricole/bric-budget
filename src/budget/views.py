@@ -21,6 +21,7 @@ Pourquoi les vues sont ici et pas dans transactions/ ?
 
 import calendar
 import json
+import logging
 import re
 from datetime import date
 from pathlib import Path
@@ -43,6 +44,8 @@ from transactions.models import (
     SubCategory,
     Transaction,
 )
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # Helpers — arithmétique sur les dates
@@ -922,6 +925,9 @@ def budget_index(request):
         "filter_account_ids": filter_account_ids,
         "all_categories": all_categories,
         "filter_cat_slugs": filter_cat_slugs,
+        # Préférence affichage décimales (toggle Paramètres)
+        # False (défaut) → entiers (32 232 CHF) | True → décimales (32 232,50 CHF)
+        "show_decimals": request.session.get("show_decimals", False),
     }
 
     return render(request, "budget/index.html", context)
@@ -3344,3 +3350,39 @@ def budget_category_delete(request, obj_type, slug):
     response = HttpResponse("")
     response["HX-Redirect"] = reverse("budget:index")
     return response
+
+
+# =============================================================================
+# budget_toggle_decimals — Bascule l'affichage des décimales dans les KPIs
+# =============================================================================
+
+
+@require_POST
+@login_required
+def budget_toggle_decimals(request):
+    """
+    Bascule la préférence d'affichage des décimales dans les montants CHF.
+
+    URL : /budget/toggle-decimals/  (POST)
+    Action : flip request.session['show_decimals'] (bool, default False)
+    Réponse : redirect vers /budget/ (full page reload pour mettre à jour les KPIs)
+
+    Pourquoi un full reload et pas HTMX partiel ?
+        Les montants sont dispersés dans plusieurs zones du template (KPIs, liste
+        catégories, donut label). Un reload complet est plus simple et fiable
+        qu'un swap HTMX multi-cible. La page budget se charge en <200ms donc pas
+        d'impact UX perceptible.
+
+    Pourquoi stocker en session et pas en cookie côté client ?
+        Cohérence avec tous les autres états UI (filtres, onglet, période).
+        La session Django est serveur : pas de JS complexe côté client.
+    """
+    current = request.session.get("show_decimals", False)
+    request.session["show_decimals"] = not current
+    logger.debug(
+        "toggle_decimals: user=%s show_decimals %s → %s",
+        request.user.username,
+        current,
+        not current,
+    )
+    return redirect("budget:index")

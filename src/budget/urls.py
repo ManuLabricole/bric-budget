@@ -212,4 +212,11 @@ urlpatterns = [
         views.budget_rule_edit_submit,
         name="rule_edit_submit",
     ),
+    # ── Paramètres (T6) ─────────────────────────────────────────────────────
+    # /budget/toggle-decimals/ → bascule l'affichage des décimales (POST → redirect)
+    path(
+        "toggle-decimals/",
+        views.budget_toggle_decimals,
+        name="toggle_decimals",
+    ),
 ]
