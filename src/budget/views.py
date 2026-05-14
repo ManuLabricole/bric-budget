@@ -481,7 +481,9 @@ def budget_index(request):
     # .filter() retourne un QuerySet (objet lazy) — la requête SQL n'est pas encore
     # envoyée à PostgreSQL. Elle le sera seulement quand on itère ou qu'on appelle
     # .aggregate(), .annotate()...
-    qs = Transaction.objects.filter(
+    # for_user() : filtre de sécurité — seules les tx des comptes dont
+    # request.user est membre. Sans ce filtre, un autre user connecté verrait tout.
+    qs = Transaction.objects.for_user(request.user).filter(
         date__gte=period_start,
         date__lte=period_end,
         is_ignored=False,
@@ -1191,7 +1193,7 @@ def budget_panel_transactions(request):
     # Pas de filtre is_ignored=False ici — contrairement à budget_index()
     # qui exclut les ignorées des KPIs budget, le panel les affiche en grisé.
     # L'utilisateur doit voir ce qu'il a ignoré pour pouvoir le réactiver.
-    qs = Transaction.objects.filter(
+    qs = Transaction.objects.for_user(request.user).filter(
         date__gte=period_start,
         date__lte=period_end,
         is_internal_transfer=False,
@@ -1351,12 +1353,21 @@ def budget_toggle_ignore(request, tx_id):
     slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
     bank_icon_url = bank_icon_map.get(slug, "")
 
-    # source=detail → appelé depuis le panneau détail → retourner le panneau entier
+    # source=detail → appelé depuis les toggles du panneau détail.
+    # close_on_back est passé comme champ hidden dans le formulaire pour préserver
+    # le contexte (True si ouvert depuis category_detail, False sinon).
     if request.POST.get("source") == "detail":
+        close_on_back = request.POST.get("close_on_back") == "true"
         return render(
             request,
             "budget/_panel_tx_detail.html",
-            {"tx": tx, "bank_icon_url": bank_icon_url},
+            {
+                "tx": tx,
+                "bank_icon_url": bank_icon_url,
+                "detail_target": "#panel-content",
+                "close_on_back": close_on_back,
+                "source": "category" if close_on_back else "",
+            },
         )
 
     # source=category → appelé depuis category_detail.html.
@@ -1463,7 +1474,17 @@ def budget_categorize_transaction(request):
     tx.category = get_object_or_404(Category, pk=cat_id)
     tx.subcategory = SubCategory.objects.filter(pk=sub_id).first() if sub_id else None
     tx.categorization_source = "manual"
-    tx.save(update_fields=["category", "subcategory", "categorization_source"])
+
+    # Sync is_internal_transfer + is_ignored selon la catégorie choisie.
+    # Si l'utilisateur catégorise en "Virements" → ignoré automatiquement.
+    # Si changement depuis "Virements" → les deux flags repassent à False.
+    from transactions.services import sync_internal_transfer
+
+    extra_fields = sync_internal_transfer(tx)
+    tx.save(
+        update_fields=["category", "subcategory", "categorization_source"]
+        + extra_fields
+    )
 
     # Extraction keyword + payload HX-Trigger — commun aux deux branches.
     tx_display = tx.display_name
@@ -1490,9 +1511,9 @@ def budget_categorize_transaction(request):
         }
     )
 
-    # source="category" → le picker était dans #cat-tx-detail.
-    # On retourne le détail mis à jour (ferme le picker, affiche la nouvelle
-    # catégorie) + HX-Trigger pour le toast "Créer une règle intelligente".
+    # source="category" → le picker était ouvert dans l'overlay #panel-content
+    # depuis category_detail.html. On retourne le détail mis à jour dans ce même
+    # overlay (close_on_back=True = bouton ← ferme, pas revenir à la liste).
     if source == "category":
         tx_full = Transaction.objects.select_related(
             "category", "subcategory", "account", "account__bank"
@@ -1511,7 +1532,7 @@ def budget_categorize_transaction(request):
                 "bank_icon_url": bank_icon_map.get(slug, ""),
                 "close_on_back": True,
                 "source": "category",
-                "detail_target": "#cat-tx-detail",
+                "detail_target": "#panel-content",
             },
         )
         response["HX-Trigger"] = hx_trigger
@@ -1629,7 +1650,8 @@ def budget_panel_rule_create(request):
     initial_count = 0
     if keyword:
         qs = (
-            Transaction.objects.filter(_keyword_q(keyword))
+            Transaction.objects.for_user(request.user)
+            .filter(_keyword_q(keyword))
             .select_related("subcategory")
             .order_by("-date")
         )
@@ -1734,7 +1756,8 @@ def budget_rule_standalone_preview(request):
 
     if combined_keyword:
         qs = (
-            Transaction.objects.filter(_keyword_q(combined_keyword))
+            Transaction.objects.for_user(request.user)
+            .filter(_keyword_q(combined_keyword))
             .select_related("account", "account__bank", "category", "subcategory")
             .order_by("-date")
         )
@@ -1816,7 +1839,7 @@ def budget_rule_create_standalone_submit(request):
         existing_rule = CategorizationRule.objects.filter(
             keyword=keyword, category=category
         ).first()
-        overwrite_qs = Transaction.objects.filter(
+        overwrite_qs = Transaction.objects.for_user(request.user).filter(
             _keyword_q(keyword), categorization_source="rule"
         )
         if existing_rule:
@@ -1864,11 +1887,15 @@ def budget_rule_create_standalone_submit(request):
         },
     )
 
-    updated_count = Transaction.objects.filter(_keyword_q(keyword)).update(
-        category=category,
-        subcategory=subcategory,
-        categorization_source="rule",
-        categorization_rule=rule,
+    updated_count = (
+        Transaction.objects.for_user(request.user)
+        .filter(_keyword_q(keyword))
+        .update(
+            category=category,
+            subcategory=subcategory,
+            categorization_source="rule",
+            categorization_rule=rule,
+        )
     )
 
     return render(
@@ -1919,7 +1946,11 @@ def budget_rule_live_preview(request):
     txs = []
     count = 0
     if keyword:
-        qs = Transaction.objects.filter(_keyword_q(keyword)).order_by("-date")
+        qs = (
+            Transaction.objects.for_user(request.user)
+            .filter(_keyword_q(keyword))
+            .order_by("-date")
+        )
         count = qs.count()
         txs = list(qs)  # toutes les transactions — la zone est scrollable
 
@@ -1970,7 +2001,9 @@ def budget_rule_preview(request):
     # Compter les transactions affectées SANS les modifier.
     # Toutes les transactions matchant le keyword sont comptées — sans exclusion.
     # Une règle explicite doit pouvoir écraser toute catégorisation antérieure.
-    affected_count = Transaction.objects.filter(_keyword_q(keyword)).count()
+    affected_count = (
+        Transaction.objects.for_user(request.user).filter(_keyword_q(keyword)).count()
+    )
 
     return render(
         request,
@@ -2035,7 +2068,7 @@ def budget_rule_create_submit(request):
         existing_rule = CategorizationRule.objects.filter(
             keyword=keyword, category=category
         ).first()
-        overwrite_qs = Transaction.objects.filter(
+        overwrite_qs = Transaction.objects.for_user(request.user).filter(
             _keyword_q(keyword), categorization_source="rule"
         )
         if existing_rule:
@@ -2083,13 +2116,17 @@ def budget_rule_create_submit(request):
         },
     )
 
-    updated_count = Transaction.objects.filter(
-        _keyword_q(keyword),
-    ).update(
-        category=category,
-        subcategory=subcategory,
-        categorization_source="rule",
-        categorization_rule=rule,
+    updated_count = (
+        Transaction.objects.for_user(request.user)
+        .filter(
+            _keyword_q(keyword),
+        )
+        .update(
+            category=category,
+            subcategory=subcategory,
+            categorization_source="rule",
+            categorization_rule=rule,
+        )
     )
 
     return render(
@@ -2141,12 +2178,12 @@ def budget_panel_tx_detail(request):
     slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
     bank_icon_url = bank_icon_map.get(slug, "")
 
-    # source="category" → le détail est chargé dans #cat-tx-detail (page catégorie),
-    # pas dans l'overlay #panel-content.
-    # detail_target est passé au template pour que le bouton catégorie sache
-    # où charger le picker (même conteneur que le détail courant).
+    # source="category" → ouvert depuis category_detail.html.
+    # close_on_back=True : bouton retour = fermer l'overlay (pas revenir à la liste,
+    # qui est déjà visible dans la page principale).
+    # detail_target est toujours #panel-content : l'overlay droit est utilisé partout,
+    # y compris depuis category_detail. Le div #cat-tx-detail est supprimé.
     source = request.GET.get("source", "")
-    detail_target = "#cat-tx-detail" if source == "category" else "#panel-content"
 
     return render(
         request,
@@ -2156,7 +2193,7 @@ def budget_panel_tx_detail(request):
             "bank_icon_url": bank_icon_url,
             "close_on_back": source == "category",
             "source": source,
-            "detail_target": detail_target,
+            "detail_target": "#panel-content",
         },
     )
 
@@ -2202,11 +2239,18 @@ def budget_toggle_reconcile(request, tx_id):
             {"tx": tx, "bank_icon_url": bank_icon_url},
         )
 
-    # source=detail → appelé depuis le panneau détail → retourner le panneau entier
+    # source=detail → retourner le panneau entier mis à jour.
+    close_on_back = request.POST.get("close_on_back") == "true"
     return render(
         request,
         "budget/_panel_tx_detail.html",
-        {"tx": tx, "bank_icon_url": bank_icon_url},
+        {
+            "tx": tx,
+            "bank_icon_url": bank_icon_url,
+            "detail_target": "#panel-content",
+            "close_on_back": close_on_back,
+            "source": "category" if close_on_back else "",
+        },
     )
 
 
@@ -2330,7 +2374,7 @@ def budget_category_detail(request, slug):
     # txs_active  = transactions non-ignorées seulement — utilisées pour les calculs
     #               budget (total, Sankey, donut) car les ignorées sont exclues de
     #               l'analyse, exactement comme dans budget_index.
-    base_qs = Transaction.objects.filter(
+    base_qs = Transaction.objects.for_user(request.user).filter(
         category=category,
         date__gte=period_start,
         date__lte=period_end,
@@ -2574,7 +2618,8 @@ def budget_category_detail(request, slug):
     # Utilisé uniquement dans le tab "objectif" pour visualiser la tendance.
     twelve_months_ago = _add_months(today.replace(day=1), -11)
     monthly_qs = (
-        Transaction.objects.filter(
+        Transaction.objects.for_user(request.user)
+        .filter(
             category=category,
             date__gte=twelve_months_ago,
             date__lte=today,
@@ -2632,7 +2677,7 @@ def budget_category_detail(request, slug):
 
         # % Dépenses année en cours : total jan→aujourd'hui / (target × mois écoulés)
         year_start = today.replace(month=1, day=1)
-        year_spent_agg = Transaction.objects.filter(
+        year_spent_agg = Transaction.objects.for_user(request.user).filter(
             category=category,
             date__gte=year_start,
             date__lte=today,
@@ -3049,9 +3094,13 @@ def budget_panel_category_manage_detail(request, slug):
         .order_by("-priority", "keyword")
     )
 
-    # Comptage global transactions (directes + via sous-catégories)
-    tx_direct = Transaction.objects.filter(category=cat).count()
-    tx_via_subcats = Transaction.objects.filter(subcategory__category=cat).count()
+    # Comptage global transactions (directes + via sous-catégories) — filtré par user
+    tx_direct = Transaction.objects.for_user(request.user).filter(category=cat).count()
+    tx_via_subcats = (
+        Transaction.objects.for_user(request.user)
+        .filter(subcategory__category=cat)
+        .count()
+    )
 
     return render(
         request,

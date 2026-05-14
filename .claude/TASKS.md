@@ -1,6 +1,6 @@
 # TASKS — BricBudget
 > Rythme : ~3h le samedi matin
-> Mis à jour : 2026-05-12 (session 26 — Phase 2G T3 livré : catégories CRUD + panel gestion + tests)
+> Mis à jour : 2026-05-14 (session 28 — Phase 2G T4b/T4c livrés : panel fixes + Account.members M2M + 210 tests)
 > Détail opérationnel → GitHub Issues / Milestones
 
 ---
@@ -600,9 +600,29 @@
 - [x] 3 nouveaux fichiers tests : `test_categorization_priority`, `test_rule_priority_autoincrement`, `test_import_decimal_precision`
 - [x] **186 tests passent**
 
-### T4 — apply_rules management command (Issue #32)
-- [ ] `transactions/management/commands/apply_rules.py` — applique toutes les règles actives en batch
-- [ ] `make apply-rules`
+### T4 — apply_rules management command (Issue #32) ✅ (2026-05-13)
+- [x] `transactions/management/commands/apply_rules.py` — applique toutes les règles actives en batch (excluant source="manual")
+- [x] `make apply-rules` — avec flags `DRY=1` et `RESET=1`
+- [x] 6 tests dans `src/tests/commands/test_apply_rules.py` — **192 tests passent**
+- [x] Dette technique notée : logique dans `handle()` → à extraire vers `services.py` si bouton UI un jour nécessaire
+
+### T4b — Fixes panneau détail + sync virement interne ✅ (2026-05-14)
+- [x] **Toggles "Ignorer" + "Pointer"** dans `_panel_tx_detail.html` — désormais fonctionnels : `hx-target="#panel-content"` + champ caché `close_on_back` propagé dans la chaîne POST
+- [x] **Suppression `#cat-tx-detail`** dans `category_detail.html` — overlay `#panel-content` unifié, plus de div statique inline (bug scroll + hx-target)
+- [x] **`sync_internal_transfer(tx)`** dans `services.py` — auto-set `is_ignored=True` + `is_internal_transfer=True` si `category.slug == "virements"`, retourne les champs modifiés pour `save(update_fields=...)`
+- [x] **`apply_rules.py`** étendu — `is_internal_transfer` + `is_ignored` dans les deux `bulk_update`
+- [x] **`transactions/admin.py`** — liens cliquables `account_link` + `category_link`, `select_related` (zéro N+1), filtre par banque (`account__bank`)
+- [x] **`src/tests/test_internal_transfer.py`** — 12 tests : `sync_internal_transfer()`, vue `budget_categorize_transaction`, `ImportService._build_transaction`, `apply_rules`
+
+### T4c — Account.members M2M (sécurité multi-utilisateur) ✅ (2026-05-14)
+- [x] **`Account.members = ManyToManyField(settings.AUTH_USER_MODEL)`** dans `accounts/models.py` — 1 compte peut appartenir à N users (compte joint Emmanuel + Carys)
+- [x] **Migration** `0013_account_members` — table M2M `accounts_account_members` (schéma)
+- [x] **Migration** `0014_account_members_data` — data migration : Emmanuel assigné à tous les comptes existants (try/except si user absent en CI)
+- [x] **`TransactionQuerySet.for_user(user)`** dans `transactions/models.py` — `filter(account__members=user)`, déclaré après les champs (DJ012)
+- [x] **17 requêtes dans `budget/views.py`** — toutes les `Transaction.objects` calls préfixées `.for_user(request.user)` : budget_index, panel_transactions, 4 vues règles, category_detail (3), panel_category_manage_detail (2)
+- [x] **`AccountAdmin`** avec `filter_horizontal = ("members",)` + `member_list` (emails CSV)
+- [x] **`src/tests/test_account_members.py`** — 6 tests : membre voit ses tx, non-membre voit 0, compte joint, isolation comptes mixtes
+- [x] **210 tests passent**
 
 ### T5 — QA fixes pré-classification (Issue #29)
 - [ ] Logos restants : `_steps_create_account.html` + `_import_detail.html` → migrer vers `{% bank_icon_url %}` + `bank_logo.html`
@@ -623,6 +643,17 @@
 - [ ] **Merge `feature/phase-2g-rules-crud` → development → main** (PR GitHub)
 - [ ] **Tag v0.1.0** — premier déploiement utilisable
 - [ ] `make backup` → snapshot DB avant mise en prod
+
+### Post-merge — Fixes audit (après v0.1.0, avant Phase 2H)
+> Issues identifiées lors de l'audit 2026-04-25. Aucune critique bloquante en mono-user.
+> À traiter avant Phase 3 (Carys multi-user) ou déploiement prod Railway.
+
+- [ ] **[SEC-01] IDOR** — Ajouter filtre `user` sur tous les `get_object_or_404(Transaction, pk=...)` dans `budget/views.py` (7 occurrences) — BLOQUANT avant Phase 3
+- [ ] **[SEC-02] GET mutatif** — Passer `budget_set_period`, `budget_set_tab`, `budget_set_cat_tab`, `budget_set_period_month` en POST
+- [ ] **[SEC-03] `@require_POST`** — Ajouter `@require_http_methods(["GET", "POST"])` sur `budget_modal_target_create`
+- [ ] **[CODE-01] Silent pass UBS** — Logger l'exception dans `UBSConnector.extract_account_identifier()` au lieu de `pass` silencieux (`ubs/parser.py:156`)
+- [ ] **[SEC-05] URL validation** — Valider le scheme URL dans `update_bank_logos.py:71`
+- [ ] **Review management commands** — Classifier DEV ONLY vs PROD SAFE + header dans chaque fichier
 
 ---
 

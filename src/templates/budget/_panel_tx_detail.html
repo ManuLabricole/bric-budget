@@ -220,10 +220,18 @@ Anatomie du toggle :
 <div class="px-5 space-y-4 flex-shrink-0">
     <div class="flex items-center justify-between gap-3">
         <span class="text-sm text-text-secondary">Inclure dans l'analyse budgétaire</span>
+        {% comment %}
+        hx-target="#panel-content" — toujours l'overlay droit, même depuis category_detail.
+        close_on_back est transmis comme champ hidden pour que la vue puisse reconstruire
+        le bouton retour correct après le toggle (fermer overlay vs revenir à la liste).
+        {% endcomment %}
         <form hx-post="{% url 'budget:toggle_ignore' tx.id %}"
               hx-target="#panel-content"
               hx-swap="innerHTML">
             <input type="hidden" name="source" value="detail">
+            <input type="hidden"
+                   name="close_on_back"
+                   value="{{ close_on_back|yesno:'true,false' }}">
             <button type="submit"
                     class="flex-shrink-0 w-9 h-5 rounded-full relative transition-colors {% if not tx.is_ignored %}bg-gold{% else %}bg-edge{% endif %}">
                 <span class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform {% if not tx.is_ignored %}translate-x-4{% else %}translate-x-0{% endif %}"></span>
@@ -236,6 +244,9 @@ Anatomie du toggle :
               hx-target="#panel-content"
               hx-swap="innerHTML">
             <input type="hidden" name="source" value="detail">
+            <input type="hidden"
+                   name="close_on_back"
+                   value="{{ close_on_back|yesno:'true,false' }}">
             <button type="submit"
                     class="flex-shrink-0 w-9 h-5 rounded-full relative transition-colors {% if tx.is_reconciled %}bg-gold{% else %}bg-edge{% endif %}">
                 <span class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform {% if tx.is_reconciled %}translate-x-4{% else %}translate-x-0{% endif %}"></span>

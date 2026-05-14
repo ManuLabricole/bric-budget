@@ -7,6 +7,7 @@ Model dependency order (follow this when reading or extending):
     ExchangeRate (standalone)
 """
 
+from django.conf import settings
 from django.db import models
 
 # =============================================================================
@@ -150,6 +151,18 @@ class Account(models.Model):
     )
 
     is_active = models.BooleanField(default=True)
+
+    # Membres ayant accès à ce compte.
+    # M2M → supporte les comptes joints (Emmanuel + Carys sur le même compte).
+    # blank=True → pas de contrainte form-level ; la validation métier est dans les vues.
+    # Toutes les requêtes Transaction filtrent par account__members=request.user
+    # pour garantir qu'un user ne voit jamais les données d'un compte dont il n'est pas membre.
+    members = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        related_name="accounts",
+        blank=True,
+        verbose_name="Membres ayant accès",
+    )
 
     created_at = models.DateTimeField(
         auto_now_add=True

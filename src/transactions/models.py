@@ -208,6 +208,41 @@ class CategorizationRule(models.Model):
 
 
 # =============================================================================
+# TransactionQuerySet — Queryset manager avec filtre de sécurité par user
+# =============================================================================
+
+
+class TransactionQuerySet(models.QuerySet):
+    """
+    QuerySet custom pour Transaction.
+
+    Méthode principale : .for_user(user)
+        Filtre les transactions selon les comptes dont l'utilisateur est membre.
+        À appeler en premier sur toutes les requêtes exposées dans les vues :
+
+            Transaction.objects.for_user(request.user).filter(date__gte=...)
+
+        Pourquoi un QuerySet et pas un filtre inline dans chaque vue ?
+            - DRY : 17 endroits dans views.py touchent Transaction.objects — un seul
+              point de vérité évite les oublis.
+            - Sécurité : si on ajoute un champ 'members' à Account, le filter est
+              mis à jour ici et toutes les vues bénéficient du fix automatiquement.
+            - Chainable : retourne un QuerySet → on peut chaîner .filter(), .exclude(),
+              .order_by()... sans friction.
+    """
+
+    def for_user(self, user):
+        """
+        Retourne uniquement les transactions des comptes dont `user` est membre.
+
+        Utilise le M2M Account.members → filtre via __members qui traverse
+        la table de jonction accounts_account_members.
+        Un user non-membre d'aucun compte obtient un queryset vide.
+        """
+        return self.filter(account__members=user)
+
+
+# =============================================================================
 # Transaction — A single financial movement on an account
 # =============================================================================
 
@@ -395,6 +430,11 @@ class Transaction(models.Model):
         on_delete=models.CASCADE,
         related_name="transactions",
     )
+
+    # Manager custom — remplace Transaction.objects par le QuerySet ci-dessus.
+    # as_manager() expose toutes les méthodes du QuerySet comme méthodes du manager.
+    # Transaction.objects.for_user(user) fonctionne comme Transaction.objects.filter(...)
+    objects = TransactionQuerySet.as_manager()
 
     class Meta:
         verbose_name = "transaction"

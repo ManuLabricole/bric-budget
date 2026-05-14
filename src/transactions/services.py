@@ -186,6 +186,47 @@ def get_exchange_rate(
 
 
 # =============================================================================
+# _sync_internal_transfer — Synchro flags virement interne après catégorisation
+# =============================================================================
+
+# Slug de la catégorie "Virements" — point central pour éviter la duplication.
+# Si le slug change un jour → changer ici uniquement.
+INTERNAL_TRANSFER_SLUG = "virements"
+
+
+def sync_internal_transfer(tx) -> list[str]:
+    """
+    Synchronise is_internal_transfer et is_ignored selon la catégorie de la transaction.
+
+    Règle métier :
+      - category.slug == "virements" → is_internal_transfer=True, is_ignored=True
+      - toute autre catégorie         → is_internal_transfer=False, is_ignored=False
+
+    Pourquoi reset is_ignored à False quand on quitte "Virements" ?
+        Si on a catégorisé → virements (flags True) puis on recatégorise → autre,
+        c'est délibéré : on veut que la transaction réapparaisse dans les totaux.
+        L'utilisateur peut re-ignorer manuellement ensuite.
+
+    Retourne la liste des champs modifiés — utile pour save(update_fields=...) ou
+    bulk_update dans apply_rules.
+
+    Appelé depuis :
+      - budget_categorize_transaction (vue manuelle)
+      - ImportService._apply_categorization (import CSV)
+      - apply_rules command (batch recatégorisation)
+    """
+    is_internal = bool(tx.category and tx.category.slug == INTERNAL_TRANSFER_SLUG)
+    changed = []
+    if tx.is_internal_transfer != is_internal:
+        tx.is_internal_transfer = is_internal
+        changed.append("is_internal_transfer")
+    if tx.is_ignored != is_internal:
+        tx.is_ignored = is_internal
+        changed.append("is_ignored")
+    return changed
+
+
+# =============================================================================
 # ImportService
 # =============================================================================
 
@@ -600,6 +641,12 @@ class ImportService:
             else:
                 amount_chf = None
 
+        # --- Flags virement interne ------------------------------------------
+        # Si la catégorie matchée est "virements", on marque la transaction comme
+        # virement interne ET ignorée dès l'import. L'utilisateur peut overrider
+        # manuellement via le toggle "Inclure dans l'analyse budgétaire".
+        is_internal = bool(category and category.slug == INTERNAL_TRANSFER_SLUG)
+
         # --- Build and return the unsaved object -----------------------------
         return Transaction(
             account=account,
@@ -617,8 +664,8 @@ class ImportService:
             description_raw=tx["description_raw"],
             display_name=tx["display_name"],
             merchant_name=tx["merchant_name"],
-            # note, is_reconciled, is_ignored, is_recurring, is_internal_transfer:
-            # all left at their model defaults (blank / False) — user fills them later
+            is_internal_transfer=is_internal,
+            is_ignored=is_internal,
             import_hash=tx["import_hash"],
         )
 

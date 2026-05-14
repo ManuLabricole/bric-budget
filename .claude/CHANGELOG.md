@@ -1,5 +1,91 @@
 # CHANGELOG — BudgetTracker
 
+## 2026-05-14 — Session 28 : Phase 2G T4b/T4c — Panel fixes + sync virement + Account.members M2M (VSCode)
+
+**Contexte**
+Session dense en deux volets : (1) corrections UX du panneau détail transaction (toggles non-fonctionnels, overlay unifié, auto-ignore virements) ; (2) sécurité multi-utilisateur critique — `Account.members` M2M avec filtre `for_user()` sur toutes les requêtes, prérequis bloquant avant Phase 3 (ajout compte Carys).
+
+**Livré**
+
+*T4b — Panel détail + sync virement interne*
+- `_panel_tx_detail.html` — toggles "Ignorer" et "Pointer" désormais fonctionnels : `hx-target="#panel-content"` + champ caché `close_on_back` propagé dans la chaîne POST (bug : la vue retournait le fragment vers la mauvaise cible après toggle)
+- `category_detail.html` — suppression de la div `#cat-tx-detail` (overlay statique inline). Toutes les transactions ouvrent maintenant `#panel-content` (overlay droit flottant)
+- `transactions/services.py` — `sync_internal_transfer(tx) → list[str]` : auto-set `is_ignored=True` + `is_internal_transfer=True` quand `tx.category.slug == "virements"`. Retourne la liste des champs modifiés pour `save(update_fields=...)`
+- `transactions/management/commands/apply_rules.py` — étendu : `is_internal_transfer` + `is_ignored` dans les deux `bulk_update`
+- `transactions/admin.py` — liens cliquables `account_link` + `category_link` avec `format_html`, `get_queryset` avec `select_related` (zéro N+1), filtre par `account__bank`
+
+*T4c — Account.members M2M (sécurité multi-utilisateur)*
+- `accounts/models.py` — `members = ManyToManyField(settings.AUTH_USER_MODEL, related_name="accounts")` sur `Account`
+- `accounts/migrations/0013_account_members.py` — migration schéma (auto-générée)
+- `accounts/migrations/0014_account_members_data.py` — migration données : Emmanuel assigné à tous les comptes existants (try/except pour CI sans seed)
+- `transactions/models.py` — `TransactionQuerySet` avec `for_user(user)` → `filter(account__members=user)`. Manager déclaré après les champs (DJ012 compliance)
+- `budget/views.py` — 17 requêtes `Transaction.objects` mises à jour avec `.for_user(request.user)` : `budget_index`, `budget_panel_transactions`, les 4 vues de règles, `budget_category_detail` (3 requêtes), `budget_panel_category_manage_detail` (2 requêtes)
+- `accounts/admin.py` — `AccountAdmin` avec `filter_horizontal = ("members",)` + méthode `member_list` (emails séparés par virgule)
+- `src/tests/test_internal_transfer.py` — 12 tests : `sync_internal_transfer()` unitaires, vue `budget_categorize_transaction`, `ImportService._build_transaction`, `apply_rules`
+- `src/tests/test_account_members.py` — 6 tests : `for_user()` retourne les tx du membre, exclut les non-membres, compte joint (2 membres voient les tx), isolation comptes mixtes
+- **210 tests passent** (ruff DJ012 corrigé : manager après champs)
+
+**Décisions**
+
+| Sujet | Décision | Pourquoi |
+|-------|----------|----------|
+| `is_internal_transfer` vs category | Flag synced DEPUIS la catégorie | Évite la redondance — "virements" est la source de vérité. `sync_internal_transfer()` = point de synchronisation unique |
+| Panel overlay vs div inline | Toujours `#panel-content` overlay | La div `#cat-tx-detail` cassait les toggles (hx-target mal résolu après scroll). Overlay flottant = plus UX + pas de re-scroll |
+| `Account.members` vs table AccountAccess | M2M simple | YAGNI — 2 utilisateurs pour l'instant. Extensible si besoin de rôles (Phase 7+) |
+| Manager `objects` position | Après les champs (DJ012) | Convention Django style guide — fields → manager → Meta → methods |
+| `for_user()` sur `get_object_or_404` | Non (pas fait) | IDOR sur les single-object fetches = dette technique SEC-01. Reste dans le backlog post-merge |
+
+**Bugs rencontrés**
+- ruff `I001` (import ordering) dans `test_account_members.py` → fixé via `ruff check --fix`
+- ruff `DJ012` (manager avant champs) dans `transactions/models.py` → manager déplacé après `import_log` FK, avant `class Meta`
+- `reverse` importé mais inutilisé dans `test_account_members.py` → supprimé par ruff
+
+**Reste à faire**
+- T5 : QA fixes (issue #29) — logos templates, UUID fichiers, descriptions UBS
+- T6 : Budget Paramètres dropdown (issue #30)
+- SEC-01 : IDOR sur `get_object_or_404(Transaction, pk=...)` — 7 occurrences — BLOQUANT avant Phase 3
+- Session classification manuelle (~4h) + export règles
+- Merge `feature/phase-2g-rules-crud` → development → main + tag v0.1.0
+
+## 2026-05-13 — Session 27 : Phase 2G T4 — apply_rules command + 6 tests (VSCode)
+
+**Contexte**
+Livraison de T4 (issue #32) : commande `apply_rules` qui applique les règles de catégorisation actives sur l'historique des transactions existantes. Complète le cycle : l'import catégorise au moment du parsing, et la commande rattrape les transactions importées avant qu'une règle existe.
+
+**Livré**
+
+- `src/transactions/management/commands/apply_rules.py` — commande batch complète
+  - Exclut `categorization_source="manual"` — choix utilisateur jamais écrasé
+  - Réutilise `ImportService._find_rule()` — zéro duplication de logique
+  - `bulk_update` par batch de 500 pour performance
+  - Flags : `--dry-run` (affiche sans écrire), `--reset` (remet à zéro avant), `--limit N` (test)
+- `Makefile` — `make apply-rules` avec `DRY=1` et `RESET=1`
+- `src/tests/commands/test_apply_rules.py` — 6 tests d'intégration
+  - Règle matche → category + source + categorization_rule mis à jour
+  - Source manual → jamais écrasée
+  - `--reset` efface puis réapplique, règle inactive ignorée
+  - Priorité haute gagne sur priorité basse
+  - Pas de match → transaction inchangée
+  - `--dry-run` → rien en DB, output informatif
+- **192 tests passent**
+
+**Décisions**
+
+| Sujet | Décision | Pourquoi |
+|-------|----------|----------|
+| Logique dans `handle()` | Acceptée comme dette technique | La commande est CLI-only pour l'instant. Si un bouton UI est nécessaire un jour, extraire vers `services.py` avant. |
+| `call_command()` depuis view/service | À ne jamais faire | Franchit deux couches dans le mauvais sens. La bonne architecture : logique dans service, command = orchestration CLI. |
+| Review management commands | Planifiée avant Phase 2H | Classifier DEV ONLY vs PROD SAFE avant déploiement Railway. |
+
+**Rappel architecture**
+L'import (`ImportService.run()`) applique déjà les règles au moment du parsing — `apply_rules` n'est utile que pour rattraper les transactions importées avant la création d'une règle.
+
+**Reste à faire**
+- T5 : QA fixes (issue #29)
+- T6 : Budget Paramètres dropdown (issue #30)
+- Session classification manuelle (~4h)
+- Merge → `development` → `main` + tag v0.1.0
+
 ## 2026-05-12 — Session 26 : Phase 2G T3 — Catégories CRUD + panel Gestion + tests (VSCode)
 
 **Contexte**

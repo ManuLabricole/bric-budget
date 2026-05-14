@@ -11,6 +11,8 @@ Usage during Phase 0B → Phase 1B:
 
 from django import forms
 from django.contrib import admin
+from django.urls import reverse
+from django.utils.html import format_html
 
 from .models import (
     BudgetTarget,
@@ -160,32 +162,105 @@ class CategorizationRuleAdmin(admin.ModelAdmin):
 
 @admin.register(Transaction)
 class TransactionAdmin(admin.ModelAdmin):
+    """
+    Admin amélioré pour les transactions.
+
+    Liens cliquables :
+        account_link  → page admin du compte (Account)
+        category_link → page admin de la catégorie
+    Ces méthodes retournent du HTML avec format_html() — Django l'injecte tel quel
+    dans la colonne, contrairement à une str ordinaire qui serait échappée.
+    allow_tags est remplacé par mark_safe/format_html depuis Django 2.0.
+
+    Filtres :
+        account__bank  → "Par banque" (proxy pour "par propriétaire" — Yuh=Emmanuel,
+                          CIC=Emmanuel FR, etc. Quand Carys aura un compte, son compte
+                          apparaîtra ici. Pas de champ owner sur Account pour l'instant.)
+        account        → "Par compte" (granularité fine : Courant, Livret A, LDDS…)
+        category       → "Par catégorie"
+        categorization_source → comment la tx a été catégorisée (auto/règle/manuel)
+        is_ignored, is_internal_transfer, is_reconciled, is_recurring → flags booléens
+
+    select_related :
+        Déclaré dans get_queryset() pour éviter N+1 — chaque ligne de la liste charge
+        account, account__bank et category en un seul JOIN au lieu d'une requête par objet.
+    """
+
     list_display = (
         "date",
-        "account",
-        "merchant_name",
+        "account_link",
+        "display_name",
         "amount",
         "currency",
-        "category",
-        "categorization_source",
-        "is_reconciled",
-        "is_ignored",
-    )
-    list_filter = (
-        "account",
-        "category",
-        "nature",
+        "category_link",
         "categorization_source",
         "is_reconciled",
         "is_ignored",
         "is_internal_transfer",
-        "is_recurring",
     )
-    search_fields = ("merchant_name", "description_raw", "note")
+    list_filter = (
+        # "Par banque" — proxy propriétaire : Yuh → Emmanuel CH, CIC → Emmanuel FR
+        "account__bank",
+        # "Par compte" — granularité fine (courant / livret / LDDS…)
+        "account",
+        # "Par catégorie"
+        "category",
+        # Source de catégorisation
+        "categorization_source",
+        # Flags booléens
+        "is_ignored",
+        "is_internal_transfer",
+        "is_reconciled",
+        "is_recurring",
+        "nature",
+    )
+    search_fields = ("display_name", "description_raw", "note")
     date_hierarchy = "date"
     ordering = ("-date",)
-    # readonly_fields: import_hash is generated at import time, never edited manually
     readonly_fields = ("import_hash", "amount_chf")
+
+    def get_queryset(self, request):
+        """
+        Précharge account, account__bank et category en un seul JOIN.
+        Sans select_related, chaque ligne de la liste ferait 3 requêtes
+        supplémentaires → explosion des requêtes sur une liste de 200 tx.
+        """
+        return (
+            super()
+            .get_queryset(request)
+            .select_related("account", "account__bank", "category", "subcategory")
+        )
+
+    @admin.display(description="Compte", ordering="account__name")
+    def account_link(self, obj):
+        """
+        Lien cliquable vers la page admin du compte.
+        reverse("admin:app_model_change", args=[pk]) génère l'URL admin standard.
+        format_html() échappe les variables pour éviter les injections XSS.
+        """
+        if not obj.account:
+            return "—"
+        url = reverse("admin:accounts_account_change", args=[obj.account.pk])
+        return format_html(
+            '<a href="{}">{} · {}</a>',
+            url,
+            obj.account.bank.name if obj.account.bank else "?",
+            obj.account.name,
+        )
+
+    @admin.display(description="Catégorie", ordering="category__name")
+    def category_link(self, obj):
+        """
+        Lien cliquable vers la page admin de la catégorie.
+        Affiche "—" si la transaction n'est pas encore catégorisée.
+        """
+        if not obj.category:
+            return "—"
+        url = reverse("admin:transactions_category_change", args=[obj.category.pk])
+        label = obj.category.name
+        if obj.subcategory:
+            label += f" › {obj.subcategory.name}"
+        return format_html('<a href="{}">{}</a>', url, label)
 
 
 # =============================================================================

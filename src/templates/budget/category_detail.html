@@ -425,7 +425,13 @@ Layout :
                                 <span class="text-[10px] font-medium text-text-muted">{{ tx.date|date:"j F Y" }}</span>
                             </div>
                         {% endifchanged %}
-                        {% include "budget/_panel_tx_row.html" with tx=tx bank_icon_url=tx.bank_icon_url panel_source="category" panel_target="#cat-tx-detail" %}
+                        {% comment %}
+                        panel_source="category" → close_on_back=True dans le panneau détail
+                        (bouton ← ferme l'overlay plutôt que de revenir à la liste).
+                        panel_target non défini → hx-target="#panel-content" (overlay droit,
+                        même que le budget index). Suppression du div #cat-tx-detail.
+                        {% endcomment %}
+                        {% include "budget/_panel_tx_row.html" with tx=tx bank_icon_url=tx.bank_icon_url panel_source="category" %}
                     {% endfor %}
                 </div>
             {% else %}
@@ -527,19 +533,6 @@ Layout :
                             {% endif %}
                         </div>
                     {% endfor %}
-                </div>
-            </div>
-            {# ── Div fixe détail transaction — apparaît quand on clique une ligne ── #}
-            {# hx-target="#cat-tx-detail" dans _panel_tx_row.html remplace innerHTML. #}
-            {# Placeholder visible jusqu'au premier clic.                             #}
-            <div id="cat-tx-detail"
-                 class="bg-surface-3/70 backdrop-blur-xl border border-edge/60 rounded-xl overflow-hidden">
-                <div class="flex flex-col items-center justify-center py-8 px-4 text-center">
-                    <p class="text-xs text-text-disabled leading-relaxed">
-                        Cliquez sur une transaction
-                        <br>
-                        pour voir les détails
-                    </p>
                 </div>
             </div>
         </aside>

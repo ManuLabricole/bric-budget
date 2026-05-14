@@ -30,7 +30,7 @@ Usage :
 from django.core.management.base import BaseCommand
 
 from transactions.models import CategorizationRule, Transaction
-from transactions.services import ImportService
+from transactions.services import ImportService, sync_internal_transfer
 
 
 class Command(BaseCommand):
@@ -160,6 +160,9 @@ class Command(BaseCommand):
                 tx.subcategory = new_sub
                 tx.categorization_rule = matched
                 tx.categorization_source = new_source
+                # Sync virement interne : si la règle catégorise en "virements",
+                # is_internal_transfer + is_ignored passent à True automatiquement.
+                sync_internal_transfer(tx)
                 batch.append(tx)
 
             updated += 1
@@ -172,6 +175,8 @@ class Command(BaseCommand):
                         "subcategory",
                         "categorization_rule",
                         "categorization_source",
+                        "is_internal_transfer",
+                        "is_ignored",
                     ],
                 )
                 batch.clear()
@@ -186,6 +191,8 @@ class Command(BaseCommand):
                     "subcategory",
                     "categorization_rule",
                     "categorization_source",
+                    "is_internal_transfer",
+                    "is_ignored",
                 ],
             )
 
