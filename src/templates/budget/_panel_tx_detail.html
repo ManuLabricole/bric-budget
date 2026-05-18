@@ -207,9 +207,9 @@ Anatomie du toggle :
         OFF : translate-x-0  (left-0.5 = 2px du bord gauche)
         ON  : translate-x-4  (= 16px → marge droite 2px)
 
-"Inclure dans l'analyse budgétaire" = NOT is_ignored
-    ON  si is_ignored=False (incluse) — toggle doré
-    OFF si is_ignored=True  (exclue)  — toggle gris
+"Exclure de l'analyse budgétaire" = is_ignored
+    ON  si is_ignored=True  (exclue) — toggle doré
+    OFF si is_ignored=False (incluse, défaut) — toggle gris
     source=detail → budget_toggle_ignore() retourne ce même panneau
 
 "Pointer la transaction" = is_reconciled
@@ -220,7 +220,7 @@ Anatomie du toggle :
 <div class="px-5 space-y-4 flex-shrink-0">
     <div class="flex flex-col gap-1.5">
         <div class="flex items-center justify-between gap-3">
-            <span class="text-sm text-text-secondary">Inclure dans l'analyse budgétaire</span>
+            <span class="text-sm text-text-secondary">Exclure de l'analyse budgétaire</span>
             {% comment %}
             hx-target="#panel-content" — toujours l'overlay droit, même depuis category_detail.
             close_on_back est transmis comme champ hidden pour que la vue puisse reconstruire
@@ -234,8 +234,8 @@ Anatomie du toggle :
                        name="close_on_back"
                        value="{{ close_on_back|yesno:'true,false' }}">
                 <button type="submit"
-                        class="flex-shrink-0 w-9 h-5 rounded-full relative transition-colors {% if not tx.is_ignored %}bg-gold{% else %}bg-edge{% endif %}">
-                    <span class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform {% if not tx.is_ignored %}translate-x-4{% else %}translate-x-0{% endif %}"></span>
+                        class="flex-shrink-0 w-9 h-5 rounded-full relative transition-colors {% if tx.is_ignored %}bg-gold{% else %}bg-edge{% endif %}">
+                    <span class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform {% if tx.is_ignored %}translate-x-4{% else %}translate-x-0{% endif %}"></span>
                 </button>
             </form>
         </div>
