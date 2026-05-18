@@ -455,7 +455,7 @@ def test_apply_rules_changing_from_virements_to_other_resets_flags(
 
 
 # =============================================================================
-# E. Template rendering — badge "Détectée comme mouvement interne"
+# E. Template rendering — badge "Classifiée comme mouvement interne"
 # =============================================================================
 
 
@@ -463,7 +463,7 @@ def test_apply_rules_changing_from_virements_to_other_resets_flags(
 def test_panel_tx_detail_shows_badge_when_internal_transfer(cat_virements, account):
     """
     Quand is_internal_transfer=True, le template _panel_tx_detail.html doit
-    afficher le badge "Détectée comme mouvement interne".
+    afficher le badge "Classifiée comme mouvement interne".
     Ce badge explique visuellement pourquoi le toggle "Inclure" est désactivé.
     """
     from django.template.loader import render_to_string
@@ -478,7 +478,7 @@ def test_panel_tx_detail_shows_badge_when_internal_transfer(cat_virements, accou
         {"tx": tx, "bank_icon_url": "", "close_on_back": False, "source": "detail"},
     )
 
-    assert "Détectée comme mouvement interne" in html
+    assert "Classifiée comme mouvement interne" in html
 
 
 @pytest.mark.django_db
@@ -499,4 +499,4 @@ def test_panel_tx_detail_no_badge_when_not_internal_transfer(cat_alim, account):
         {"tx": tx, "bank_icon_url": "", "close_on_back": False, "source": "detail"},
     )
 
-    assert "Détectée comme mouvement interne" not in html
+    assert "Classifiée comme mouvement interne" not in html
