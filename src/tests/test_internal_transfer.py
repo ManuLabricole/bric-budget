@@ -503,21 +503,20 @@ def test_panel_tx_detail_no_badge_when_not_internal_transfer(cat_alim, account):
 
 
 # =============================================================================
-# F. Sync OOB — toggle ignore depuis le panneau détail en contexte category
+# F. Reload page — toggle ignore depuis le panneau détail en contexte category
 # =============================================================================
 
 
 @pytest.mark.django_db
-def test_toggle_ignore_from_detail_close_on_back_returns_oob_row(
+def test_toggle_ignore_from_detail_close_on_back_returns_redirect(
     auth_client, test_user, cat_alim, account
 ):
     """
     Quand toggle_ignore est appelé avec source=detail et close_on_back=true
-    (ouvert depuis category_detail), la réponse doit contenir :
-    1. Le fragment _panel_tx_detail.html (mise à jour du panneau)
-    2. Le fragment _panel_tx_row.html avec hx-swap-oob (mise à jour de la ligne)
+    (ouvert depuis category_detail), la réponse doit être un HX-Redirect
+    pour recharger la page entière (Sankey + KPIs + liste).
 
-    Sans l'OOB, l'œil dans la liste reste désynchronisé après toggle.
+    Sans reload complet, le Sankey et les KPIs restent figés après toggle.
     """
     account.members.add(test_user)
     tx = make_tx(account, "MIGROS", category=cat_alim, seed="oob1")
@@ -527,15 +526,12 @@ def test_toggle_ignore_from_detail_close_on_back_returns_oob_row(
     response = auth_client.post(
         reverse("budget:toggle_ignore", args=[tx.id]),
         {"source": "detail", "close_on_back": "true"},
+        HTTP_HX_CURRENT_URL="/budget/categorie/alimentation/",
     )
 
     assert response.status_code == 200
-    content = response.content.decode()
-    # Panneau mis à jour
-    assert "Exclure de l'analyse budgétaire" in content
-    # OOB row présent avec l'attribut hx-swap-oob
-    assert "hx-swap-oob" in content
-    assert f'id="tx-{tx.id}"' in content
+    assert response.has_header("HX-Redirect")
+    assert response["HX-Redirect"] == "/budget/categorie/alimentation/"
 
 
 @pytest.mark.django_db

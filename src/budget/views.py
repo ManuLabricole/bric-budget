@@ -1377,19 +1377,14 @@ def budget_toggle_ignore(request, tx_id):
             request=request,
         )
         if close_on_back:
-            # OOB swap : met à jour la ligne derrière le panneau en même temps.
-            # Sans ça, l'œil dans la liste reste désynchronisé après toggle.
-            row_html = render_to_string(
-                "budget/_panel_tx_row.html",
-                {
-                    "tx": tx,
-                    "bank_icon_url": bank_icon_url,
-                    "panel_source": "category",
-                    "oob": True,
-                },
-                request=request,
-            )
-            return HttpResponse(panel_html + row_html)
+            # Recharger la page complète (category_detail) pour que le Sankey,
+            # les KPIs et la liste soient recalculés avec les données fraîches.
+            # HX-Current-URL = URL courante du navigateur envoyée par HTMX.
+            response = HttpResponse()
+            response["HX-Redirect"] = request.headers.get(
+                "HX-Current-URL"
+            ) or request.META.get("HTTP_REFERER", "/budget/")
+            return response
         return HttpResponse(panel_html)
 
     # source=category → appelé depuis category_detail.html.
@@ -2269,6 +2264,13 @@ def budget_toggle_reconcile(request, tx_id):
 
     # source=detail → retourner le panneau entier mis à jour.
     close_on_back = request.POST.get("close_on_back") == "true"
+    if close_on_back:
+        # Recharger la page complète pour que la liste (badge vert) soit à jour.
+        response = HttpResponse()
+        response["HX-Redirect"] = request.headers.get(
+            "HX-Current-URL"
+        ) or request.META.get("HTTP_REFERER", "/budget/")
+        return response
     return render(
         request,
         "budget/_panel_tx_detail.html",
