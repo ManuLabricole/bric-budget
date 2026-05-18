@@ -609,7 +609,10 @@ def import_log_detail(request, pk):
     Fragment HTMX — chargé dans #panel-content quand on clique sur une ligne.
     """
     log = get_object_or_404(
-        ImportLog.objects.select_related("account__bank", "imported_by"), pk=pk
+        ImportLog.objects.select_related("account__bank", "imported_by").filter(
+            account__members=request.user
+        ),
+        pk=pk,
     )
     return render(request, "imports/partials/_import_detail.html", {"log": log})
 
@@ -629,7 +632,9 @@ def import_log_delete(request, pk):
         → log.delete()
         → HX-Redirect /import/
     """
-    log = get_object_or_404(ImportLog, pk=pk)
+    log = get_object_or_404(
+        ImportLog.objects.filter(account__members=request.user), pk=pk
+    )
 
     tx_count = log.transactions.count()
     log.transactions.all().delete()
