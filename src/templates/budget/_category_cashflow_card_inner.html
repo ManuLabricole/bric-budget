@@ -1,21 +1,4 @@
 {% load static budget_filters %}
-{#
-    _category_cashflow_card_inner.html — inner HTML de #cashflow-card
-    Contexte attendu :
-        category       — Category
-        period_label   — str  "Mai 2026" ou "Avr — Mai 2026"
-        has_sankey     — bool
-        sankey_data    — dict { nodes, links }
-        cat_tab        — str  "transactions" | "subcategories" | "objectif"
-        total_amount   — Decimal
-        subcat_count   — int
-        budget_target  — BudgetTarget | None
-        target_amount  — Decimal | None
-        arc_fill_px    — float | None
-
-    Rendu soit par budget_category_detail (page complète, via include tag)
-    soit par budget_category_cashflow_fragment (refresh partiel HTMX).
-#}
 <div class="flex items-center justify-between px-5 pt-5 pb-2">
     <h2 class="text-sm font-semibold text-text-base">Cashflow</h2>
     <span class="text-[10px] text-text-disabled">{{ period_label }}</span>
