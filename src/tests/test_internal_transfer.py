@@ -452,3 +452,51 @@ def test_apply_rules_changing_from_virements_to_other_resets_flags(
     assert tx.is_internal_transfer is False
     assert tx.is_ignored is False
     assert tx.category == cat_alim
+
+
+# =============================================================================
+# E. Template rendering — badge "Détectée comme mouvement interne"
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_panel_tx_detail_shows_badge_when_internal_transfer(cat_virements, account):
+    """
+    Quand is_internal_transfer=True, le template _panel_tx_detail.html doit
+    afficher le badge "Détectée comme mouvement interne".
+    Ce badge explique visuellement pourquoi le toggle "Inclure" est désactivé.
+    """
+    from django.template.loader import render_to_string
+
+    tx = make_tx(account, "VIREMENT YUH → CIC", category=cat_virements)
+    tx.is_internal_transfer = True
+    tx.is_ignored = True
+    tx.save(update_fields=["is_internal_transfer", "is_ignored"])
+
+    html = render_to_string(
+        "budget/_panel_tx_detail.html",
+        {"tx": tx, "bank_icon_url": "", "close_on_back": False, "source": "detail"},
+    )
+
+    assert "Détectée comme mouvement interne" in html
+
+
+@pytest.mark.django_db
+def test_panel_tx_detail_no_badge_when_not_internal_transfer(cat_alim, account):
+    """
+    Quand is_internal_transfer=False, le badge ne doit PAS apparaître —
+    pas de bruit visuel pour les transactions normales.
+    """
+    from django.template.loader import render_to_string
+
+    tx = make_tx(account, "MIGROS LAUSANNE", category=cat_alim)
+    tx.is_internal_transfer = False
+    tx.is_ignored = False
+    tx.save(update_fields=["is_internal_transfer", "is_ignored"])
+
+    html = render_to_string(
+        "budget/_panel_tx_detail.html",
+        {"tx": tx, "bank_icon_url": "", "close_on_back": False, "source": "detail"},
+    )
+
+    assert "Détectée comme mouvement interne" not in html
