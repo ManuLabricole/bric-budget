@@ -272,4 +272,8 @@ Anatomie du toggle :
             </button>
         </form>
     </div>
+    {% if cashflow_refresh_url %}
+        {# Signal pour le JS de category_detail.html : déclenche le refresh du Sankey + KPIs #}
+        <span data-cashflow-refresh="{{ cashflow_refresh_url }}" class="hidden"></span>
+    {% endif %}
 </div>

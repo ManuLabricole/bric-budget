@@ -89,75 +89,12 @@ Layout :
         </div>
     </div>
     {# ── Carte Cashflow — Sankey + KPI strip ─────────────────────────────────── #}
-    {# Même structure que la carte Cashflow de index.html :                       #}
-    {#   header "Cashflow" → Sankey → KPI strip collée en bas (divide-x)          #}
     {# overflow-hidden : clippe le border-b du tab strip aux coins arrondis de la card. #}
+    {# L'inner HTML est extrait dans _category_cashflow_card_inner.html pour être     #}
+    {# rechargé en partiel (HTMX GET) après un toggle is_ignored depuis le panneau.   #}
     <div id="cashflow-card"
          class="bg-surface-3/70 backdrop-blur-xl border border-edge/60 rounded-xl mb-4 overflow-hidden">
-        <div class="flex items-center justify-between px-5 pt-5 pb-2">
-            <h2 class="text-sm font-semibold text-text-base">Cashflow</h2>
-            <span class="text-[10px] text-text-disabled">{{ period_label }}</span>
-        </div>
-        {% if has_sankey %}
-            <div class="px-5 pb-2">
-                <div id="sankey-chart" class="w-full" style="height: 220px;"></div>
-                {{ sankey_data|json_script:"sankey-data" }}
-            </div>
-        {% endif %}
-        {# KPI strip — 3 onglets cliquables (sélecteurs de tab).                           #}
-        {# Clic → budget:set_cat_tab → session budget_cat_tab → redirect referer.         #}
-        {# Actif : border-b-2 border-gold + label/valeur text-gold.                       #}
-        {# Transactions = montant total · Sous-catégories = count distinct · Objectif     #}
-        {# KPI strip — même pattern que index.html : flex items-end, active = border-b border-gold -mb-px #}
-        <div class="flex items-end gap-0 border-b border-edge px-5 pt-3 mt-2">
-            {# ── Onglet Transactions — montant total sur la période ── #}
-            <a href="{% url 'budget:set_cat_tab' 'transactions' %}"
-               class="group flex flex-col items-start gap-1 pb-3 pr-8 cursor-pointer transition-colors {% if cat_tab == 'transactions' %}text-gold border-b border-gold -mb-px{% else %}text-text-base hover:text-gold{% endif %}">
-                <span class="text-[9px] font-medium uppercase tracking-wide {% if cat_tab == 'transactions' %}text-gold{% else %}text-text-muted group-hover:text-gold{% endif %}">Transactions</span>
-                {% if total_amount >= 0 %}
-                    <span class="text-base font-bold tabular-nums {% if cat_tab != 'transactions' %}text-income{% endif %}">+{{ total_amount|chf }} CHF</span>
-                {% else %}
-                    <span class="text-base font-bold tabular-nums {% if cat_tab != 'transactions' %}text-expense{% endif %}">−{{ total_amount|chf }} CHF</span>
-                {% endif %}
-            </a>
-            {# ── Onglet Sous-catégories — nombre de sous-cats distinctes ── #}
-            <a href="{% url 'budget:set_cat_tab' 'subcategories' %}"
-               class="group flex flex-col items-start gap-1 pb-3 pr-8 cursor-pointer transition-colors {% if cat_tab == 'subcategories' %}text-gold border-b border-gold -mb-px{% else %}text-text-base hover:text-gold{% endif %}">
-                <span class="text-[9px] font-medium uppercase tracking-wide {% if cat_tab == 'subcategories' %}text-gold{% else %}text-text-muted group-hover:text-gold{% endif %}">Sous-catégories</span>
-                <span class="text-base font-bold tabular-nums">{{ subcat_count }}</span>
-            </a>
-            {# ── Onglet Objectif — montant mis à l'échelle + bouton modifier ── #}
-            {# Le bouton ✏️ HTMX est à l'intérieur du <a> → stopPropagation      #}
-            {# pour éviter que son clic déclenche la navigation vers set_cat_tab. #}
-            <a href="{% url 'budget:set_cat_tab' 'objectif' %}"
-               class="group flex flex-col items-start gap-1 pb-3 pr-8 cursor-pointer transition-colors {% if cat_tab == 'objectif' %}text-gold border-b border-gold -mb-px{% else %}text-text-base hover:text-gold{% endif %}">
-                <span class="text-[9px] font-medium uppercase tracking-wide {% if cat_tab == 'objectif' %}text-gold{% else %}text-text-muted group-hover:text-gold{% endif %}">Objectif</span>
-                {% if budget_target %}
-                    <div class="flex items-center gap-2">
-                        <p class="text-base font-bold tabular-nums {% if cat_tab == 'objectif' %}text-gold{% else %}text-text-base{% endif %}">
-                            {{ target_amount|chf }} CHF
-                        </p>
-                        {# Mini gauge inline — couleur catégorie, w-8 #}
-                        {% include "budget/_gauge.html" with gauge_fill_px=arc_fill_px gauge_color=category.colour_hex gauge_class="w-8" %}
-                    </div>
-                {% else %}
-                    <button hx-get="{% url 'budget:modal_target_create' %}?category_id={{ category.id }}"
-                            hx-target="#modal-content"
-                            hx-swap="innerHTML"
-                            onclick="event.stopPropagation(); event.preventDefault();"
-                            class="w-6 h-6 rounded-full border border-dashed border-edge/50 hover:border-gold/50 flex items-center justify-center text-text-disabled hover:text-gold transition-colors"
-                            title="Définir un objectif mensuel">
-                        <svg class="w-3 h-3"
-                             fill="none"
-                             viewBox="0 0 24 24"
-                             stroke-width="2.5"
-                             stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                        </svg>
-                    </button>
-                {% endif %}
-            </a>
-        </div>
+        {% include "budget/_category_cashflow_card_inner.html" %}
     </div>
     {# ── Contenu principal — conditionnel selon cat_tab ────────────────────────── #}
     {# Tab "subcategories" → liste des sous-catégories avec leurs montants.        #}
@@ -582,4 +519,44 @@ Layout :
   }
         </script>
     {% endif %}
+    <script>
+  // Refresh du Sankey + KPIs après toggle is_ignored depuis le panneau détail.
+  //
+  // Flux :
+  //   1. toggle_ignore (close_on_back=True) injecte [data-cashflow-refresh] dans
+  //      le panneau → #panel-content est swappé par HTMX → htmx:afterSwap fire.
+  //   2. Le listener détecte le signal, déclenche htmx.ajax vers /cashflow/
+  //      → #cashflow-card innerHTML est remplacé → second htmx:afterSwap fire.
+  //   3. Le second listener ré-initialise ECharts sur le nouveau #sankey-chart.
+  document.addEventListener("htmx:afterSwap", function (evt) {
+    var target = evt.detail && evt.detail.target;
+    if (!target) return;
+
+    // Étape 1 : panel-content swappé → chercher le signal cashflow-refresh
+    if (target.id === "panel-content") {
+      var refreshEl = target.querySelector("[data-cashflow-refresh]");
+      if (refreshEl) {
+        htmx.ajax("GET", refreshEl.getAttribute("data-cashflow-refresh"), {
+          target: "#cashflow-card",
+          swap: "innerHTML"
+        });
+      }
+    }
+
+    // Étape 2 : cashflow-card swappé → ré-init Sankey + ré-aligner hauteur donut
+    if (target.id === "cashflow-card") {
+      var sankeyEl = document.getElementById("sankey-chart");
+      if (sankeyEl && typeof BricCharts !== "undefined") {
+        var dataEl = document.getElementById("sankey-data");
+        if (dataEl) {
+          BricCharts.initSankey(sankeyEl, JSON.parse(dataEl.textContent));
+        }
+      }
+      var donutCardEl = document.getElementById("donut-card");
+      if (donutCardEl) {
+        donutCardEl.style.minHeight = target.offsetHeight + "px";
+      }
+    }
+  });
+    </script>
 {% endblock %}

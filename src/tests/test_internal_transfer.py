@@ -508,15 +508,15 @@ def test_panel_tx_detail_no_badge_when_not_internal_transfer(cat_alim, account):
 
 
 @pytest.mark.django_db
-def test_toggle_ignore_from_detail_close_on_back_returns_redirect(
+def test_toggle_ignore_from_detail_close_on_back_returns_oob_and_cashflow_signal(
     auth_client, test_user, cat_alim, account
 ):
     """
     Quand toggle_ignore est appelé avec source=detail et close_on_back=true
-    (ouvert depuis category_detail), la réponse doit être un HX-Redirect
-    pour recharger la page entière (Sankey + KPIs + liste).
-
-    Sans reload complet, le Sankey et les KPIs restent figés après toggle.
+    (ouvert depuis category_detail), la réponse doit :
+    - retourner le panneau détail mis à jour (pas de HX-Redirect)
+    - inclure un OOB row pour mettre à jour la ligne dans la liste
+    - inclure data-cashflow-refresh pour signaler au JS de refresher le Sankey
     """
     account.members.add(test_user)
     tx = make_tx(account, "MIGROS", category=cat_alim, seed="oob1")
@@ -530,8 +530,12 @@ def test_toggle_ignore_from_detail_close_on_back_returns_redirect(
     )
 
     assert response.status_code == 200
-    assert response.has_header("HX-Redirect")
-    assert response["HX-Redirect"] == "/budget/categorie/alimentation/"
+    assert not response.has_header("HX-Redirect")
+    content = response.content.decode()
+    # OOB row pour mise à jour de la liste
+    assert 'hx-swap-oob="outerHTML"' in content
+    # Signal JS pour déclencher le refresh du Sankey
+    assert "data-cashflow-refresh" in content
 
 
 @pytest.mark.django_db

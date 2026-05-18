@@ -125,6 +125,13 @@ urlpatterns = [
     path(
         "categorie/<slug:slug>/", views.budget_category_detail, name="category_detail"
     ),
+    # /budget/categorie/<slug>/cashflow/ → partial HTMX : inner HTML de #cashflow-card
+    # Appelé par JS après toggle is_ignored depuis le panneau détail.
+    path(
+        "categorie/<slug:slug>/cashflow/",
+        views.budget_category_cashflow_fragment,
+        name="category_cashflow_fragment",
+    ),
     # ── Filtres multi-select (T1 + T2) ──────────────────────────────────────
     # /budget/filter/account/<account_id>/ → toggle compte dans le filtre session
     # account_id=0 → réinitialise (tous les comptes)

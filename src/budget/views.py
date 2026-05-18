@@ -1365,26 +1365,50 @@ def budget_toggle_ignore(request, tx_id):
     # le contexte (True si ouvert depuis category_detail, False sinon).
     if request.POST.get("source") == "detail":
         close_on_back = request.POST.get("close_on_back") == "true"
+
+        if close_on_back:
+            # Ouvert depuis category_detail : le panneau est posé sur une page qui
+            # affiche déjà la liste + le Sankey.
+            # On retourne :
+            #   1. panel_html → injecté dans #panel-content (le panneau reste ouvert)
+            #   2. row_html OOB → met à jour la ligne dans la liste sans reload
+            #   3. cashflow_refresh_url → signal JS pour déclencher le refresh Sankey
+            category_slug = tx.category.slug if tx.category else None
+            cashflow_refresh_url = (
+                reverse("budget:category_cashflow_fragment", args=[category_slug])
+                if category_slug
+                else None
+            )
+            panel_html = render_to_string(
+                "budget/_panel_tx_detail.html",
+                {
+                    "tx": tx,
+                    "bank_icon_url": bank_icon_url,
+                    "detail_target": "#panel-content",
+                    "close_on_back": True,
+                    "source": "category",
+                    "cashflow_refresh_url": cashflow_refresh_url,
+                },
+                request=request,
+            )
+            row_html = render_to_string(
+                "budget/_panel_tx_row.html",
+                {"tx": tx, "bank_icon_url": bank_icon_url, "oob": True},
+                request=request,
+            )
+            return HttpResponse(panel_html + row_html)
+
         panel_html = render_to_string(
             "budget/_panel_tx_detail.html",
             {
                 "tx": tx,
                 "bank_icon_url": bank_icon_url,
                 "detail_target": "#panel-content",
-                "close_on_back": close_on_back,
-                "source": "category" if close_on_back else "",
+                "close_on_back": False,
+                "source": "",
             },
             request=request,
         )
-        if close_on_back:
-            # Recharger la page complète (category_detail) pour que le Sankey,
-            # les KPIs et la liste soient recalculés avec les données fraîches.
-            # HX-Current-URL = URL courante du navigateur envoyée par HTMX.
-            response = HttpResponse()
-            response["HX-Redirect"] = request.headers.get(
-                "HX-Current-URL"
-            ) or request.META.get("HTTP_REFERER", "/budget/")
-            return response
         return HttpResponse(panel_html)
 
     # source=category → appelé depuis category_detail.html.
@@ -2265,12 +2289,25 @@ def budget_toggle_reconcile(request, tx_id):
     # source=detail → retourner le panneau entier mis à jour.
     close_on_back = request.POST.get("close_on_back") == "true"
     if close_on_back:
-        # Recharger la page complète pour que la liste (badge vert) soit à jour.
-        response = HttpResponse()
-        response["HX-Redirect"] = request.headers.get(
-            "HX-Current-URL"
-        ) or request.META.get("HTTP_REFERER", "/budget/")
-        return response
+        # Ouvert depuis category_detail : panneau reste ouvert, ligne liste à jour.
+        # is_reconciled ne modifie pas les totaux → pas de cashflow_refresh_url.
+        panel_html = render_to_string(
+            "budget/_panel_tx_detail.html",
+            {
+                "tx": tx,
+                "bank_icon_url": bank_icon_url,
+                "detail_target": "#panel-content",
+                "close_on_back": True,
+                "source": "category",
+            },
+            request=request,
+        )
+        row_html = render_to_string(
+            "budget/_panel_tx_row.html",
+            {"tx": tx, "bank_icon_url": bank_icon_url, "oob": True},
+            request=request,
+        )
+        return HttpResponse(panel_html + row_html)
     return render(
         request,
         "budget/_panel_tx_detail.html",
@@ -2278,10 +2315,18 @@ def budget_toggle_reconcile(request, tx_id):
             "tx": tx,
             "bank_icon_url": bank_icon_url,
             "detail_target": "#panel-content",
-            "close_on_back": close_on_back,
-            "source": "category" if close_on_back else "",
+            "close_on_back": False,
+            "source": "",
         },
     )
+
+
+# =============================================================================
+def _seg_factor(i, n):
+    """Distribue n segments entre 0.70 (lumineux) et 0.35 (sombre min lisible)."""
+    if n <= 1:
+        return 0.70
+    return 0.70 - (0.70 - 0.35) * i / (n - 1)
 
 
 # =============================================================================
@@ -2330,6 +2375,216 @@ def budget_set_period_month(request, year, month):
 
 
 # =============================================================================
+# _compute_category_cashflow_context — données communes Cashflow card + fragment
+# =============================================================================
+
+
+def _compute_category_cashflow_context(request, category):
+    """
+    Calcule le contexte de la carte Cashflow de category_detail.html.
+    Partagé par budget_category_detail (page complète) et
+    budget_category_cashflow_fragment (refresh HTMX partiel après toggle).
+    """
+    today = date.today()
+    period_start_str = request.session.get("budget_period_start")
+    period_end_str = request.session.get("budget_period_end")
+    if period_start_str and period_end_str:
+        period_start = date.fromisoformat(period_start_str)
+        period_end = date.fromisoformat(period_end_str)
+    else:
+        period_start = today.replace(day=1)
+        period_end = today.replace(day=calendar.monthrange(today.year, today.month)[1])
+
+    period_mode = request.session.get("budget_period_mode", "1m")
+    if period_mode == "1m":
+        period_label = f"{MOIS_FR[period_start.month]} {period_start.year}"
+    else:
+        period_label = (
+            f"{MOIS_FR[period_start.month]} — "
+            f"{MOIS_FR[period_end.month]} {period_end.year}"
+        )
+
+    filter_account_ids = request.session.get("budget_filter_accounts", [])
+
+    base_qs = Transaction.objects.for_user(request.user).filter(
+        category=category,
+        date__gte=period_start,
+        date__lte=period_end,
+    )
+    if filter_account_ids:
+        base_qs = base_qs.filter(account_id__in=filter_account_ids)
+    txs_active = base_qs.filter(is_ignored=False)
+
+    total_amount = (
+        txs_active.aggregate(total=Sum(Coalesce("amount_chf", "amount")))["total"] or 0
+    )
+    subcat_list = list(
+        txs_active.filter(subcategory__isnull=False)
+        .values(
+            "subcategory__id",
+            "subcategory__name",
+            "subcategory__slug",
+            "subcategory__icon",
+            "subcategory__is_system",
+        )
+        .annotate(total=Sum(Coalesce("amount_chf", "amount")))
+        .order_by("total")
+    )
+
+    cat_color = category.colour_hex or "#4ade80"
+    source_name = category.name + "​"  # U+200B ZWSP — nœud source unique ECharts
+    n_segs = len(subcat_list)
+    subcat_colors = [
+        _vary_color(cat_color, _seg_factor(i, n_segs)) for i in range(n_segs)
+    ]
+
+    sankey_nodes = [
+        {"name": source_name, "slug": category.slug, "itemStyle": {"color": cat_color}}
+    ]
+    sankey_links = []
+    for i, sub in enumerate(subcat_list):
+        sankey_nodes.append(
+            {
+                "name": sub["subcategory__name"],
+                "slug": sub["subcategory__slug"],
+                "itemStyle": {"color": subcat_colors[i]},
+            }
+        )
+        sankey_links.append(
+            {
+                "source": source_name,
+                "target": sub["subcategory__name"],
+                "value": round(float(abs(sub["total"])), 2),
+            }
+        )
+
+    categorized_amount = sum(float(abs(sub["total"])) for sub in subcat_list)
+    uncategorized_amount = abs(float(total_amount)) - categorized_amount
+    uncat_color = _vary_color(cat_color, 0.20)
+    if uncategorized_amount > 0.01:
+        sankey_nodes.append(
+            {
+                "name": category.name,
+                "slug": category.slug,
+                "itemStyle": {"color": uncat_color},
+            }
+        )
+        sankey_links.append(
+            {
+                "source": source_name,
+                "target": category.name,
+                "value": round(uncategorized_amount, 2),
+            }
+        )
+    if not sankey_links and total_amount != 0:
+        sankey_nodes.append(
+            {
+                "name": category.name,
+                "slug": category.slug,
+                "itemStyle": {"color": cat_color},
+            }
+        )
+        sankey_links.append(
+            {
+                "source": source_name,
+                "target": category.name,
+                "value": round(float(abs(total_amount)), 2),
+            }
+        )
+
+    sankey_data = {"nodes": sankey_nodes, "links": sankey_links}
+    has_sankey = len(sankey_links) > 0
+
+    tx_count = txs_active.count()
+    cat_tab = request.session.get("budget_cat_tab", "transactions")
+    subcat_count = (
+        txs_active.filter(subcategory__isnull=False)
+        .values("subcategory_id")
+        .distinct()
+        .count()
+    )
+    period_months = PERIOD_MODE_MONTHS.get(period_mode, 1)
+    budget_target = BudgetTarget.objects.filter(category=category).first()
+
+    target_amount = target_pct = on_track = arc_fill_px = None
+    if budget_target:
+        from decimal import Decimal
+
+        target_amount = budget_target.amount * Decimal(period_months)
+        spent = abs(total_amount)
+        target_pct = (
+            round(float(spent / target_amount) * 100) if target_amount > 0 else 0
+        )
+        on_track = spent <= target_amount
+        arc_fill_px = round(min(target_pct, 100) / 100 * 125.66, 1)
+
+    return {
+        "period_start": period_start,
+        "period_end": period_end,
+        "period_mode": period_mode,
+        "period_label": period_label,
+        "period_months": period_months,
+        "filter_account_ids": filter_account_ids,
+        "base_qs": base_qs,
+        "txs_active": txs_active,
+        "total_amount": total_amount,
+        "subcat_list": subcat_list,
+        "subcat_colors": subcat_colors,
+        "cat_color": cat_color,
+        "uncategorized_amount": uncategorized_amount,
+        "uncat_color": uncat_color,
+        "sankey_data": sankey_data,
+        "has_sankey": has_sankey,
+        "tx_count": tx_count,
+        "cat_tab": cat_tab,
+        "subcat_count": subcat_count,
+        "budget_target": budget_target,
+        "target_amount": target_amount,
+        "target_pct": target_pct,
+        "on_track": on_track,
+        "arc_fill_px": arc_fill_px,
+    }
+
+
+# =============================================================================
+# budget_category_cashflow_fragment — Partial HTMX : carte Cashflow seule (GET)
+# =============================================================================
+
+
+@login_required
+def budget_category_cashflow_fragment(request, slug):
+    """
+    Partial HTMX — recalcule et retourne l'inner HTML de #cashflow-card.
+
+    URL    : GET /budget/categorie/<slug>/cashflow/
+    Target : #cashflow-card   swap="innerHTML"
+    Template : budget/_category_cashflow_card_inner.html
+
+    Appelé automatiquement depuis category_detail.html (JS htmx:afterSwap)
+    après un toggle is_ignored depuis le panneau détail, pour mettre à jour
+    le Sankey et les KPIs sans recharger toute la page.
+    """
+    category = get_object_or_404(Category, slug=slug)
+    cc = _compute_category_cashflow_context(request, category)
+    return render(
+        request,
+        "budget/_category_cashflow_card_inner.html",
+        {
+            "category": category,
+            "period_label": cc["period_label"],
+            "has_sankey": cc["has_sankey"],
+            "sankey_data": cc["sankey_data"],
+            "cat_tab": cc["cat_tab"],
+            "total_amount": cc["total_amount"],
+            "subcat_count": cc["subcat_count"],
+            "budget_target": cc["budget_target"],
+            "target_amount": cc["target_amount"],
+            "arc_fill_px": cc["arc_fill_px"],
+        },
+    )
+
+
+# =============================================================================
 # budget_category_detail — Page détail d'une catégorie
 # =============================================================================
 
@@ -2357,290 +2612,75 @@ def budget_category_detail(request, slug):
 
     category = get_object_or_404(Category, slug=slug)
 
-    # ── Période active — même clé session que budget_index ───────────────────
+    cc = _compute_category_cashflow_context(request, category)
+    period_start = cc["period_start"]
+    period_end = cc["period_end"]
+    period_mode = cc["period_mode"]
+
     today = date.today()
-    period_start_str = request.session.get("budget_period_start")
-    period_end_str = request.session.get("budget_period_end")
-
-    if period_start_str and period_end_str:
-        period_start = date.fromisoformat(period_start_str)
-        period_end = date.fromisoformat(period_end_str)
-    else:
-        period_start = today.replace(day=1)
-        last_day = calendar.monthrange(today.year, today.month)[1]
-        period_end = today.replace(day=last_day)
-
-    period_mode = request.session.get("budget_period_mode", "1m")
-    if period_mode == "1m":
-        period_label = f"{MOIS_FR[period_start.month]} {period_start.year}"
-    else:
-        period_label = (
-            f"{MOIS_FR[period_start.month]} — "
-            f"{MOIS_FR[period_end.month]} {period_end.year}"
-        )
-
-    # Pour le composant period_nav — même logique que budget_index
-    current_month_end = date.today().replace(
+    current_month_end = today.replace(
         day=calendar.monthrange(today.year, today.month)[1]
     )
     can_go_next = period_end < current_month_end
 
-    # ── Filtre compte actif (même session que budget_index) ──────────────────
-    #
-    # Le filtre compte est partagé entre toutes les vues budget via la session.
-    # Sur category_detail : restreint les transactions affichées ET les calculs
-    # (Sankey, KPIs) au(x) compte(s) sélectionné(s).
-    filter_account_ids = request.session.get("budget_filter_accounts", [])
     accounts = (
         Account.objects.filter(is_active=True)
         .select_related("bank")
         .order_by("bank__name", "name")
     )
 
-    # ── Transactions de la catégorie sur la période ──────────────────────────
-    #
-    # txs         = toutes les transactions (affichage) — les ignorées apparaissent
-    #               en grisé via _panel_tx_row.html (opacity-40 + line-through).
-    # txs_active  = transactions non-ignorées seulement — utilisées pour les calculs
-    #               budget (total, Sankey, donut) car les ignorées sont exclues de
-    #               l'analyse, exactement comme dans budget_index.
-    base_qs = Transaction.objects.for_user(request.user).filter(
-        category=category,
-        date__gte=period_start,
-        date__lte=period_end,
+    txs = (
+        cc["base_qs"]
+        .select_related("subcategory", "account", "account__bank")
+        .order_by("-date", "-id")
     )
-    # Appliquer le filtre compte si actif (vide = tous les comptes)
-    if filter_account_ids:
-        base_qs = base_qs.filter(account_id__in=filter_account_ids)
-    txs = base_qs.select_related("subcategory", "account", "account__bank").order_by(
-        "-date", "-id"
-    )
-    txs_active = base_qs.filter(is_ignored=False)
-
-    total_amount = (
-        txs_active.aggregate(total=Sum(Coalesce("amount_chf", "amount")))["total"] or 0
-    )
-
-    # ── Sous-totaux par sous-catégorie — pour le Sankey + donut ─────────────
-    # list() force l'évaluation du queryset ici — on itère deux fois :
-    # une fois pour le Sankey, une fois pour le donut.
-    subcat_list = list(
-        txs_active.filter(subcategory__isnull=False)
-        .values(
-            "subcategory__id",
-            "subcategory__name",
-            "subcategory__slug",
-            "subcategory__icon",
-            "subcategory__is_system",  # nécessaire pour afficher/masquer le bouton Supprimer
-        )
-        .annotate(total=Sum(Coalesce("amount_chf", "amount")))
-        .order_by("total")
-    )
-
-    # ── Construction du Sankey "direct" (Category → SubCategories) ───────────
-    # Nœud source = la catégorie elle-même.
-    # Nœuds cibles = les sous-catégories avec des transactions sur la période.
-    # Pas de nœud "__pool__" → BricCharts.initSankey détecte hasPool=false
-    # et utilise des marges de 10% pour ne pas rogner les labels.
-    cat_color = category.colour_hex or "#4ade80"
-
-    # U+200B (zero-width space) : rend le nom du nœud source unique même
-    # quand une sous-catégorie porte le même nom que sa catégorie parente
-    # (ex: catégorie "Investissements" avec sous-cat "Investissements").
-    # ECharts identifie les nœuds par `name` — deux nœuds homonymes créent
-    # un self-loop qui rend le chart vide silencieusement.
-    # Le ZWSP est invisible à l'affichage et strippé dans le formatter JS.
-    source_name = category.name + "​"
-
-    sankey_nodes = [
-        {
-            "name": source_name,
-            "slug": category.slug,
-            "itemStyle": {"color": cat_color},
-        }
-    ]
-    sankey_links = []
-
-    # Couleurs pré-calculées : même palette pour Sankey ET donut.
-    # _seg_factor distribue les teintes entre 0.70 (lumineux) et 0.15 (sombre)
-    # sur n segments — aligné sur le range du gradient Sankey (0.05→0.70).
-    n_segs = len(subcat_list)
-
-    def _seg_factor(i, n):
-        """Distribue n segments entre 0.70 (lumineux) et 0.35 (sombre min lisible)."""
-        if n <= 1:
-            return 0.70
-        return 0.70 - (0.70 - 0.35) * i / (n - 1)
-
-    subcat_colors = [
-        _vary_color(cat_color, _seg_factor(i, n_segs)) for i in range(n_segs)
-    ]
-
-    for i, sub in enumerate(subcat_list):
-        sankey_nodes.append(
-            {
-                "name": sub["subcategory__name"],
-                "slug": sub["subcategory__slug"],
-                "itemStyle": {"color": subcat_colors[i]},
-            }
-        )
-        sankey_links.append(
-            {
-                "source": source_name,
-                "target": sub["subcategory__name"],
-                "value": round(float(abs(sub["total"])), 2),
-            }
-        )
-
-    # ── Nœud pour les transactions sans sous-catégorie ─────────────────────────
-    # subcat_list = seulement les transactions avec une sous-catégorie assignée.
-    # Le reste = transactions rattachées à la catégorie principale elle-même
-    # (la catégorie peut jouer le rôle de sous-catégorie pour les transactions
-    # qui n'ont pas besoin d'un niveau de détail supplémentaire).
-    #
-    # Astuce ZWSP : source_name porte un U+200B (zero-width space), category.name non.
-    # ECharts traite ces deux nœuds comme distincts → pas de self-loop.
-    # Le formatter JS strippe le ZWSP → les deux labels affichent "Revenus" visuellement.
-    categorized_amount = sum(float(abs(sub["total"])) for sub in subcat_list)
-    uncategorized_amount = abs(float(total_amount)) - categorized_amount
-    uncat_color = _vary_color(cat_color, 0.20)  # teinte légèrement plus sombre
-
-    if uncategorized_amount > 0.01:
-        sankey_nodes.append(
-            {
-                "name": category.name,  # sans ZWSP — distinct de source_name pour ECharts
-                "slug": category.slug,
-                "itemStyle": {"color": uncat_color},
-            }
-        )
-        sankey_links.append(
-            {
-                "source": source_name,  # avec ZWSP
-                "target": category.name,  # sans ZWSP
-                "value": round(uncategorized_amount, 2),
-            }
-        )
-
-    # Fallback : aucun lien du tout (cas improbable — garde-fou).
-    if not sankey_links and total_amount != 0:
-        sankey_nodes.append(
-            {
-                "name": category.name,  # sans ZWSP — nom distinct pour ECharts
-                "slug": category.slug,
-                "itemStyle": {"color": cat_color},
-            }
-        )
-        sankey_links.append(
-            {
-                "source": source_name,  # avec ZWSP
-                "target": category.name,  # sans ZWSP
-                "value": round(float(abs(total_amount)), 2),
-            }
-        )
-
-    sankey_data = {"nodes": sankey_nodes, "links": sankey_links}
-    has_sankey = len(sankey_links) > 0
-
-    # ── Distribution donut (panel droit) ────────────────────────────────────
-    # subcat_colors calculé au-dessus (même palette que les nœuds Sankey).
-    donut_segments = [
-        {
-            "name": sub["subcategory__name"],
-            "value": round(float(abs(sub["total"])), 2),
-            "itemStyle": {"color": subcat_colors[i]},
-        }
-        for i, sub in enumerate(subcat_list)
-    ]
-
-    # Ajouter un segment pour les transactions sans sous-catégorie.
-    # Nommé d'après la catégorie principale elle-même (pas "Sans sous-catégorie").
-    if uncategorized_amount > 0.01:
-        donut_segments.append(
-            {
-                "name": category.name,
-                "value": round(uncategorized_amount, 2),
-                "itemStyle": {"color": uncat_color},
-            }
-        )
-
-    # Fallback : aucune sous-catégorie → segment unique à 100% pour ne pas masquer le donut.
-    if not donut_segments and total_amount != 0:
-        donut_segments = [
-            {
-                "name": category.name,
-                "value": round(float(abs(total_amount)), 2),
-                "itemStyle": {"color": cat_color},
-            }
-        ]
-
-    donut_data = {
-        "segments": donut_segments,
-        "label": "Distribution",
-        "sign": "−" if total_amount < 0 else "+",
-        "total": round(float(abs(total_amount)), 2),
-    }
-    has_donut = len(donut_segments) > 0
-
-    # ── Icônes banques pour la liste de transactions ─────────────────────────
     bank_icon_map = _resolve_bank_icon_map()
     for tx in txs:
         icon_slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
         tx.bank_icon_url = bank_icon_map.get(icon_slug, "")
 
-    tx_count = txs_active.count()
-    avg_amount = (total_amount / tx_count) if tx_count > 0 else None
+    avg_amount = (cc["total_amount"] / cc["tx_count"]) if cc["tx_count"] > 0 else None
 
-    # ── KPI tabs — données pour les 3 onglets sélecteurs ─────────────────────
-    # cat_tab : onglet actif en session (par défaut "transactions")
-    cat_tab = request.session.get("budget_cat_tab", "transactions")
+    # ── Distribution donut (panel droit) — même palette de couleurs que le Sankey ──
+    donut_segments = [
+        {
+            "name": sub["subcategory__name"],
+            "value": round(float(abs(sub["total"])), 2),
+            "itemStyle": {"color": cc["subcat_colors"][i]},
+        }
+        for i, sub in enumerate(cc["subcat_list"])
+    ]
+    if cc["uncategorized_amount"] > 0.01:
+        donut_segments.append(
+            {
+                "name": category.name,
+                "value": round(cc["uncategorized_amount"], 2),
+                "itemStyle": {"color": cc["uncat_color"]},
+            }
+        )
+    if not donut_segments and cc["total_amount"] != 0:
+        donut_segments = [
+            {
+                "name": category.name,
+                "value": round(float(abs(cc["total_amount"])), 2),
+                "itemStyle": {"color": cc["cat_color"]},
+            }
+        ]
+    donut_data = {
+        "segments": donut_segments,
+        "label": "Distribution",
+        "sign": "−" if cc["total_amount"] < 0 else "+",
+        "total": round(float(abs(cc["total_amount"])), 2),
+    }
+    has_donut = len(donut_segments) > 0
 
-    # Nombre de sous-catégories distinctes utilisées sur la période.
-    # distinct() sur subcategory_id évite de compter les doublons si plusieurs
-    # transactions tombent dans la même sous-catégorie.
-    subcat_count = (
-        txs_active.filter(subcategory__isnull=False)
-        .values("subcategory_id")
-        .distinct()
-        .count()
-    )
-
-    # Objectif mensuel pour cette catégorie — paramètre général, sans notion de mois.
-    # On multiplie par le nombre de mois de la période pour le KPI affiché.
-    period_months = PERIOD_MODE_MONTHS.get(period_mode, 1)
-
-    budget_target = BudgetTarget.objects.filter(category=category).first()
-
-    # Montant cible mis à l'échelle de la période + indicateurs de progression
-    target_amount = None
-    target_pct = None
-    on_track = None
-    arc_fill_px = None  # longueur de l'arc SVG gauge — approche cercle complet, r=40, demi-périmètre = π×40 = 125.66
-    remaining_chf = (
-        None  # target_amount - spent : positif = marge, négatif = dépassement
-    )
-    remaining_abs_chf = None  # abs(remaining_chf) — pour l'affichage sans signe
-    if budget_target:
-        from decimal import Decimal
-
-        target_amount = budget_target.amount * Decimal(period_months)
-        spent = abs(total_amount)
-        if target_amount > 0:
-            target_pct = round(float(spent / target_amount) * 100)
-        else:
-            target_pct = 0
-        on_track = spent <= target_amount
-        # arc_fill_px : proportion de l'arc à remplir.
-        # Plafond à 124 (pas 125.5 = périmètre exact) pour laisser un micro-gap :
-        # avec stroke-linecap="round", les deux caps arrondis aux extrémités du
-        # demi-cercle (10,52) et (90,52) se superposent quand l'arc est plein →
-        # deux "oreilles" visibles. En stoppant à 124, le cap de fin n'atteint pas
-        # le cap de départ et il n'y a plus de superposition.
-        # Demi-périmètre exact : π × r = π × 40 = 125.66
-        # Pas besoin de tricher avec 124 — le viewport SVG "0 0 100 52" clippe les oreilles nativement.
-        arc_fill_px = round(min(target_pct, 100) / 100 * 125.66, 1)
-        # remaining_chf : marge restante (positif) ou dépassement (négatif)
-        remaining_chf = round(float(target_amount) - float(spent), 2)
-        # remaining_abs_chf : valeur absolue pour l'affichage (|chf| filtre ne gère pas les négatifs)
+    # remaining_abs_chf : marge / dépassement objectif (affichage panel droit)
+    remaining_chf = None
+    remaining_abs_chf = None
+    if cc["budget_target"] and cc["target_amount"]:
+        remaining_chf = round(
+            float(cc["target_amount"]) - float(abs(cc["total_amount"])), 2
+        )
         remaining_abs_chf = abs(remaining_chf)
 
     # ── Historique mensuel — 12 mois glissants pour le bar chart ─────────────
@@ -2676,11 +2716,13 @@ def budget_category_detail(request, slug):
         "values": history_values,
         "urls": history_urls,
         # Ligne de référence — montant mensuel brut (pas multiplié par period_months)
-        "target": round(float(budget_target.amount), 2) if budget_target else None,
+        "target": round(float(cc["budget_target"].amount), 2)
+        if cc["budget_target"]
+        else None,
         # current_month permet à bar.js de colorer la barre active avec la couleur catégorie
         "current_month": period_start.strftime("%Y-%m"),
         # Couleur catégorie — barres actives et ligne objectif
-        "cat_color": category.colour_hex or "#4ade80",
+        "cat_color": cc["cat_color"],
     }
     has_history = len(history_months) > 0
 
@@ -2688,10 +2730,10 @@ def budget_category_detail(request, slug):
     # Calculés uniquement si budget_target existe (sinon affichage vide + CTA).
     # Sont des faits fixes sur 12 mois glissants — indépendants de la période.
     bar_kpis = None
-    if budget_target and has_history:
+    if cc["budget_target"] and has_history:
         from decimal import Decimal as D
 
-        target_monthly = float(budget_target.amount)
+        target_monthly = float(cc["budget_target"].amount)
 
         # Dépenses moyennes sur les 12 mois de l'historique
         avg_monthly = sum(history_values) / len(history_values)
@@ -2740,35 +2782,35 @@ def budget_category_detail(request, slug):
             "category": category,
             "period_start": period_start,
             "period_end": period_end,
-            "period_label": period_label,
-            "total_amount": total_amount,
-            "tx_count": tx_count,
+            "period_label": cc["period_label"],
+            "total_amount": cc["total_amount"],
+            "tx_count": cc["tx_count"],
             "avg_amount": avg_amount,
             "txs": txs,
-            "subcat_list": subcat_list,
-            "sankey_data": sankey_data,
-            "has_sankey": has_sankey,
+            "subcat_list": cc["subcat_list"],
+            "sankey_data": cc["sankey_data"],
+            "has_sankey": cc["has_sankey"],
             "donut_data": donut_data,
             "has_donut": has_donut,
-            "cat_tab": cat_tab,
-            "subcat_count": subcat_count,
-            "budget_target": budget_target,
-            "target_amount": target_amount,
-            "target_pct": target_pct,
-            "on_track": on_track,
-            "arc_fill_px": arc_fill_px,
+            "cat_tab": cc["cat_tab"],
+            "subcat_count": cc["subcat_count"],
+            "budget_target": cc["budget_target"],
+            "target_amount": cc["target_amount"],
+            "target_pct": cc["target_pct"],
+            "on_track": cc["on_track"],
+            "arc_fill_px": cc["arc_fill_px"],
             "remaining_chf": remaining_chf,
             "remaining_abs_chf": remaining_abs_chf,
-            "period_months": period_months,
+            "period_months": cc["period_months"],
             "period_mode": period_mode,
-            "period_display": period_label,
+            "period_display": cc["period_label"],
             "can_go_next": can_go_next,
             "history_chart_data": history_chart_data,
             "has_history": has_history,
             "bar_kpis": bar_kpis,
             # Filtres compte — partagés avec budget_index via la session
             "accounts": accounts,
-            "filter_account_ids": filter_account_ids,
+            "filter_account_ids": cc["filter_account_ids"],
         },
     )
 
