@@ -21,6 +21,7 @@ Rendu d'une transaction ignorée (is_ignored=True) :
     - Bouton oeil-slash en doré (clic = réactiver)
 {% endcomment %}
 <div id="tx-{{ tx.id }}"
+     {% if oob %}hx-swap-oob="outerHTML"{% endif %}
      class="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-hover/40 transition-colors group{% if tx.is_ignored %} opacity-40{% endif %}">
     {% comment %}
     Zone cliquable colonnes 1-4 : ouvre le picker catégorie.

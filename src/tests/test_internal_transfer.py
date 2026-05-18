@@ -500,3 +500,60 @@ def test_panel_tx_detail_no_badge_when_not_internal_transfer(cat_alim, account):
     )
 
     assert "Classifiée comme mouvement interne" not in html
+
+
+# =============================================================================
+# F. Sync OOB — toggle ignore depuis le panneau détail en contexte category
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_toggle_ignore_from_detail_close_on_back_returns_oob_row(
+    auth_client, test_user, cat_alim, account
+):
+    """
+    Quand toggle_ignore est appelé avec source=detail et close_on_back=true
+    (ouvert depuis category_detail), la réponse doit contenir :
+    1. Le fragment _panel_tx_detail.html (mise à jour du panneau)
+    2. Le fragment _panel_tx_row.html avec hx-swap-oob (mise à jour de la ligne)
+
+    Sans l'OOB, l'œil dans la liste reste désynchronisé après toggle.
+    """
+    account.members.add(test_user)
+    tx = make_tx(account, "MIGROS", category=cat_alim, seed="oob1")
+    tx.is_ignored = False
+    tx.save(update_fields=["is_ignored"])
+
+    response = auth_client.post(
+        reverse("budget:toggle_ignore", args=[tx.id]),
+        {"source": "detail", "close_on_back": "true"},
+    )
+
+    assert response.status_code == 200
+    content = response.content.decode()
+    # Panneau mis à jour
+    assert "Exclure de l'analyse budgétaire" in content
+    # OOB row présent avec l'attribut hx-swap-oob
+    assert "hx-swap-oob" in content
+    assert f'id="tx-{tx.id}"' in content
+
+
+@pytest.mark.django_db
+def test_toggle_ignore_from_detail_no_oob_when_not_close_on_back(
+    auth_client, test_user, cat_alim, account
+):
+    """
+    Depuis le panneau principal (close_on_back=false), pas d'OOB —
+    la liste panel est rechargée séparément.
+    """
+    account.members.add(test_user)
+    tx = make_tx(account, "MIGROS", category=cat_alim, seed="oob2")
+
+    response = auth_client.post(
+        reverse("budget:toggle_ignore", args=[tx.id]),
+        {"source": "detail", "close_on_back": "false"},
+    )
+
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert "hx-swap-oob" not in content

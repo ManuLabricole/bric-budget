@@ -32,6 +32,7 @@ from django.db.models import Count, Max, Sum
 from django.db.models.functions import Coalesce, TruncMonth
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.templatetags.static import static
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -1364,8 +1365,7 @@ def budget_toggle_ignore(request, tx_id):
     # le contexte (True si ouvert depuis category_detail, False sinon).
     if request.POST.get("source") == "detail":
         close_on_back = request.POST.get("close_on_back") == "true"
-        return render(
-            request,
+        panel_html = render_to_string(
             "budget/_panel_tx_detail.html",
             {
                 "tx": tx,
@@ -1374,7 +1374,23 @@ def budget_toggle_ignore(request, tx_id):
                 "close_on_back": close_on_back,
                 "source": "category" if close_on_back else "",
             },
+            request=request,
         )
+        if close_on_back:
+            # OOB swap : met à jour la ligne derrière le panneau en même temps.
+            # Sans ça, l'œil dans la liste reste désynchronisé après toggle.
+            row_html = render_to_string(
+                "budget/_panel_tx_row.html",
+                {
+                    "tx": tx,
+                    "bank_icon_url": bank_icon_url,
+                    "panel_source": "category",
+                    "oob": True,
+                },
+                request=request,
+            )
+            return HttpResponse(panel_html + row_html)
+        return HttpResponse(panel_html)
 
     # source=category → appelé depuis category_detail.html.
     # On ne peut pas mettre à jour KPIs + Sankey + donut en partiel —
