@@ -28,8 +28,9 @@ from pathlib import Path
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
+from django.core.paginator import EmptyPage, InvalidPage, Paginator
 from django.db.models import Count, Max, Q, Sum
-from django.db.models.functions import Coalesce, TruncMonth
+from django.db.models.functions import Abs, Coalesce, TruncMonth
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
@@ -1184,6 +1185,23 @@ def budget_panel_transactions(request):
     # icontains = insensible à la casse.
     q = request.GET.get("q", "").strip()
 
+    # ── Filtre montant min/max (valeur absolue en CHF) ────────────────────────
+    #
+    # Le montant est filtré sur la valeur absolue du champ `amount`.
+    # Limitation connue : pour les comptes non-CHF (EUR), `amount` est en devise
+    # native. On filtre donc en EUR pour ces comptes. Acceptable pour l'usage actuel
+    # (majorité des comptes sont CHF).
+    def _parse_amount_filter(raw):
+        """Retourne un entier positif ou None si invalide/vide."""
+        try:
+            v = int(float(raw)) if raw and raw.strip() else None
+            return v if v and v > 0 else None
+        except (ValueError, TypeError):
+            return None
+
+    amount_min = _parse_amount_filter(request.GET.get("amount_min", ""))
+    amount_max = _parse_amount_filter(request.GET.get("amount_max", ""))
+
     # ── Filtre compte actif (même session que budget_index) ──────────────────
     filter_account_ids = request.session.get("budget_filter_accounts", [])
     accounts = (
@@ -1202,26 +1220,69 @@ def budget_panel_transactions(request):
     # Pas de filtre is_ignored=False ici — contrairement à budget_index()
     # qui exclut les ignorées des KPIs budget, le panel les affiche en grisé.
     # L'utilisateur doit voir ce qu'il a ignoré pour pouvoir le réactiver.
-    qs = Transaction.objects.for_user(request.user).filter(
-        date__gte=period_start,
-        date__lte=period_end,
-        is_internal_transfer=False,
+    qs = (
+        Transaction.objects.for_user(request.user)
+        .filter(
+            date__gte=period_start,
+            date__lte=period_end,
+            is_internal_transfer=False,
+        )
+        .select_related("category", "subcategory", "account", "account__bank")
+        .order_by("-date", "-id")
     )
     if filter_account_ids:
         qs = qs.filter(account_id__in=filter_account_ids)
     if q:
         qs = qs.filter(display_name__icontains=q)
-    tx_list = list(
-        qs.select_related(
-            "category", "subcategory", "account", "account__bank"
-        ).order_by("-date", "-id")[:200]
-    )
+    if amount_min is not None or amount_max is not None:
+        # Abs() annote chaque ligne avec la valeur absolue du montant.
+        # On filtre ensuite dessus — les dépenses (négatives) et entrées (positives)
+        # sont traitées de la même façon.
+        qs = qs.annotate(abs_amount=Abs("amount"))
+        if amount_min is not None:
+            qs = qs.filter(abs_amount__gte=amount_min)
+        if amount_max is not None:
+            qs = qs.filter(abs_amount__lte=amount_max)
+
+    # Pagination 50 tx/page — scroll infini côté client (HTMX "revealed").
+    # ?page= est injecté par le sentinel HTMX en bas du scroll.
+    # Page invalide ou hors-borne → retomber sur la première page.
+    paginator = Paginator(qs, 50)
+    try:
+        page_number = int(request.GET.get("page", 1))
+    except (ValueError, TypeError):
+        page_number = 1
+    try:
+        page_obj = paginator.page(page_number)
+    except (EmptyPage, InvalidPage):
+        page_obj = paginator.page(1)
+        page_number = 1
+
+    tx_list = list(page_obj.object_list)
 
     # Annoter chaque transaction avec l'URL résolue de l'icône banque.
     # tx.bank_icon_url est ensuite accessible directement dans le template.
     for tx in tx_list:
         slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
         tx.bank_icon_url = bank_icon_map.get(slug, "")
+
+    # ── Page > 1 = réponse "append-only" pour le scroll infini ─────────────────
+    # Le sentinel HTMX en bas de liste fait un GET ?page=N.
+    # On retourne uniquement les nouvelles lignes + un nouveau sentinel si besoin.
+    # Pas de shell panel : HTMX remplace le sentinel par les nouvelles lignes.
+    if page_number > 1:
+        return render(
+            request,
+            "budget/_panel_tx_rows_append.html",
+            {
+                "transactions": tx_list,
+                "page_obj": page_obj,
+                "bank_icon_map": bank_icon_map,
+                "q": q,
+                "amount_min": amount_min,
+                "amount_max": amount_max,
+            },
+        )
 
     period_mode = request.session.get("budget_period_mode", "1m")
 
@@ -1253,6 +1314,11 @@ def budget_panel_transactions(request):
             # Filtre compte — partagé via la session
             "accounts": accounts,
             "filter_account_ids": filter_account_ids,
+            "page_obj": page_obj,
+            # q + montant transmis au template pour l'URL du sentinel scroll infini
+            "q": q,
+            "amount_min": amount_min,
+            "amount_max": amount_max,
         },
     )
 
