@@ -15,21 +15,31 @@ Contexte :
     <div class="flex items-center justify-between mb-4">
         <div>
             <span class="text-[10px] font-bold text-text-disabled uppercase tracking-widest">Règles de catégorisation</span>
-            <p class="text-xs text-text-muted mt-0.5">
-                {{ rules|length }} règle{{ rules|length|pluralize }}
-                {% with active_count=rules|length %}{# on recompte les actives proprement en template #}{% endwith %}
-            </p>
+            <p class="text-xs text-text-muted mt-0.5">{{ rules|length }} règle{{ rules|length|pluralize }}</p>
         </div>
-        <button onclick="closeModal()"
-                class="w-6 h-6 rounded-full border border-edge flex items-center justify-center text-text-disabled hover:text-text-muted hover:border-edge-subtle transition-colors flex-shrink-0">
-            <svg class="w-3 h-3"
-                 fill="none"
-                 viewBox="0 0 24 24"
-                 stroke-width="2.5"
-                 stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-            </svg>
-        </button>
+        <div class="flex items-center gap-2">
+            <a href="{% url 'budget:export_rules_download' %}"
+               title="Exporter toutes les règles en JSON"
+               class="w-6 h-6 rounded-lg flex items-center justify-center text-text-disabled hover:text-text-base hover:bg-surface-hover transition-colors flex-shrink-0">
+                <svg class="w-3.5 h-3.5"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="2"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+            </a>
+            <button onclick="closeModal()"
+                    class="w-6 h-6 rounded-full border border-edge flex items-center justify-center text-text-disabled hover:text-text-muted hover:border-edge-subtle transition-colors flex-shrink-0">
+                <svg class="w-3 h-3"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="2.5"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
     </div>
     {# ── Liste des règles ── #}
     {% if rules %}

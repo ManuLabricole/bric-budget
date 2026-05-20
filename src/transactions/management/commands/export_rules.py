@@ -1,7 +1,7 @@
 """
 transactions/management/commands/export_rules.py
 
-Exporte les CategorizationRule actives vers un fichier JSON.
+Exporte toutes les CategorizationRule (actives ET inactives) vers un fichier JSON.
 
 Pourquoi cette commande existe :
     La session de classification manuelle (Phase 2G) va créer des dizaines de règles.
@@ -23,7 +23,8 @@ Format de sortie :
                 "category_slug": "alimentation",
                 "subcategory_slug": "supermarche",
                 "target_field": "description_raw",
-                "priority": 10
+                "priority": 10,
+                "is_active": true
             },
             ...
         ]
@@ -40,7 +41,9 @@ from transactions.models import CategorizationRule
 
 
 class Command(BaseCommand):
-    help = "Export CategorizationRule actives vers JSON (backup avant classification)"
+    help = (
+        "Export toutes les CategorizationRule vers JSON (backup avant classification)"
+    )
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -55,13 +58,14 @@ class Command(BaseCommand):
         # Les champs FK (category, subcategory) sont traversés avec __ pour obtenir
         # le slug (clé métier stable) plutôt que l'ID (clé technique instable).
         rules_qs = (
-            CategorizationRule.objects.filter(is_active=True)
+            CategorizationRule.objects.all()
             .values(
                 "keyword",
                 "category__slug",
                 "subcategory__slug",
                 "target_field",
                 "priority",
+                "is_active",
             )
             .order_by("priority", "keyword")
         )
@@ -74,6 +78,7 @@ class Command(BaseCommand):
                 "subcategory_slug": r["subcategory__slug"],
                 "target_field": r["target_field"],
                 "priority": r["priority"],
+                "is_active": r["is_active"],
             }
             for r in rules_qs
         ]
