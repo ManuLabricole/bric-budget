@@ -2960,24 +2960,24 @@ def budget_toggle_filter_category(request, slug):
 @login_required
 def budget_export_rules_download(request):
     """
-    Retourne les CategorizationRule actives sous forme de fichier JSON téléchargeable.
+    Retourne toutes les CategorizationRule (actives ET inactives) en JSON téléchargeable.
 
     URL : /budget/export/rules/
     Response : application/json avec Content-Disposition: attachment
 
-    Format du fichier :
+    Format du fichier (identique à la management command export_rules) :
         {
             "exported_at": "YYYY-MM-DD",
             "count": N,
             "rules": [
                 {"keyword": "...", "category_slug": "...", "subcategory_slug": "...",
-                 "target_field": "...", "priority": N},
+                 "target_field": "...", "priority": N, "is_active": true},
                 ...
             ]
         }
 
     Pourquoi exporter via le navigateur et pas seulement via make export-rules ?
-        - Accessible depuis l'UI Paramètres sans ouvrir un terminal.
+        - Accessible depuis l'UI sans ouvrir un terminal.
         - Utile avant la session de classification manuelle pour faire un backup rapide.
     """
     rules = list(
