@@ -100,6 +100,9 @@ INSTALLED_APPS = [
 # XFrameOptionsMiddleware → sends X-Frame-Options header (prevents iframe embedding)
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # WhiteNoise doit être juste après SecurityMiddleware pour servir les fichiers
+    # statiques directement depuis Django (sans Nginx) — requis sur Railway.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -279,8 +282,22 @@ STATIC_URL = "static/"
 # → copies everything from STATICFILES_DIRS into STATIC_ROOT (a single folder)
 # → Nginx serves STATIC_ROOT directly, bypassing Django entirely (much faster).
 #
-# STATIC_ROOT is not set here because we don't deploy yet.
+# STATIC_ROOT : dossier cible de `collectstatic` en production.
+# Railway lance `python manage.py collectstatic` au build (via Procfile/nixpacks).
+# WhiteNoise sert ce dossier directement — pas besoin de Nginx.
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# STATICFILES_DIRS : sources en développement (ignoré après collectstatic).
 STATICFILES_DIRS = [BASE_DIR / "static"]
+
+# Compression + cache-busting automatique (ajoute un hash dans le nom du fichier).
+# Permet de servir les statics avec Cache-Control: max-age=31536000 en toute sécurité.
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
+    },
+}
 
 
 # =============================================================================
