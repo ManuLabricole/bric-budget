@@ -17,8 +17,17 @@ Including another URLconf
 
 from django.contrib import admin
 from django.contrib.auth.decorators import login_required
+from django.http import HttpResponse
 from django.shortcuts import render
 from django.urls import include, path
+
+
+# Vue health check — utilisée par Railway pour savoir si l'app est vivante.
+# Pas de @login_required : Railway pingue cette URL sans cookie de session.
+# Pas de DB : si la DB est down, on veut quand même répondre 200 (le container
+# est vivant, c'est la DB qui a un problème — Railway ne doit pas redémarrer l'app).
+def healthz(request):
+    return HttpResponse("ok", content_type="text/plain")
 
 
 # Vue temporaire de test pour valider le layout Phase 1B.
@@ -30,6 +39,9 @@ def synthese(request):
 
 
 urlpatterns = [
+    # /healthz/ — Railway pingue cette URL toutes les 30s pour vérifier que
+    # l'app répond. Si elle ne répond plus, Railway redémarre le container.
+    path("healthz/", healthz, name="healthz"),
     path("admin/", admin.site.urls),
     path("", include("django.contrib.auth.urls")),
     path("synthese/", synthese, name="synthese"),
