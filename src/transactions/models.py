@@ -163,7 +163,9 @@ class CategorizationRule(models.Model):
 
     class TargetField(models.TextChoices):
         DESCRIPTION_RAW = "description_raw", "Raw description"
-        MERCHANT_NAME = "merchant_name", "Merchant name"
+        MERCHANT_NAME = "merchant_name", "Merchant name (legacy)"
+        # display_name is the stored cleaned bank-agnostic name — canonical target since Phase 2G.
+        DISPLAY_NAME = "display_name", "Display name (clean)"
 
     keyword = models.CharField(max_length=200)
 
@@ -185,7 +187,7 @@ class CategorizationRule(models.Model):
     target_field = models.CharField(
         max_length=20,
         choices=TargetField.choices,
-        default=TargetField.MERCHANT_NAME,
+        default=TargetField.DISPLAY_NAME,
     )
 
     # Higher priority = checked first. Rules with the same priority are checked
@@ -203,6 +205,41 @@ class CategorizationRule(models.Model):
         target = f"[{self.target_field}]"
         dest = str(self.subcategory) if self.subcategory else str(self.category)
         return f'"{self.keyword}" {target} → {dest}'
+
+
+# =============================================================================
+# TransactionQuerySet — Queryset manager avec filtre de sécurité par user
+# =============================================================================
+
+
+class TransactionQuerySet(models.QuerySet):
+    """
+    QuerySet custom pour Transaction.
+
+    Méthode principale : .for_user(user)
+        Filtre les transactions selon les comptes dont l'utilisateur est membre.
+        À appeler en premier sur toutes les requêtes exposées dans les vues :
+
+            Transaction.objects.for_user(request.user).filter(date__gte=...)
+
+        Pourquoi un QuerySet et pas un filtre inline dans chaque vue ?
+            - DRY : 17 endroits dans views.py touchent Transaction.objects — un seul
+              point de vérité évite les oublis.
+            - Sécurité : si on ajoute un champ 'members' à Account, le filter est
+              mis à jour ici et toutes les vues bénéficient du fix automatiquement.
+            - Chainable : retourne un QuerySet → on peut chaîner .filter(), .exclude(),
+              .order_by()... sans friction.
+    """
+
+    def for_user(self, user):
+        """
+        Retourne uniquement les transactions des comptes dont `user` est membre.
+
+        Utilise le M2M Account.members → filtre via __members qui traverse
+        la table de jonction accounts_account_members.
+        Un user non-membre d'aucun compte obtient un queryset vide.
+        """
+        return self.filter(account__members=user)
 
 
 # =============================================================================
@@ -335,11 +372,16 @@ class Transaction(models.Model):
 
     # --- Description ---
 
-    # Raw text from the bank export — never modified, used for audit and rule matching
+    # Raw text from the bank export — never modified, used for audit trail only.
     description_raw = models.CharField(max_length=500)
 
-    # Cleaned merchant name — editable by the user, shown in the UI
-    # Pre-filled from description_raw at import time (basic cleanup)
+    # Bank-agnostic cleaned description — computed at import by _clean_description()
+    # in connectors/base.py. Stored so the ORM can filter on it (categorization rules,
+    # search, keyword_q). Recomputable via `make recalculate-display-names`.
+    display_name = models.CharField(max_length=300, blank=True, default="")
+
+    # User-editable override — shown instead of display_name when set.
+    # Pre-filled from display_name at import; user can rename ("Loyer Robert" etc.).
     merchant_name = models.CharField(max_length=200, blank=True, default="")
 
     # Free-text note added by the user — e.g. "January rent", "wedding gift"
@@ -379,18 +421,20 @@ class Transaction(models.Model):
     import_hash = models.CharField(max_length=64, unique=True)
 
     # Lien vers l'import qui a créé cette transaction.
-    # null=True : les transactions existantes avant cette migration restent valides.
-    # SET_NULL : si l'ImportLog est supprimé manuellement depuis l'admin, les
-    #            transactions restent en DB avec import_log=NULL.
-    #            La vue delete_import fait une suppression explicite des tx AVANT
-    #            de supprimer le log — SET_NULL est ici un filet de sécurité.
+    # null=True : permet aux transactions créées en CLI (sans ImportLog) de rester valides.
+    # CASCADE : supprimer un ImportLog supprime automatiquement toutes ses transactions.
     import_log = models.ForeignKey(
         "ImportLog",
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=models.CASCADE,
         related_name="transactions",
     )
+
+    # Manager custom — remplace Transaction.objects par le QuerySet ci-dessus.
+    # as_manager() expose toutes les méthodes du QuerySet comme méthodes du manager.
+    # Transaction.objects.for_user(user) fonctionne comme Transaction.objects.filter(...)
+    objects = TransactionQuerySet.as_manager()
 
     class Meta:
         verbose_name = "transaction"
@@ -461,6 +505,28 @@ class ImportLog(models.Model):
 
     # Optional error detail for debugging — populated when status != SUCCESS
     error_detail = models.TextField(blank=True, default="")
+
+    # ── Stockage permanent du fichier source ──────────────────────────────────
+    # Renseigné après confirmation de l'import (vide pour les imports CLI).
+    #
+    # stored_filename : nom canonique calculé depuis les métadonnées du fichier.
+    #   Convention : {bank}_{account}_{date_min}_{date_max}[_b{balance}]_{n}tx{ext}
+    #   Exemple    : yuh_checking_20260101_20260430_b12345.67_42tx.csv
+    #
+    # stored_path : chemin RELATIF à settings.IMPORT_STORAGE_ROOT.
+    #   On ne stocke jamais de chemin absolu en DB — non portable entre machines.
+    #   Exemple    : yuh/2026/yuh_checking_20260101_20260430_b12345.67_42tx.csv.enc
+    #
+    # is_encrypted : True si le fichier est chiffré avec Fernet.
+    #   Tous les nouveaux imports web sont chiffrés (clé dans .env).
+    stored_filename = models.CharField(max_length=255, blank=True, default="")
+    stored_path = models.CharField(max_length=500, blank=True, default="")
+    is_encrypted = models.BooleanField(default=False)
+
+    # Date range of the transactions in this import — populated after bulk_create.
+    # None for failed imports (0 transactions created) or legacy CLI imports.
+    date_min = models.DateField(null=True, blank=True)
+    date_max = models.DateField(null=True, blank=True)
 
     class Meta:
         verbose_name = "import log"

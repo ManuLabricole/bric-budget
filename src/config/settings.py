@@ -62,7 +62,7 @@ INSTALLED_APPS = [
     # transactions/ has FK to accounts/ (Transaction.account) → declared last
     "users",
     "accounts",
-    "transactions",
+    "transactions.apps.TransactionsConfig",  # explicit config → ready() appelé → signals connectés
     "budget",
     # imports/ n'a pas de FK vers d'autres apps → déclaré en dernier
     "imports",
@@ -255,3 +255,20 @@ STATICFILES_DIRS = [BASE_DIR / "static"]
 # BigAutoField = 64-bit integer (up to 9.2 × 10^18 rows).
 # The old default was AutoField (32-bit, ~2 billion rows) — BigAutoField is safer.
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+# =============================================================================
+# 10. Import file storage
+# =============================================================================
+
+# Dossier permanent pour les fichiers bancaires importés via l'UI web.
+# assets/private/ est gitignored — les données ne quittent jamais le Mac.
+# BASE_DIR = src/  →  BASE_DIR.parent = racine du repo
+IMPORT_STORAGE_ROOT = BASE_DIR.parent / "assets" / "private" / "data" / "imports"
+
+# Clé Fernet (AES-128-CBC + HMAC-SHA256) pour chiffrer les fichiers au repos.
+# default="" permet de démarrer sans la clé (CI, dev sans imports web).
+# La clé est requise au moment de l'usage — imports/storage.py lève ImproperlyConfigured
+# si elle est vide quand on tente de chiffrer ou déchiffrer un fichier.
+# Générer :  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+IMPORT_ENCRYPTION_KEY = config("IMPORT_ENCRYPTION_KEY", default="")

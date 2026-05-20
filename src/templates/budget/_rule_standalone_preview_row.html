@@ -1,0 +1,54 @@
+{% load budget_filters static %}
+{% comment %}
+budget/_rule_standalone_preview_row.html — Rangée compacte alignée (preview règle)
+
+Layout colonne stricte — une seule ligne, tout aligné :
+    [date w-9] [logo banque w-7] [icône cat w-7] [description flex-1 truncate] [montant w-20]
+
+Identique au panel de droite (_panel_tx_row.html) mais sans boutons d'action.
+Pas d'HTMX — lecture seule.
+{% endcomment %}
+<div class="flex items-center gap-3 px-4 py-2 hover:bg-surface-hover/40 transition-colors">
+    {# COL 1 — Date ── fixe w-9 #}
+    <span class="text-[10px] text-text-disabled tabular-nums flex-shrink-0 w-9 leading-none">
+        {{ tx.date|date:"d/m" }}
+    </span>
+    {# COL 2 — Logo banque ── cercle blanc w-7, même règle que bank_logo.html #}
+    {% include "components/banks/bank_logo.html" with icon_url=tx.bank_icon_url bank=tx.account.bank size="w-7 h-7" padding="p-1" %}
+    {# COL 3 — Icône catégorie ── cercle coloré w-7 #}
+    <div class="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center"
+         style="background-color: {{ tx.category.colour_hex|default:'#2d3033' }}">
+        {% if tx.subcategory and tx.subcategory.icon %}
+            {% with icon_path="icons/categories/"|add:tx.subcategory.icon|add:".svg" %}
+                <img src="{% static icon_path %}"
+                     width="14"
+                     height="14"
+                     class="w-3.5 h-3.5 brightness-0 invert"
+                     alt="">
+            {% endwith %}
+        {% elif tx.category and tx.category.icon %}
+            {% with icon_path="icons/categories/"|add:tx.category.icon|add:".svg" %}
+                <img src="{% static icon_path %}"
+                     width="14"
+                     height="14"
+                     class="w-3.5 h-3.5 brightness-0 invert"
+                     alt="">
+            {% endwith %}
+        {% else %}
+            <span class="text-white text-[10px] font-bold">?</span>
+        {% endif %}
+    </div>
+    {# COL 4 — Description ── flex-1 = prend tout l'espace restant, truncate #}
+    <span class="flex-1 min-w-0 text-[11px] font-semibold text-text-base uppercase tracking-wide truncate">
+        {{ tx.display_name }}
+    </span>
+    {# COL 5 — Montant ── fixe w-20, tabular-nums, right-aligned #}
+    <span class="w-20 flex-shrink-0 text-right text-[11px] font-medium tabular-nums {% if tx.amount >= 0 %}text-income{% else %}text-text-secondary{% endif %}">
+        {% if tx.amount >= 0 %}
+            +
+        {% else %}
+            −
+        {% endif %}
+        {{ tx.amount_chf|default:tx.amount|chf_dec }}
+    </span>
+</div>

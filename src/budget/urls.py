@@ -69,6 +69,24 @@ urlpatterns = [
     path(
         "panel/rule-create/", views.budget_panel_rule_create, name="panel_rule_create"
     ),
+    # /budget/panel/rule-create-standalone/ → formulaire création règle sans transaction source (fragment HTMX)
+    path(
+        "panel/rule-create-standalone/",
+        views.budget_panel_rule_create_standalone,
+        name="panel_rule_create_standalone",
+    ),
+    # /budget/panel/rule-standalone-preview/ → aperçu live multi-keywords (GET HTMX)
+    path(
+        "panel/rule-standalone-preview/",
+        views.budget_rule_standalone_preview,
+        name="rule_standalone_preview",
+    ),
+    # /budget/transactions/rule-create-standalone/ → crée N règles + bulk apply (POST)
+    path(
+        "transactions/rule-create-standalone/",
+        views.budget_rule_create_standalone_submit,
+        name="rule_create_standalone_submit",
+    ),
     # /budget/transactions/rule-preview/ → prévisualise l'impact d'une règle (POST)
     path("transactions/rule-preview/", views.budget_rule_preview, name="rule_preview"),
     # /budget/transactions/rule-live-preview/ → aperçu live des transactions matchées (GET HTMX)
@@ -107,6 +125,13 @@ urlpatterns = [
     path(
         "categorie/<slug:slug>/", views.budget_category_detail, name="category_detail"
     ),
+    # /budget/categorie/<slug>/cashflow/ → partial HTMX : inner HTML de #cashflow-card
+    # Appelé par JS après toggle is_ignored depuis le panneau détail.
+    path(
+        "categorie/<slug:slug>/cashflow/",
+        views.budget_category_cashflow_fragment,
+        name="category_cashflow_fragment",
+    ),
     # ── Filtres multi-select (T1 + T2) ──────────────────────────────────────
     # /budget/filter/account/<account_id>/ → toggle compte dans le filtre session
     # account_id=0 → réinitialise (tous les comptes)
@@ -128,5 +153,77 @@ urlpatterns = [
         "export/rules/",
         views.budget_export_rules_download,
         name="export_rules_download",
+    ),
+    # ── Gestion Catégories — liste + détail (Phase 2G T3) ───────────────────────
+    # /budget/panel/category-manage/ → liste de toutes les catégories (fragment HTMX → #modal-content)
+    path(
+        "panel/category-manage/",
+        views.budget_panel_category_manage,
+        name="panel_category_manage",
+    ),
+    # /budget/panel/category-manage/<slug>/ → détail d'une catégorie (sous-cats + règles)
+    path(
+        "panel/category-manage/<slug:slug>/",
+        views.budget_panel_category_manage_detail,
+        name="panel_category_manage_detail",
+    ),
+    # ── Création / Suppression Catégories (Phase 2G T3) ────────────────────────
+    # /budget/panel/category-create/ → panel création catégorie ou sous-catégorie (fragment HTMX → #modal-content)
+    path(
+        "panel/category-create/",
+        views.budget_panel_category_create,
+        name="panel_category_create",
+    ),
+    # /budget/category/create/submit/ → crée la catégorie ou sous-catégorie en DB (POST HTMX)
+    path(
+        "category/create/submit/",
+        views.budget_category_create_submit,
+        name="category_create_submit",
+    ),
+    # /budget/category/<obj_type>/<slug>/delete-confirm/ → panel warning avant suppression (GET HTMX)
+    # obj_type : "category" | "subcategory"
+    path(
+        "category/<str:obj_type>/<slug:slug>/delete-confirm/",
+        views.budget_panel_category_delete_confirm,
+        name="category_delete_confirm",
+    ),
+    # /budget/category/<obj_type>/<slug>/delete/ → supprime l'objet en DB (POST HTMX)
+    path(
+        "category/<str:obj_type>/<slug:slug>/delete/",
+        views.budget_category_delete,
+        name="category_delete",
+    ),
+    # ── CRUD Règles (Phase 2G) ───────────────────────────────────────────────
+    # /budget/panel/rules/ → panel liste des règles (fragment HTMX → #modal-content)
+    path("panel/rules/", views.budget_panel_rules_list, name="panel_rules_list"),
+    # /budget/rules/<id>/toggle/ → inverse is_active, retourne la ligne (POST HTMX)
+    path(
+        "rules/<int:rule_id>/toggle/",
+        views.budget_rule_toggle_active,
+        name="rule_toggle_active",
+    ),
+    # /budget/rules/<id>/delete/ → supprime la règle, retourne vide (POST HTMX)
+    path(
+        "rules/<int:rule_id>/delete/",
+        views.budget_rule_delete,
+        name="rule_delete",
+    ),
+    # /budget/rules/<id>/edit/ → GET = formulaire édition, POST = sauvegarde
+    path(
+        "rules/<int:rule_id>/edit/",
+        views.budget_rule_row_edit,
+        name="rule_row_edit",
+    ),
+    path(
+        "rules/<int:rule_id>/edit/submit/",
+        views.budget_rule_edit_submit,
+        name="rule_edit_submit",
+    ),
+    # ── Paramètres (T6) ─────────────────────────────────────────────────────
+    # /budget/toggle-decimals/ → bascule l'affichage des décimales (POST → redirect)
+    path(
+        "toggle-decimals/",
+        views.budget_toggle_decimals,
+        name="toggle_decimals",
     ),
 ]

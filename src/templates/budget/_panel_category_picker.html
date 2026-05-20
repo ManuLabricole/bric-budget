@@ -12,7 +12,7 @@ Après sélection d'une sous-catégorie : POST → budget_categorize_transaction
 {% endcomment %}
 {% comment %} ── Ligne titre transaction + bouton × retour liste ── {% endcomment %}
 <div class="px-4 pt-4 pb-1 flex items-center justify-between gap-3 flex-shrink-0">
-    <p class="text-base font-bold text-text-base leading-snug flex-1">{{ tx.merchant_name|default:tx.description_raw }}</p>
+    <p class="text-base font-bold text-text-base leading-snug flex-1">{{ tx.display_name }}</p>
     {# × — retourne au détail (source=category) ou à la liste (source=list/vide) #}
     <button type="button"
             {% if source == "category" %} onclick="htmx.ajax('GET', '{% url 'budget:panel_tx_detail' %}?tx_id={{ tx.id }}&source=category', {target: '#cat-tx-detail', swap: 'innerHTML'})" {% else %} onclick="htmx.ajax('GET', '{% url 'budget:panel_transactions' %}', {target: '#panel-content', swap: 'innerHTML'})" {% endif %}

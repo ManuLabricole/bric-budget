@@ -21,6 +21,7 @@ Rendu d'une transaction ignorée (is_ignored=True) :
     - Bouton oeil-slash en doré (clic = réactiver)
 {% endcomment %}
 <div id="tx-{{ tx.id }}"
+     {% if oob %}hx-swap-oob="outerHTML"{% endif %}
      class="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-hover/40 transition-colors group{% if tx.is_ignored %} opacity-40{% endif %}">
     {% comment %}
     Zone cliquable colonnes 1-4 : ouvre le picker catégorie.
@@ -75,13 +76,8 @@ Rendu d'une transaction ignorée (is_ignored=True) :
                 {% endif %}
             </p>
             <p class="text-[11px] font-semibold text-text-base uppercase tracking-wide truncate{% if tx.is_ignored %} line-through{% endif %}">
-                {% if tx.merchant_name %}
-                    {{ tx.merchant_name|slice:":25" }}
-                    {% if tx.merchant_name|length > 25 %}…{% endif %}
-                {% else %}
-                    {{ tx.description_raw|slice:":25" }}
-                    {% if tx.description_raw|length > 25 %}…{% endif %}
-                {% endif %}
+                {{ tx.display_name|slice:":40" }}
+                {% if tx.display_name|length > 40 %}…{% endif %}
             </p>
         </div>
         {% comment %} COL 3 — Icône banque + nom compte {% endcomment %}

@@ -1,0 +1,354 @@
+{% load static %}
+{% comment %}
+  _panel_category_create.html — Panel HTMX création catégorie/sous-catégorie.
+  Contexte (formulaire) : icon_names, cats_with_subcats, color_palette, errors?, posted?
+  Contexte (succès)     : success=True, obj_label, obj_type_label
+{% endcomment %}
+{% if success %}
+    {# ─── ÉCRAN DE CONFIRMATION ─────────────────────────────────────────────── #}
+    <div class="flex flex-col items-center text-center px-8 py-10">
+        <div class="w-14 h-14 rounded-full bg-income/20 flex items-center justify-center mb-5">
+            <svg class="w-7 h-7 text-income"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="2.5"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+            </svg>
+        </div>
+        <p class="text-[10px] font-bold text-text-disabled uppercase tracking-widest mb-2">{{ obj_type_label }} créée</p>
+        <h2 class="text-base font-semibold text-text-base mb-1">{{ obj_label }}</h2>
+        <p class="text-xs text-text-muted mb-8">Elle apparaît maintenant dans la liste des catégories.</p>
+        <button onclick="closeModal()"
+                class="w-full bg-gold hover:bg-gold-hover text-surface-3 font-semibold text-sm rounded-xl px-4 py-3 transition-colors">
+            Fermer
+        </button>
+    </div>
+{% else %}
+    {# ─── FORMULAIRE ─────────────────────────────────────────────────────────── #}
+    <form id="cat-create-form"
+          hx-post="{% url 'budget:category_create_submit' %}"
+          hx-target="#modal-content"
+          hx-swap="innerHTML">
+        {% csrf_token %}
+        {# Valeurs cachées — remplies par JS au fil des choix #}
+        <input type="hidden"
+               name="cat_type"
+               id="cat-type-input"
+               value="{{ posted.cat_type|default:'main' }}">
+        <input type="hidden"
+               name="colour_hex"
+               id="colour-hex-input"
+               value="{{ posted.colour_hex|default:'' }}">
+        <input type="hidden"
+               name="icon"
+               id="icon-input"
+               value="{{ posted.icon|default:'' }}">
+        <input type="hidden"
+               name="parent_id"
+               id="parent-id-input"
+               value="{{ posted.parent_id|default:'' }}">
+        <div class="flex flex-col" style="max-height: 82vh">
+            {# ── HEADER ──────────────────────────────────────────────────────── #}
+            <div class="flex-shrink-0 px-5 pt-5 pb-4 border-b border-edge/50">
+                <div class="flex items-center justify-between mb-1.5">
+                    <span class="text-[10px] font-bold text-text-disabled uppercase tracking-widest">Nouvelle catégorie</span>
+                    <button type="button"
+                            onclick="closeModal()"
+                            class="w-6 h-6 rounded-full border border-edge flex items-center justify-center text-text-disabled hover:text-text-muted hover:border-edge-subtle transition-colors">
+                        <svg class="w-3 h-3"
+                             fill="none"
+                             viewBox="0 0 24 24"
+                             stroke-width="2.5"
+                             stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+                <h2 class="text-base font-semibold text-text-base">Créer une catégorie</h2>
+                {# Erreurs de validation #}
+                {% if errors %}
+                    <ul class="mt-3 space-y-1">
+                        {% for err in errors %}
+                            <li class="flex items-center gap-2 text-xs text-expense">
+                                <svg class="w-3 h-3 flex-shrink-0"
+                                     fill="none"
+                                     viewBox="0 0 24 24"
+                                     stroke-width="2"
+                                     stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126Z" />
+                                </svg>
+                                {{ err }}
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+            </div>
+            {# ── CONTENU SCROLLABLE ───────────────────────────────────────────── #}
+            <div class="flex-1 overflow-y-auto bb-scroll px-5 py-4 space-y-5">
+                {# ── STEP 1 : TYPE (principale / sous-catégorie) ──────────────── #}
+                <div>
+                    <p class="text-[10px] font-semibold text-text-disabled uppercase tracking-wider mb-2">Type</p>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button type="button"
+                                id="btn-type-main"
+                                onclick="catSetType('main')"
+                                class="cat-type-btn flex flex-col items-center gap-1.5 px-3 py-3 rounded-xl border text-xs font-medium transition-colors {% if posted.cat_type == 'sub' %}border-edge text-text-muted bg-surface-hover{% else %}border-gold text-gold bg-gold/10{% endif %}">
+                            <svg class="w-4 h-4"
+                                 fill="none"
+                                 viewBox="0 0 24 24"
+                                 stroke-width="1.8"
+                                 stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v8.25" />
+                            </svg>
+                            Principale
+                        </button>
+                        <button type="button"
+                                id="btn-type-sub"
+                                onclick="catSetType('sub')"
+                                class="cat-type-btn flex flex-col items-center gap-1.5 px-3 py-3 rounded-xl border text-xs font-medium transition-colors {% if posted.cat_type == 'sub' %}border-gold text-gold bg-gold/10{% else %}border-edge text-text-muted bg-surface-hover{% endif %}">
+                            <svg class="w-4 h-4"
+                                 fill="none"
+                                 viewBox="0 0 24 24"
+                                 stroke-width="1.8"
+                                 stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+                            </svg>
+                            Sous-catégorie
+                        </button>
+                    </div>
+                </div>
+                {# ── PICKER CATÉGORIE PARENTE (sous-catégorie seulement) ───────── #}
+                <div id="parent-picker-zone"
+                     class="{% if posted.cat_type != 'sub' %}hidden{% endif %}">
+                    <p class="text-[10px] font-semibold text-text-disabled uppercase tracking-wider mb-2">Catégorie parente</p>
+                    <details id="parent-picker-details"
+                             class="group/parent rounded-xl border border-edge bg-surface-hover overflow-hidden">
+                        <summary class="list-none flex items-center gap-2.5 px-3 py-2.5 cursor-pointer select-none">
+                            <div id="parent-icon-preview"
+                                 class="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center bg-edge">
+                            </div>
+                            <span id="parent-label-preview" class="flex-1 text-xs text-text-muted">Choisir une catégorie…</span>
+                            <svg class="w-3.5 h-3.5 text-text-disabled transition-transform group-open/parent:rotate-180"
+                                 fill="none"
+                                 viewBox="0 0 24 24"
+                                 stroke-width="2"
+                                 stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                            </svg>
+                        </summary>
+                        <div class="border-t border-edge/50 max-h-48 overflow-y-auto bb-scroll">
+                            {% for cat, subcats in cats_with_subcats %}
+                                <button type="button"
+                                        onclick="catSelectParent({{ cat.id }}, '{{ cat.name|escapejs }}', '{{ cat.colour_hex|default:'#2d3033' }}', '{{ cat.icon }}')"
+                                        class="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-text-secondary hover:bg-surface-hover transition-colors">
+                                    <div class="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center"
+                                         style="background-color: {{ cat.colour_hex|default:'#2d3033' }}">
+                                        {% if cat.icon %}
+                                            <img src="{% static 'icons/categories/'|add:cat.icon|add:'.svg' %}"
+                                                 width="12"
+                                                 height="12"
+                                                 class="w-3 h-3 brightness-0 invert"
+                                                 alt="">
+                                        {% endif %}
+                                    </div>
+                                    {{ cat.name }}
+                                </button>
+                            {% endfor %}
+                        </div>
+                    </details>
+                </div>
+                {# ── STEP 2 : ICÔNE ───────────────────────────────────────────── #}
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <p class="text-[10px] font-semibold text-text-disabled uppercase tracking-wider">Icône</p>
+                        <p id="icon-selected-label"
+                           class="text-[10px] text-gold {% if not posted.icon %}hidden{% endif %}">
+                            {{ posted.icon|default:'' }}
+                        </p>
+                    </div>
+                    {# Grille 8 colonnes — 40 icônes curées, 5 lignes de 8 #}
+                    <div class="grid grid-cols-8 gap-1.5">
+                        {% for name in available_icons %}
+                            <button type="button"
+                                    data-icon="{{ name }}"
+                                    onclick="catSelectIcon('{{ name }}')"
+                                    title="{{ name }}"
+                                    class="icon-btn w-8 h-8 flex items-center justify-center rounded-full transition-colors {% if posted.icon == name %}bg-gold/20 ring-2 ring-gold ring-offset-1 ring-offset-surface-3{% else %}hover:bg-surface-hover{% endif %}">
+                                <img src="{% static 'icons/categories/'|add:name|add:'.svg' %}"
+                                     width="16"
+                                     height="16"
+                                     class="w-4 h-4 brightness-0 invert {% if posted.icon == name %}opacity-100{% else %}opacity-40{% endif %}"
+                                     alt="{{ name }}">
+                            </button>
+                        {% endfor %}
+                    </div>
+                </div>
+                {# ── STEP 3 : COULEUR (catégorie principale seulement) ────────── #}
+                <div id="color-zone"
+                     class="{% if posted.cat_type == 'sub' %}hidden{% endif %}">
+                    <p class="text-[10px] font-semibold text-text-disabled uppercase tracking-wider mb-2">Couleur</p>
+                    <div class="grid grid-cols-8 gap-2">
+                        {% for color in color_palette %}
+                            <button type="button"
+                                    data-color="{{ color.hex }}"
+                                    onclick="catSelectColor('{{ color.hex }}')"
+                                    title="{{ color.name }}"
+                                    class="color-btn w-7 h-7 rounded-full transition-all ring-offset-surface-3 {% if posted.colour_hex == color.hex %}ring-2 ring-gold ring-offset-2{% endif %}"
+                                    style="background-color: {{ color.hex }}"></button>
+                        {% endfor %}
+                    </div>
+                </div>
+                {# ── STEP 4 : NOM ─────────────────────────────────────────────── #}
+                <div>
+                    <label for="cat-name-input"
+                           class="block text-[10px] font-semibold text-text-disabled uppercase tracking-wider mb-2">
+                        Nom
+                    </label>
+                    <input type="text"
+                           id="cat-name-input"
+                           name="name"
+                           value="{{ posted.name|default:'' }}"
+                           placeholder="Ex : Médecine douce"
+                           autocomplete="off"
+                           oninput="catUpdateSubmit()"
+                           class="w-full px-3 py-2.5 bg-surface-hover border border-edge rounded-xl text-sm text-text-base placeholder:text-text-disabled focus:outline-none focus:border-gold/50 transition-colors">
+                </div>
+            </div>
+            {# fin contenu scrollable #}
+            {# ── FOOTER ───────────────────────────────────────────────────────── #}
+            <div class="flex-shrink-0 px-5 py-4 border-t border-edge/50">
+                <button type="submit"
+                        id="cat-submit-btn"
+                        disabled
+                        class="w-full bg-gold hover:bg-gold-hover text-surface-3 font-semibold text-sm rounded-xl px-4 py-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                    Créer la catégorie
+                </button>
+            </div>
+        </div>
+        {# fin flex flex-col #}
+    </form>
+    <script>
+// ─────────────────────────────────────────────────────────────────────────────
+// État local du panel (remplace les hidden inputs manquants au chargement)
+// ─────────────────────────────────────────────────────────────────────────────
+(function () {
+    // Initialise l'état courant depuis les valeurs pré-remplies (erreur POST)
+    const _type       = document.getElementById('cat-type-input').value   || 'main';
+    const _icon       = document.getElementById('icon-input').value       || '';
+    const _color      = document.getElementById('colour-hex-input').value || '';
+    const _parentId   = document.getElementById('parent-id-input').value  || '';
+
+    // ── Changement de type (principale / sous-catégorie) ─────────────────────
+    window.catSetType = function (type) {
+        document.getElementById('cat-type-input').value = type;
+
+        const btnMain  = document.getElementById('btn-type-main');
+        const btnSub   = document.getElementById('btn-type-sub');
+        const colorZone  = document.getElementById('color-zone');
+        const parentZone = document.getElementById('parent-picker-zone');
+
+        const activeClass   = 'border-gold text-gold bg-gold/10';
+        const inactiveClass = 'border-edge text-text-muted bg-surface-hover';
+
+        if (type === 'main') {
+            btnMain.className = btnMain.className.replace(inactiveClass, activeClass);
+            btnSub.className  = btnSub.className.replace(activeClass, inactiveClass);
+            colorZone.classList.remove('hidden');
+            parentZone.classList.add('hidden');
+            document.getElementById('parent-id-input').value = '';
+        } else {
+            btnSub.className  = btnSub.className.replace(inactiveClass, activeClass);
+            btnMain.className = btnMain.className.replace(activeClass, inactiveClass);
+            colorZone.classList.add('hidden');
+            parentZone.classList.remove('hidden');
+            document.getElementById('colour-hex-input').value = '';
+            // réinitialise les boutons couleur
+            document.querySelectorAll('.color-btn').forEach(function(b) {
+                b.classList.remove('ring-2', 'ring-gold', 'ring-offset-2');
+            });
+        }
+        catUpdateSubmit();
+    };
+
+    // ── Sélection catégorie parente ───────────────────────────────────────────
+    window.catSelectParent = function (id, name, color, icon) {
+        document.getElementById('parent-id-input').value = id;
+
+        // Met à jour l'aperçu dans le <summary>
+        var preview = document.getElementById('parent-icon-preview');
+        preview.style.backgroundColor = color;
+        if (icon) {
+            preview.innerHTML = '<img src="/static/icons/categories/' + icon + '.svg" width="12" height="12" class="w-3 h-3 brightness-0 invert" alt="">';
+        } else {
+            preview.innerHTML = '';
+        }
+        document.getElementById('parent-label-preview').textContent = name;
+        document.getElementById('parent-label-preview').classList.remove('text-text-muted');
+        document.getElementById('parent-label-preview').classList.add('text-text-base');
+
+        // Ferme le dropdown
+        document.getElementById('parent-picker-details').removeAttribute('open');
+        catUpdateSubmit();
+    };
+
+    // ── Sélection icône ───────────────────────────────────────────────────────
+    window.catSelectIcon = function (name) {
+        document.getElementById('icon-input').value = name;
+
+        document.querySelectorAll('.icon-btn').forEach(function (btn) {
+            var selected = btn.dataset.icon === name;
+            btn.classList.toggle('bg-gold/20', selected);
+            btn.classList.toggle('ring-2', selected);
+            btn.classList.toggle('ring-gold', selected);
+            btn.classList.toggle('ring-offset-1', selected);
+            btn.classList.toggle('ring-offset-surface-3', selected);
+            var img = btn.querySelector('img');
+            if (img) {
+                img.classList.toggle('opacity-100', selected);
+                img.classList.toggle('opacity-40', !selected);
+            }
+        });
+
+        // Affiche le nom de l'icône sélectionnée en haut à droite du bloc
+        var label = document.getElementById('icon-selected-label');
+        label.textContent = name;
+        label.classList.remove('hidden');
+
+        catUpdateSubmit();
+    };
+
+    // ── Sélection couleur ─────────────────────────────────────────────────────
+    window.catSelectColor = function (hex) {
+        document.getElementById('colour-hex-input').value = hex;
+
+        document.querySelectorAll('.color-btn').forEach(function (btn) {
+            const selected = btn.dataset.color === hex;
+            btn.classList.toggle('ring-2', selected);
+            btn.classList.toggle('ring-gold', selected);
+            btn.classList.toggle('ring-offset-2', selected);
+        });
+
+        catUpdateSubmit();
+    };
+
+    // ── Activation du bouton Créer (toutes conditions remplies) ───────────────
+    window.catUpdateSubmit = function () {
+        var type     = document.getElementById('cat-type-input').value;
+        var name     = (document.getElementById('cat-name-input').value || '').trim();
+        var icon     = document.getElementById('icon-input').value;
+        var color    = document.getElementById('colour-hex-input').value;
+        var parentId = document.getElementById('parent-id-input').value;
+
+        var ok = name.length > 0 && icon.length > 0;
+        if (type === 'main') ok = ok && color.length > 0;
+        if (type === 'sub')  ok = ok && parentId.length > 0;
+
+        document.getElementById('cat-submit-btn').disabled = !ok;
+    };
+
+    // Initialisation au chargement (cas pré-remplissage après erreur)
+    catUpdateSubmit();
+}());
+    </script>
+{% endif %}

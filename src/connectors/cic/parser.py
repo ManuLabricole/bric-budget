@@ -154,17 +154,22 @@ class CICConnector(BaseConnector):
 
         transactions = []
         skipped = 0
+        # occurrence_counters : même mécanisme que Yuh.
+        # Clé = (rib, date_str, amount, description_raw) → index d'occurrence.
+        # Permet de distinguer deux transactions CIC strictement identiques le même jour
+        # (ex: deux tickets RATP à 2.10€) sans dépendre de la position dans le fichier.
+        occurrence_counters: dict[tuple, int] = {}
 
         for row_idx, row in enumerate(
             ws.iter_rows(min_row=DATA_START_ROW, values_only=True), start=DATA_START_ROW
         ):
-            date_val, _, libelle, debit, credit, _, currency = (
+            date_val, _, libelle, debit, credit, solde, currency = (
                 row[0],
                 row[1],
                 row[2],
                 row[3],
                 row[4],
-                row[5],
+                row[5],  # Solde — running balance after this transaction
                 row[6],
             )
 
@@ -185,7 +190,15 @@ class CICConnector(BaseConnector):
             try:
                 transactions.append(
                     self._parse_row(
-                        date_val, libelle, debit, credit, currency, rib, row_idx
+                        date_val,
+                        libelle,
+                        debit,
+                        credit,
+                        solde,
+                        currency,
+                        rib,
+                        row_idx,
+                        occurrence_counters,
                     )
                 )
             except Exception as e:
@@ -269,15 +282,22 @@ class CICConnector(BaseConnector):
         libelle: str,
         debit,  # float (negative) or None
         credit,  # float (positive) or None
+        solde,  # float or None — running balance after this transaction
         currency: str,
-        rib: str,  # used for import_hash uniqueness across accounts
-        row_idx: int,  # Excel row number — used for import_hash uniqueness within a sheet
+        rib: str,  # account identifier — used in import_hash
+        row_idx: int,  # kept for internal use, not in hash
+        occurrence_counters: dict | None = None,  # mutated in place
     ) -> TransactionDict:
         """
         Convert one Excel row into a TransactionDict.
 
         Amount convention: negative = debit (money out), positive = credit (money in).
         CIC stores debit as negative float in column D, credit as positive in column E.
+
+        occurrence_counters : {(rib, date, amount, desc) → next_index}.
+        Permet de distinguer deux transactions identiques le même jour sans dépendre
+        de la position dans le fichier (contrairement à row_idx qui changeait à chaque
+        nouvel export et causait des doublons à la réimportation).
         """
         date_str = date_val.strftime("%Y-%m-%d")
 
@@ -292,15 +312,28 @@ class CICConnector(BaseConnector):
             raise ValueError(f"Both Débit and Crédit are None for row: {libelle}")
 
         description_raw = str(libelle).strip() if libelle else ""
-        merchant_name = self._clean_merchant(description_raw)
+        display_name = self._clean_merchant(description_raw)
+        merchant_name = display_name  # pre-fill override
         card_last_four = self._parse_card(description_raw)
 
-        # import_hash: includes rib (account) + row_idx (position in sheet).
-        # rib distinguishes transactions across accounts in the same file.
-        # row_idx disambiguates identical rows within the same sheet — e.g. two
-        # SNCF payments of the same amount on the same day are real distinct events.
-        raw = f"{rib}|{row_idx}|{date_str}|{amount}|{description_raw}"
+        # occurrence_index : 0 pour la 1ère occurrence de (rib, date, amount, desc)
+        # dans ce fichier, 1 pour la 2ème, etc. Stable entre exports partiels et complets
+        # car CIC préserve l'ordre intra-journalier. Inclus dans le hash pour éviter
+        # les collisions sur des transactions genuinement distinctes mais identiques.
+        if occurrence_counters is None:
+            occurrence_counters = {}
+        group_key = (rib, date_str, amount, description_raw)
+        occurrence_index = occurrence_counters.get(group_key, 0)
+        occurrence_counters[group_key] = occurrence_index + 1
+
+        raw = f"{rib}|{date_str}|{amount}|{description_raw}|{occurrence_index}"
         import_hash = hashlib.sha256(raw.encode()).hexdigest()
+
+        # Solde après transaction — colonne F de l'Excel CIC.
+        # float si présent, None si la cellule est vide (rare mais possible).
+        # Utilisé par ImportService pour créer des BalanceSnapshot journaliers.
+        # Non utilisé dans le hash (voir contrat dans base.py).
+        balance_after = float(solde) if isinstance(solde, (int, float)) else None
 
         return TransactionDict(
             date=date_str,
@@ -308,53 +341,31 @@ class CICConnector(BaseConnector):
             amount=amount,
             currency=curr,
             description_raw=description_raw,
+            display_name=display_name,
             merchant_name=merchant_name,
             card_last_four=card_last_four,
             import_hash=import_hash,
+            balance_after=balance_after,
         )
 
     def _clean_merchant(self, description: str) -> str:
         """
-        Produce a readable merchant name from the CIC raw description.
+        Remove structurally guaranteed CIC noise — nothing else.
 
-        CIC descriptions are uppercase with structured prefixes:
-          "PAIEMENT PSC 3003 MONTBONNOT ST TABAC PRESSE CARTE 8703"
-          "PAIEMENT CB 0504 PARIS 12 SNCF WEB MOBILE CARTE 8703"
-          "VIR SEPA PRET VOITURE I20V23091L036457"
-          "RETRAIT DAB 2703 GRENOBLE"
+        These two patterns are imposed by the French banking norm, never merchant names:
+          - Verb prefix + optional DDMM date: "PAIEMENT PSC 1703 ", "VIR SEPA ", "RETRAIT DAB 2703 "
+          - Card suffix: "CARTE 8703" and anything after (always terminal noise)
 
-        Strategy:
-        1. Strip card suffix "CARTE XXXX" at the end
-        2. Strip known verb prefixes (PAIEMENT PSC/CB DDMM, VIR SEPA, RETRAIT DAB DDMM)
-           We do NOT try to isolate the city name — it's 1 or 2 words with no separator.
-           Keeping city + merchant is more useful than risking a bad split.
-        3. Strip trailing internal reference codes (long alphanumeric sequences)
-        4. Title-case
+        Everything else (city names, reference codes, amounts) is left intact
+        because it is ambiguous — removing it would lose information.
         """
-        text = description
-
-        # 1. Remove card reference suffix: "CARTE 8703" and anything after
-        text = re.sub(r"\s+CARTE\s+\d{4}.*$", "", text, flags=re.IGNORECASE)
-
-        # 2. Remove known CIC prefixes (PAIEMENT PSC or CB + 4-digit date)
-        text = re.sub(r"^PAIEMENT (?:PSC|CB) \d{4} ", "", text)
-
-        # Remove VIR prefixes
-        text = re.sub(r"^VIR (?:SEPA|INST|PERM) ", "", text)
-
-        # Remove RETRAIT DAB prefix (ATM, includes 4-digit date)
-        text = re.sub(r"^RETRAIT DAB \d{4} ", "", text)
-
-        # 3. Strip trailing internal reference codes.
-        # Heuristic : un code de station/terminal contient toujours des chiffres mélangés
-        # aux lettres (ex: ESSOF108, ESSO31761ROC1, I20V23091L036457).
-        # Un nom de marchand est pure-lettres (GRENOBLE, CERTAS, BIVIERS).
-        # On retire tout token final qui contient AU MOINS UN chiffre.
-        text = re.sub(r"\s+[A-Z][A-Z0-9]*\d[A-Z0-9]*$", "", text)
-
-        # 4. Normalize spacing + title-case via the shared base helper
-        result = self._normalize_merchant(text)
-        return result if result else self._normalize_merchant(description)
+        text = re.sub(
+            r"^(?:PAIEMENT (?:PSC|CB) \d{4}|VIR (?:SEPA|INST|PERM)|RETRAIT DAB \d{4}) ",
+            "",
+            description,
+        )
+        text = re.sub(r"\s+CARTE \d{4}.*$", "", text)
+        return self._normalize_merchant(text)
 
     def _parse_card(self, description: str) -> str | None:
         """

@@ -66,13 +66,7 @@ Ref : cat_flow_06
             {% endwith %}
         {% endif %}
     </div>
-    <span class="flex-1 text-xs font-medium text-text-base truncate uppercase tracking-wide">
-        {% if tx.merchant_name %}
-            {{ tx.merchant_name }}
-        {% else %}
-            {{ tx.description_raw|slice:":40" }}
-        {% endif %}
-    </span>
+    <span class="flex-1 text-xs font-medium text-text-base truncate uppercase tracking-wide">{{ tx.display_name }}</span>
     <span class="text-xs font-medium {% if tx.amount >= 0 %}text-income{% else %}text-expense{% endif %} tabular-nums flex-shrink-0">
         {% if tx.amount >= 0 %}
             +

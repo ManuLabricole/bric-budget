@@ -90,19 +90,19 @@ def test_parse_card_last_four_none_for_transfer(yuh_csv_path):
 
 
 def test_parse_merchant_name_from_recipient_for_payment_out(yuh_csv_path):
-    """PAYMENT_TRANSACTION_OUT → merchant_name depuis RECIPIENT, title-cased."""
+    """PAYMENT_TRANSACTION_OUT → merchant_name depuis RECIPIENT, uppercase."""
     connector = YuhConnector()
     transactions = connector.parse(yuh_csv_path)
     # Ligne 4 : RECIPIENT = """LANDLORD SA"""
-    assert transactions[2]["merchant_name"] == "Landlord Sa"
+    assert transactions[2]["merchant_name"] == "LANDLORD SA"
 
 
 def test_parse_merchant_name_from_sender_for_payment_in(yuh_csv_path):
-    """PAYMENT_TRANSACTION_IN → merchant_name depuis SENDER, title-cased."""
+    """PAYMENT_TRANSACTION_IN → merchant_name depuis SENDER, uppercase."""
     connector = YuhConnector()
     transactions = connector.parse(yuh_csv_path)
     # Ligne 3 : SENDER = """EMPLOYER SA"""
-    assert transactions[1]["merchant_name"] == "Employer Sa"
+    assert transactions[1]["merchant_name"] == "EMPLOYER SA"
 
 
 # =============================================================================

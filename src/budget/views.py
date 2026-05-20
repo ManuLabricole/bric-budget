@@ -21,16 +21,18 @@ Pourquoi les vues sont ici et pas dans transactions/ ?
 
 import calendar
 import json
+import logging
 import re
 from datetime import date
 from pathlib import Path
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
-from django.db.models import Q, Sum
+from django.db.models import Count, Max, Q, Sum
 from django.db.models.functions import Coalesce, TruncMonth
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.templatetags.static import static
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -43,6 +45,8 @@ from transactions.models import (
     SubCategory,
     Transaction,
 )
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # Helpers — arithmétique sur les dates
@@ -118,33 +122,137 @@ _RULE_NOISE_TOKENS = {
 }
 
 
+# =============================================================================
+# Palette de couleurs pour les catégories créées par l'utilisateur
+# =============================================================================
+#
+# 16 pastels harmonieux sur fond très sombre (#131314).
+# Les 5 premières sont les couleurs déjà utilisées par les catégories système —
+# on les inclut car l'utilisateur peut vouloir s'en inspirer ou les réutiliser.
+# Stockée ici (pas dans Tailwind) car c'est une donnée métier, pas un token UI.
+CATEGORY_COLOR_PALETTE = [
+    {"hex": "#eed8b4", "name": "Ocre"},
+    {"hex": "#deab5e", "name": "Caramel"},
+    {"hex": "#e77f79", "name": "Corail"},
+    {"hex": "#5abdc5", "name": "Cyan"},
+    {"hex": "#63e096", "name": "Menthe"},
+    {"hex": "#b09be8", "name": "Lavande"},
+    {"hex": "#f09e5a", "name": "Orange"},
+    {"hex": "#7ec8e3", "name": "Ciel"},
+    {"hex": "#f0c878", "name": "Miel"},
+    {"hex": "#e8a0b0", "name": "Rose"},
+    {"hex": "#95d4b4", "name": "Sauge"},
+    {"hex": "#d4a0d0", "name": "Lilas"},
+    {"hex": "#c8d87c", "name": "Citron"},
+    {"hex": "#a0c8f8", "name": "Bleu"},
+    {"hex": "#98d8d8", "name": "Turquoise"},
+    {"hex": "#e8c8a8", "name": "Sable"},
+]
+
+
+# 40 icônes disponibles dans le picker de création de catégorie.
+# Ordonnées par thème pour un affichage cohérent en grille 8 colonnes.
+# Les icônes déjà attribuées à une catégorie/sous-catégorie existante
+# sont filtrées côté vue — elles n'apparaissent pas dans le picker.
+_CURATED_ICONS = [
+    # Alimentation (4)
+    "burger",
+    "coffee",
+    "chef-hat",
+    "tools-kitchen",
+    # Transports (6)
+    "car",
+    "bus",
+    "train",
+    "plane",
+    "bike",
+    "parking",
+    # Shopping & style (3)
+    "basket",
+    "shirt",
+    "tag",
+    # Santé (3)
+    "pill",
+    "stethoscope",
+    "first-aid-kit",
+    # Logement (5)
+    "home",
+    "key",
+    "bolt",
+    "flame",
+    "tool",
+    # Finance & travail (7)
+    "wallet",
+    "coin",
+    "pig-money",
+    "briefcase",
+    "file-invoice",
+    "receipt",
+    "percentage",
+    # Loisirs & culture (7)
+    "movie",
+    "music",
+    "ball-football",
+    "beach",
+    "luggage",
+    "gift",
+    "book",
+    # Famille, animaux & divers (5)
+    "device-laptop",
+    "wifi",
+    "users",
+    "baby-carriage",
+    "paw",
+]
+
+
+def _generate_unique_slug(name: str, model_class) -> str:
+    """
+    Génère un slug unique pour une catégorie ou sous-catégorie.
+
+    Processus :
+    1. slugify(name) → minuscules + ASCII + hyphens (ex: "Alimentation et Boissons" → "alimentation-et-boissons")
+    2. Remplace les hyphens par underscores pour cohérence avec les slugs système existants
+    3. Si le slug existe déjà en DB, ajoute un suffixe numérique (_1, _2, …)
+
+    Paramètres :
+        name        : nom saisi par l'utilisateur
+        model_class : Category ou SubCategory (les deux ont un champ slug unique)
+    """
+    from django.utils.text import slugify
+
+    base_slug = slugify(name, allow_unicode=False).replace("-", "_")
+    slug = base_slug
+    counter = 1
+    while model_class.objects.filter(slug=slug).exists():
+        slug = f"{base_slug}_{counter}"
+        counter += 1
+    return slug
+
+
 def _keyword_q(keyword: str):
     r"""
-    Retourne un Q filtre Django pour description_raw basé sur le keyword.
+    Retourne un Q filtre Django basé sur le keyword, appliqué sur display_name.
+
+    display_name est le champ stocké nettoyé (bank-agnostic) — c'est lui que
+    l'utilisateur voit et sur lequel les règles doivent matcher. description_raw
+    reste l'audit trail immuable mais n'est plus la cible du matching.
 
     Règles :
-      - Chaque mot du keyword doit apparaître comme MOT ENTIER dans description_raw.
-        Ex : keyword="ESSO" ne match pas "ESSOF108" car \y (word boundary PostgreSQL)
-        sépare les tokens alphanumériques.
-      - Plusieurs mots → condition AND (toutes les parties doivent être présentes).
-      - Keyword vide → retourne Q(pk__in=[]) pour ne matcher aucune transaction.
-
-    Pourquoi iregex et pas icontains ?
-        icontains correspond à LIKE '%mot%' — ne respecte pas les frontières de mots.
-        iregex utilise le moteur regex PostgreSQL qui supporte \y (word boundary),
-        ce qui correspond exactement à un token complet.
+      - Chaque mot du keyword doit apparaître comme MOT ENTIER dans display_name.
+        Ex : keyword="ESSO" ne match pas "ESSOF108" (word boundary \y PostgreSQL).
+      - Plusieurs mots → condition AND.
+      - Keyword vide → Q(pk__in=[]) pour ne matcher aucune transaction.
     """
     from django.db.models import Q
 
     words = [w for w in keyword.upper().split() if w]
     if not words:
-        # Aucun mot → on ne veut matcher rien (protection anti-apply-all)
         return Q(pk__in=[])
     q = Q()
     for word in words:
-        # \y = word boundary dans PostgreSQL. re.escape protège les caractères spéciaux.
         pattern = r"\y" + re.escape(word) + r"\y"
-        q &= Q(description_raw__iregex=pattern)
+        q &= Q(display_name__iregex=pattern)
     return q
 
 
@@ -358,7 +466,8 @@ def budget_index(request):
     filter_account_ids = request.session.get("budget_filter_accounts", [])
     filter_cat_slugs = request.session.get("budget_filter_categories", [])
     accounts = (
-        Account.objects.filter(is_active=True)
+        Account.objects.for_user(request.user)
+        .filter(is_active=True)
         .select_related("bank")
         .order_by("bank__name", "name")
     )
@@ -377,7 +486,9 @@ def budget_index(request):
     # .filter() retourne un QuerySet (objet lazy) — la requête SQL n'est pas encore
     # envoyée à PostgreSQL. Elle le sera seulement quand on itère ou qu'on appelle
     # .aggregate(), .annotate()...
-    qs = Transaction.objects.filter(
+    # for_user() : filtre de sécurité — seules les tx des comptes dont
+    # request.user est membre. Sans ce filtre, un autre user connecté verrait tout.
+    qs = Transaction.objects.for_user(request.user).filter(
         date__gte=period_start,
         date__lte=period_end,
         is_ignored=False,
@@ -816,6 +927,9 @@ def budget_index(request):
         "filter_account_ids": filter_account_ids,
         "all_categories": all_categories,
         "filter_cat_slugs": filter_cat_slugs,
+        # Préférence affichage décimales (toggle Paramètres)
+        # False (défaut) → entiers (32 232 CHF) | True → décimales (32 232,50 CHF)
+        "show_decimals": request.session.get("show_decimals", False),
     }
 
     return render(request, "budget/index.html", context)
@@ -1066,14 +1180,15 @@ def budget_panel_transactions(request):
     # ── Recherche texte libre (filtre live) ──────────────────────────────────
     #
     # "q" est envoyé par le composant search_bar.html via hx-get avec name="q".
-    # On cherche dans merchant_name ET description_raw (OR).
+    # On cherche dans display_name — le champ nettoyé canonical (Phase 2G).
     # icontains = insensible à la casse.
     q = request.GET.get("q", "").strip()
 
     # ── Filtre compte actif (même session que budget_index) ──────────────────
     filter_account_ids = request.session.get("budget_filter_accounts", [])
     accounts = (
-        Account.objects.filter(is_active=True)
+        Account.objects.for_user(request.user)
+        .filter(is_active=True)
         .select_related("bank")
         .order_by("bank__name", "name")
     )
@@ -1087,7 +1202,7 @@ def budget_panel_transactions(request):
     # Pas de filtre is_ignored=False ici — contrairement à budget_index()
     # qui exclut les ignorées des KPIs budget, le panel les affiche en grisé.
     # L'utilisateur doit voir ce qu'il a ignoré pour pouvoir le réactiver.
-    qs = Transaction.objects.filter(
+    qs = Transaction.objects.for_user(request.user).filter(
         date__gte=period_start,
         date__lte=period_end,
         is_internal_transfer=False,
@@ -1095,7 +1210,7 @@ def budget_panel_transactions(request):
     if filter_account_ids:
         qs = qs.filter(account_id__in=filter_account_ids)
     if q:
-        qs = qs.filter(Q(merchant_name__icontains=q) | Q(description_raw__icontains=q))
+        qs = qs.filter(display_name__icontains=q)
     tx_list = list(
         qs.select_related(
             "category", "subcategory", "account", "account__bank"
@@ -1234,7 +1349,7 @@ def budget_toggle_ignore(request, tx_id):
         Le champ source=detail dans le formulaire HTMX indique quel fragment retourner.
     """
     tx = get_object_or_404(
-        Transaction.objects.select_related(
+        Transaction.objects.for_user(request.user).select_related(
             "category", "subcategory", "account", "account__bank"
         ),
         pk=tx_id,
@@ -1247,13 +1362,56 @@ def budget_toggle_ignore(request, tx_id):
     slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
     bank_icon_url = bank_icon_map.get(slug, "")
 
-    # source=detail → appelé depuis le panneau détail → retourner le panneau entier
+    # source=detail → appelé depuis les toggles du panneau détail.
+    # close_on_back est passé comme champ hidden dans le formulaire pour préserver
+    # le contexte (True si ouvert depuis category_detail, False sinon).
     if request.POST.get("source") == "detail":
-        return render(
-            request,
+        close_on_back = request.POST.get("close_on_back") == "true"
+
+        if close_on_back:
+            # Ouvert depuis category_detail : le panneau est posé sur une page qui
+            # affiche déjà la liste + le Sankey.
+            # On retourne :
+            #   1. panel_html → injecté dans #panel-content (le panneau reste ouvert)
+            #   2. row_html OOB → met à jour la ligne dans la liste sans reload
+            #   3. cashflow_refresh_url → signal JS pour déclencher le refresh Sankey
+            category_slug = tx.category.slug if tx.category else None
+            cashflow_refresh_url = (
+                reverse("budget:category_cashflow_fragment", args=[category_slug])
+                if category_slug
+                else None
+            )
+            panel_html = render_to_string(
+                "budget/_panel_tx_detail.html",
+                {
+                    "tx": tx,
+                    "bank_icon_url": bank_icon_url,
+                    "detail_target": "#panel-content",
+                    "close_on_back": True,
+                    "source": "category",
+                    "cashflow_refresh_url": cashflow_refresh_url,
+                },
+                request=request,
+            )
+            row_html = render_to_string(
+                "budget/_panel_tx_row.html",
+                {"tx": tx, "bank_icon_url": bank_icon_url, "oob": True},
+                request=request,
+            )
+            return HttpResponse(panel_html + row_html)
+
+        panel_html = render_to_string(
             "budget/_panel_tx_detail.html",
-            {"tx": tx, "bank_icon_url": bank_icon_url},
+            {
+                "tx": tx,
+                "bank_icon_url": bank_icon_url,
+                "detail_target": "#panel-content",
+                "close_on_back": False,
+                "source": "",
+            },
+            request=request,
         )
+        return HttpResponse(panel_html)
 
     # source=category → appelé depuis category_detail.html.
     # On ne peut pas mettre à jour KPIs + Sankey + donut en partiel —
@@ -1295,7 +1453,9 @@ def budget_panel_category_picker(request):
     """
     tx_id = request.GET.get("tx_id")
     tx = get_object_or_404(
-        Transaction.objects.select_related("category", "subcategory"),
+        Transaction.objects.for_user(request.user).select_related(
+            "category", "subcategory"
+        ),
         pk=tx_id,
     )
     # Catégories système = seedées à l'init, non supprimables (ex: Alimentation, Transport...)
@@ -1355,16 +1515,26 @@ def budget_categorize_transaction(request):
     sub_id = request.POST.get("subcategory_id") or None
     source = request.POST.get("source", "")
 
-    tx = get_object_or_404(Transaction, pk=tx_id)
+    tx = get_object_or_404(Transaction.objects.for_user(request.user), pk=tx_id)
     tx.category = get_object_or_404(Category, pk=cat_id)
     tx.subcategory = SubCategory.objects.filter(pk=sub_id).first() if sub_id else None
     tx.categorization_source = "manual"
-    tx.save(update_fields=["category", "subcategory", "categorization_source"])
+
+    # Sync is_internal_transfer + is_ignored selon la catégorie choisie.
+    # Si l'utilisateur catégorise en "Virements" → ignoré automatiquement.
+    # Si changement depuis "Virements" → les deux flags repassent à False.
+    from transactions.services import sync_internal_transfer
+
+    extra_fields = sync_internal_transfer(tx)
+    tx.save(
+        update_fields=["category", "subcategory", "categorization_source"]
+        + extra_fields
+    )
 
     # Extraction keyword + payload HX-Trigger — commun aux deux branches.
-    tx_display = tx.merchant_name or tx.description_raw[:30]
-    description_clean = tx.description_raw.split("|")[0].strip()
-    raw_tokens = re.split(r"[\s\*\+\-\/\.\,\_]+", description_clean.upper())
+    tx_display = tx.display_name
+    # Tokenize from display_name — already cleaned by _clean_description at import.
+    raw_tokens = re.split(r"[\s\*\+\-\/\.\,\_]+", tx.display_name.upper())
     keyword_tokens = [
         t
         for t in raw_tokens
@@ -1386,9 +1556,9 @@ def budget_categorize_transaction(request):
         }
     )
 
-    # source="category" → le picker était dans #cat-tx-detail.
-    # On retourne le détail mis à jour (ferme le picker, affiche la nouvelle
-    # catégorie) + HX-Trigger pour le toast "Créer une règle intelligente".
+    # source="category" → le picker était ouvert dans l'overlay #panel-content
+    # depuis category_detail.html. On retourne le détail mis à jour dans ce même
+    # overlay (close_on_back=True = bouton ← ferme, pas revenir à la liste).
     if source == "category":
         tx_full = Transaction.objects.select_related(
             "category", "subcategory", "account", "account__bank"
@@ -1407,7 +1577,7 @@ def budget_categorize_transaction(request):
                 "bank_icon_url": bank_icon_map.get(slug, ""),
                 "close_on_back": True,
                 "source": "category",
-                "detail_target": "#cat-tx-detail",
+                "detail_target": "#panel-content",
             },
         )
         response["HX-Trigger"] = hx_trigger
@@ -1444,7 +1614,9 @@ def budget_modal_rule_intro(request):
     keyword = request.GET.get("keyword", "")
 
     tx = get_object_or_404(
-        Transaction.objects.select_related("category", "subcategory"),
+        Transaction.objects.for_user(request.user).select_related(
+            "category", "subcategory"
+        ),
         pk=tx_id,
     )
 
@@ -1488,7 +1660,9 @@ def budget_panel_rule_create(request):
     subcat_id = request.GET.get("subcat_id")
 
     tx = get_object_or_404(
-        Transaction.objects.select_related("category", "subcategory"),
+        Transaction.objects.for_user(request.user).select_related(
+            "category", "subcategory"
+        ),
         pk=tx_id,
     )
 
@@ -1500,11 +1674,10 @@ def budget_panel_rule_create(request):
     elif tx.subcategory:
         subcategory = tx.subcategory
 
-    # Tokens cliquables — uniquement la partie avant "|" (évite les métadonnées Yuh).
+    # Tokens cliquables depuis display_name — déjà nettoyé par _clean_description à l'import.
     # Filtre agressif : on garde seulement les tokens qui ont une valeur sémantique
     # (nom de commerce, lieu…) et on écarte le bruit banque (_RULE_NOISE_TOKENS).
-    description_clean = tx.description_raw.split("|")[0].strip()
-    raw_tokens = re.split(r"[\s\*\+\-\/\.\,\_]+", description_clean.upper())
+    raw_tokens = re.split(r"[\s\*\+\-\/\.\,\_]+", tx.display_name.upper())
     seen = set()
     tokens = []
     for t in raw_tokens:
@@ -1526,7 +1699,8 @@ def budget_panel_rule_create(request):
     initial_count = 0
     if keyword:
         qs = (
-            Transaction.objects.filter(_keyword_q(keyword))
+            Transaction.objects.for_user(request.user)
+            .filter(_keyword_q(keyword))
             .select_related("subcategory")
             .order_by("-date")
         )
@@ -1547,6 +1721,242 @@ def budget_panel_rule_create(request):
             "cat_display_name": cat_display_name,
             "initial_txs": initial_txs,
             "initial_count": initial_count,
+        },
+    )
+
+
+# =============================================================================
+# budget_panel_rule_create_standalone — Formulaire création règle sans source tx
+# =============================================================================
+
+
+@login_required
+def budget_panel_rule_create_standalone(request):
+    """
+    Partial HTMX — panneau "Créer une règle intelligente" en mode standalone.
+
+    URL      : GET /budget/panel/rule-create-standalone/
+    Target   : #modal-content
+    Template : budget/_panel_rule_create_standalone.html
+
+    Déclenché depuis le dropdown "Créer" → bouton "Nouvelle règle intelligente".
+    Contrairement à budget_panel_rule_create, aucun tx_id n'est requis.
+    L'utilisateur saisit le keyword manuellement et choisit la catégorie.
+
+    Différence clé avec le wizard transaction-first :
+        - Pas de tx source → pas de chips extraits d'une description
+        - Keyword libre (input texte) → même live preview via rule_live_preview
+        - Picker catégorie identique à _rule_row_edit.html (réutilise ruleEditSelect)
+        - Submit → budget_rule_create_submit (même vue, même payload)
+    """
+    _, cats_with_subcats = _cats_with_subcats()
+    return render(
+        request,
+        "budget/_panel_rule_create_standalone.html",
+        {
+            "cats_with_subcats": cats_with_subcats,
+        },
+    )
+
+
+# =============================================================================
+# budget_rule_standalone_preview — Preview multi-chips (GET HTMX)
+# =============================================================================
+
+
+@login_required
+def budget_rule_standalone_preview(request):
+    r"""
+    Partial HTMX — aperçu des transactions matchant un keyword composé.
+
+    URL      : GET /budget/panel/rule-standalone-preview/?kw=MIGROS&kw=CAROUGE&category_id=5
+    Target   : #rule-preview-zone
+    Template : budget/_rule_standalone_preview.html
+
+    Les chips du formulaire standalone s'accumulent en AND :
+        kw=MIGROS            → transactions contenant "MIGROS"
+        kw=MIGROS&kw=CAROUGE → transactions contenant "MIGROS" ET "CAROUGE"
+
+    L'opérateur AND est géré par _keyword_q(combined) : les mots sont séparés par
+    un espace et chacun est matché comme word boundary (\y) dans description_raw.
+    Même règle que la catégorisation automatique à l'import — cohérence garantie.
+
+    La vue résout les icônes banque (bank_icon_map) pour la rangée compacte,
+    charge les 25 premières transactions pour la preview scrollable.
+    """
+    kw_list = [kw.strip().upper() for kw in request.GET.getlist("kw") if kw.strip()]
+    cat_id = request.GET.get("category_id")
+    subcat_id = request.GET.get("subcategory_id")
+
+    # Keyword composé : "MIGROS CAROUGE" → _keyword_q AND-e les deux mots
+    combined_keyword = " ".join(kw_list)
+
+    cat_display_name = ""
+    if cat_id:
+        cat = Category.objects.filter(pk=cat_id).first()
+        if cat:
+            sub = (
+                SubCategory.objects.filter(pk=subcat_id).first() if subcat_id else None
+            )
+            cat_display_name = sub.name if sub else cat.name
+
+    txs = []
+    total_count = 0
+
+    if combined_keyword:
+        qs = (
+            Transaction.objects.for_user(request.user)
+            .filter(_keyword_q(combined_keyword))
+            .select_related("account", "account__bank", "category", "subcategory")
+            .order_by("-date")
+        )
+        total_count = qs.count()
+        # On charge toutes les tx pour la zone scrollable (limit visuelle = template)
+        txs = list(qs)
+        bank_icon_map = _resolve_bank_icon_map()
+        for tx in txs:
+            slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
+            tx.bank_icon_url = bank_icon_map.get(slug, "")
+
+    return render(
+        request,
+        "budget/_rule_standalone_preview.html",
+        {
+            "txs": txs,
+            "total_count": total_count,
+            "kw_list": kw_list,
+            "combined_keyword": combined_keyword,
+            "cat_display_name": cat_display_name,
+        },
+    )
+
+
+# =============================================================================
+# budget_rule_create_standalone_submit — Crée 1 règle composée + bulk apply (POST)
+# =============================================================================
+
+
+@login_required
+@require_POST
+def budget_rule_create_standalone_submit(request):
+    """
+    Crée une CategorizationRule avec keyword composé + bulk apply.
+
+    URL      : POST /budget/transactions/rule-create-standalone/
+    Target   : #modal-content
+
+    Flow en deux étapes si des transactions seront écrasées :
+        Étape 1 (force absent) :
+            - Vérifie si des transactions ont déjà une règle différente → keyword
+            - Si oui : retourne _panel_rule_overwrite_warning.html (SANS créer la règle)
+            - Si non : passe directement à l'étape 2
+        Étape 2 (force=1 dans POST) :
+            - Crée la règle + bulk apply → _panel_rule_confirm.html (succès)
+
+    Le keyword composé est transmis en deux variantes :
+        - Chips initiales : POST multi-value kw[] = ["MIGROS", "CAROUGE"]
+        - Re-confirmation après warning : POST single keyword = "MIGROS CAROUGE"
+    La vue accepte les deux — keyword single prend priorité.
+    """
+    from django.urls import reverse
+
+    # Accepte soit un keyword déjà joint (re-confirmation) soit des chips kw[]
+    keyword_single = request.POST.get("keyword", "").strip().upper()
+    if keyword_single:
+        keyword = keyword_single
+    else:
+        kw_list = [
+            kw.strip().upper() for kw in request.POST.getlist("kw") if kw.strip()
+        ]
+        if not kw_list:
+            from django.http import HttpResponseBadRequest
+
+            return HttpResponseBadRequest("Au moins un mot-clé requis")
+        keyword = " ".join(kw_list)
+
+    cat_id = request.POST.get("category_id")
+    sub_id = request.POST.get("subcategory_id") or None
+    force = request.POST.get("force") == "1"
+
+    category = get_object_or_404(Category, pk=cat_id)
+    subcategory = SubCategory.objects.filter(pk=sub_id).first() if sub_id else None
+
+    if not force:
+        # Étape 1 — chercher les transactions qui seront écrasées AVANT de créer la règle.
+        # On vérifie les tx avec source="rule" et une règle différente de celle qu'on va créer.
+        # existing_rule peut être None si la règle n'existe pas encore.
+        existing_rule = CategorizationRule.objects.filter(
+            keyword=keyword, category=category
+        ).first()
+        overwrite_qs = Transaction.objects.for_user(request.user).filter(
+            _keyword_q(keyword), categorization_source="rule"
+        )
+        if existing_rule:
+            overwrite_qs = overwrite_qs.exclude(categorization_rule=existing_rule)
+
+        if overwrite_qs.exists():
+            txs = list(
+                overwrite_qs.select_related(
+                    "account", "account__bank", "category", "subcategory"
+                ).order_by("-date")
+            )
+            bank_icon_map = _resolve_bank_icon_map()
+            for tx in txs:
+                slug = (
+                    tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
+                )
+                tx.bank_icon_url = bank_icon_map.get(slug, "")
+
+            return render(
+                request,
+                "budget/_panel_rule_overwrite_warning.html",
+                {
+                    "txs": txs,
+                    "overwritten_count": len(txs),
+                    "keyword": keyword,
+                    "category": category,
+                    "subcategory": subcategory,
+                    "form_action": reverse("budget:rule_create_standalone_submit"),
+                },
+            )
+
+    # Étape 2 — créer la règle + bulk apply
+    # Priorité = max existant + 1 → la dernière règle créée gagne toujours en cas de conflit
+    next_priority = (
+        CategorizationRule.objects.aggregate(m=Max("priority"))["m"] or 0
+    ) + 1
+    rule, created = CategorizationRule.objects.get_or_create(
+        keyword=keyword,
+        category=category,
+        defaults={
+            "subcategory": subcategory,
+            "target_field": "display_name",
+            "priority": next_priority,
+            "is_active": True,
+        },
+    )
+
+    updated_count = (
+        Transaction.objects.for_user(request.user)
+        .filter(_keyword_q(keyword))
+        .update(
+            category=category,
+            subcategory=subcategory,
+            categorization_source="rule",
+            categorization_rule=rule,
+        )
+    )
+
+    return render(
+        request,
+        "budget/_panel_rule_confirm.html",
+        {
+            "rule": rule,
+            "created": created,
+            "updated_count": updated_count,
+            "keyword": keyword,
+            "category": category,
+            "subcategory": subcategory,
         },
     )
 
@@ -1585,7 +1995,11 @@ def budget_rule_live_preview(request):
     txs = []
     count = 0
     if keyword:
-        qs = Transaction.objects.filter(_keyword_q(keyword)).order_by("-date")
+        qs = (
+            Transaction.objects.for_user(request.user)
+            .filter(_keyword_q(keyword))
+            .order_by("-date")
+        )
         count = qs.count()
         txs = list(qs)  # toutes les transactions — la zone est scrollable
 
@@ -1636,7 +2050,9 @@ def budget_rule_preview(request):
     # Compter les transactions affectées SANS les modifier.
     # Toutes les transactions matchant le keyword sont comptées — sans exclusion.
     # Une règle explicite doit pouvoir écraser toute catégorisation antérieure.
-    affected_count = Transaction.objects.filter(_keyword_q(keyword)).count()
+    affected_count = (
+        Transaction.objects.for_user(request.user).filter(_keyword_q(keyword)).count()
+    )
 
     return render(
         request,
@@ -1680,11 +2096,14 @@ def budget_rule_create_submit(request):
         Seules les transactions "default" (import), "rule" (autre règle) ou
         "ai" (Claude) sont recatégorisables.
     """
+    from django.urls import reverse
+
     keyword = request.POST.get("keyword", "").strip().upper()
     cat_id = request.POST.get("category_id")
     sub_id = request.POST.get("subcategory_id") or None
+    tx_id = request.POST.get("tx_id")
+    force = request.POST.get("force") == "1"
 
-    # Garde serveur : keyword vide → refus silencieux (le bouton est déjà désactivé côté UI)
     if not keyword:
         from django.http import HttpResponseBadRequest
 
@@ -1693,29 +2112,70 @@ def budget_rule_create_submit(request):
     category = get_object_or_404(Category, pk=cat_id)
     subcategory = SubCategory.objects.filter(pk=sub_id).first() if sub_id else None
 
-    # Créer la règle — get_or_create évite les doublons si même keyword + catégorie
-    # update_fields non applicable ici : on veut l'objet complet pour le contexte
+    if not force:
+        # Étape 1 — vérifier les transactions déjà catégorisées par UNE AUTRE règle.
+        existing_rule = CategorizationRule.objects.filter(
+            keyword=keyword, category=category
+        ).first()
+        overwrite_qs = Transaction.objects.for_user(request.user).filter(
+            _keyword_q(keyword), categorization_source="rule"
+        )
+        if existing_rule:
+            overwrite_qs = overwrite_qs.exclude(categorization_rule=existing_rule)
+
+        if overwrite_qs.exists():
+            txs = list(
+                overwrite_qs.select_related(
+                    "account", "account__bank", "category", "subcategory"
+                ).order_by("-date")
+            )
+            bank_icon_map = _resolve_bank_icon_map()
+            for tx in txs:
+                slug = (
+                    tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
+                )
+                tx.bank_icon_url = bank_icon_map.get(slug, "")
+
+            return render(
+                request,
+                "budget/_panel_rule_overwrite_warning.html",
+                {
+                    "txs": txs,
+                    "overwritten_count": len(txs),
+                    "keyword": keyword,
+                    "category": category,
+                    "subcategory": subcategory,
+                    "tx_id": tx_id,
+                    "form_action": reverse("budget:rule_create_submit"),
+                },
+            )
+
+    # Étape 2 — créer la règle + bulk apply
+    next_priority = (
+        CategorizationRule.objects.aggregate(m=Max("priority"))["m"] or 0
+    ) + 1
     rule, created = CategorizationRule.objects.get_or_create(
         keyword=keyword,
         category=category,
         defaults={
             "subcategory": subcategory,
-            "target_field": "description_raw",  # wizard UI → toujours description_raw
-            "priority": 10,
+            "target_field": "display_name",
+            "priority": next_priority,
             "is_active": True,
         },
     )
 
-    # Bulk apply : toutes les transactions dont description_raw contient le keyword
-    # comme MOT ENTIER (word boundary). Aucune exclusion — une règle explicite écrase
-    # toute catégorisation antérieure (import, règle précédente, IA, ou manuelle).
-    updated_count = Transaction.objects.filter(
-        _keyword_q(keyword),
-    ).update(
-        category=category,
-        subcategory=subcategory,
-        categorization_source="rule",
-        categorization_rule=rule,
+    updated_count = (
+        Transaction.objects.for_user(request.user)
+        .filter(
+            _keyword_q(keyword),
+        )
+        .update(
+            category=category,
+            subcategory=subcategory,
+            categorization_source="rule",
+            categorization_rule=rule,
+        )
     )
 
     return render(
@@ -1756,7 +2216,7 @@ def budget_panel_tx_detail(request):
     """
     tx_id = request.GET.get("tx_id")
     tx = get_object_or_404(
-        Transaction.objects.select_related(
+        Transaction.objects.for_user(request.user).select_related(
             "category", "subcategory", "account", "account__bank"
         ),
         pk=tx_id,
@@ -1767,12 +2227,12 @@ def budget_panel_tx_detail(request):
     slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
     bank_icon_url = bank_icon_map.get(slug, "")
 
-    # source="category" → le détail est chargé dans #cat-tx-detail (page catégorie),
-    # pas dans l'overlay #panel-content.
-    # detail_target est passé au template pour que le bouton catégorie sache
-    # où charger le picker (même conteneur que le détail courant).
+    # source="category" → ouvert depuis category_detail.html.
+    # close_on_back=True : bouton retour = fermer l'overlay (pas revenir à la liste,
+    # qui est déjà visible dans la page principale).
+    # detail_target est toujours #panel-content : l'overlay droit est utilisé partout,
+    # y compris depuis category_detail. Le div #cat-tx-detail est supprimé.
     source = request.GET.get("source", "")
-    detail_target = "#cat-tx-detail" if source == "category" else "#panel-content"
 
     return render(
         request,
@@ -1782,7 +2242,7 @@ def budget_panel_tx_detail(request):
             "bank_icon_url": bank_icon_url,
             "close_on_back": source == "category",
             "source": source,
-            "detail_target": detail_target,
+            "detail_target": "#panel-content",
         },
     )
 
@@ -1807,7 +2267,7 @@ def budget_toggle_reconcile(request, tx_id):
     Appelé uniquement depuis le panneau détail — pas de source à détecter.
     """
     tx = get_object_or_404(
-        Transaction.objects.select_related(
+        Transaction.objects.for_user(request.user).select_related(
             "category", "subcategory", "account", "account__bank"
         ),
         pk=tx_id,
@@ -1828,12 +2288,47 @@ def budget_toggle_reconcile(request, tx_id):
             {"tx": tx, "bank_icon_url": bank_icon_url},
         )
 
-    # source=detail → appelé depuis le panneau détail → retourner le panneau entier
+    # source=detail → retourner le panneau entier mis à jour.
+    close_on_back = request.POST.get("close_on_back") == "true"
+    if close_on_back:
+        # Ouvert depuis category_detail : panneau reste ouvert, ligne liste à jour.
+        # is_reconciled ne modifie pas les totaux → pas de cashflow_refresh_url.
+        panel_html = render_to_string(
+            "budget/_panel_tx_detail.html",
+            {
+                "tx": tx,
+                "bank_icon_url": bank_icon_url,
+                "detail_target": "#panel-content",
+                "close_on_back": True,
+                "source": "category",
+            },
+            request=request,
+        )
+        row_html = render_to_string(
+            "budget/_panel_tx_row.html",
+            {"tx": tx, "bank_icon_url": bank_icon_url, "oob": True},
+            request=request,
+        )
+        return HttpResponse(panel_html + row_html)
     return render(
         request,
         "budget/_panel_tx_detail.html",
-        {"tx": tx, "bank_icon_url": bank_icon_url},
+        {
+            "tx": tx,
+            "bank_icon_url": bank_icon_url,
+            "detail_target": "#panel-content",
+            "close_on_back": False,
+            "source": "",
+        },
     )
+
+
+# =============================================================================
+def _seg_factor(i, n):
+    """Distribue n segments entre 0.70 (lumineux) et 0.35 (sombre min lisible)."""
+    if n <= 1:
+        return 0.70
+    return 0.70 - (0.70 - 0.35) * i / (n - 1)
 
 
 # =============================================================================
@@ -1882,6 +2377,216 @@ def budget_set_period_month(request, year, month):
 
 
 # =============================================================================
+# _compute_category_cashflow_context — données communes Cashflow card + fragment
+# =============================================================================
+
+
+def _compute_category_cashflow_context(request, category):
+    """
+    Calcule le contexte de la carte Cashflow de category_detail.html.
+    Partagé par budget_category_detail (page complète) et
+    budget_category_cashflow_fragment (refresh HTMX partiel après toggle).
+    """
+    today = date.today()
+    period_start_str = request.session.get("budget_period_start")
+    period_end_str = request.session.get("budget_period_end")
+    if period_start_str and period_end_str:
+        period_start = date.fromisoformat(period_start_str)
+        period_end = date.fromisoformat(period_end_str)
+    else:
+        period_start = today.replace(day=1)
+        period_end = today.replace(day=calendar.monthrange(today.year, today.month)[1])
+
+    period_mode = request.session.get("budget_period_mode", "1m")
+    if period_mode == "1m":
+        period_label = f"{MOIS_FR[period_start.month]} {period_start.year}"
+    else:
+        period_label = (
+            f"{MOIS_FR[period_start.month]} — "
+            f"{MOIS_FR[period_end.month]} {period_end.year}"
+        )
+
+    filter_account_ids = request.session.get("budget_filter_accounts", [])
+
+    base_qs = Transaction.objects.for_user(request.user).filter(
+        category=category,
+        date__gte=period_start,
+        date__lte=period_end,
+    )
+    if filter_account_ids:
+        base_qs = base_qs.filter(account_id__in=filter_account_ids)
+    txs_active = base_qs.filter(is_ignored=False)
+
+    total_amount = (
+        txs_active.aggregate(total=Sum(Coalesce("amount_chf", "amount")))["total"] or 0
+    )
+    subcat_list = list(
+        txs_active.filter(subcategory__isnull=False)
+        .values(
+            "subcategory__id",
+            "subcategory__name",
+            "subcategory__slug",
+            "subcategory__icon",
+            "subcategory__is_system",
+        )
+        .annotate(total=Sum(Coalesce("amount_chf", "amount")))
+        .order_by("total")
+    )
+
+    cat_color = category.colour_hex or "#4ade80"
+    source_name = category.name + "​"  # U+200B ZWSP — nœud source unique ECharts
+    n_segs = len(subcat_list)
+    subcat_colors = [
+        _vary_color(cat_color, _seg_factor(i, n_segs)) for i in range(n_segs)
+    ]
+
+    sankey_nodes = [
+        {"name": source_name, "slug": category.slug, "itemStyle": {"color": cat_color}}
+    ]
+    sankey_links = []
+    for i, sub in enumerate(subcat_list):
+        sankey_nodes.append(
+            {
+                "name": sub["subcategory__name"],
+                "slug": sub["subcategory__slug"],
+                "itemStyle": {"color": subcat_colors[i]},
+            }
+        )
+        sankey_links.append(
+            {
+                "source": source_name,
+                "target": sub["subcategory__name"],
+                "value": round(float(abs(sub["total"])), 2),
+            }
+        )
+
+    categorized_amount = sum(float(abs(sub["total"])) for sub in subcat_list)
+    uncategorized_amount = abs(float(total_amount)) - categorized_amount
+    uncat_color = _vary_color(cat_color, 0.20)
+    if uncategorized_amount > 0.01:
+        sankey_nodes.append(
+            {
+                "name": category.name,
+                "slug": category.slug,
+                "itemStyle": {"color": uncat_color},
+            }
+        )
+        sankey_links.append(
+            {
+                "source": source_name,
+                "target": category.name,
+                "value": round(uncategorized_amount, 2),
+            }
+        )
+    if not sankey_links and total_amount != 0:
+        sankey_nodes.append(
+            {
+                "name": category.name,
+                "slug": category.slug,
+                "itemStyle": {"color": cat_color},
+            }
+        )
+        sankey_links.append(
+            {
+                "source": source_name,
+                "target": category.name,
+                "value": round(float(abs(total_amount)), 2),
+            }
+        )
+
+    sankey_data = {"nodes": sankey_nodes, "links": sankey_links}
+    has_sankey = len(sankey_links) > 0
+
+    tx_count = txs_active.count()
+    cat_tab = request.session.get("budget_cat_tab", "transactions")
+    subcat_count = (
+        txs_active.filter(subcategory__isnull=False)
+        .values("subcategory_id")
+        .distinct()
+        .count()
+    )
+    period_months = PERIOD_MODE_MONTHS.get(period_mode, 1)
+    budget_target = BudgetTarget.objects.filter(category=category).first()
+
+    target_amount = target_pct = on_track = arc_fill_px = None
+    if budget_target:
+        from decimal import Decimal
+
+        target_amount = budget_target.amount * Decimal(period_months)
+        spent = abs(total_amount)
+        target_pct = (
+            round(float(spent / target_amount) * 100) if target_amount > 0 else 0
+        )
+        on_track = spent <= target_amount
+        arc_fill_px = round(min(target_pct, 100) / 100 * 125.66, 1)
+
+    return {
+        "period_start": period_start,
+        "period_end": period_end,
+        "period_mode": period_mode,
+        "period_label": period_label,
+        "period_months": period_months,
+        "filter_account_ids": filter_account_ids,
+        "base_qs": base_qs,
+        "txs_active": txs_active,
+        "total_amount": total_amount,
+        "subcat_list": subcat_list,
+        "subcat_colors": subcat_colors,
+        "cat_color": cat_color,
+        "uncategorized_amount": uncategorized_amount,
+        "uncat_color": uncat_color,
+        "sankey_data": sankey_data,
+        "has_sankey": has_sankey,
+        "tx_count": tx_count,
+        "cat_tab": cat_tab,
+        "subcat_count": subcat_count,
+        "budget_target": budget_target,
+        "target_amount": target_amount,
+        "target_pct": target_pct,
+        "on_track": on_track,
+        "arc_fill_px": arc_fill_px,
+    }
+
+
+# =============================================================================
+# budget_category_cashflow_fragment — Partial HTMX : carte Cashflow seule (GET)
+# =============================================================================
+
+
+@login_required
+def budget_category_cashflow_fragment(request, slug):
+    """
+    Partial HTMX — recalcule et retourne l'inner HTML de #cashflow-card.
+
+    URL    : GET /budget/categorie/<slug>/cashflow/
+    Target : #cashflow-card   swap="innerHTML"
+    Template : budget/_category_cashflow_card_inner.html
+
+    Appelé automatiquement depuis category_detail.html (JS htmx:afterSwap)
+    après un toggle is_ignored depuis le panneau détail, pour mettre à jour
+    le Sankey et les KPIs sans recharger toute la page.
+    """
+    category = get_object_or_404(Category, slug=slug)
+    cc = _compute_category_cashflow_context(request, category)
+    return render(
+        request,
+        "budget/_category_cashflow_card_inner.html",
+        {
+            "category": category,
+            "period_label": cc["period_label"],
+            "has_sankey": cc["has_sankey"],
+            "sankey_data": cc["sankey_data"],
+            "cat_tab": cc["cat_tab"],
+            "total_amount": cc["total_amount"],
+            "subcat_count": cc["subcat_count"],
+            "budget_target": cc["budget_target"],
+            "target_amount": cc["target_amount"],
+            "arc_fill_px": cc["arc_fill_px"],
+        },
+    )
+
+
+# =============================================================================
 # budget_category_detail — Page détail d'une catégorie
 # =============================================================================
 
@@ -1909,289 +2614,76 @@ def budget_category_detail(request, slug):
 
     category = get_object_or_404(Category, slug=slug)
 
-    # ── Période active — même clé session que budget_index ───────────────────
+    cc = _compute_category_cashflow_context(request, category)
+    period_start = cc["period_start"]
+    period_end = cc["period_end"]
+    period_mode = cc["period_mode"]
+
     today = date.today()
-    period_start_str = request.session.get("budget_period_start")
-    period_end_str = request.session.get("budget_period_end")
-
-    if period_start_str and period_end_str:
-        period_start = date.fromisoformat(period_start_str)
-        period_end = date.fromisoformat(period_end_str)
-    else:
-        period_start = today.replace(day=1)
-        last_day = calendar.monthrange(today.year, today.month)[1]
-        period_end = today.replace(day=last_day)
-
-    period_mode = request.session.get("budget_period_mode", "1m")
-    if period_mode == "1m":
-        period_label = f"{MOIS_FR[period_start.month]} {period_start.year}"
-    else:
-        period_label = (
-            f"{MOIS_FR[period_start.month]} — "
-            f"{MOIS_FR[period_end.month]} {period_end.year}"
-        )
-
-    # Pour le composant period_nav — même logique que budget_index
-    current_month_end = date.today().replace(
+    current_month_end = today.replace(
         day=calendar.monthrange(today.year, today.month)[1]
     )
     can_go_next = period_end < current_month_end
 
-    # ── Filtre compte actif (même session que budget_index) ──────────────────
-    #
-    # Le filtre compte est partagé entre toutes les vues budget via la session.
-    # Sur category_detail : restreint les transactions affichées ET les calculs
-    # (Sankey, KPIs) au(x) compte(s) sélectionné(s).
-    filter_account_ids = request.session.get("budget_filter_accounts", [])
     accounts = (
-        Account.objects.filter(is_active=True)
+        Account.objects.for_user(request.user)
+        .filter(is_active=True)
         .select_related("bank")
         .order_by("bank__name", "name")
     )
 
-    # ── Transactions de la catégorie sur la période ──────────────────────────
-    #
-    # txs         = toutes les transactions (affichage) — les ignorées apparaissent
-    #               en grisé via _panel_tx_row.html (opacity-40 + line-through).
-    # txs_active  = transactions non-ignorées seulement — utilisées pour les calculs
-    #               budget (total, Sankey, donut) car les ignorées sont exclues de
-    #               l'analyse, exactement comme dans budget_index.
-    base_qs = Transaction.objects.filter(
-        category=category,
-        date__gte=period_start,
-        date__lte=period_end,
+    txs = (
+        cc["base_qs"]
+        .select_related("subcategory", "account", "account__bank")
+        .order_by("-date", "-id")
     )
-    # Appliquer le filtre compte si actif (vide = tous les comptes)
-    if filter_account_ids:
-        base_qs = base_qs.filter(account_id__in=filter_account_ids)
-    txs = base_qs.select_related("subcategory", "account", "account__bank").order_by(
-        "-date", "-id"
-    )
-    txs_active = base_qs.filter(is_ignored=False)
-
-    total_amount = (
-        txs_active.aggregate(total=Sum(Coalesce("amount_chf", "amount")))["total"] or 0
-    )
-
-    # ── Sous-totaux par sous-catégorie — pour le Sankey + donut ─────────────
-    # list() force l'évaluation du queryset ici — on itère deux fois :
-    # une fois pour le Sankey, une fois pour le donut.
-    subcat_list = list(
-        txs_active.filter(subcategory__isnull=False)
-        .values(
-            "subcategory__id",
-            "subcategory__name",
-            "subcategory__slug",
-            "subcategory__icon",
-        )
-        .annotate(total=Sum(Coalesce("amount_chf", "amount")))
-        .order_by("total")
-    )
-
-    # ── Construction du Sankey "direct" (Category → SubCategories) ───────────
-    # Nœud source = la catégorie elle-même.
-    # Nœuds cibles = les sous-catégories avec des transactions sur la période.
-    # Pas de nœud "__pool__" → BricCharts.initSankey détecte hasPool=false
-    # et utilise des marges de 10% pour ne pas rogner les labels.
-    cat_color = category.colour_hex or "#4ade80"
-
-    # U+200B (zero-width space) : rend le nom du nœud source unique même
-    # quand une sous-catégorie porte le même nom que sa catégorie parente
-    # (ex: catégorie "Investissements" avec sous-cat "Investissements").
-    # ECharts identifie les nœuds par `name` — deux nœuds homonymes créent
-    # un self-loop qui rend le chart vide silencieusement.
-    # Le ZWSP est invisible à l'affichage et strippé dans le formatter JS.
-    source_name = category.name + "​"
-
-    sankey_nodes = [
-        {
-            "name": source_name,
-            "slug": category.slug,
-            "itemStyle": {"color": cat_color},
-        }
-    ]
-    sankey_links = []
-
-    # Couleurs pré-calculées : même palette pour Sankey ET donut.
-    # _seg_factor distribue les teintes entre 0.70 (lumineux) et 0.15 (sombre)
-    # sur n segments — aligné sur le range du gradient Sankey (0.05→0.70).
-    n_segs = len(subcat_list)
-
-    def _seg_factor(i, n):
-        """Distribue n segments entre 0.70 (lumineux) et 0.35 (sombre min lisible)."""
-        if n <= 1:
-            return 0.70
-        return 0.70 - (0.70 - 0.35) * i / (n - 1)
-
-    subcat_colors = [
-        _vary_color(cat_color, _seg_factor(i, n_segs)) for i in range(n_segs)
-    ]
-
-    for i, sub in enumerate(subcat_list):
-        sankey_nodes.append(
-            {
-                "name": sub["subcategory__name"],
-                "slug": sub["subcategory__slug"],
-                "itemStyle": {"color": subcat_colors[i]},
-            }
-        )
-        sankey_links.append(
-            {
-                "source": source_name,
-                "target": sub["subcategory__name"],
-                "value": round(float(abs(sub["total"])), 2),
-            }
-        )
-
-    # ── Nœud pour les transactions sans sous-catégorie ─────────────────────────
-    # subcat_list = seulement les transactions avec une sous-catégorie assignée.
-    # Le reste = transactions rattachées à la catégorie principale elle-même
-    # (la catégorie peut jouer le rôle de sous-catégorie pour les transactions
-    # qui n'ont pas besoin d'un niveau de détail supplémentaire).
-    #
-    # Astuce ZWSP : source_name porte un U+200B (zero-width space), category.name non.
-    # ECharts traite ces deux nœuds comme distincts → pas de self-loop.
-    # Le formatter JS strippe le ZWSP → les deux labels affichent "Revenus" visuellement.
-    categorized_amount = sum(float(abs(sub["total"])) for sub in subcat_list)
-    uncategorized_amount = abs(float(total_amount)) - categorized_amount
-    uncat_color = _vary_color(cat_color, 0.20)  # teinte légèrement plus sombre
-
-    if uncategorized_amount > 0.01:
-        sankey_nodes.append(
-            {
-                "name": category.name,  # sans ZWSP — distinct de source_name pour ECharts
-                "slug": category.slug,
-                "itemStyle": {"color": uncat_color},
-            }
-        )
-        sankey_links.append(
-            {
-                "source": source_name,  # avec ZWSP
-                "target": category.name,  # sans ZWSP
-                "value": round(uncategorized_amount, 2),
-            }
-        )
-
-    # Fallback : aucun lien du tout (cas improbable — garde-fou).
-    if not sankey_links and total_amount != 0:
-        sankey_nodes.append(
-            {
-                "name": category.name,  # sans ZWSP — nom distinct pour ECharts
-                "slug": category.slug,
-                "itemStyle": {"color": cat_color},
-            }
-        )
-        sankey_links.append(
-            {
-                "source": source_name,  # avec ZWSP
-                "target": category.name,  # sans ZWSP
-                "value": round(float(abs(total_amount)), 2),
-            }
-        )
-
-    sankey_data = {"nodes": sankey_nodes, "links": sankey_links}
-    has_sankey = len(sankey_links) > 0
-
-    # ── Distribution donut (panel droit) ────────────────────────────────────
-    # subcat_colors calculé au-dessus (même palette que les nœuds Sankey).
-    donut_segments = [
-        {
-            "name": sub["subcategory__name"],
-            "value": round(float(abs(sub["total"])), 2),
-            "itemStyle": {"color": subcat_colors[i]},
-        }
-        for i, sub in enumerate(subcat_list)
-    ]
-
-    # Ajouter un segment pour les transactions sans sous-catégorie.
-    # Nommé d'après la catégorie principale elle-même (pas "Sans sous-catégorie").
-    if uncategorized_amount > 0.01:
-        donut_segments.append(
-            {
-                "name": category.name,
-                "value": round(uncategorized_amount, 2),
-                "itemStyle": {"color": uncat_color},
-            }
-        )
-
-    # Fallback : aucune sous-catégorie → segment unique à 100% pour ne pas masquer le donut.
-    if not donut_segments and total_amount != 0:
-        donut_segments = [
-            {
-                "name": category.name,
-                "value": round(float(abs(total_amount)), 2),
-                "itemStyle": {"color": cat_color},
-            }
-        ]
-
-    donut_data = {
-        "segments": donut_segments,
-        "label": "Distribution",
-        "sign": "−" if total_amount < 0 else "+",
-        "total": round(float(abs(total_amount)), 2),
-    }
-    has_donut = len(donut_segments) > 0
-
-    # ── Icônes banques pour la liste de transactions ─────────────────────────
     bank_icon_map = _resolve_bank_icon_map()
     for tx in txs:
         icon_slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
         tx.bank_icon_url = bank_icon_map.get(icon_slug, "")
 
-    tx_count = txs_active.count()
-    avg_amount = (total_amount / tx_count) if tx_count > 0 else None
+    avg_amount = (cc["total_amount"] / cc["tx_count"]) if cc["tx_count"] > 0 else None
 
-    # ── KPI tabs — données pour les 3 onglets sélecteurs ─────────────────────
-    # cat_tab : onglet actif en session (par défaut "transactions")
-    cat_tab = request.session.get("budget_cat_tab", "transactions")
+    # ── Distribution donut (panel droit) — même palette de couleurs que le Sankey ──
+    donut_segments = [
+        {
+            "name": sub["subcategory__name"],
+            "value": round(float(abs(sub["total"])), 2),
+            "itemStyle": {"color": cc["subcat_colors"][i]},
+        }
+        for i, sub in enumerate(cc["subcat_list"])
+    ]
+    if cc["uncategorized_amount"] > 0.01:
+        donut_segments.append(
+            {
+                "name": category.name,
+                "value": round(cc["uncategorized_amount"], 2),
+                "itemStyle": {"color": cc["uncat_color"]},
+            }
+        )
+    if not donut_segments and cc["total_amount"] != 0:
+        donut_segments = [
+            {
+                "name": category.name,
+                "value": round(float(abs(cc["total_amount"])), 2),
+                "itemStyle": {"color": cc["cat_color"]},
+            }
+        ]
+    donut_data = {
+        "segments": donut_segments,
+        "label": "Distribution",
+        "sign": "−" if cc["total_amount"] < 0 else "+",
+        "total": round(float(abs(cc["total_amount"])), 2),
+    }
+    has_donut = len(donut_segments) > 0
 
-    # Nombre de sous-catégories distinctes utilisées sur la période.
-    # distinct() sur subcategory_id évite de compter les doublons si plusieurs
-    # transactions tombent dans la même sous-catégorie.
-    subcat_count = (
-        txs_active.filter(subcategory__isnull=False)
-        .values("subcategory_id")
-        .distinct()
-        .count()
-    )
-
-    # Objectif mensuel pour cette catégorie — paramètre général, sans notion de mois.
-    # On multiplie par le nombre de mois de la période pour le KPI affiché.
-    period_months = PERIOD_MODE_MONTHS.get(period_mode, 1)
-
-    budget_target = BudgetTarget.objects.filter(category=category).first()
-
-    # Montant cible mis à l'échelle de la période + indicateurs de progression
-    target_amount = None
-    target_pct = None
-    on_track = None
-    arc_fill_px = None  # longueur de l'arc SVG gauge — approche cercle complet, r=40, demi-périmètre = π×40 = 125.66
-    remaining_chf = (
-        None  # target_amount - spent : positif = marge, négatif = dépassement
-    )
-    remaining_abs_chf = None  # abs(remaining_chf) — pour l'affichage sans signe
-    if budget_target:
-        from decimal import Decimal
-
-        target_amount = budget_target.amount * Decimal(period_months)
-        spent = abs(total_amount)
-        if target_amount > 0:
-            target_pct = round(float(spent / target_amount) * 100)
-        else:
-            target_pct = 0
-        on_track = spent <= target_amount
-        # arc_fill_px : proportion de l'arc à remplir.
-        # Plafond à 124 (pas 125.5 = périmètre exact) pour laisser un micro-gap :
-        # avec stroke-linecap="round", les deux caps arrondis aux extrémités du
-        # demi-cercle (10,52) et (90,52) se superposent quand l'arc est plein →
-        # deux "oreilles" visibles. En stoppant à 124, le cap de fin n'atteint pas
-        # le cap de départ et il n'y a plus de superposition.
-        # Demi-périmètre exact : π × r = π × 40 = 125.66
-        # Pas besoin de tricher avec 124 — le viewport SVG "0 0 100 52" clippe les oreilles nativement.
-        arc_fill_px = round(min(target_pct, 100) / 100 * 125.66, 1)
-        # remaining_chf : marge restante (positif) ou dépassement (négatif)
-        remaining_chf = round(float(target_amount) - float(spent), 2)
-        # remaining_abs_chf : valeur absolue pour l'affichage (|chf| filtre ne gère pas les négatifs)
+    # remaining_abs_chf : marge / dépassement objectif (affichage panel droit)
+    remaining_chf = None
+    remaining_abs_chf = None
+    if cc["budget_target"] and cc["target_amount"]:
+        remaining_chf = round(
+            float(cc["target_amount"]) - float(abs(cc["total_amount"])), 2
+        )
         remaining_abs_chf = abs(remaining_chf)
 
     # ── Historique mensuel — 12 mois glissants pour le bar chart ─────────────
@@ -2199,7 +2691,8 @@ def budget_category_detail(request, slug):
     # Utilisé uniquement dans le tab "objectif" pour visualiser la tendance.
     twelve_months_ago = _add_months(today.replace(day=1), -11)
     monthly_qs = (
-        Transaction.objects.filter(
+        Transaction.objects.for_user(request.user)
+        .filter(
             category=category,
             date__gte=twelve_months_ago,
             date__lte=today,
@@ -2226,11 +2719,13 @@ def budget_category_detail(request, slug):
         "values": history_values,
         "urls": history_urls,
         # Ligne de référence — montant mensuel brut (pas multiplié par period_months)
-        "target": round(float(budget_target.amount), 2) if budget_target else None,
+        "target": round(float(cc["budget_target"].amount), 2)
+        if cc["budget_target"]
+        else None,
         # current_month permet à bar.js de colorer la barre active avec la couleur catégorie
         "current_month": period_start.strftime("%Y-%m"),
         # Couleur catégorie — barres actives et ligne objectif
-        "cat_color": category.colour_hex or "#4ade80",
+        "cat_color": cc["cat_color"],
     }
     has_history = len(history_months) > 0
 
@@ -2238,10 +2733,10 @@ def budget_category_detail(request, slug):
     # Calculés uniquement si budget_target existe (sinon affichage vide + CTA).
     # Sont des faits fixes sur 12 mois glissants — indépendants de la période.
     bar_kpis = None
-    if budget_target and has_history:
+    if cc["budget_target"] and has_history:
         from decimal import Decimal as D
 
-        target_monthly = float(budget_target.amount)
+        target_monthly = float(cc["budget_target"].amount)
 
         # Dépenses moyennes sur les 12 mois de l'historique
         avg_monthly = sum(history_values) / len(history_values)
@@ -2257,7 +2752,7 @@ def budget_category_detail(request, slug):
 
         # % Dépenses année en cours : total jan→aujourd'hui / (target × mois écoulés)
         year_start = today.replace(month=1, day=1)
-        year_spent_agg = Transaction.objects.filter(
+        year_spent_agg = Transaction.objects.for_user(request.user).filter(
             category=category,
             date__gte=year_start,
             date__lte=today,
@@ -2290,35 +2785,35 @@ def budget_category_detail(request, slug):
             "category": category,
             "period_start": period_start,
             "period_end": period_end,
-            "period_label": period_label,
-            "total_amount": total_amount,
-            "tx_count": tx_count,
+            "period_label": cc["period_label"],
+            "total_amount": cc["total_amount"],
+            "tx_count": cc["tx_count"],
             "avg_amount": avg_amount,
             "txs": txs,
-            "subcat_list": subcat_list,
-            "sankey_data": sankey_data,
-            "has_sankey": has_sankey,
+            "subcat_list": cc["subcat_list"],
+            "sankey_data": cc["sankey_data"],
+            "has_sankey": cc["has_sankey"],
             "donut_data": donut_data,
             "has_donut": has_donut,
-            "cat_tab": cat_tab,
-            "subcat_count": subcat_count,
-            "budget_target": budget_target,
-            "target_amount": target_amount,
-            "target_pct": target_pct,
-            "on_track": on_track,
-            "arc_fill_px": arc_fill_px,
+            "cat_tab": cc["cat_tab"],
+            "subcat_count": cc["subcat_count"],
+            "budget_target": cc["budget_target"],
+            "target_amount": cc["target_amount"],
+            "target_pct": cc["target_pct"],
+            "on_track": cc["on_track"],
+            "arc_fill_px": cc["arc_fill_px"],
             "remaining_chf": remaining_chf,
             "remaining_abs_chf": remaining_abs_chf,
-            "period_months": period_months,
+            "period_months": cc["period_months"],
             "period_mode": period_mode,
-            "period_display": period_label,
+            "period_display": cc["period_label"],
             "can_go_next": can_go_next,
             "history_chart_data": history_chart_data,
             "has_history": has_history,
             "bar_kpis": bar_kpis,
             # Filtres compte — partagés avec budget_index via la session
             "accounts": accounts,
-            "filter_account_ids": filter_account_ids,
+            "filter_account_ids": cc["filter_account_ids"],
         },
     )
 
@@ -2355,6 +2850,9 @@ def budget_toggle_filter_account(request, account_id):
         ids = ids + [account_id]
 
     request.session["budget_filter_accounts"] = ids
+    # HTMX request → retourne le fragment panel directement (pas de redirect pleine page)
+    if request.headers.get("HX-Request"):
+        return budget_panel_transactions(request)
     return redirect(request.META.get("HTTP_REFERER", "budget:index"))
 
 
@@ -2452,3 +2950,524 @@ def budget_export_rules_download(request):
     )
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
+
+
+# =============================================================================
+# Helpers — CRUD règles
+# =============================================================================
+
+
+def _cats_with_subcats():
+    """
+    Retourne une liste de tuples (Category, [SubCategory, ...]) pour peupler
+    le <select> de sous-catégories groupé par catégorie dans les formulaires d'édition.
+
+    Construit en deux passes Python (pas de N+1) :
+        1. charger toutes les sous-catégories actives avec leur catégorie
+        2. grouper par category_id dans un dict, puis zipper avec les catégories
+    """
+    all_categories = list(
+        Category.objects.filter(is_active=True).order_by("order", "name")
+    )
+    subcat_by_cat: dict[int, list] = {}
+    for sub in (
+        SubCategory.objects.filter(is_active=True)
+        .select_related("category")
+        .order_by("name")
+    ):
+        subcat_by_cat.setdefault(sub.category_id, []).append(sub)
+
+    return all_categories, [
+        (cat, subcat_by_cat.get(cat.id, [])) for cat in all_categories
+    ]
+
+
+# =============================================================================
+# budget_panel_rules_list — Panel CRUD des règles de catégorisation (GET)
+# =============================================================================
+
+
+@login_required
+def budget_panel_rules_list(request):
+    """
+    Charge le panel de gestion des règles dans #modal-content.
+
+    URL : GET /budget/panel/rules/
+    Cible HTMX : #modal-content (openModal() déclenché automatiquement par base_app.html)
+
+    Affiche toutes les règles triées : actives d'abord, puis par priorité desc, puis keyword.
+    """
+    rules = CategorizationRule.objects.select_related(
+        "category", "subcategory__category"
+    ).order_by("-is_active", "-priority", "keyword")
+
+    all_categories, cats_with_subcats = _cats_with_subcats()
+
+    return render(
+        request,
+        "budget/_panel_rules_list.html",
+        {
+            "rules": rules,
+            "all_categories": all_categories,
+            "cats_with_subcats": cats_with_subcats,
+        },
+    )
+
+
+# =============================================================================
+# budget_rule_toggle_active — Toggle is_active sur une règle (POST HTMX)
+# =============================================================================
+
+
+@login_required
+@require_POST
+def budget_rule_toggle_active(request, rule_id):
+    """
+    Inverse is_active d'une règle et retourne la ligne mise à jour.
+
+    URL : POST /budget/rules/<rule_id>/toggle/
+    HTMX : hx-target="#rule-<id>" hx-swap="outerHTML"
+    """
+    rule = get_object_or_404(CategorizationRule, id=rule_id)
+    rule.is_active = not rule.is_active
+    rule.save(update_fields=["is_active"])
+    return render(request, "budget/_rule_row.html", {"rule": rule})
+
+
+# =============================================================================
+# budget_rule_delete — Supprime une règle (POST HTMX)
+# =============================================================================
+
+
+@login_required
+@require_POST
+def budget_rule_delete(request, rule_id):
+    """
+    Supprime la règle et retourne une réponse vide → HTMX retire la ligne du DOM.
+
+    URL : POST /budget/rules/<rule_id>/delete/
+    HTMX : hx-target="#rule-<id>" hx-swap="outerHTML"
+           hx-confirm="Supprimer ?" (confirmation navigateur native)
+    """
+    rule = get_object_or_404(CategorizationRule, id=rule_id)
+    rule.delete()
+    return HttpResponse("")
+
+
+# =============================================================================
+# budget_rule_row_edit — Retourne la ligne en mode édition (GET HTMX)
+# =============================================================================
+
+
+@login_required
+def budget_rule_row_edit(request, rule_id):
+    """
+    Remplace la ligne de lecture par un formulaire d'édition inline.
+
+    URL : GET /budget/rules/<rule_id>/edit/
+    HTMX : hx-target="#rule-<id>" hx-swap="outerHTML"
+
+    ?cancel=1 → retourne la ligne en mode lecture (bouton Annuler du formulaire).
+    """
+    rule = get_object_or_404(CategorizationRule, id=rule_id)
+    if request.GET.get("cancel"):
+        return render(request, "budget/_rule_row.html", {"rule": rule})
+    all_categories, cats_with_subcats = _cats_with_subcats()
+    return render(
+        request,
+        "budget/_rule_row_edit.html",
+        {
+            "rule": rule,
+            "all_categories": all_categories,
+            "cats_with_subcats": cats_with_subcats,
+        },
+    )
+
+
+# =============================================================================
+# budget_rule_edit_submit — Sauvegarde les modifications d'une règle (POST HTMX)
+# =============================================================================
+
+
+@login_required
+@require_POST
+def budget_rule_edit_submit(request, rule_id):
+    """
+    Valide et sauvegarde keyword + category + subcategory d'une règle.
+    Retourne la ligne en mode lecture avec les nouvelles valeurs.
+
+    URL : POST /budget/rules/<rule_id>/edit/
+    HTMX : hx-target="#rule-<id>" hx-swap="outerHTML"
+
+    keyword est normalisé en UPPERCASE (cohérence avec le wizard de création).
+    Si keyword ou category_id manquent, la règle est retournée inchangée.
+    """
+    rule = get_object_or_404(CategorizationRule, id=rule_id)
+    keyword = request.POST.get("keyword", "").strip().upper()
+    category_id = request.POST.get("category_id", "").strip()
+    subcategory_id = request.POST.get("subcategory_id", "").strip() or None
+
+    if keyword and category_id:
+        try:
+            cat_id = int(category_id)
+            subcat_id = int(subcategory_id) if subcategory_id else None
+        except (ValueError, TypeError):
+            # category_id non numérique → ignorer silencieusement, retourner la règle inchangée
+            return render(request, "budget/_rule_row.html", {"rule": rule})
+        rule.keyword = keyword
+        rule.category_id = cat_id
+        rule.subcategory_id = subcat_id
+        rule.save(update_fields=["keyword", "category_id", "subcategory_id"])
+
+    return render(request, "budget/_rule_row.html", {"rule": rule})
+
+
+# =============================================================================
+# Catégories — Gestion (panel liste + détail) — Phase 2G T3
+# =============================================================================
+
+
+@login_required
+def budget_panel_category_manage(request):
+    """
+    Panel de gestion des catégories : liste toutes les catégories avec leurs stats.
+
+    URL  : GET /budget/panel/category-manage/
+    HTMX : hx-target="#modal-content" hx-swap="innerHTML"
+
+    Chaque catégorie est annotée avec :
+    - subcat_count : nombre de sous-catégories
+    - tx_count     : nombre de transactions directement liées
+    - rules_count  : nombre de règles liées
+    """
+    # tx_count scopé à l'user connecté : Count("transactions") sans filtre compterait
+    # les transactions de tous les users → fuite de données en contexte multi-user.
+    # Django supporte Count(filter=Q(...)) depuis 2.0 — agrégat conditionnel SQL FILTER.
+    cats = (
+        Category.objects.filter(is_active=True)
+        .annotate(
+            subcat_count=Count("subcategories", distinct=True),
+            tx_count=Count(
+                "transactions",
+                filter=Q(transactions__account__members=request.user),
+                distinct=True,
+            ),
+            rules_count=Count("rules", distinct=True),
+        )
+        .order_by("order", "name")
+    )
+    return render(request, "budget/_panel_category_manage.html", {"cats": cats})
+
+
+@login_required
+def budget_panel_category_manage_detail(request, slug):
+    """
+    Panel de détail d'une catégorie : sous-catégories + règles liées.
+
+    URL  : GET /budget/panel/category-manage/<slug>/
+    HTMX : hx-target="#modal-content" hx-swap="innerHTML"
+    Bouton ← : hx-get vers budget_panel_category_manage (retour à la liste).
+    """
+    cat = get_object_or_404(Category, slug=slug, is_active=True)
+
+    # tx_count scopé : même logique que budget_panel_category_manage.
+    subcats = cat.subcategories.annotate(
+        tx_count=Count(
+            "transactions",
+            filter=Q(transactions__account__members=request.user),
+            distinct=True,
+        ),
+        rules_count=Count("rules", distinct=True),
+    ).order_by("name")
+
+    # Règles directement liées à cette catégorie principale
+    rules = (
+        CategorizationRule.objects.filter(category=cat)
+        .select_related("subcategory")
+        .order_by("-priority", "keyword")
+    )
+
+    # Comptage global transactions (directes + via sous-catégories) — filtré par user
+    tx_direct = Transaction.objects.for_user(request.user).filter(category=cat).count()
+    tx_via_subcats = (
+        Transaction.objects.for_user(request.user)
+        .filter(subcategory__category=cat)
+        .count()
+    )
+
+    return render(
+        request,
+        "budget/_panel_category_manage_detail.html",
+        {
+            "cat": cat,
+            "subcats": subcats,
+            "rules": rules,
+            "tx_direct": tx_direct,
+            "tx_via_subcats": tx_via_subcats,
+        },
+    )
+
+
+# =============================================================================
+# Catégories — Création (Phase 2G T3)
+# =============================================================================
+
+
+@login_required
+def budget_panel_category_create(request):
+    """
+    Charge le panel de création de catégorie ou sous-catégorie dans #modal-content.
+
+    URL  : GET /budget/panel/category-create/
+    HTMX : hx-target="#modal-content" hx-swap="innerHTML"
+
+    Passe au template :
+    - icon_names    : liste triée des noms de fichiers SVG disponibles (sans extension)
+    - cats_with_subcats : pour le picker de catégorie parente (sous-cat uniquement)
+    - color_palette : CATEGORY_COLOR_PALETTE — 16 couleurs pastels
+    """
+    _, cats_with_subcats = _cats_with_subcats()
+
+    return render(
+        request,
+        "budget/_panel_category_create.html",
+        {
+            "available_icons": _CURATED_ICONS,
+            "cats_with_subcats": cats_with_subcats,
+            "color_palette": CATEGORY_COLOR_PALETTE,
+        },
+    )
+
+
+@login_required
+@require_POST
+def budget_category_create_submit(request):
+    """
+    Crée une Category ou SubCategory depuis le formulaire du panel.
+
+    URL  : POST /budget/category/create/submit/
+    HTMX : hx-target="#modal-content" hx-swap="innerHTML"
+
+    Champs POST :
+        cat_type    : "main" (Category) | "sub" (SubCategory)
+        name        : nom affiché (ex : "Médecine douce")
+        icon        : nom fichier SVG sans extension (ex : "heartbeat")
+        colour_hex  : ex "#e77f79" — obligatoire si cat_type="main"
+        parent_id   : id Category parente — obligatoire si cat_type="sub"
+
+    En cas d'erreur : re-render le panel avec les erreurs et valeurs pré-remplies.
+    En cas de succès : render le même template en mode "success" (écran de confirmation).
+    """
+    cat_type = request.POST.get("cat_type", "main")
+    name = request.POST.get("name", "").strip()
+    icon = request.POST.get("icon", "")
+    errors = []
+
+    if not name:
+        errors.append("Le nom est obligatoire.")
+    if not icon:
+        errors.append("Choisissez une icône.")
+
+    obj_label = ""
+    obj_type_label = ""
+
+    if not errors:
+        if cat_type == "main":
+            colour_hex = request.POST.get("colour_hex", "")
+            if not colour_hex:
+                errors.append("Choisissez une couleur.")
+            else:
+                if Category.objects.filter(name__iexact=name).exists():
+                    errors.append(f"Une catégorie « {name} » existe déjà.")
+                else:
+                    slug = _generate_unique_slug(name, Category)
+                    Category.objects.create(
+                        name=name,
+                        slug=slug,
+                        icon=icon,
+                        colour_hex=colour_hex,
+                        order=100,  # placée en fin de liste par défaut
+                        is_system=False,
+                    )
+                    obj_label = name
+                    obj_type_label = "catégorie principale"
+
+        elif cat_type == "sub":
+            parent_id = request.POST.get("parent_id", "").strip()
+            if not parent_id:
+                errors.append("Choisissez une catégorie parente.")
+            else:
+                parent = get_object_or_404(Category, id=parent_id)
+                if SubCategory.objects.filter(
+                    category=parent, name__iexact=name
+                ).exists():
+                    errors.append(
+                        f"Une sous-catégorie « {name} » existe déjà dans {parent.name}."
+                    )
+                else:
+                    slug = _generate_unique_slug(name, SubCategory)
+                    SubCategory.objects.create(
+                        category=parent,
+                        name=name,
+                        slug=slug,
+                        icon=icon,
+                        is_system=False,
+                    )
+                    obj_label = f"{name} (sous {parent.name})"
+                    obj_type_label = "sous-catégorie"
+
+    if errors:
+        # Re-render avec erreurs + pré-remplissage (posted = dict des valeurs soumises)
+        _, cats_with_subcats = _cats_with_subcats()
+        return render(
+            request,
+            "budget/_panel_category_create.html",
+            {
+                "available_icons": _CURATED_ICONS,
+                "cats_with_subcats": cats_with_subcats,
+                "color_palette": CATEGORY_COLOR_PALETTE,
+                "errors": errors,
+                "posted": request.POST,
+            },
+        )
+
+    # Succès — même template, branche {% if success %} activée côté HTML
+    return render(
+        request,
+        "budget/_panel_category_create.html",
+        {
+            "success": True,
+            "obj_label": obj_label,
+            "obj_type_label": obj_type_label,
+        },
+    )
+
+
+# =============================================================================
+# Catégories — Suppression (Phase 2G T3)
+# =============================================================================
+
+
+@login_required
+def budget_panel_category_delete_confirm(request, obj_type, slug):
+    """
+    Affiche le panel de confirmation de suppression avec les counts d'impact.
+
+    URL  : GET /budget/category/<obj_type>/<slug>/delete-confirm/
+    HTMX : hx-target="#modal-content" hx-swap="innerHTML"
+
+    obj_type : "category"    → supprime une Category (+ sous-cats CASCADE)
+               "subcategory" → supprime une SubCategory (transactions → SET_NULL)
+
+    Les catégories/sous-catégories système (is_system=True) retournent 403.
+    """
+    if obj_type == "category":
+        obj = get_object_or_404(Category, slug=slug)
+        if obj.is_system:
+            return HttpResponse(
+                "Catégorie système — suppression interdite.", status=403
+            )
+        tx_count = (
+            Transaction.objects.for_user(request.user).filter(category=obj).count()
+        )
+        subcat_count = obj.subcategories.count()
+        rules_count = CategorizationRule.objects.filter(category=obj).count()
+
+    elif obj_type == "subcategory":
+        obj = get_object_or_404(SubCategory, slug=slug)
+        if obj.is_system:
+            return HttpResponse(
+                "Sous-catégorie système — suppression interdite.", status=403
+            )
+        tx_count = (
+            Transaction.objects.for_user(request.user).filter(subcategory=obj).count()
+        )
+        subcat_count = 0
+        rules_count = CategorizationRule.objects.filter(subcategory=obj).count()
+
+    else:
+        return HttpResponse("Type invalide.", status=400)
+
+    delete_url = reverse("budget:category_delete", args=[obj_type, slug])
+
+    return render(
+        request,
+        "budget/_panel_category_delete_confirm.html",
+        {
+            "obj": obj,
+            "obj_type": obj_type,
+            "tx_count": tx_count,
+            "subcat_count": subcat_count,
+            "rules_count": rules_count,
+            "delete_url": delete_url,
+        },
+    )
+
+
+@login_required
+@require_POST
+def budget_category_delete(request, obj_type, slug):
+    """
+    Supprime une Category ou SubCategory non-système.
+
+    URL  : POST /budget/category/<obj_type>/<slug>/delete/
+    HTMX : hx-target="#modal-content" hx-swap="innerHTML"
+
+    Django exécute automatiquement toutes les cascades définies sur les ForeignKey :
+    - Category supprimée → SubCategories CASCADE, BudgetTarget CASCADE,
+      CategorizationRules CASCADE, Transaction.category SET_NULL
+    - SubCategory supprimée → Transaction.subcategory SET_NULL,
+      CategorizationRule.subcategory SET_NULL
+
+    Après suppression, HTMX recharge /budget/ via l'en-tête HX-Redirect.
+    """
+    if obj_type == "category":
+        obj = get_object_or_404(Category, slug=slug, is_system=False)
+    elif obj_type == "subcategory":
+        obj = get_object_or_404(SubCategory, slug=slug, is_system=False)
+    else:
+        return HttpResponse("Type invalide.", status=400)
+
+    obj.delete()
+
+    # HX-Redirect demande à HTMX de naviguer vers /budget/ après la suppression.
+    # Le modal se fermera automatiquement car la page se recharge entièrement.
+    response = HttpResponse("")
+    response["HX-Redirect"] = reverse("budget:index")
+    return response
+
+
+# =============================================================================
+# budget_toggle_decimals — Bascule l'affichage des décimales dans les KPIs
+# =============================================================================
+
+
+@require_POST
+@login_required
+def budget_toggle_decimals(request):
+    """
+    Bascule la préférence d'affichage des décimales dans les montants CHF.
+
+    URL : /budget/toggle-decimals/  (POST)
+    Action : flip request.session['show_decimals'] (bool, default False)
+    Réponse : redirect vers /budget/ (full page reload pour mettre à jour les KPIs)
+
+    Pourquoi un full reload et pas HTMX partiel ?
+        Les montants sont dispersés dans plusieurs zones du template (KPIs, liste
+        catégories, donut label). Un reload complet est plus simple et fiable
+        qu'un swap HTMX multi-cible. La page budget se charge en <200ms donc pas
+        d'impact UX perceptible.
+
+    Pourquoi stocker en session et pas en cookie côté client ?
+        Cohérence avec tous les autres états UI (filtres, onglet, période).
+        La session Django est serveur : pas de JS complexe côté client.
+    """
+    current = request.session.get("show_decimals", False)
+    request.session["show_decimals"] = not current
+    logger.debug(
+        "toggle_decimals: user=%s show_decimals %s → %s",
+        request.user.username,
+        current,
+        not current,
+    )
+    return redirect("budget:index")

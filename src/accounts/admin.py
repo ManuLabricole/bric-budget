@@ -49,9 +49,30 @@ class BankAdmin(admin.ModelAdmin):
 
 @admin.register(Account)
 class AccountAdmin(admin.ModelAdmin):
-    list_display = ("name", "bank", "account_type", "currency", "is_active")
+    """
+    filter_horizontal : widget admin standard pour les champs M2M.
+    Affiche deux colonnes "membres disponibles" ↔ "membres assignés" avec
+    des flèches pour ajouter/retirer. Plus ergonomique que le select multiple par défaut.
+    C'est ici qu'on ajoute Carys à un compte joint ou qu'on révoque un accès.
+    """
+
+    list_display = (
+        "name",
+        "bank",
+        "account_type",
+        "currency",
+        "member_list",
+        "is_active",
+    )
     list_filter = ("bank", "account_type", "currency", "is_active")
-    search_fields = ("name",)
+    search_fields = ("name", "iban", "contract_number")
+    filter_horizontal = ("members",)
+
+    @admin.display(description="Membres")
+    def member_list(self, obj):
+        """Affiche les emails des membres séparés par des virgules."""
+        emails = obj.members.values_list("email", flat=True)
+        return ", ".join(emails) if emails else "—"
 
 
 # =============================================================================

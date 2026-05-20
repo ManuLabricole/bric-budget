@@ -1,0 +1,116 @@
+{% load static %}
+{% comment %}
+budget/_rule_row.html — Ligne de règle en mode lecture
+
+Utilisé dans :
+    - _panel_rules_list.html (boucle initiale)
+    - budget_rule_toggle_active (réponse HTMX après toggle)
+    - budget_rule_edit_submit (réponse HTMX après sauvegarde)
+
+Contexte : rule — CategorizationRule avec category + subcategory préchargés
+
+Actions HTMX sur la ligne :
+    - Éditer  : GET  /budget/rules/<id>/edit/        → remplace la ligne par _rule_row_edit.html
+    - Toggle  : POST /budget/rules/<id>/toggle/      → retourne cette même vue mise à jour
+    - Supprimer : POST /budget/rules/<id>/delete/    → retourne vide → la ligne disparaît
+{% endcomment %}
+<div id="rule-{{ rule.id }}"
+     class="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors group {% if rule.is_active %}bg-surface-hover/50 hover:bg-surface-hover{% else %}bg-surface-hover/20 hover:bg-surface-hover/40 opacity-50{% endif %}">
+    {# ── Icône catégorie / sous-catégorie ── #}
+    {# Fond plein = catégorie principale. Fond à 25% (hex40) = sous-catégorie (même pattern que category_detail.html). #}
+    <span class="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center"
+          style="background-color: {{ rule.category.colour_hex|default:'#2d3033' }}{% if rule.subcategory %}40{% endif %}">
+        {% if rule.subcategory %}
+            {# Sous-catégorie : son icône propre si elle existe, sinon celle de la catégorie parente #}
+            {% if rule.subcategory.icon %}
+                {% with icon_path="icons/categories/"|add:rule.subcategory.icon|add:".svg" %}
+                    <img src="{% static icon_path %}"
+                         width="14"
+                         height="14"
+                         class="w-3.5 h-3.5 brightness-0 invert opacity-80"
+                         alt="">
+                {% endwith %}
+            {% elif rule.category.icon %}
+                {% with icon_path="icons/categories/"|add:rule.category.icon|add:".svg" %}
+                    <img src="{% static icon_path %}"
+                         width="14"
+                         height="14"
+                         class="w-3.5 h-3.5 brightness-0 invert opacity-80"
+                         alt="">
+                {% endwith %}
+            {% endif %}
+        {% else %}
+            {# Catégorie principale : fond plein, icône normale #}
+            {% if rule.category.icon %}
+                {% with icon_path="icons/categories/"|add:rule.category.icon|add:".svg" %}
+                    <img src="{% static icon_path %}"
+                         width="14"
+                         height="14"
+                         class="w-3.5 h-3.5 brightness-0 invert"
+                         alt="">
+                {% endwith %}
+            {% endif %}
+        {% endif %}
+    </span>
+    {# ── Keyword + catégorie ── #}
+    <div class="flex-1 min-w-0">
+        <p class="text-xs font-mono font-semibold text-text-base tracking-wide truncate">{{ rule.keyword }}</p>
+        <p class="text-[10px] text-text-disabled truncate mt-0.5">
+            {{ rule.category.name }}
+            {% if rule.subcategory %}› {{ rule.subcategory.name }}{% endif %}
+            <span class="opacity-50">· p{{ rule.priority }}</span>
+        </p>
+    </div>
+    {# ── Actions (visibles au hover) ── #}
+    <div class="flex items-center gap-1 flex-shrink-0">
+        {# Éditer — crayon, visible au hover #}
+        <button hx-get="{% url 'budget:rule_row_edit' rule.id %}"
+                hx-target="#rule-{{ rule.id }}"
+                hx-swap="outerHTML"
+                title="Éditer"
+                class="w-6 h-6 rounded-lg flex items-center justify-center text-text-disabled hover:text-text-base hover:bg-edge transition-colors opacity-0 group-hover:opacity-100">
+            <svg class="w-3 h-3"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="2"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Z" />
+            </svg>
+        </button>
+        {# Toggle actif/inactif ── #}
+        <button hx-post="{% url 'budget:rule_toggle_active' rule.id %}"
+                hx-target="#rule-{{ rule.id }}"
+                hx-swap="outerHTML"
+                title="{% if rule.is_active %}Désactiver{% else %}Activer{% endif %}"
+                class="w-6 h-6 rounded-lg flex items-center justify-center transition-colors {% if rule.is_active %}text-gold hover:bg-gold/10{% else %}text-text-disabled hover:bg-edge{% endif %}">
+            {% if rule.is_active %}
+                <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="5" />
+                </svg>
+            {% else %}
+                <svg class="w-3.5 h-3.5"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="2"
+                     stroke="currentColor">
+                    <circle cx="12" cy="12" r="5" />
+                </svg>
+            {% endif %}
+        </button>
+        {# Supprimer — croix ── #}
+        <button hx-post="{% url 'budget:rule_delete' rule.id %}"
+                hx-target="#rule-{{ rule.id }}"
+                hx-swap="outerHTML"
+                hx-confirm="Supprimer la règle « {{ rule.keyword }} » ?"
+                title="Supprimer"
+                class="w-6 h-6 rounded-lg flex items-center justify-center text-text-disabled hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100">
+            <svg class="w-3 h-3"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="2.5"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+            </svg>
+        </button>
+    </div>
+</div>

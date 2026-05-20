@@ -99,6 +99,15 @@ class YuhConnector(BaseConnector):
         transactions = []
         skipped = 0
 
+        # occurrence_index: counts how many times we've already seen each
+        # (date, activity_type, amount, description) group in this file.
+        # Used in the hash instead of line_number — stable across partial exports.
+        #
+        # Example: two identical parking payments on the same day always get
+        # occurrence_index 0 and 1 regardless of where the file starts.
+        # With line_number they'd shift if the file started later → duplicate import.
+        occurrence_counters: dict[tuple, int] = {}
+
         with open(filepath, encoding="utf-8-sig") as f:
             # utf-8-sig: strips the BOM character automatically
             # Without it, the first column header would be "﻿DATE" instead of "DATE"
@@ -106,7 +115,7 @@ class YuhConnector(BaseConnector):
 
             for line_number, row in enumerate(
                 reader, start=2
-            ):  # start=2: line 1 = header
+            ):  # start=2: line 1 = header, kept for warning messages
                 activity_type = row.get("ACTIVITY TYPE", "").strip()
 
                 # Skip only REWARD_RECEIVED — everything else is a real money movement
@@ -115,7 +124,9 @@ class YuhConnector(BaseConnector):
                     continue
 
                 try:
-                    transactions.append(self._parse_row(row, line_number))
+                    transactions.append(
+                        self._parse_row(row, line_number, occurrence_counters)
+                    )
                 except Exception as e:
                     # Never abort on a bad row — log and continue
                     print(
@@ -176,7 +187,9 @@ class YuhConnector(BaseConnector):
     # Private helpers
     # =========================================================================
 
-    def _parse_row(self, row: dict, line_number: int) -> TransactionDict:
+    def _parse_row(
+        self, row: dict, line_number: int, occurrence_counters: dict
+    ) -> TransactionDict:
         """
         Convert one CSV row dict into a TransactionDict.
 
@@ -186,18 +199,44 @@ class YuhConnector(BaseConnector):
         date_str = self._parse_date(row["DATE"].strip())
         amount, currency = self._parse_amount(row)
         description_raw = self._strip_quotes(row["ACTIVITY NAME"].strip())
-        merchant_name = self._clean_merchant(description_raw, row)
+        # Yuh RECIPIENT/SENDER columns are already clean names — use as display_name
+        # when available (better than cleaning ACTIVITY NAME which is already clean).
+        # Fall back to _clean_description(description_raw) for unrecognised types.
+        activity_type = row.get("ACTIVITY TYPE", "").strip()
+        recipient = self._strip_quotes(row.get("RECIPIENT", "").strip())
+        sender = self._strip_quotes(row.get("SENDER", "").strip())
+        if (
+            activity_type in ("CARD_TRANSACTION_OUT", "PAYMENT_TRANSACTION_OUT")
+            and recipient
+        ):
+            display_name = self._normalize_merchant(recipient)
+        elif activity_type == "PAYMENT_TRANSACTION_IN" and sender:
+            display_name = self._normalize_merchant(sender)
+        else:
+            display_name = self._clean_description(description_raw)
+        merchant_name = display_name  # pre-fill override with same value
         card_last_four = self._parse_card(row.get("CARD NUMBER", "").strip())
 
-        # import_hash: SHA1 fingerprint used for deduplication at import time.
-        # We include line_number because Yuh exports don't have transaction IDs,
-        # and the same merchant/amount/date can appear multiple times on the same
-        # day (e.g. two 2 CHF parking payments, two identical SBB tickets).
-        # Without line_number those rows produce the same hash — bulk_create would
-        # crash on the unique constraint.
-        # line_number is the position in the file (stable across re-imports of the
-        # same file — Yuh always exports in chronological order).
-        raw = f"{line_number}|{date_str}|{row['ACTIVITY TYPE']}|{amount}|{description_raw}"
+        # import_hash — see CONTRACT in base.py.
+        #
+        # Yuh has no bank-assigned transaction ID, so we build a stable key from
+        # content fields + occurrence_index.
+        #
+        # occurrence_index = how many times this exact (date, type, amount, desc)
+        # combination has already appeared earlier in THIS file. This disambiguates
+        # two identical transactions on the same day (e.g. two 2 CHF parking) while
+        # staying stable across partial exports:
+        #
+        #   Full-year file : parking Jan-15 → occurrence_index=0 → hash H1
+        #   January-only   : same parking   → occurrence_index=0 → same hash H1  ✓
+        #
+        # Contrast with line_number: full-year line 150 vs Jan-only line 5 → different
+        # hashes → duplicate import. That's the bug occurrence_index fixes.
+        group_key = (date_str, row["ACTIVITY TYPE"], amount, description_raw)
+        occurrence_index = occurrence_counters.get(group_key, 0)
+        occurrence_counters[group_key] = occurrence_index + 1
+
+        raw = f"{date_str}|{row['ACTIVITY TYPE']}|{amount}|{description_raw}|{occurrence_index}"
         import_hash = hashlib.sha256(raw.encode()).hexdigest()
 
         return TransactionDict(
@@ -206,9 +245,11 @@ class YuhConnector(BaseConnector):
             amount=amount,
             currency=currency,
             description_raw=description_raw,
+            display_name=display_name,
             merchant_name=merchant_name,
             card_last_four=card_last_four,
             import_hash=import_hash,
+            balance_after=None,
         )
 
     def _parse_date(self, raw: str) -> str:

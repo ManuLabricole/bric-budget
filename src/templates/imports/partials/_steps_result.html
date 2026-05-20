@@ -76,7 +76,16 @@
             </p>
         </div>
     </div>
-    {# ── Étape 4 : Bouton confirmer (ou message "rien à importer") ─────────── #}
+    {# ── Étape 4 : Bouton confirmer ou "Marquer synchronisé" ou "Vide" ──────── #}
+    {#                                                                             #}
+    {# Trois cas :                                                                 #}
+    {#   total_created > 0  → bouton "Confirmer l'import — N transactions"        #}
+    {#   total_skipped > 0  → bouton "Marquer comme synchronisé" (crée ImportLog) #}
+    {#   les deux à 0       → fichier vide, aucune action possible                #}
+    {#                                                                             #}
+    {# Le cas total_skipped > 0 permet de créer un ImportLog même si zéro         #}
+    {# nouvelle transaction n'est détectée. Sans ce bouton, le badge sync du       #}
+    {# compte resterait "stale" indéfiniment alors que le compte est à jour.       #}
     <div class="step-card"
          style="animation-delay: {{ dry_results|length|add:2 }}50ms">
         {% if total_created > 0 %}
@@ -87,10 +96,24 @@
                     hx-indicator="#upload-spinner">
                 Confirmer l'import — {{ total_created }} transaction{{ total_created|pluralize }}
             </button>
+        {% elif total_skipped > 0 %}
+            <button class="w-full mt-1 px-4 py-2.5 text-sm font-semibold rounded-xl bg-surface-3 text-text-muted border border-border hover:bg-surface-hover transition-colors"
+                    hx-post="{% url 'imports:confirm' %}"
+                    hx-target="#import-steps"
+                    hx-swap="innerHTML"
+                    hx-indicator="#upload-spinner">
+                Marquer comme synchronisé
+                <span class="font-normal opacity-60 ml-1">· {{ total_skipped }} déjà présente{{ total_skipped|pluralize }}</span>
+            </button>
         {% else %}
-            <div class="mt-1 px-4 py-2.5 text-sm text-text-muted text-center bg-surface-hover rounded-xl">
-                Aucune nouvelle transaction — tout est déjà importé.
-            </div>
+            <button class="w-full mt-1 px-4 py-2.5 text-sm font-semibold rounded-xl bg-warning/10 text-warning border border-warning/30 hover:bg-warning/20 transition-colors"
+                    hx-post="{% url 'imports:confirm' %}"
+                    hx-target="#import-steps"
+                    hx-swap="innerHTML"
+                    hx-indicator="#upload-spinner"
+                    hx-confirm="Ce fichier est vide (0 transaction détectée). Confirmer quand même mettra à jour la date de synchronisation du compte. Continuer ?">
+                Fichier vide — valider quand même
+            </button>
         {% endif %}
     </div>
 </div>
