@@ -47,10 +47,13 @@ we assign it. Error if 0 or more than 1.
 
 import csv
 import hashlib
+import logging
 import re
 from pathlib import Path
 
 from connectors.base import BaseConnector, TransactionDict
+
+logger = logging.getLogger(__name__)
 
 
 class YuhConnector(BaseConnector):
@@ -128,14 +131,19 @@ class YuhConnector(BaseConnector):
                         self._parse_row(row, line_number, occurrence_counters)
                     )
                 except Exception as e:
-                    # Never abort on a bad row — log and continue
-                    print(
-                        f"  [Yuh] WARNING line {line_number}: {e} — row skipped: {row}"
+                    logger.warning(
+                        "[Yuh] line %d: %s — row skipped: %s",
+                        line_number,
+                        e,
+                        row,
+                        exc_info=True,
                     )
                     skipped += 1
 
-        print(
-            f"  [Yuh] Parsed {len(transactions)} transactions, {skipped} rows skipped"
+        logger.info(
+            "[Yuh] Parsed %d transactions, %d rows skipped",
+            len(transactions),
+            skipped,
         )
         return transactions
 
@@ -177,10 +185,10 @@ class YuhConnector(BaseConnector):
         try:
             with open(filepath, encoding="utf-8-sig") as f:
                 first_line = f.readline().strip()
-            # Split on semicolons and compare to our known signature
             columns = [col.strip() for col in first_line.split(";")]
             return columns == cls.COLUMN_SIGNATURE
         except Exception:
+            logger.debug("[Yuh] matches_file failed for %s", filepath, exc_info=True)
             return False
 
     # =========================================================================

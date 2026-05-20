@@ -158,11 +158,12 @@ class UBSConnector(BaseConnector):
             with open(filepath, encoding="utf-8-sig") as f:
                 line1 = f.readline()
             parts = line1.strip().split(";")
-            # parts[0] = "Numéro de compte:", parts[1] = "0243 00693382.40"
             if len(parts) >= 2 and parts[1].strip():
                 return f"UBS {parts[1].strip()}"
         except Exception:
-            pass
+            logger.warning(
+                "[UBS] extract_account_name failed for %s", filepath, exc_info=True
+            )
         return None
 
     def extract_account_identifier(self, filepath: Path) -> str | None:
@@ -186,13 +187,15 @@ class UBSConnector(BaseConnector):
             with open(filepath, encoding="utf-8-sig") as f:
                 f.readline()  # line 1: account number
                 line2 = f.readline()  # line 2: IBAN
-            # Format: "IBAN:;CH9X XXXX XXXX XXXX XXXX X;"
             parts = line2.strip().split(";")
-            # parts[0] = "IBAN:", parts[1] = "CH9X XXXX XXXX XXXX XXXX X", parts[2] = ""
             if len(parts) >= 2 and parts[0].strip() == "IBAN:":
-                return parts[1].strip().replace(" ", "")  # normalize: strip spaces
+                return parts[1].strip().replace(" ", "")
         except Exception:
-            pass
+            logger.warning(
+                "[UBS] extract_account_identifier failed for %s",
+                filepath,
+                exc_info=True,
+            )
         return None
 
     def extract_balance(self, filepath: Path) -> float | None:
@@ -206,13 +209,14 @@ class UBSConnector(BaseConnector):
             with open(filepath, encoding="utf-8-sig") as f:
                 for i, line in enumerate(f, start=1):
                     if i == 6:
-                        # "Solde final:;7281.45;"
                         parts = line.strip().split(";")
                         if len(parts) >= 2:
                             return float(parts[1].strip())
                         break
         except Exception:
-            pass
+            logger.warning(
+                "[UBS] extract_balance failed for %s", filepath, exc_info=True
+            )
         return None
 
     @classmethod
@@ -248,7 +252,8 @@ class UBSConnector(BaseConnector):
                     if columns == cls.COLUMN_SIGNATURE:
                         return True
         except Exception:
-            pass
+            logger.warning("[UBS] matches_file failed for %s", filepath, exc_info=True)
+            return False
         return False
 
     # =========================================================================

@@ -30,10 +30,14 @@ BalanceSnapshots pour lesquels IL N'EXISTERA PLUS AUCUNE transaction (ni de cet
 import, ni d'un autre) après la suppression.
 """
 
+import logging
+
 from django.db.models import Q
 from django.db.models.signals import pre_delete
 
 from transactions.models import ImportLog
+
+logger = logging.getLogger(__name__)
 
 
 def cleanup_orphaned_snapshots(sender, instance, **kwargs):
@@ -91,8 +95,10 @@ def cleanup_orphaned_snapshots(sender, instance, **kwargs):
     ).delete()
 
     if count:
-        print(
-            f"  [signal] {count} BalanceSnapshot(s) orphelin(s) supprimé(s) pour {account}"
+        logger.info(
+            "[signal] %d BalanceSnapshot(s) orphelin(s) supprimé(s) pour %s",
+            count,
+            account,
         )
 
 
