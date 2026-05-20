@@ -290,14 +290,17 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 # STATICFILES_DIRS : sources en développement (ignoré après collectstatic).
 STATICFILES_DIRS = [BASE_DIR / "static"]
 
-# Compression + cache-busting automatique (ajoute un hash dans le nom du fichier).
-# Permet de servir les statics avec Cache-Control: max-age=31536000 en toute sécurité.
-STORAGES = {
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
-    "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
-    },
-}
+# En production uniquement : manifest + compression Whitenoise.
+# CompressedManifestStaticFilesStorage exige un staticfiles.json généré par
+# collectstatic. En dev/CI (DEBUG=True), on utilise le storage par défaut de
+# Django qui résout {% static %} directement sans manifest → pas de ValueError.
+if not DEBUG:
+    STORAGES = {
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {
+            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
+        },
+    }
 
 
 # =============================================================================
