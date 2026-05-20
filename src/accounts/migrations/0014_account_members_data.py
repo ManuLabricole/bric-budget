@@ -1,36 +1,41 @@
 """
-Migration de données : assigne Emmanuel (emmanuel.barriol@gmail.com) comme membre
+Migration de données : assigne tous les utilisateurs actifs comme membres
 de tous les comptes existants.
 
 Pourquoi une migration de données séparée (pas dans 0013) ?
     Bonne pratique Django : séparer les migrations de schéma (DDL) des migrations
     de données (DML). La migration de schéma (0013) crée la table M2M. Cette
-    migration (0014) la remplit. Si la data migration échoue (user inexistant
-    en env de test), on peut la rejouer sans retoucher le schéma.
+    migration (0014) la remplit. Si la data migration échoue, on peut la rejouer
+    sans retoucher le schéma.
 
-Comportement si l'user n'existe pas :
-    On ne plante pas (try/except). Environnements de test et CI n'ont pas de seed
-    utilisateur — la data migration est un no-op dans ce cas.
-    En prod : l'user Emmanuel existe → tous les comptes lui sont assignés.
+Stratégie — assign TOUS les utilisateurs actifs (pas d'email hardcodé) :
+    Phase 1 (mono-user) : l'unique user obtient tous les comptes. ✓
+    CI / tests          : aucun user → no-op. ✓
+    Futur multi-user    : chaque user membre de tous les comptes existants au
+                          moment de la migration — à ajuster si nécessaire.
+
+    L'ancienne version ciblait "emmanuel.barriol@gmail.com" (hardcodé).
+    Problem : si l'user n'existe pas en prod pour une raison quelconque,
+    tous les comptes restent sans membre → for_user() retourne 0 résultat
+    et toutes les données deviennent inaccessibles silencieusement.
 """
 
 from django.db import migrations
 
 
-def add_emmanuel_to_all_accounts(apps, schema_editor):
+def assign_all_users_to_all_accounts(apps, schema_editor):
     Account = apps.get_model("accounts", "Account")
     User = apps.get_model("users", "CustomUser")
-    try:
-        emmanuel = User.objects.get(email="emmanuel.barriol@gmail.com")
-    except User.DoesNotExist:
+    users = list(User.objects.filter(is_active=True))
+    if not users:
         # Env de test ou CI sans seed — ne rien faire
         return
     for account in Account.objects.all():
-        account.members.add(emmanuel)
+        account.members.set(users)
 
 
-def remove_emmanuel_from_all_accounts(apps, schema_editor):
-    """Reverse migration : vide la table M2M (pas de suppression du compte)."""
+def remove_all_users_from_all_accounts(apps, schema_editor):
+    """Reverse migration : vide la table M2M (pas de suppression des comptes)."""
     Account = apps.get_model("accounts", "Account")
     for account in Account.objects.all():
         account.members.clear()
@@ -43,7 +48,7 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.RunPython(
-            add_emmanuel_to_all_accounts,
-            reverse_code=remove_emmanuel_from_all_accounts,
+            assign_all_users_to_all_accounts,
+            reverse_code=remove_all_users_from_all_accounts,
         ),
     ]

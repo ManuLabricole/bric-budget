@@ -267,6 +267,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 IMPORT_STORAGE_ROOT = BASE_DIR.parent / "assets" / "private" / "data" / "imports"
 
 # Clé Fernet (AES-128-CBC + HMAC-SHA256) pour chiffrer les fichiers au repos.
-# OBLIGATOIRE pour l'upload web — lève UndefinedValueError au démarrage si absente.
+# default="" permet de démarrer sans la clé (CI, dev sans imports web).
+# La clé est requise au moment de l'usage — imports/storage.py lève ImproperlyConfigured
+# si elle est vide quand on tente de chiffrer ou déchiffrer un fichier.
 # Générer :  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-IMPORT_ENCRYPTION_KEY = config("IMPORT_ENCRYPTION_KEY")
+IMPORT_ENCRYPTION_KEY = config("IMPORT_ENCRYPTION_KEY", default="")

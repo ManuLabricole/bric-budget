@@ -28,7 +28,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
-from django.db.models import Count, Max, Sum
+from django.db.models import Count, Max, Q, Sum
 from django.db.models.functions import Coalesce, TruncMonth
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -3108,9 +3108,15 @@ def budget_rule_edit_submit(request, rule_id):
     subcategory_id = request.POST.get("subcategory_id", "").strip() or None
 
     if keyword and category_id:
+        try:
+            cat_id = int(category_id)
+            subcat_id = int(subcategory_id) if subcategory_id else None
+        except (ValueError, TypeError):
+            # category_id non numérique → ignorer silencieusement, retourner la règle inchangée
+            return render(request, "budget/_rule_row.html", {"rule": rule})
         rule.keyword = keyword
-        rule.category_id = int(category_id)
-        rule.subcategory_id = int(subcategory_id) if subcategory_id else None
+        rule.category_id = cat_id
+        rule.subcategory_id = subcat_id
         rule.save(update_fields=["keyword", "category_id", "subcategory_id"])
 
     return render(request, "budget/_rule_row.html", {"rule": rule})
@@ -3134,11 +3140,18 @@ def budget_panel_category_manage(request):
     - tx_count     : nombre de transactions directement liées
     - rules_count  : nombre de règles liées
     """
+    # tx_count scopé à l'user connecté : Count("transactions") sans filtre compterait
+    # les transactions de tous les users → fuite de données en contexte multi-user.
+    # Django supporte Count(filter=Q(...)) depuis 2.0 — agrégat conditionnel SQL FILTER.
     cats = (
         Category.objects.filter(is_active=True)
         .annotate(
             subcat_count=Count("subcategories", distinct=True),
-            tx_count=Count("transactions", distinct=True),
+            tx_count=Count(
+                "transactions",
+                filter=Q(transactions__account__members=request.user),
+                distinct=True,
+            ),
             rules_count=Count("rules", distinct=True),
         )
         .order_by("order", "name")
@@ -3157,8 +3170,13 @@ def budget_panel_category_manage_detail(request, slug):
     """
     cat = get_object_or_404(Category, slug=slug, is_active=True)
 
+    # tx_count scopé : même logique que budget_panel_category_manage.
     subcats = cat.subcategories.annotate(
-        tx_count=Count("transactions", distinct=True),
+        tx_count=Count(
+            "transactions",
+            filter=Q(transactions__account__members=request.user),
+            distinct=True,
+        ),
         rules_count=Count("rules", distinct=True),
     ).order_by("name")
 
@@ -3349,7 +3367,9 @@ def budget_panel_category_delete_confirm(request, obj_type, slug):
             return HttpResponse(
                 "Catégorie système — suppression interdite.", status=403
             )
-        tx_count = Transaction.objects.filter(category=obj).count()
+        tx_count = (
+            Transaction.objects.for_user(request.user).filter(category=obj).count()
+        )
         subcat_count = obj.subcategories.count()
         rules_count = CategorizationRule.objects.filter(category=obj).count()
 
@@ -3359,7 +3379,9 @@ def budget_panel_category_delete_confirm(request, obj_type, slug):
             return HttpResponse(
                 "Sous-catégorie système — suppression interdite.", status=403
             )
-        tx_count = Transaction.objects.filter(subcategory=obj).count()
+        tx_count = (
+            Transaction.objects.for_user(request.user).filter(subcategory=obj).count()
+        )
         subcat_count = 0
         rules_count = CategorizationRule.objects.filter(subcategory=obj).count()
 

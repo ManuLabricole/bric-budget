@@ -1,5 +1,5 @@
 {% load static %}
-{#
+{% comment %}
   _panel_category_delete_confirm.html
   Panel de confirmation avant suppression d'une catégorie ou sous-catégorie.
 
@@ -25,7 +25,7 @@
     SubCategory supprimée :
       → Transaction.subcategory : SET_NULL
       → CategorizationRule.subcategory : SET_NULL
-#}
+{% endcomment %}
 <div class="flex flex-col" style="max-height: 82vh">
     {# ── HEADER ──────────────────────────────────────────────────────────── #}
     <div class="flex-shrink-0 px-5 pt-5 pb-4 border-b border-edge/50">
