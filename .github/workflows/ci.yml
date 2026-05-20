@@ -83,16 +83,13 @@ jobs:
           --health-retries 5
 
     env:
-      # Clé secrète fictive — utilisée uniquement pour signer les sessions en test.
-      # Aucune valeur réelle n'est exposée ici.
+      # Clé secrète fictive — uniquement pour signer les sessions en test.
       SECRET_KEY: ci-secret-key-not-used-in-production
       DEBUG: "True"
-      # Connexion à la DB PostgreSQL du service ci-dessus.
-      DB_NAME: bricbudget
-      DB_USER: bricbudget
-      DB_PASSWORD: bricbudget
-      DB_HOST: localhost
-      DB_PORT: 5432
+      # Convention 12-factor : DATABASE_URL décrit toute la connexion.
+      # Même format qu'en local et sur Railway — cohérence locale/CI/prod.
+      # Pointe vers le service postgres: du workflow (host=localhost, port=5432).
+      DATABASE_URL: postgresql://bricbudget:bricbudget@localhost:5432/bricbudget
       # IMPORT_ENCRYPTION_KEY vide → autorisé (settings.py, default="").
       # La clé n'est requise qu'au moment d'un import web, pas pendant les tests.
       IMPORT_ENCRYPTION_KEY: ""
