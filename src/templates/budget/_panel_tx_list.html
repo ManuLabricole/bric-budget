@@ -113,16 +113,16 @@ Données :
   dans la réponse serveur et ré-injectable.
 {% endcomment %}
 <div id="tx-results" class="flex flex-col flex-1 min-h-0">
-    {% comment %} Compteur {% endcomment %}
+    {% comment %} Compteur — total depuis le paginator, pas juste la page courante {% endcomment %}
     <div class="px-4 py-2 flex-shrink-0">
         <p class="text-[10px] text-text-disabled">
-            {{ transactions|length }} transaction{{ transactions|length|pluralize }}
+            {{ page_obj.paginator.count }} transaction{{ page_obj.paginator.count|pluralize }}
             · {{ period_start|date:"j M Y" }} – {{ period_end|date:"j M Y" }}
-            {% if transactions|length == 200 %}<span class="text-gold/60">· limité à 200</span>{% endif %}
         </p>
     </div>
     {% if transactions %}
-        <div class="flex-1 overflow-y-auto"
+        <div id="tx-scroll-container"
+             class="flex-1 overflow-y-auto"
              style="-ms-overflow-style:none;
                     scrollbar-width:none">
             {% for tx in transactions %}
@@ -141,6 +141,20 @@ Données :
                 {% endcomment %}
                 {% include "budget/_panel_tx_row.html" with bank_icon_url=tx.bank_icon_url %}
             {% endfor %}
+            {% comment %}
+            Sentinel scroll infini — visible uniquement si d'autres pages existent.
+            hx-trigger="revealed" = HTMX détecte quand ce div entre dans le viewport.
+            hx-swap="outerHTML" = remplace CE div par la réponse (nouvelles lignes + nouveau sentinel).
+            ?q={{ q }} préserve la recherche en cours lors du chargement de la page suivante.
+            {% endcomment %}
+            {% if page_obj.has_next %}
+                <div hx-get="{% url 'budget:panel_transactions' %}?page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}"
+                     hx-trigger="intersect root:#tx-scroll-container once"
+                     hx-swap="outerHTML"
+                     class="py-4 flex justify-center">
+                    <span class="text-[10px] text-text-disabled">Chargement…</span>
+                </div>
+            {% endif %}
         </div>
     {% else %}
         <div class="flex flex-col items-center justify-center py-12 text-text-disabled flex-1">

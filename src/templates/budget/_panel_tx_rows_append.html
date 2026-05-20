@@ -1,0 +1,28 @@
+{% load budget_filters %}
+{% comment %}
+budget/_panel_tx_rows_append.html — Fragment HTMX : lignes supplémentaires pour le scroll infini
+
+Retourné par budget_panel_transactions() quand ?page > 1.
+Remplace le sentinel div (hx-swap="outerHTML") avec les nouvelles lignes + un nouveau sentinel.
+
+Contexte attendu :
+    transactions  — list() annoté, .bank_icon_url résolu en Python
+    page_obj      — Page Django
+    q             — str recherche en cours (peut être vide)
+{% endcomment %}
+{% for tx in transactions %}
+    {% ifchanged tx.date %}
+        <div class="px-4 py-1.5 sticky top-0 z-10 bg-surface-2/90 backdrop-blur-sm">
+            <span class="text-[10px] font-medium text-text-muted">{{ tx.date|date:"j F Y" }}</span>
+        </div>
+    {% endifchanged %}
+    {% include "budget/_panel_tx_row.html" with bank_icon_url=tx.bank_icon_url %}
+{% endfor %}
+{% if page_obj.has_next %}
+    <div hx-get="{% url 'budget:panel_transactions' %}?page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}"
+         hx-trigger="intersect root:#tx-scroll-container once"
+         hx-swap="outerHTML"
+         class="py-4 flex justify-center">
+        <span class="text-[10px] text-text-disabled">Chargement…</span>
+    </div>
+{% endif %}
