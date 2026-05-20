@@ -30,7 +30,7 @@ from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db.models import Count, Max, Q, Sum
-from django.db.models.functions import Coalesce, TruncMonth
+from django.db.models.functions import Abs, Coalesce, TruncMonth
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
@@ -1185,6 +1185,23 @@ def budget_panel_transactions(request):
     # icontains = insensible à la casse.
     q = request.GET.get("q", "").strip()
 
+    # ── Filtre montant min/max (valeur absolue en CHF) ────────────────────────
+    #
+    # Le montant est filtré sur la valeur absolue du champ `amount`.
+    # Limitation connue : pour les comptes non-CHF (EUR), `amount` est en devise
+    # native. On filtre donc en EUR pour ces comptes. Acceptable pour l'usage actuel
+    # (majorité des comptes sont CHF).
+    def _parse_amount_filter(raw):
+        """Retourne un entier positif ou None si invalide/vide."""
+        try:
+            v = int(float(raw)) if raw and raw.strip() else None
+            return v if v and v > 0 else None
+        except (ValueError, TypeError):
+            return None
+
+    amount_min = _parse_amount_filter(request.GET.get("amount_min", ""))
+    amount_max = _parse_amount_filter(request.GET.get("amount_max", ""))
+
     # ── Filtre compte actif (même session que budget_index) ──────────────────
     filter_account_ids = request.session.get("budget_filter_accounts", [])
     accounts = (
@@ -1217,6 +1234,15 @@ def budget_panel_transactions(request):
         qs = qs.filter(account_id__in=filter_account_ids)
     if q:
         qs = qs.filter(display_name__icontains=q)
+    if amount_min is not None or amount_max is not None:
+        # Abs() annote chaque ligne avec la valeur absolue du montant.
+        # On filtre ensuite dessus — les dépenses (négatives) et entrées (positives)
+        # sont traitées de la même façon.
+        qs = qs.annotate(abs_amount=Abs("amount"))
+        if amount_min is not None:
+            qs = qs.filter(abs_amount__gte=amount_min)
+        if amount_max is not None:
+            qs = qs.filter(abs_amount__lte=amount_max)
 
     # Pagination 50 tx/page — scroll infini côté client (HTMX "revealed").
     # ?page= est injecté par le sentinel HTMX en bas du scroll.
@@ -1253,6 +1279,8 @@ def budget_panel_transactions(request):
                 "page_obj": page_obj,
                 "bank_icon_map": bank_icon_map,
                 "q": q,
+                "amount_min": amount_min,
+                "amount_max": amount_max,
             },
         )
 
@@ -1287,8 +1315,10 @@ def budget_panel_transactions(request):
             "accounts": accounts,
             "filter_account_ids": filter_account_ids,
             "page_obj": page_obj,
-            # q transmis au template pour l'inclure dans l'URL du sentinel scroll
+            # q + montant transmis au template pour l'URL du sentinel scroll infini
             "q": q,
+            "amount_min": amount_min,
+            "amount_max": amount_max,
         },
     )
 

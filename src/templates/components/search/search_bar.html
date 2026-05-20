@@ -34,6 +34,7 @@ Variables optionnelles :
            hx-select="{{ hx_select|default:'#tx-results' }}"
            hx-swap="outerHTML"
            hx-trigger="input changed delay:300ms"
+           {% if hx_include %}hx-include="{{ hx_include }}"{% endif %}
            onfocus="this.previousElementSibling.style.color='#f2c086'"
            onblur="this.previousElementSibling.style.color=''"
            class="flex-1 min-w-0 bg-transparent text-xs outline-none text-text-disabled placeholder:text-text-disabled group-hover:text-text-base group-hover:placeholder:text-text-muted focus:text-text-base">
