@@ -252,8 +252,9 @@ class UBSConnector(BaseConnector):
                     if columns == cls.COLUMN_SIGNATURE:
                         return True
         except Exception:
-            logger.debug("[UBS] matches_file failed for %s", filepath, exc_info=True)
+            logger.warning("[UBS] matches_file failed for %s", filepath, exc_info=True)
             return False
+        return False
 
     # =========================================================================
     # Private helpers

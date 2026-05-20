@@ -17,6 +17,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from decouple import config  # reads variables from .env — never hardcode secrets here
+from django.core.exceptions import ImproperlyConfigured
 
 # =============================================================================
 # 1. Paths & secrets
@@ -342,7 +343,16 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024  # 5 MB
 #   False = on AJOUTE notre config sans écraser les leurs.
 #   True  = on les écrase → silence total des logs Django internes.
 
-_log_level = config("LOG_LEVEL", default="DEBUG" if DEBUG else "WARNING")
+_VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "NOTSET"}
+_log_level_raw = (
+    config("LOG_LEVEL", default="DEBUG" if DEBUG else "INFO").strip().upper()
+)
+if _log_level_raw not in _VALID_LOG_LEVELS:
+    raise ImproperlyConfigured(
+        f"LOG_LEVEL='{_log_level_raw}' est invalide. "
+        f"Valeurs acceptées : {', '.join(sorted(_VALID_LOG_LEVELS))}"
+    )
+_log_level = _log_level_raw
 
 LOGGING = {
     "version": 1,

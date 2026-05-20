@@ -200,9 +200,9 @@ def test_ubs_extract_account_name_logs_on_error(tmp_path, caplog):
     assert result is None
 
 
-def test_ubs_matches_file_logs_debug_on_error(tmp_path, caplog):
+def test_ubs_matches_file_logs_warning_on_error(tmp_path, caplog):
     """
-    UBSConnector.matches_file() : fichier illisible → logger.debug, retourne False.
+    UBSConnector.matches_file() : fichier illisible → logger.warning, retourne False.
     """
     from connectors.ubs.parser import UBSConnector
 
@@ -212,9 +212,15 @@ def test_ubs_matches_file_logs_debug_on_error(tmp_path, caplog):
     bad_file.chmod(0o000)
 
     try:
-        with caplog.at_level(logging.DEBUG, logger="connectors.ubs.parser"):
+        with caplog.at_level(logging.WARNING, logger="connectors.ubs.parser"):
             result = UBSConnector.matches_file(bad_file)
         assert result is False
+        warnings = [
+            r
+            for r in caplog.records
+            if r.levelno >= logging.WARNING and "UBS" in r.message
+        ]
+        assert len(warnings) == 1
     finally:
         bad_file.chmod(0o644)
 

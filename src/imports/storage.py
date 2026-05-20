@@ -74,9 +74,21 @@ def _get_fernet():
         )
 
     keys = [k.strip() for k in raw.split(",") if k.strip()]
-    if len(keys) == 1:
-        return Fernet(keys[0].encode() if isinstance(keys[0], str) else keys[0])
-    return MultiFernet([Fernet(k.encode() if isinstance(k, str) else k) for k in keys])
+    if not keys:
+        raise ImproperlyConfigured(
+            "IMPORT_ENCRYPTION_KEY ne contient aucune clé valide (valeur : ',,,')."
+        )
+    try:
+        if len(keys) == 1:
+            return Fernet(keys[0].encode() if isinstance(keys[0], str) else keys[0])
+        return MultiFernet(
+            [Fernet(k.encode() if isinstance(k, str) else k) for k in keys]
+        )
+    except ValueError as e:
+        raise ImproperlyConfigured(
+            f"IMPORT_ENCRYPTION_KEY contient une clé Fernet invalide : {e}. "
+            "Chaque clé doit être une clé Fernet valide (base64url 32 bytes)."
+        ) from e
 
 
 # =============================================================================
