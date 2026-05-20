@@ -39,29 +39,29 @@ Contexte :
                 <span id="edit-picker-icon-{{ rule.id }}"
                       class="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center"
                       style="background-color: {{ rule.category.colour_hex|default:'#2d3033' }}{% if rule.subcategory %}40{% endif %}">
-                    {% if rule.subcategory %}
-                        {% if rule.subcategory.icon %}
-                            <img id="edit-picker-img-{{ rule.id }}"
-                                 src="{% with p="icons/categories/"|add:rule.subcategory.icon|add:".svg" %}{% static p %}{% endwith %}"
-                                 width="14"
-                                 height="14"
-                                 class="w-3.5 h-3.5 brightness-0 invert opacity-80"
-                                 alt="">
-                        {% elif rule.category.icon %}
-                            <img id="edit-picker-img-{{ rule.id }}"
-                                 src="{% with p="icons/categories/"|add:rule.category.icon|add:".svg" %}{% static p %}{% endwith %}"
-                                 width="14"
-                                 height="14"
-                                 class="w-3.5 h-3.5 brightness-0 invert opacity-80"
-                                 alt="">
-                        {% endif %}
+                    {# Toujours présent — JS peut show/hide/changer src sans créer/détruire l'élément #}
+                    {% if rule.subcategory and rule.subcategory.icon %}
+                        <img id="edit-picker-img-{{ rule.id }}"
+                             src="{% with p="icons/categories/"|add:rule.subcategory.icon|add:".svg" %}{% static p %}{% endwith %}"
+                             width="14"
+                             height="14"
+                             class="w-3.5 h-3.5 brightness-0 invert opacity-80"
+                             alt="">
                     {% elif rule.category.icon %}
                         <img id="edit-picker-img-{{ rule.id }}"
                              src="{% with p="icons/categories/"|add:rule.category.icon|add:".svg" %}{% static p %}{% endwith %}"
                              width="14"
                              height="14"
-                             class="w-3.5 h-3.5 brightness-0 invert"
+                             class="w-3.5 h-3.5 brightness-0 invert opacity-80"
                              alt="">
+                    {% else %}
+                        <img id="edit-picker-img-{{ rule.id }}"
+                             src=""
+                             width="14"
+                             height="14"
+                             class="w-3.5 h-3.5 brightness-0 invert opacity-80"
+                             alt=""
+                             hidden>
                     {% endif %}
                 </span>
                 <span id="edit-picker-label-{{ rule.id }}"
@@ -185,7 +185,15 @@ function ruleEditSelect(ruleId, catId, subcatId, label, color, iconUrl, isSubcat
     var icon = document.getElementById('edit-picker-icon-' + ruleId);
     if (icon) icon.style.backgroundColor = isSubcat ? color + '40' : color;
     var img = document.getElementById('edit-picker-img-' + ruleId);
-    if (img) img.src = iconUrl;
+    if (img) {
+        if (iconUrl) {
+            img.src = iconUrl;
+            img.hidden = false;
+        } else {
+            img.removeAttribute('src');
+            img.hidden = true;
+        }
+    }
     document.getElementById('edit-picker-' + ruleId).removeAttribute('open');
 }
 </script>
