@@ -14,6 +14,7 @@ Reading guide:
 """
 
 from pathlib import Path
+from urllib.parse import urlparse
 
 from decouple import config  # reads variables from .env — never hardcode secrets here
 
@@ -162,19 +163,36 @@ WSGI_APPLICATION = "config.wsgi.application"
 # 5. Database
 # =============================================================================
 
-# All values read from .env — never hardcode credentials here.
-# DB_PORT default: 5433 because port 5432 is taken by Homebrew PostgreSQL on this Mac.
-# Inside Docker the container still uses 5432 — only the Mac-side port differs.
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": config("DB_NAME", default="bricbudget"),
-        "USER": config("DB_USER", default="bricbudget"),
-        "PASSWORD": config("DB_PASSWORD", default="bricbudget"),
-        "HOST": config("DB_HOST", default="localhost"),
-        "PORT": config("DB_PORT", default="5432"),
+# En production Railway, DATABASE_URL est injectée automatiquement.
+# En local, on utilise les variables DB_* du .env.
+_db_url = config("DATABASE_URL", default="")
+if _db_url:
+    _u = urlparse(_db_url)
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": _u.path.lstrip("/"),
+            "USER": _u.username,
+            "PASSWORD": _u.password,
+            "HOST": _u.hostname,
+            "PORT": _u.port or 5432,
+            "CONN_MAX_AGE": 60,
+        }
     }
-}
+else:
+    # DB_PORT default: 5433 because port 5432 is taken by Homebrew PostgreSQL on this Mac.
+    # Inside Docker the container still uses 5432 — only the Mac-side port differs.
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": config("DB_NAME", default="bricbudget"),
+            "USER": config("DB_USER", default="bricbudget"),
+            "PASSWORD": config("DB_PASSWORD", default="bricbudget"),
+            "HOST": config("DB_HOST", default="localhost"),
+            "PORT": config("DB_PORT", default="5432"),
+            "CONN_MAX_AGE": 60,
+        }
+    }
 
 
 # =============================================================================
