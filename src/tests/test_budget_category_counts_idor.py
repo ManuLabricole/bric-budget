@@ -432,16 +432,16 @@ def test_settings_without_import_encryption_key_does_not_crash():
     assert isinstance(key, str)
 
 
-def test_storage_get_key_raises_improperly_configured_when_empty():
+def test_storage_get_fernet_raises_improperly_configured_when_empty():
     """
-    imports/storage._get_key() : si la clé est vide, lève ImproperlyConfigured
+    imports/storage._get_fernet() : si la clé est vide, lève ImproperlyConfigured
     avec un message d'aide explicite (pas un KeyError ou AttributeError cryptique).
     """
     from django.core.exceptions import ImproperlyConfigured
 
-    from imports.storage import _get_key
+    from imports.storage import _get_fernet
 
     with override_settings(IMPORT_ENCRYPTION_KEY=""):
         with pytest.raises(ImproperlyConfigured) as exc_info:
-            _get_key()
+            _get_fernet()
         assert "IMPORT_ENCRYPTION_KEY" in str(exc_info.value)

@@ -45,23 +45,38 @@ from django.core.exceptions import ImproperlyConfigured
 # =============================================================================
 
 
-def _get_key() -> bytes:
+def _get_fernet():
     """
-    Retourne la clé Fernet depuis settings.IMPORT_ENCRYPTION_KEY.
+    Construit l'objet Fernet (ou MultiFernet) depuis settings.IMPORT_ENCRYPTION_KEY.
 
-    Lève ImproperlyConfigured si la clé est vide ou absente.
-    Cette vérification est faite à l'appel (pas au démarrage Django) pour
-    permettre aux tests d'utiliser @override_settings sans redémarrer.
+    Format de la variable d'env :
+        Clé unique  : IMPORT_ENCRYPTION_KEY=abc123==
+        Rotation    : IMPORT_ENCRYPTION_KEY=new_key==,old_key==
+
+    Quand plusieurs clés sont présentes (séparées par des virgules) :
+        - MultiFernet chiffre TOUJOURS avec la première clé (la plus récente)
+        - MultiFernet essaie toutes les clés pour déchiffrer
+        → Rotation sans re-chiffrement : ajouter la nouvelle clé en tête,
+          garder l'ancienne pour déchiffrer les fichiers existants,
+          retirer l'ancienne quand tous les fichiers ont été migrés.
+
+    Lève ImproperlyConfigured si aucune clé valide n'est fournie.
+    Importé ici (pas au niveau module) pour permettre @override_settings dans les tests.
     """
-    key = getattr(settings, "IMPORT_ENCRYPTION_KEY", "")
-    if not key:
+    from cryptography.fernet import Fernet, MultiFernet
+
+    raw = getattr(settings, "IMPORT_ENCRYPTION_KEY", "")
+    if not raw:
         raise ImproperlyConfigured(
             "IMPORT_ENCRYPTION_KEY est obligatoire pour les imports web. "
             'Générer : python -c "from cryptography.fernet import Fernet; '
             'print(Fernet.generate_key().decode())"'
         )
-    # La clé est stockée en str dans .env → on encode en bytes pour Fernet
-    return key.encode() if isinstance(key, str) else key
+
+    keys = [k.strip() for k in raw.split(",") if k.strip()]
+    if len(keys) == 1:
+        return Fernet(keys[0].encode() if isinstance(keys[0], str) else keys[0])
+    return MultiFernet([Fernet(k.encode() if isinstance(k, str) else k) for k in keys])
 
 
 # =============================================================================
@@ -71,28 +86,22 @@ def _get_key() -> bytes:
 
 def encrypt_bytes(data: bytes) -> bytes:
     """
-    Chiffre des données brutes avec Fernet.
+    Chiffre des données brutes avec Fernet (clé primaire = première de la liste).
 
-    L'appel importe Fernet ici (et non au niveau module) pour deux raisons :
-        1. Évite l'import de `cryptography` si le module est importé mais la
-           fonction jamais appelée (ex: tests CLI sans clé).
-        2. Permet à @override_settings de fonctionner sans reload du module.
+    L'import de _get_fernet() est retardé pour permettre @override_settings dans les tests.
     """
-    from cryptography.fernet import Fernet
-
-    return Fernet(_get_key()).encrypt(data)
+    return _get_fernet().encrypt(data)
 
 
 def decrypt_bytes(data: bytes) -> bytes:
     """
     Déchiffre des données Fernet.
 
-    Lève cryptography.fernet.InvalidToken si les données sont altérées
-    ou si la clé est incorrecte — ne jamais ignorer cette exception en prod.
+    MultiFernet essaie automatiquement toutes les clés configurées.
+    Lève cryptography.fernet.InvalidToken si aucune clé ne correspond
+    ou si les données sont altérées.
     """
-    from cryptography.fernet import Fernet
-
-    return Fernet(_get_key()).decrypt(data)
+    return _get_fernet().decrypt(data)
 
 
 # =============================================================================

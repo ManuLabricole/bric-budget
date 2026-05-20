@@ -312,11 +312,77 @@ if not DEBUG:
 # 9. Misc
 # =============================================================================
 
-# DEFAULT_AUTO_FIELD: the type of auto-generated primary key for models that
-# don't declare their own primary key.
-# BigAutoField = 64-bit integer (up to 9.2 × 10^18 rows).
-# The old default was AutoField (32-bit, ~2 billion rows) — BigAutoField is safer.
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# FILE_UPLOAD_MAX_MEMORY_SIZE: taille max d'un fichier uploadé conservé en RAM.
+# Au-delà, Django bascule sur un fichier temporaire disque (TemporaryFileUploadHandler).
+# 5 MB = largement suffisant pour un CSV/Excel bancaire (typiquement < 500 KB).
+# Sans cette limite, un upload malveillant ou accidentel peut saturer la RAM du worker.
+FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024  # 5 MB
+
+
+# =============================================================================
+# 11. Logging
+# =============================================================================
+
+# LOGGING : logs structurés vers stdout → capturés par Railway dashboard.
+#
+# Niveaux :
+#   DEBUG   → très verbeux, uniquement en dev local
+#   INFO    → parseurs (nb transactions, nb skipped), imports validés
+#   WARNING → lignes CSV ignorées, exceptions silencieuses dans les connecteurs
+#   ERROR   → erreurs non récupérées (vues 500, signaux qui plantent)
+#
+# LOG_LEVEL : contrôlé par variable d'env.
+#   Local  : DEBUG (tout voir pendant le dev)
+#   Railway: WARNING (silence les INFO, ne remonte que les anomalies)
+#
+# Pourquoi disable_existing_loggers=False ?
+#   Django + bibliothèques tiers configurent leurs propres loggers.
+#   False = on AJOUTE notre config sans écraser les leurs.
+#   True  = on les écrase → silence total des logs Django internes.
+
+_log_level = config("LOG_LEVEL", default="DEBUG" if DEBUG else "WARNING")
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        # Format compact pour Railway : timestamp + level + logger + message
+        "railway": {
+            "format": "{asctime} {levelname} {name}: {message}",
+            "style": "{",
+            "datefmt": "%Y-%m-%dT%H:%M:%S",
+        },
+    },
+    "handlers": {
+        # stdout → Railway capture automatiquement (pas de fichier log en prod)
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "railway",
+        },
+    },
+    "root": {
+        # Logger racine : s'applique à tout ce qui n'a pas de logger explicite
+        "handlers": ["console"],
+        "level": _log_level,
+    },
+    "loggers": {
+        # Django lui-même : propagate=False pour éviter la double sortie.
+        # Django configure ses propres loggers internement — on force WARNING en prod.
+        "django": {
+            "handlers": ["console"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+        # Nos apps héritent du root logger via propagation (propagate=True par défaut).
+        # Pas besoin de les déclarer explicitement — le root handler les couvre.
+        # On les déclare uniquement pour contrôler leur niveau indépendamment.
+        "connectors": {"level": _log_level},
+        "imports": {"level": _log_level},
+        "transactions": {"level": _log_level},
+    },
+}
 
 
 # =============================================================================

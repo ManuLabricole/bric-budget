@@ -54,12 +54,15 @@ Account type detection (from title row 1):
 """
 
 import hashlib
+import logging
 import re
 from pathlib import Path
 
 import openpyxl
 
 from connectors.base import BaseConnector, TransactionDict
+
+logger = logging.getLogger(__name__)
 
 # Sheets to skip — not account transaction sheets
 NON_ACCOUNT_SHEETS = {"Vos comptes", "hidden_data", "hidden"}
@@ -100,6 +103,7 @@ class CICConnector(BaseConnector):
             wb.close()
             return "Vos comptes" in sheet_names
         except Exception:
+            logger.debug("[CIC] matches_file failed for %s", filepath, exc_info=True)
             return False
 
     def get_account_sheets(self, filepath: Path) -> list[dict]:
@@ -202,12 +206,15 @@ class CICConnector(BaseConnector):
                     )
                 )
             except Exception as e:
-                print(f"  [CIC] WARNING row {row_idx}: {e} — skipped")
+                logger.warning("[CIC] row %d: %s — skipped", row_idx, e, exc_info=True)
                 skipped += 1
 
         wb.close()
-        print(
-            f"  [CIC] Sheet '{sheet_name}': {len(transactions)} transactions, {skipped} skipped"
+        logger.info(
+            "[CIC] Sheet '%s': %d transactions, %d skipped",
+            sheet_name,
+            len(transactions),
+            skipped,
         )
         return transactions
 
