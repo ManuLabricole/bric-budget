@@ -1,0 +1,123 @@
+# .github/workflows/ci.yml — BricBudget CI
+#
+# Ce workflow tourne sur chaque PR et push vers development / main.
+# Il vérifie que le code est propre avant de merger.
+#
+# Pipeline :
+#   1. lint    — ruff (Python) + djlint (templates)
+#   2. test    — pytest avec une vraie DB PostgreSQL
+#
+# Railway gère le déploiement automatiquement à partir du repo GitHub.
+# Ce fichier ne déploie rien — il bloque seulement les merges cassés.
+
+name: CI
+
+on:
+  push:
+    branches:
+      - development
+      - main
+  pull_request:
+    branches:
+      - development
+      - main
+
+jobs:
+  # ── Lint ────────────────────────────────────────────────────────────────────
+  # Vérifie le style Python (ruff) et les templates Django (djlint).
+  # Ce job ne touche pas la DB — il est rapide (~10s).
+  lint:
+    name: Lint (ruff + djlint)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      # --no-root : on installe les dépendances mais pas le projet lui-même
+      # (il n'y a pas de package Python à installer, juste une app Django)
+      - name: Install dependencies
+        run: poetry install --no-root
+
+      - name: ruff — lint Python
+        run: poetry run ruff check src/
+
+      - name: ruff — format check
+        run: poetry run ruff format --check src/
+
+      - name: djlint — lint templates
+        run: poetry run djlint src/templates/ --profile=django --lint
+
+  # ── Tests ───────────────────────────────────────────────────────────────────
+  # Lance les 323 tests pytest avec une vraie DB PostgreSQL.
+  # Django crée un test_bricbudget automatiquement, le détruit en fin de job.
+  test:
+    name: Tests (pytest)
+    runs-on: ubuntu-latest
+
+    # Service PostgreSQL — lancé dans un container Docker auxiliaire.
+    # Django s'y connecte via localhost:5432 pendant les tests.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: bricbudget
+          POSTGRES_USER: bricbudget
+          POSTGRES_PASSWORD: bricbudget
+        ports:
+          - 5432:5432
+        # Health check : GitHub Actions attend que Postgres soit prêt
+        # avant de passer aux steps suivants.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # Clé secrète fictive — utilisée uniquement pour signer les sessions en test.
+      # Aucune valeur réelle n'est exposée ici.
+      SECRET_KEY: ci-secret-key-not-used-in-production
+      DEBUG: "True"
+      # Connexion à la DB PostgreSQL du service ci-dessus.
+      DB_NAME: bricbudget
+      DB_USER: bricbudget
+      DB_PASSWORD: bricbudget
+      DB_HOST: localhost
+      DB_PORT: 5432
+      # IMPORT_ENCRYPTION_KEY vide → autorisé (settings.py, default="").
+      # La clé n'est requise qu'au moment d'un import web, pas pendant les tests.
+      IMPORT_ENCRYPTION_KEY: ""
+      # ADMIN_URL : valeur par défaut "admin" (settings.py)
+      ADMIN_URL: admin
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Install dependencies
+        run: poetry install --no-root
+
+      # Les migrations doivent tourner avant pytest.
+      # pytest-django crée la test_db à partir des migrations — pas de fixtures SQL.
+      - name: Run migrations
+        run: cd src && poetry run python manage.py migrate
+
+      - name: Run tests
+        run: cd src && poetry run pytest --color=yes -q
