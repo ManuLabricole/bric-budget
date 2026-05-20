@@ -39,7 +39,11 @@ nixPkgs = ["python313"]
 # ou manuellement après le premier déploiement.
 [phases.build]
 cmds = [
-  "cd src && poetry run python manage.py collectstatic --noinput",
+  # SECRET_KEY inline : Railway n'injecte pas toujours les variables pendant le build.
+  # Sans SECRET_KEY, Django refuse de démarrer → collectstatic crashe silencieusement.
+  # Cette valeur est utilisée UNIQUEMENT pour collectstatic (copie de fichiers statiques).
+  # Elle ne signe rien, ne sécurise rien — la vraie SECRET_KEY vient de Railway en prod.
+  "cd src && SECRET_KEY=build-only-not-secret ALLOWED_HOSTS=localhost DEBUG=False poetry run python manage.py collectstatic --noinput",
 ]
 
 # ── Start ──────────────────────────────────────────────────────────────────────
