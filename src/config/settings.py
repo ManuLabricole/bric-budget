@@ -323,10 +323,23 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # 10. Import file storage
 # =============================================================================
 
-# Dossier permanent pour les fichiers bancaires importés via l'UI web.
-# assets/private/ est gitignored — les données ne quittent jamais le Mac.
-# BASE_DIR = src/  →  BASE_DIR.parent = racine du repo
-IMPORT_STORAGE_ROOT = BASE_DIR.parent / "assets" / "private" / "data" / "imports"
+# Dossier de stockage des fichiers bancaires uploadés via l'UI /import/.
+#
+# Local  : assets/private/data/imports/ (gitignored, reste sur le Mac)
+# Railway: /mnt/imports (Railway Volume monté sur le service bric-budget)
+#          → Volume persistant : survit aux redeploys et aux redémarrages.
+#          → Sans Volume, le filesystem Railway est éphémère — les fichiers
+#            disparaissent à chaque deploy.
+#
+# Phase 2H : Railway Volume (simple, suffisant pour usage perso)
+# Phase future : migrer vers object storage (Cloudflare R2 ou AWS S3)
+#                pour un stockage sans état, scalable, et indépendant du serveur.
+#
+# ⚠️  Le dossier doit exister avant le premier import — Django ne le crée pas.
+#     En local : mkdir -p assets/private/data/imports
+#     Sur Railway : créé automatiquement au montage du Volume.
+_default_storage = str(BASE_DIR.parent / "assets" / "private" / "data" / "imports")
+IMPORT_STORAGE_ROOT = Path(config("IMPORT_STORAGE_ROOT", default=_default_storage))
 
 # Clé Fernet (AES-128-CBC + HMAC-SHA256) pour chiffrer les fichiers au repos.
 # default="" permet de démarrer sans la clé (CI, dev sans imports web).
