@@ -28,7 +28,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
-from django.core.paginator import Paginator
+from django.core.paginator import EmptyPage, InvalidPage, Paginator
 from django.db.models import Count, Max, Q, Sum
 from django.db.models.functions import Abs, Coalesce, TruncMonth
 from django.http import HttpResponse, JsonResponse
@@ -1254,7 +1254,7 @@ def budget_panel_transactions(request):
         page_number = 1
     try:
         page_obj = paginator.page(page_number)
-    except Exception:
+    except (EmptyPage, InvalidPage):
         page_obj = paginator.page(1)
         page_number = 1
 

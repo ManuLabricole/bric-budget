@@ -19,7 +19,7 @@ Contexte attendu :
     {% include "budget/_panel_tx_row.html" with bank_icon_url=tx.bank_icon_url %}
 {% endfor %}
 {% if page_obj.has_next %}
-    <div hx-get="{% url 'budget:panel_transactions' %}?page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}{% if amount_min %}&amount_min={{ amount_min }}{% endif %}{% if amount_max %}&amount_max={{ amount_max }}{% endif %}"
+    <div hx-get="{% url 'budget:panel_transactions' %}?page={{ page_obj.next_page_number }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if amount_min %}&amount_min={{ amount_min }}{% endif %}{% if amount_max %}&amount_max={{ amount_max }}{% endif %}"
          hx-trigger="intersect root:#tx-scroll-container once"
          hx-swap="outerHTML"
          class="py-4 flex justify-center">
