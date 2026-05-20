@@ -179,6 +179,7 @@ def resolve_accounts(
     connector: BaseConnector,
     filepath: Path,
     forced_account_id: int | None = None,
+    user=None,
 ) -> list[AccountMatch]:
     """
     Retourne la liste des comptes DB associés au fichier.
@@ -187,6 +188,12 @@ def resolve_accounts(
         Quand l'utilisateur a sélectionné manuellement un compte (via le picker
         AccountAmbiguous), la vue passe l'ID ici pour court-circuiter la résolution
         automatique. Utilisé par Yuh uniquement pour l'instant.
+
+    Paramètre optionnel user :
+        Si fourni, tous les lookups Account sont filtrés par members=user.
+        Cela garantit qu'un user ne peut résoudre que ses propres comptes,
+        même s'il connaît un account_id ou un IBAN appartenant à un autre user.
+        Toujours passer request.user depuis les vues.
 
     Lève :
         AccountNotFound    : identifiant présent dans le fichier mais inconnu en DB
@@ -198,16 +205,20 @@ def resolve_accounts(
     UBS  → 1 AccountMatch (Account.iban extrait de la ligne 2 du fichier)
     CIC  → N AccountMatch (1 par feuille, RIB dans header de chaque sheet)
     """
+    # Scope de base : comptes actifs, filtrés par user si fourni.
+    # Account.objects.for_user(None) retourne tous les comptes (usage CLI).
+    # Account.objects.for_user(request.user) restreint aux comptes dont l'user est membre.
+    base_qs = Account.objects.for_user(user).filter(is_active=True)
+
     if isinstance(connector, YuhConnector):
         # Yuh n'expose aucun identifiant dans le fichier.
         # Si forced_account_id est fourni (l'utilisateur a choisi via le picker),
         # on retourne directement ce compte sans chercher en DB.
         if forced_account_id is not None:
             try:
-                account = Account.objects.get(
+                account = base_qs.get(
                     pk=forced_account_id,
                     bank__slug="yuh",
-                    is_active=True,
                 )
                 return [AccountMatch(account=account)]
             except Account.DoesNotExist:
@@ -217,14 +228,9 @@ def resolve_accounts(
                     bank_slug="yuh",
                 )
 
-        # Sans forced_account_id : chercher les comptes Yuh actifs.
+        # Sans forced_account_id : chercher les comptes Yuh actifs (scopés à l'user).
         accounts = list(
-            Account.objects.filter(
-                bank__slug="yuh",
-                is_active=True,
-            )
-            .select_related("bank")
-            .order_by("name")
+            base_qs.filter(bank__slug="yuh").select_related("bank").order_by("name")
         )
         if not accounts:
             raise AccountNotFound(
@@ -250,10 +256,9 @@ def resolve_accounts(
                 "Le fichier est peut-être corrompu."
             )
         try:
-            account = Account.objects.select_related("bank").get(
+            account = base_qs.select_related("bank").get(
                 iban=identifier,
                 bank__slug="ubs",
-                is_active=True,
             )
         except Account.DoesNotExist:
             raise AccountNotFound(
@@ -272,10 +277,9 @@ def resolve_accounts(
         for sheet in sheets:
             rib = sheet["rib"]  # RIB normalisé sans espaces
             try:
-                account = Account.objects.get(
+                account = base_qs.get(
                     bank__slug="cic",
                     contract_number=rib,
-                    is_active=True,
                 )
             except Account.DoesNotExist:
                 raise AccountNotFound(

@@ -466,7 +466,8 @@ def budget_index(request):
     filter_account_ids = request.session.get("budget_filter_accounts", [])
     filter_cat_slugs = request.session.get("budget_filter_categories", [])
     accounts = (
-        Account.objects.filter(is_active=True)
+        Account.objects.for_user(request.user)
+        .filter(is_active=True)
         .select_related("bank")
         .order_by("bank__name", "name")
     )
@@ -1186,7 +1187,8 @@ def budget_panel_transactions(request):
     # ── Filtre compte actif (même session que budget_index) ──────────────────
     filter_account_ids = request.session.get("budget_filter_accounts", [])
     accounts = (
-        Account.objects.filter(is_active=True)
+        Account.objects.for_user(request.user)
+        .filter(is_active=True)
         .select_related("bank")
         .order_by("bank__name", "name")
     )
@@ -2624,7 +2626,8 @@ def budget_category_detail(request, slug):
     can_go_next = period_end < current_month_end
 
     accounts = (
-        Account.objects.filter(is_active=True)
+        Account.objects.for_user(request.user)
+        .filter(is_active=True)
         .select_related("bank")
         .order_by("bank__name", "name")
     )

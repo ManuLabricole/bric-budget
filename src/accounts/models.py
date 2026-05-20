@@ -64,6 +64,42 @@ class Bank(models.Model):
 # =============================================================================
 
 
+# =============================================================================
+# AccountQuerySet — Queryset manager avec filtre de sécurité par user
+# =============================================================================
+
+
+class AccountQuerySet(models.QuerySet):
+    """
+    QuerySet custom pour Account.
+
+    Méthode principale : .for_user(user)
+        Filtre les comptes selon les membres — même pattern que
+        TransactionQuerySet.for_user(user).
+
+        À appeler partout où les vues ou le resolver exposent des comptes :
+
+            Account.objects.for_user(request.user).filter(is_active=True)
+
+        Pourquoi un QuerySet et pas un filtre inline ?
+            - DRY : si Account.members change de nom ou de structure, un seul
+              endroit à mettre à jour.
+            - Chainable : retourne un QuerySet standard.
+            - Cohérence : même contrat que Transaction.objects.for_user().
+    """
+
+    def for_user(self, user):
+        """
+        Retourne uniquement les comptes dont `user` est membre.
+
+        Un user non-membre d'aucun compte obtient un queryset vide.
+        Passer None retourne tous les comptes (usage CLI uniquement).
+        """
+        if user is None:
+            return self
+        return self.filter(members=user)
+
+
 class Account(models.Model):
     """
     Generic model representing any bank account.
@@ -167,6 +203,10 @@ class Account(models.Model):
     created_at = models.DateTimeField(
         auto_now_add=True
     )  # set automatically on creation
+
+    # Manager custom — expose Account.objects.for_user(user).
+    # Même pattern que Transaction.objects.for_user(user).
+    objects = AccountQuerySet.as_manager()
 
     class Meta:
         verbose_name = "account"

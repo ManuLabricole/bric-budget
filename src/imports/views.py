@@ -245,16 +245,21 @@ def _handle_dry_run(request):
         connector_label = type(connector).__name__.replace("Connector", "")
 
         # ── Duplicate check au niveau fichier ────────────────────────────────
-        # ImportLog.file_hash est unique en DB → inutile d'aller plus loin.
-        # On retourne un partial riche (pas une erreur générique) pour que
-        # l'utilisateur sache exactement quel import correspond à ce fichier.
+        # Duplicate check scopé à l'user : on ne cherche que les imports sur les
+        # comptes dont l'user est membre. Si un autre user a importé le même fichier,
+        # ce n'est pas "déjà importé" pour cet user — et on n'expose pas ses données.
+        # Note : file_hash est unique=True globalement en DB (contrainte à assouplir
+        # en Phase 3 vers unique_together=(file_hash, account)).
         file_hash = compute_file_hash(tmp_path)
-        if ImportLog.objects.filter(file_hash=file_hash).exists():
-            existing_log = (
-                ImportLog.objects.filter(file_hash=file_hash)
-                .select_related("account__bank")
-                .first()
+        existing_log = (
+            ImportLog.objects.filter(
+                file_hash=file_hash,
+                account__members=request.user,
             )
+            .select_related("account__bank")
+            .first()
+        )
+        if existing_log is not None:
             os.unlink(tmp_path)
             return render(
                 request,
@@ -264,7 +269,7 @@ def _handle_dry_run(request):
 
         # ── Résolution du ou des comptes ─────────────────────────────────────
         try:
-            matches = resolve_accounts(connector, tmp_path)
+            matches = resolve_accounts(connector, tmp_path, user=request.user)
         except AccountNotFound as e:
             # Compte introuvable → on garde le fichier temp en session et on
             # propose un formulaire de création inline (fragment HTMX).
@@ -432,7 +437,7 @@ def import_confirm(request):
         if connector is None:
             raise ValueError("Connecteur non détecté (fichier corrompu ?)")
 
-        matches = resolve_accounts(connector, tmp_path)
+        matches = resolve_accounts(connector, tmp_path, user=request.user)
 
         if isinstance(connector, CICConnector):
             sheets_info = {
@@ -725,7 +730,7 @@ def import_create_account(request):
     # Relancer le dry-run complet (même logique que _handle_dry_run)
     try:
         connector = detect_connector(tmp_path)
-        matches = resolve_accounts(connector, tmp_path)
+        matches = resolve_accounts(connector, tmp_path, user=request.user)
 
         if isinstance(connector, CICConnector):
             sheets_info = {
@@ -843,12 +848,18 @@ def import_select_account(request):
         del request.session["pending_import"]
         return _error(request, "Fichier temporaire introuvable. Recommencez l'import.")
 
-    # Vérification : le compte doit appartenir à la banque attendue
+    # Vérification : le compte doit appartenir à la banque attendue ET à l'user.
+    # members=request.user empêche un user de forger un POST avec l'account_id
+    # d'un autre user (IDOR). bank__slug en session empêche de changer de banque.
     try:
-        account = Account.objects.select_related("bank").get(
-            pk=account_id,
-            bank__slug=bank_slug,
-            is_active=True,
+        account = (
+            Account.objects.for_user(request.user)
+            .select_related("bank")
+            .get(
+                pk=account_id,
+                bank__slug=bank_slug,
+                is_active=True,
+            )
         )
     except Account.DoesNotExist:
         return _error(
@@ -863,7 +874,9 @@ def import_select_account(request):
         if connector is None:
             raise ValueError("Connecteur non détecté.")
 
-        matches = resolve_accounts(connector, tmp_path, forced_account_id=account.pk)
+        matches = resolve_accounts(
+            connector, tmp_path, forced_account_id=account.pk, user=request.user
+        )
 
         raw_balance = connector.extract_balance(tmp_path)
         balances = {None: raw_balance}
