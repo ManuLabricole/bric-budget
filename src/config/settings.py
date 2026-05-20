@@ -38,9 +38,28 @@ SECRET_KEY = config("SECRET_KEY")
 DEBUG = config("DEBUG", default=False, cast=bool)
 
 # ALLOWED_HOSTS: list of domains Django will accept requests from.
-# In production, set this to your real domain: ["bricbudget.com"].
-# In development, "localhost" and "127.0.0.1" are enough.
+# En local : localhost,127.0.0.1 (défaut).
+# En prod Railway : ajouter votre domaine dans la variable ALLOWED_HOSTS.
+# Railway injecte aussi RAILWAY_PUBLIC_DOMAIN automatiquement — on l'ajoute ici.
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1").split(",")
+
+_railway_domain = config("RAILWAY_PUBLIC_DOMAIN", default="")
+if _railway_domain and _railway_domain not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(_railway_domain)
+
+# CSRF_TRUSTED_ORIGINS : obligatoire pour les POST en HTTPS (Django 4+).
+# Toujours préfixer avec https:// — les cookies SameSite exigent l'origine complète.
+CSRF_TRUSTED_ORIGINS = [
+    f"https://{h}" for h in ALLOWED_HOSTS if h not in ("localhost", "127.0.0.1")
+]
+
+# En production (DEBUG=False) : forcer HTTPS et sécuriser les cookies.
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 60  # augmenter à 31536000 après validation en prod
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 
 
 # =============================================================================
