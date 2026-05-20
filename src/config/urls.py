@@ -15,11 +15,19 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 
+from decouple import config
 from django.contrib import admin
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.shortcuts import render
 from django.urls import include, path
+
+# URL de l'interface admin Django — lue depuis .env pour ne pas être devinable.
+# En local : ADMIN_URL=admin (défaut, pratique)
+# En prod  : ADMIN_URL=un-chemin-secret-que-seul-toi-connais (ex: "gestion-b4f2a1")
+# Sans cette variable en prod → un attaquant qui essaie /admin/ tombe sur une 404.
+# Important : toujours terminer SANS slash — le path() en ajoute un.
+ADMIN_URL = config("ADMIN_URL", default="admin")
 
 
 # Vue health check — utilisée par Railway pour savoir si l'app est vivante.
@@ -42,7 +50,7 @@ urlpatterns = [
     # /healthz/ — Railway pingue cette URL toutes les 30s pour vérifier que
     # l'app répond. Si elle ne répond plus, Railway redémarre le container.
     path("healthz/", healthz, name="healthz"),
-    path("admin/", admin.site.urls),
+    path(f"{ADMIN_URL}/", admin.site.urls),
     path("", include("django.contrib.auth.urls")),
     path("synthese/", synthese, name="synthese"),
     # URLs de l'app budget — vues + templates de l'interface Budget
