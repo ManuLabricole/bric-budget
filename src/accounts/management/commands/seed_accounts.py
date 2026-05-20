@@ -17,6 +17,7 @@ Les données ne transitent jamais dans un fichier — saisie terminal uniquement
 
 import getpass
 
+from decouple import config
 from django.core.management.base import BaseCommand, CommandError
 
 from accounts.models import Account, Bank, CheckingAccount, SavingsAccount
@@ -280,6 +281,6 @@ class Command(BaseCommand):
                 )
             self.stdout.write(
                 self.style.WARNING(
-                    "   → Compléter dans l'admin : http://localhost:8000/admin/accounts/checkingaccount/"
+                    f"   → Compléter dans l'admin : /{config('ADMIN_URL', default='admin')}/accounts/checkingaccount/"
                 )
             )

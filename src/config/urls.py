@@ -15,10 +15,27 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 
+from decouple import config
 from django.contrib import admin
 from django.contrib.auth.decorators import login_required
+from django.http import HttpResponse
 from django.shortcuts import render
 from django.urls import include, path
+
+# URL de l'interface admin Django — lue depuis .env pour ne pas être devinable.
+# En local : ADMIN_URL=admin (défaut, pratique)
+# En prod  : ADMIN_URL=un-chemin-secret-que-seul-toi-connais (ex: "gestion-b4f2a1")
+# Sans cette variable en prod → un attaquant qui essaie /admin/ tombe sur une 404.
+# Important : toujours terminer SANS slash — le path() en ajoute un.
+ADMIN_URL = config("ADMIN_URL", default="admin")
+
+
+# Vue health check — utilisée par Railway pour savoir si l'app est vivante.
+# Pas de @login_required : Railway pingue cette URL sans cookie de session.
+# Pas de DB : si la DB est down, on veut quand même répondre 200 (le container
+# est vivant, c'est la DB qui a un problème — Railway ne doit pas redémarrer l'app).
+def healthz(request):
+    return HttpResponse("ok", content_type="text/plain")
 
 
 # Vue temporaire de test pour valider le layout Phase 1B.
@@ -30,7 +47,10 @@ def synthese(request):
 
 
 urlpatterns = [
-    path("admin/", admin.site.urls),
+    # /healthz/ — Railway pingue cette URL toutes les 30s pour vérifier que
+    # l'app répond. Si elle ne répond plus, Railway redémarre le container.
+    path("healthz/", healthz, name="healthz"),
+    path(f"{ADMIN_URL}/", admin.site.urls),
     path("", include("django.contrib.auth.urls")),
     path("synthese/", synthese, name="synthese"),
     # URLs de l'app budget — vues + templates de l'interface Budget

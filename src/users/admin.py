@@ -83,6 +83,4 @@ class ProfileAdmin(admin.ModelAdmin):
     """Profile is a standard model — ModelAdmin is sufficient."""
 
     list_display = ("user", "language", "display_currency")
-    search_fields = (
-        "user__email",
-    )  # __ = FK traversal: Profile → CustomUser → email
+    search_fields = ("user__email",)  # __ = FK traversal: Profile → CustomUser → email
