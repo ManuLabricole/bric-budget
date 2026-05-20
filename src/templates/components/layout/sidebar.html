@@ -96,16 +96,21 @@
             </p>
             <p class="text-xs text-text-muted truncate">{{ request.user.email }}</p>
         </div>
-        <a href="{% url 'logout' %}"
-           class="ml-auto text-text-muted hover:text-gold bg-surface-hover/30 transition-colors flex-shrink-0"
-           title="Se déconnecter">
-            <svg class="w-4 h-4"
-                 fill="none"
-                 viewBox="0 0 24 24"
-                 stroke-width="1.5"
-                 stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
-            </svg>
-        </a>
+        <form method="post"
+              action="{% url 'logout' %}"
+              class="ml-auto flex-shrink-0">
+            {% csrf_token %}
+            <button type="submit"
+                    class="text-text-muted hover:text-gold bg-surface-hover/30 transition-colors"
+                    title="Se déconnecter">
+                <svg class="w-4 h-4"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="1.5"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
+                </svg>
+            </button>
+        </form>
     </div>
 </div>
