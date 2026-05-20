@@ -41,16 +41,21 @@ DEBUG = config("DEBUG", default=False, cast=bool)
 # En local : localhost,127.0.0.1 (défaut).
 # En prod Railway : ajouter votre domaine dans la variable ALLOWED_HOSTS.
 # Railway injecte aussi RAILWAY_PUBLIC_DOMAIN automatiquement — on l'ajoute ici.
-ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1").split(",")
+# strip() + filtre vides : "example.com, www.example.com" → ["example.com", "www.example.com"]
+# sans ça, un espace ou une virgule finale crée une entrée vide/avec espace qui ne matche jamais.
+_raw_hosts = config("ALLOWED_HOSTS", default="localhost,127.0.0.1")
+ALLOWED_HOSTS = [h.strip() for h in _raw_hosts.split(",") if h.strip()]
 
-_railway_domain = config("RAILWAY_PUBLIC_DOMAIN", default="")
+_railway_domain = config("RAILWAY_PUBLIC_DOMAIN", default="").strip()
 if _railway_domain and _railway_domain not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(_railway_domain)
 
 # CSRF_TRUSTED_ORIGINS : obligatoire pour les POST en HTTPS (Django 4+).
 # Toujours préfixer avec https:// — les cookies SameSite exigent l'origine complète.
+# On exclut localhost/127.0.0.1 (HTTP local) et "*" (wildcard invalide comme origin).
+_local_hosts = {"localhost", "127.0.0.1"}
 CSRF_TRUSTED_ORIGINS = [
-    f"https://{h}" for h in ALLOWED_HOSTS if h not in ("localhost", "127.0.0.1")
+    f"https://{h}" for h in ALLOWED_HOSTS if h not in _local_hosts and h != "*"
 ]
 
 # En production (DEBUG=False) : forcer HTTPS et sécuriser les cookies.
