@@ -10,7 +10,12 @@ Données :
   period_start / period_end — date Python
 {% endcomment %}
 {% comment %} Masquer le scrollbar webkit {% endcomment %}
-<style>#panel-content::-webkit-scrollbar { display: none; }</style>
+<style>
+    #panel-content::-webkit-scrollbar { display: none; }
+    #panel-amount-filter input[type=number]::-webkit-inner-spin-button,
+    #panel-amount-filter input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    #panel-amount-filter input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+</style>
 {% comment %} Barre période + bouton fermer panneau ── {% endcomment %}
 <div class="px-4 py-3 flex-shrink-0 border-b border-edge flex items-center gap-2">
     <div class="flex-1">
@@ -28,10 +33,54 @@ Données :
         </svg>
     </button>
 </div>
-{% comment %} Barre recherche + filtre compte {% endcomment %}
+{% comment %} Barre recherche + filtre montant + filtre compte {% endcomment %}
 {% url 'budget:panel_transactions' as panel_search_url %}
 <div class="px-4 pt-3 pb-2 flex items-center gap-2 flex-shrink-0 border-b border-edge">
-    {% include "components/search/search_bar.html" with hx_url=panel_search_url hx_target="#tx-results" hx_select="#tx-results" placeholder="Chercher une transaction" width="w-44" %}
+    {% include "components/search/search_bar.html" with hx_url=panel_search_url hx_target="#tx-results" hx_select="#tx-results" placeholder="Chercher" width="w-32" hx_include="#panel-amount-filter input" %}
+    {% comment %}
+    Filtre montant — form inline avec deux inputs numériques (min/max valeur absolue).
+    hx-trigger="change delay:500ms from:input" : se déclenche quand l'user change un champ
+    (blur ou entrée), avec un délai pour éviter les requêtes intermédiaires.
+    hx-include="[name='q']" : inclut la recherche texte dans la requête.
+    {% endcomment %}
+    <form id="panel-amount-filter"
+          hx-get="{{ panel_search_url }}"
+          hx-target="#tx-results"
+          hx-select="#tx-results"
+          hx-swap="outerHTML"
+          hx-trigger="input delay:400ms from:input"
+          hx-include="[name='q']"
+          class="flex items-center gap-1 flex-shrink-0">
+        <input type="number"
+               name="amount_min"
+               placeholder="Min"
+               value="{{ amount_min }}"
+               min="0"
+               step="1"
+               class="w-12 bg-transparent text-xs text-text-disabled placeholder:text-text-disabled outline-none focus:text-text-base border-b border-edge/50 focus:border-gold/50 pb-0.5 transition-colors [appearance:textfield] [-moz-appearance:textfield] [&:not(:placeholder-shown)]:text-gold [&:not(:placeholder-shown)]:border-gold/40">
+        <span class="text-[10px] text-text-disabled flex-shrink-0">–</span>
+        <input type="number"
+               name="amount_max"
+               placeholder="Max"
+               value="{{ amount_max }}"
+               min="0"
+               step="1"
+               class="w-12 bg-transparent text-xs text-text-disabled placeholder:text-text-disabled outline-none focus:text-text-base border-b border-edge/50 focus:border-gold/50 pb-0.5 transition-colors [appearance:textfield] [-moz-appearance:textfield] [&:not(:placeholder-shown)]:text-gold [&:not(:placeholder-shown)]:border-gold/40">
+        {% if amount_min or amount_max %}
+            <button type="button"
+                    onclick="let f=this.closest('form');f.querySelector('[name=amount_min]').value='';f.querySelector('[name=amount_max]').value='';f.querySelector('[name=amount_min]').dispatchEvent(new Event('input',{bubbles:true}));"
+                    class="text-text-disabled hover:text-text-muted transition-colors flex-shrink-0 ml-0.5"
+                    title="Réinitialiser le filtre montant">
+                <svg class="w-3 h-3"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="2.5"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                </svg>
+            </button>
+        {% endif %}
+    </form>
     {# Filtre compte — dropdown multi-select, même composant que index.html #}
     {# Après le toggle, HTMX recharge le panel entier (HX-Redirect → panel_transactions) #}
     <div class="relative flex-shrink-0" id="panel-accounts-filter">
@@ -58,10 +107,12 @@ Données :
                         <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
                     </svg>
                 </summary>
-                <div class="absolute right-0 top-full mt-2 min-w-[200px] bg-surface-3 border border-edge/70 rounded-2xl shadow-2xl z-20 py-1.5 overflow-hidden">
+                <div class="absolute right-0 top-full mt-2 w-56 bg-surface-3 border border-edge/70 rounded-2xl shadow-2xl z-20 py-1.5 overflow-hidden">
                     {% if active_count > 0 %}
-                        <a href="{% url 'budget:toggle_filter_account' 0 %}"
-                           class="flex items-center gap-2 px-4 py-2 text-xs text-gold hover:bg-gold/10 transition-colors">
+                        <a hx-get="{% url 'budget:toggle_filter_account' 0 %}"
+                           hx-target="#panel-content"
+                           hx-swap="innerHTML"
+                           class="flex items-center gap-2 px-4 py-2 text-xs text-gold hover:bg-gold/10 transition-colors cursor-pointer">
                             <svg class="w-3 h-3"
                                  fill="none"
                                  viewBox="0 0 24 24"
@@ -76,8 +127,10 @@ Données :
                     <p class="px-4 pt-1.5 pb-1 text-[9px] font-bold text-text-disabled uppercase tracking-widest">Comptes</p>
                     {% for account in accounts %}
                         {% bank_icon_url account.bank as bicon %}
-                        <a href="{% url 'budget:toggle_filter_account' account.id %}"
-                           class="flex items-center gap-3 px-4 py-2 text-sm hover:bg-surface-hover transition-colors">
+                        <a hx-get="{% url 'budget:toggle_filter_account' account.id %}"
+                           hx-target="#panel-content"
+                           hx-swap="innerHTML"
+                           class="flex items-center gap-3 px-4 py-2 text-sm hover:bg-surface-hover transition-colors cursor-pointer">
                             <span class="w-4 h-4 rounded-full border flex-shrink-0 flex items-center justify-center {% if account.id in filter_account_ids %}bg-gold border-gold{% else %}border-edge{% endif %}">
                                 {% if account.id in filter_account_ids %}
                                     <svg class="w-2.5 h-2.5 text-black"
@@ -89,9 +142,9 @@ Données :
                                     </svg>
                                 {% endif %}
                             </span>
-                            <span class="flex items-center gap-2 flex-1 min-w-0">
+                            <span class="flex items-center gap-2 flex-1 min-w-0 overflow-hidden">
                                 {% include "components/banks/bank_logo.html" with icon_url=bicon bank=account.bank size="w-5 h-5" padding="p-0.5" %}
-                                <span class="text-xs text-text-base truncate">{{ account.name }}</span>
+                                <span class="text-xs text-text-base truncate min-w-0">{{ account.name }}</span>
                                 <span class="text-[10px] text-text-disabled ml-auto flex-shrink-0">{{ account.currency }}</span>
                             </span>
                         </a>
@@ -109,16 +162,16 @@ Données :
   dans la réponse serveur et ré-injectable.
 {% endcomment %}
 <div id="tx-results" class="flex flex-col flex-1 min-h-0">
-    {% comment %} Compteur {% endcomment %}
+    {% comment %} Compteur — total depuis le paginator, pas juste la page courante {% endcomment %}
     <div class="px-4 py-2 flex-shrink-0">
         <p class="text-[10px] text-text-disabled">
-            {{ transactions|length }} transaction{{ transactions|length|pluralize }}
+            {{ page_obj.paginator.count }} transaction{{ page_obj.paginator.count|pluralize }}
             · {{ period_start|date:"j M Y" }} – {{ period_end|date:"j M Y" }}
-            {% if transactions|length == 200 %}<span class="text-gold/60">· limité à 200</span>{% endif %}
         </p>
     </div>
     {% if transactions %}
-        <div class="flex-1 overflow-y-auto"
+        <div id="tx-scroll-container"
+             class="flex-1 overflow-y-auto"
              style="-ms-overflow-style:none;
                     scrollbar-width:none">
             {% for tx in transactions %}
@@ -137,6 +190,20 @@ Données :
                 {% endcomment %}
                 {% include "budget/_panel_tx_row.html" with bank_icon_url=tx.bank_icon_url %}
             {% endfor %}
+            {% comment %}
+            Sentinel scroll infini — visible uniquement si d'autres pages existent.
+            hx-trigger="revealed" = HTMX détecte quand ce div entre dans le viewport.
+            hx-swap="outerHTML" = remplace CE div par la réponse (nouvelles lignes + nouveau sentinel).
+            ?q={{ q }} préserve la recherche en cours lors du chargement de la page suivante.
+            {% endcomment %}
+            {% if page_obj.has_next %}
+                <div hx-get="{% url 'budget:panel_transactions' %}?page={{ page_obj.next_page_number }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if amount_min %}&amount_min={{ amount_min }}{% endif %}{% if amount_max %}&amount_max={{ amount_max }}{% endif %}"
+                     hx-trigger="intersect root:#tx-scroll-container once"
+                     hx-swap="outerHTML"
+                     class="py-4 flex justify-center">
+                    <span class="text-[10px] text-text-disabled">Chargement…</span>
+                </div>
+            {% endif %}
         </div>
     {% else %}
         <div class="flex flex-col items-center justify-center py-12 text-text-disabled flex-1">

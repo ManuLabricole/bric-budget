@@ -26,6 +26,7 @@ Ce que la commande NE remplit PAS (à compléter manuellement dans l'admin) :
 
 from pathlib import Path
 
+from decouple import config
 from django.core.management.base import BaseCommand, CommandError
 
 from accounts.models import Account, Bank, CheckingAccount, SavingsAccount
@@ -150,7 +151,9 @@ class Command(BaseCommand):
                     )
                 )
             self.stdout.write(
-                self.style.WARNING("   → http://localhost:8000/admin/accounts/account/")
+                self.style.WARNING(
+                    f"   → /{config('ADMIN_URL', default='admin')}/accounts/account/"
+                )
             )
         self.stdout.write("")
 

@@ -14,8 +14,10 @@ Reading guide:
 """
 
 from pathlib import Path
+from urllib.parse import urlparse
 
 from decouple import config  # reads variables from .env — never hardcode secrets here
+from django.core.exceptions import ImproperlyConfigured
 
 # =============================================================================
 # 1. Paths & secrets
@@ -37,9 +39,33 @@ SECRET_KEY = config("SECRET_KEY")
 DEBUG = config("DEBUG", default=False, cast=bool)
 
 # ALLOWED_HOSTS: list of domains Django will accept requests from.
-# In production, set this to your real domain: ["bricbudget.com"].
-# In development, "localhost" and "127.0.0.1" are enough.
-ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1").split(",")
+# En local : localhost,127.0.0.1 (défaut).
+# En prod Railway : ajouter votre domaine dans la variable ALLOWED_HOSTS.
+# Railway injecte aussi RAILWAY_PUBLIC_DOMAIN automatiquement — on l'ajoute ici.
+# strip() + filtre vides : "example.com, www.example.com" → ["example.com", "www.example.com"]
+# sans ça, un espace ou une virgule finale crée une entrée vide/avec espace qui ne matche jamais.
+_raw_hosts = config("ALLOWED_HOSTS", default="localhost,127.0.0.1")
+ALLOWED_HOSTS = [h.strip() for h in _raw_hosts.split(",") if h.strip()]
+
+_railway_domain = config("RAILWAY_PUBLIC_DOMAIN", default="").strip()
+if _railway_domain and _railway_domain not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(_railway_domain)
+
+# CSRF_TRUSTED_ORIGINS : obligatoire pour les POST en HTTPS (Django 4+).
+# Toujours préfixer avec https:// — les cookies SameSite exigent l'origine complète.
+# On exclut localhost/127.0.0.1 (HTTP local) et "*" (wildcard invalide comme origin).
+_local_hosts = {"localhost", "127.0.0.1"}
+CSRF_TRUSTED_ORIGINS = [
+    f"https://{h}" for h in ALLOWED_HOSTS if h not in _local_hosts and h != "*"
+]
+
+# En production (DEBUG=False) : forcer HTTPS et sécuriser les cookies.
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 60  # augmenter à 31536000 après validation en prod
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 
 
 # =============================================================================
@@ -62,7 +88,7 @@ INSTALLED_APPS = [
     # transactions/ has FK to accounts/ (Transaction.account) → declared last
     "users",
     "accounts",
-    "transactions",
+    "transactions.apps.TransactionsConfig",  # explicit config → ready() appelé → signals connectés
     "budget",
     # imports/ n'a pas de FK vers d'autres apps → déclaré en dernier
     "imports",
@@ -80,6 +106,9 @@ INSTALLED_APPS = [
 # XFrameOptionsMiddleware → sends X-Frame-Options header (prevents iframe embedding)
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # WhiteNoise doit être juste après SecurityMiddleware pour servir les fichiers
+    # statiques directement depuis Django (sans Nginx) — requis sur Railway.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -162,19 +191,36 @@ WSGI_APPLICATION = "config.wsgi.application"
 # 5. Database
 # =============================================================================
 
-# All values read from .env — never hardcode credentials here.
-# DB_PORT default: 5433 because port 5432 is taken by Homebrew PostgreSQL on this Mac.
-# Inside Docker the container still uses 5432 — only the Mac-side port differs.
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": config("DB_NAME", default="bricbudget"),
-        "USER": config("DB_USER", default="bricbudget"),
-        "PASSWORD": config("DB_PASSWORD", default="bricbudget"),
-        "HOST": config("DB_HOST", default="localhost"),
-        "PORT": config("DB_PORT", default="5432"),
+# En production Railway, DATABASE_URL est injectée automatiquement.
+# En local, on utilise les variables DB_* du .env.
+_db_url = config("DATABASE_URL", default="")
+if _db_url:
+    _u = urlparse(_db_url)
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": _u.path.lstrip("/"),
+            "USER": _u.username,
+            "PASSWORD": _u.password,
+            "HOST": _u.hostname,
+            "PORT": _u.port or 5432,
+            "CONN_MAX_AGE": 60,
+        }
     }
-}
+else:
+    # DB_PORT default: 5433 because port 5432 is taken by Homebrew PostgreSQL on this Mac.
+    # Inside Docker the container still uses 5432 — only the Mac-side port differs.
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": config("DB_NAME", default="bricbudget"),
+            "USER": config("DB_USER", default="bricbudget"),
+            "PASSWORD": config("DB_PASSWORD", default="bricbudget"),
+            "HOST": config("DB_HOST", default="localhost"),
+            "PORT": config("DB_PORT", default="5432"),
+            "CONN_MAX_AGE": 60,
+        }
+    }
 
 
 # =============================================================================
@@ -242,16 +288,138 @@ STATIC_URL = "static/"
 # → copies everything from STATICFILES_DIRS into STATIC_ROOT (a single folder)
 # → Nginx serves STATIC_ROOT directly, bypassing Django entirely (much faster).
 #
-# STATIC_ROOT is not set here because we don't deploy yet.
+# STATIC_ROOT : dossier cible de `collectstatic` en production.
+# Railway lance `python manage.py collectstatic` au build (via Procfile/nixpacks).
+# WhiteNoise sert ce dossier directement — pas besoin de Nginx.
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# STATICFILES_DIRS : sources en développement (ignoré après collectstatic).
 STATICFILES_DIRS = [BASE_DIR / "static"]
+
+# En production uniquement : manifest + compression Whitenoise.
+# CompressedManifestStaticFilesStorage exige un staticfiles.json généré par
+# collectstatic. En dev/CI (DEBUG=True), on utilise le storage par défaut de
+# Django qui résout {% static %} directement sans manifest → pas de ValueError.
+if not DEBUG:
+    STORAGES = {
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {
+            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
+        },
+    }
 
 
 # =============================================================================
 # 9. Misc
 # =============================================================================
 
-# DEFAULT_AUTO_FIELD: the type of auto-generated primary key for models that
-# don't declare their own primary key.
-# BigAutoField = 64-bit integer (up to 9.2 × 10^18 rows).
-# The old default was AutoField (32-bit, ~2 billion rows) — BigAutoField is safer.
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# FILE_UPLOAD_MAX_MEMORY_SIZE: taille max d'un fichier uploadé conservé en RAM.
+# Au-delà, Django bascule sur un fichier temporaire disque (TemporaryFileUploadHandler).
+# 5 MB = largement suffisant pour un CSV/Excel bancaire (typiquement < 500 KB).
+# Sans cette limite, un upload malveillant ou accidentel peut saturer la RAM du worker.
+FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024  # 5 MB
+
+
+# =============================================================================
+# 11. Logging
+# =============================================================================
+
+# LOGGING : logs structurés vers stdout → capturés par Railway dashboard.
+#
+# Niveaux :
+#   DEBUG   → très verbeux, uniquement en dev local
+#   INFO    → parseurs (nb transactions, nb skipped), imports validés
+#   WARNING → lignes CSV ignorées, exceptions silencieuses dans les connecteurs
+#   ERROR   → erreurs non récupérées (vues 500, signaux qui plantent)
+#
+# LOG_LEVEL : contrôlé par variable d'env.
+#   Local  : DEBUG (tout voir pendant le dev)
+#   Railway: WARNING (silence les INFO, ne remonte que les anomalies)
+#
+# Pourquoi disable_existing_loggers=False ?
+#   Django + bibliothèques tiers configurent leurs propres loggers.
+#   False = on AJOUTE notre config sans écraser les leurs.
+#   True  = on les écrase → silence total des logs Django internes.
+
+_VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "NOTSET"}
+_log_level_raw = (
+    config("LOG_LEVEL", default="DEBUG" if DEBUG else "INFO").strip().upper()
+)
+if _log_level_raw not in _VALID_LOG_LEVELS:
+    raise ImproperlyConfigured(
+        f"LOG_LEVEL='{_log_level_raw}' est invalide. "
+        f"Valeurs acceptées : {', '.join(sorted(_VALID_LOG_LEVELS))}"
+    )
+_log_level = _log_level_raw
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        # Format compact pour Railway : timestamp + level + logger + message
+        "railway": {
+            "format": "{asctime} {levelname} {name}: {message}",
+            "style": "{",
+            "datefmt": "%Y-%m-%dT%H:%M:%S",
+        },
+    },
+    "handlers": {
+        # stdout → Railway capture automatiquement (pas de fichier log en prod)
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "railway",
+        },
+    },
+    "root": {
+        # Logger racine : s'applique à tout ce qui n'a pas de logger explicite
+        "handlers": ["console"],
+        "level": _log_level,
+    },
+    "loggers": {
+        # Django lui-même : propagate=False pour éviter la double sortie.
+        # Django configure ses propres loggers internement — on force WARNING en prod.
+        "django": {
+            "handlers": ["console"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+        # Nos apps héritent du root logger via propagation (propagate=True par défaut).
+        # Pas besoin de les déclarer explicitement — le root handler les couvre.
+        # On les déclare uniquement pour contrôler leur niveau indépendamment.
+        "connectors": {"level": _log_level},
+        "imports": {"level": _log_level},
+        "transactions": {"level": _log_level},
+    },
+}
+
+
+# =============================================================================
+# 10. Import file storage
+# =============================================================================
+
+# Dossier de stockage des fichiers bancaires uploadés via l'UI /import/.
+#
+# Local  : assets/private/data/imports/ (gitignored, reste sur le Mac)
+# Railway: /mnt/imports (Railway Volume monté sur le service bric-budget)
+#          → Volume persistant : survit aux redeploys et aux redémarrages.
+#          → Sans Volume, le filesystem Railway est éphémère — les fichiers
+#            disparaissent à chaque deploy.
+#
+# Phase 2H : Railway Volume (simple, suffisant pour usage perso)
+# Phase future : migrer vers object storage (Cloudflare R2 ou AWS S3)
+#                pour un stockage sans état, scalable, et indépendant du serveur.
+#
+# ⚠️  Le dossier doit exister avant le premier import — Django ne le crée pas.
+#     En local : mkdir -p assets/private/data/imports
+#     Sur Railway : créé automatiquement au montage du Volume.
+_default_storage = str(BASE_DIR.parent / "assets" / "private" / "data" / "imports")
+IMPORT_STORAGE_ROOT = Path(config("IMPORT_STORAGE_ROOT", default=_default_storage))
+
+# Clé Fernet (AES-128-CBC + HMAC-SHA256) pour chiffrer les fichiers au repos.
+# default="" permet de démarrer sans la clé (CI, dev sans imports web).
+# La clé est requise au moment de l'usage — imports/storage.py lève ImproperlyConfigured
+# si elle est vide quand on tente de chiffrer ou déchiffrer un fichier.
+# Générer :  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+IMPORT_ENCRYPTION_KEY = config("IMPORT_ENCRYPTION_KEY", default="")

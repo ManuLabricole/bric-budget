@@ -25,8 +25,10 @@ This separation means the same service can later be called from:
 No command-specific printing here — only business logic and DB writes.
 """
 
+import datetime as _dt
 import hashlib
 import json
+import logging
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -40,6 +42,8 @@ from django.db import transaction as db_transaction
 from accounts.models import Account, BalanceSnapshot, Card, ExchangeRate
 from connectors.base import TransactionDict
 from transactions.models import CategorizationRule, Category, ImportLog, Transaction
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # ImportResult — returned by ImportService.run()
@@ -62,6 +66,13 @@ class ImportResult:
     count_skipped: int = 0  # duplicates (import_hash already in DB)
     count_errors: int = 0  # rows that couldn't be processed
     error_detail: list[str] = field(default_factory=list)  # one message per error
+
+    # PK de l'ImportLog créé lors de l'écriture en DB.
+    # None si dry_run=True (pas d'écriture) ou si une erreur précoce a bloqué
+    # la création du log (ex: fichier déjà importé → return early).
+    # Utilisé par import_confirm pour retrouver les transactions insérées et
+    # déclencher le stockage permanent du fichier source.
+    log_pk: int | None = None
 
 
 # =============================================================================
@@ -152,20 +163,67 @@ def get_exchange_rate(
     except (urllib.error.URLError, KeyError, ValueError) as e:
         # Erreur réseau ou format inattendu → on ne plante pas l'import.
         # La transaction sera créée avec amount_chf=None — mieux que de tout perdre.
-        print(
-            f"[exchange_rate] WARNING: could not fetch {from_currency}→{to_currency} for {date_str}: {e}"
+        logger.warning(
+            "exchange_rate: could not fetch %s→%s for %s: %s",
+            from_currency,
+            to_currency,
+            date_str,
+            e,
         )
         return None
 
     # ── 3. Stocker en DB pour les prochains imports ───────────────────────────
-    ExchangeRate.objects.create(
+    # get_or_create évite une IntegrityError si deux imports simultanés appellent
+    # cette fonction pour la même date/devise en même temps (race condition).
+    ExchangeRate.objects.get_or_create(
         date=date,
         from_currency=from_currency,
         to_currency=to_currency,
-        rate=rate,
+        defaults={"rate": rate},
     )
 
     return rate
+
+
+# =============================================================================
+# _sync_internal_transfer — Synchro flags virement interne après catégorisation
+# =============================================================================
+
+# Slug de la catégorie "Virements" — point central pour éviter la duplication.
+# Si le slug change un jour → changer ici uniquement.
+INTERNAL_TRANSFER_SLUG = "virements"
+
+
+def sync_internal_transfer(tx) -> list[str]:
+    """
+    Synchronise is_internal_transfer et is_ignored selon la catégorie de la transaction.
+
+    Règle métier :
+      - category.slug == "virements" → is_internal_transfer=True, is_ignored=True
+      - toute autre catégorie         → is_internal_transfer=False, is_ignored=False
+
+    Pourquoi reset is_ignored à False quand on quitte "Virements" ?
+        Si on a catégorisé → virements (flags True) puis on recatégorise → autre,
+        c'est délibéré : on veut que la transaction réapparaisse dans les totaux.
+        L'utilisateur peut re-ignorer manuellement ensuite.
+
+    Retourne la liste des champs modifiés — utile pour save(update_fields=...) ou
+    bulk_update dans apply_rules.
+
+    Appelé depuis :
+      - budget_categorize_transaction (vue manuelle)
+      - ImportService._apply_categorization (import CSV)
+      - apply_rules command (batch recatégorisation)
+    """
+    is_internal = bool(tx.category and tx.category.slug == INTERNAL_TRANSFER_SLUG)
+    changed = []
+    if tx.is_internal_transfer != is_internal:
+        tx.is_internal_transfer = is_internal
+        changed.append("is_internal_transfer")
+    if tx.is_ignored != is_internal:
+        tx.is_ignored = is_internal
+        changed.append("is_ignored")
+    return changed
 
 
 # =============================================================================
@@ -252,7 +310,25 @@ class ImportService:
         # Savings accounts have no checking_account → returns {} (no cards).
         cards_by_last_four = self._load_cards(account)
 
-        # ── 5. Process each transaction ───────────────────────────────────────
+        # ── 5. Extract daily end-of-day balances from balance_after ──────────
+        # Populated only for CIC (column F — Solde après transaction).
+        # Yuh and UBS always return balance_after=None, so this dict stays empty
+        # and has no effect on those connectors.
+        #
+        # CIC exports antichronologically (newest first) → the FIRST tx_dict seen
+        # for a given date is the chronologically LAST transaction of that day
+        # → its balance_after is the end-of-day balance. "first seen wins" gives
+        # the correct end-of-day value for each date without any sorting.
+        #
+        # We scan the FULL transactions list (not just new ones) because
+        # balance_after is authoritative bank data regardless of dedup status.
+        daily_balances: dict[str, Decimal] = {}
+        for _tx in transactions:
+            _ba = _tx.get("balance_after")
+            if _ba is not None and _tx["date"] not in daily_balances:
+                daily_balances[_tx["date"]] = Decimal(str(_ba))
+
+        # ── 6. Process each transaction ───────────────────────────────────────
         transactions_to_create = []
         # Garde trace des hashes vus dans CE batch pour dédupliquer les doublons
         # internes au fichier (ex: deux virements UBS identiques le même jour).
@@ -289,12 +365,12 @@ class ImportService:
 
         result.count_created = len(transactions_to_create)
 
-        # ── 6. Dry run: stop here, return counts ──────────────────────────────
+        # ── 7. Dry run: stop here, return counts ──────────────────────────────
         # The caller (management command) can print the result without any DB writes.
         if dry_run:
             return result
 
-        # ── 7. Write to DB — all in one atomic transaction ───────────────────
+        # ── 8. Write to DB — all in one atomic transaction ───────────────────
         # db_transaction.atomic() is a context manager that wraps all writes in
         # a single SQL transaction. If anything inside raises an exception,
         # PostgreSQL rolls back ALL writes — no partial imports.
@@ -328,6 +404,39 @@ class ImportService:
 
             if transactions_to_create:
                 Transaction.objects.bulk_create(transactions_to_create)
+                # Persist the transaction date range on the ImportLog for display.
+                dates = [t.date for t in transactions_to_create]
+                ImportLog.objects.filter(pk=import_log.pk).update(
+                    date_min=min(dates),
+                    date_max=max(dates),
+                )
+
+            # ── Daily BalanceSnapshots from per-row balance_after (CIC only) ──
+            # For each date in the file where the bank provides a running balance,
+            # we persist an end-of-day BalanceSnapshot. This builds a full balance
+            # history curve (one point per day) rather than a single closing value.
+            #
+            # update_or_create: safe on re-import of overlapping date ranges.
+            # We do NOT touch computed_balance here — that's managed by the
+            # single-snapshot block below (which adds the "derived" running total).
+            #
+            # Guard: only run if there are new transactions. If all transactions
+            # are duplicates (skipped), we skip snapshot creation too — a pure-
+            # duplicate import shouldn't silently update balance history.
+            if daily_balances and transactions_to_create:
+                for _snap_date_str, _snap_balance in daily_balances.items():
+                    BalanceSnapshot.objects.update_or_create(
+                        account=account,
+                        date=_dt.date.fromisoformat(_snap_date_str),
+                        defaults={
+                            "balance": _snap_balance,
+                            "currency": account.currency,
+                            "balance_chf": _snap_balance
+                            if account.currency == "CHF"
+                            else None,
+                            "source": BalanceSnapshot.Source.IMPORT,
+                        },
+                    )
 
             # BalanceSnapshot : enregistre le solde du compte à la date d'export.
             # update_or_create : safe à ré-exécuter — pas de doublon si (account, date) identique.
@@ -342,9 +451,16 @@ class ImportService:
             if transactions_to_create:
                 snapshot_date = max(t.date for t in transactions_to_create)
 
-                # Calculer computed_balance à partir du snapshot précédent
+                # Calculer computed_balance à partir du snapshot précédent.
+                # IMPORTANT : date__lt=snapshot_date filtre UNIQUEMENT les snapshots
+                # antérieurs à la date qu'on insère. Sans ce filtre, un import
+                # rétroactif (ex : fichier CIC de janvier importé en mai) prendrait
+                # le snapshot le plus récent en DB comme base, ce qui donne un
+                # computed_balance complètement faux.
                 prev = (
-                    BalanceSnapshot.objects.filter(account=account)
+                    BalanceSnapshot.objects.filter(
+                        account=account, date__lt=snapshot_date
+                    )
                     .order_by("-date")
                     .first()
                 )
@@ -371,16 +487,26 @@ class ImportService:
                 balance_chf = extracted if account.currency == "CHF" else None
 
                 if extracted is not None or computed is not None:
+                    # Build defaults carefully: never overwrite an existing
+                    # bank-provided balance with None.
+                    # This matters for CIC: the daily loop above may have already
+                    # written balance for snapshot_date (from balance_after col F).
+                    # If footer extraction failed (extracted=None), we don't want
+                    # to erase that good value.
+                    snap_defaults: dict = {
+                        "currency": account.currency,
+                        "source": BalanceSnapshot.Source.IMPORT,
+                    }
+                    if extracted is not None:
+                        snap_defaults["balance"] = extracted
+                        snap_defaults["balance_chf"] = balance_chf
+                    if computed is not None:
+                        snap_defaults["computed_balance"] = computed
+
                     BalanceSnapshot.objects.update_or_create(
                         account=account,
                         date=snapshot_date,
-                        defaults={
-                            "balance": extracted,
-                            "computed_balance": computed,
-                            "currency": account.currency,
-                            "balance_chf": balance_chf,
-                            "source": BalanceSnapshot.Source.IMPORT,
-                        },
+                        defaults=snap_defaults,
                     )
 
                 # Alerte si les deux sont disponibles et divergent de plus de 1 centime
@@ -399,6 +525,10 @@ class ImportService:
                             extracted,
                             computed,
                         )
+
+            # Exposer le PK de l'ImportLog au caller (views.py) pour pouvoir
+            # retrouver les transactions insérées et déclencher le stockage du fichier.
+            result.log_pk = import_log.pk
 
         return result
 
@@ -511,6 +641,12 @@ class ImportService:
             else:
                 amount_chf = None
 
+        # --- Flags virement interne ------------------------------------------
+        # Si la catégorie matchée est "virements", on marque la transaction comme
+        # virement interne ET ignorée dès l'import. L'utilisateur peut overrider
+        # manuellement via le toggle "Inclure dans l'analyse budgétaire".
+        is_internal = bool(category and category.slug == INTERNAL_TRANSFER_SLUG)
+
         # --- Build and return the unsaved object -----------------------------
         return Transaction(
             account=account,
@@ -526,9 +662,10 @@ class ImportService:
             currency=tx["currency"],
             amount_chf=amount_chf,
             description_raw=tx["description_raw"],
+            display_name=tx["display_name"],
             merchant_name=tx["merchant_name"],
-            # note, is_reconciled, is_ignored, is_recurring, is_internal_transfer:
-            # all left at their model defaults (blank / False) — user fills them later
+            is_internal_transfer=is_internal,
+            is_ignored=is_internal,
             import_hash=tx["import_hash"],
         )
 
@@ -544,16 +681,18 @@ class ImportService:
             rule.keyword = "migros" matches "DEMIGROS" → True (intentional — simpler)
 
         target_field determines which transaction field to search:
-            "merchant_name"   → the cleaned display name (default)
-            "description_raw" → the unmodified bank text (for tricky patterns)
+            "display_name"    → the stored clean bank-agnostic name (canonical since Phase 2G)
+            "merchant_name"   → legacy alias for display_name (same value at import time)
+            "description_raw" → the unmodified bank text (kept for backward compat with old rules)
 
         Returns None if no rule matches → caller sets category=None ("Unknown").
         """
         for rule in rules:
-            if rule.target_field == CategorizationRule.TargetField.MERCHANT_NAME:
-                text = tx["merchant_name"]
-            else:
+            if rule.target_field == CategorizationRule.TargetField.DESCRIPTION_RAW:
                 text = tx["description_raw"]
+            else:
+                # display_name and merchant_name (legacy) both map to the clean name.
+                text = tx["display_name"]
 
             if rule.keyword.lower() in text.lower():
                 return rule

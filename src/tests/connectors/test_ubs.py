@@ -97,12 +97,12 @@ def test_parse_description_raw_combines_descriptions(ubs_csv_path):
     assert "Paiement carte de debit" in transactions[0]["description_raw"]
 
 
-def test_parse_merchant_name_is_title_cased(ubs_csv_path):
-    """merchant_name = Description1 avec espaces multiples réduits + title-case."""
+def test_parse_merchant_name_is_normalized(ubs_csv_path):
+    """merchant_name = Description1 avec espaces multiples réduits + uppercase."""
     connector = UBSConnector()
     transactions = connector.parse(ubs_csv_path)
-    # "FEEL EAT SARL LAUSANNE" → "Feel Eat Sarl Lausanne"
-    assert transactions[0]["merchant_name"] == "Feel Eat Sarl Lausanne"
+    # "FEEL EAT SARL            LAUSANNE" → "FEEL EAT SARL LAUSANNE"
+    assert transactions[0]["merchant_name"] == "FEEL EAT SARL LAUSANNE"
 
 
 # =============================================================================
@@ -163,3 +163,47 @@ def test_matches_file_true_for_ubs_csv(ubs_csv_path):
 def test_matches_file_false_for_yuh_csv(yuh_csv_path):
     """Un fichier Yuh ne doit PAS être reconnu comme UBS."""
     assert UBSConnector.matches_file(yuh_csv_path) is False
+
+
+# =============================================================================
+# _clean_merchant() — nettoyage des préfixes UBS parasites
+# =============================================================================
+
+
+def test_clean_merchant_strips_gutschrift_prefix():
+    """'Gutschrift ANTEIS SA' → 'ANTEIS SA'"""
+    c = UBSConnector()
+    assert c._clean_merchant("Gutschrift ANTEIS SA") == "ANTEIS SA"
+
+
+def test_clean_merchant_strips_auftrag_prefix():
+    """'Auftrag: Loyer appartement' → 'LOYER APPARTEMENT'"""
+    c = UBSConnector()
+    assert c._clean_merchant("Auftrag: Loyer appartement") == "LOYER APPARTEMENT"
+
+
+def test_clean_merchant_strips_ebanking_prefix():
+    """'E-Banking Virement Alvarez' → 'VIREMENT ALVAREZ'"""
+    c = UBSConnector()
+    assert c._clean_merchant("E-Banking Virement Alvarez") == "VIREMENT ALVAREZ"
+
+
+def test_clean_merchant_strips_debit_direct_prefix():
+    """'Debit Direct Swisscom' → 'SWISSCOM'"""
+    c = UBSConnector()
+    assert c._clean_merchant("Debit Direct Swisscom") == "SWISSCOM"
+
+
+def test_clean_merchant_leaves_normal_merchant_intact():
+    """Un nom de marchand sans préfixe UBS ne doit pas être modifié (hors casse)."""
+    c = UBSConnector()
+    assert c._clean_merchant("FEEL EAT SARL") == "FEEL EAT SARL"
+
+
+def test_clean_merchant_collapses_spaces():
+    """Les espaces multiples (padding UBS) doivent être réduits à un seul."""
+    c = UBSConnector()
+    assert (
+        c._clean_merchant("FEEL EAT SARL            LA CHAUX-D")
+        == "FEEL EAT SARL LA CHAUX-D"
+    )

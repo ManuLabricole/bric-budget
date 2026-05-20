@@ -51,9 +51,13 @@ No KEPT_ACTIVITY_TYPES needed — we import everything.
 
 import csv
 import hashlib
+import logging
+import re
 from pathlib import Path
 
 from connectors.base import BaseConnector, TransactionDict
+
+logger = logging.getLogger(__name__)
 
 # Number of metadata lines before the blank separator and then the column header
 # Layout: 8 metadata lines + 1 blank line = 9 lines to skip before the header row
@@ -129,13 +133,15 @@ class UBSConnector(BaseConnector):
                 try:
                     transactions.append(self._parse_row(row))
                 except Exception as e:
-                    print(
-                        f"  [UBS] WARNING line {line_number}: {e} — row skipped: {row}"
+                    logger.warning(
+                        "[UBS] line %d: %s — row skipped: %s", line_number, e, row
                     )
                     skipped += 1
 
-        print(
-            f"  [UBS] Parsed {len(transactions)} transactions, {skipped} rows skipped"
+        logger.info(
+            "[UBS] Parsed %d transactions, %d rows skipped",
+            len(transactions),
+            skipped,
         )
         return transactions
 
@@ -152,11 +158,12 @@ class UBSConnector(BaseConnector):
             with open(filepath, encoding="utf-8-sig") as f:
                 line1 = f.readline()
             parts = line1.strip().split(";")
-            # parts[0] = "Numéro de compte:", parts[1] = "0243 00693382.40"
             if len(parts) >= 2 and parts[1].strip():
                 return f"UBS {parts[1].strip()}"
         except Exception:
-            pass
+            logger.warning(
+                "[UBS] extract_account_name failed for %s", filepath, exc_info=True
+            )
         return None
 
     def extract_account_identifier(self, filepath: Path) -> str | None:
@@ -180,13 +187,15 @@ class UBSConnector(BaseConnector):
             with open(filepath, encoding="utf-8-sig") as f:
                 f.readline()  # line 1: account number
                 line2 = f.readline()  # line 2: IBAN
-            # Format: "IBAN:;CH9X XXXX XXXX XXXX XXXX X;"
             parts = line2.strip().split(";")
-            # parts[0] = "IBAN:", parts[1] = "CH9X XXXX XXXX XXXX XXXX X", parts[2] = ""
             if len(parts) >= 2 and parts[0].strip() == "IBAN:":
-                return parts[1].strip().replace(" ", "")  # normalize: strip spaces
+                return parts[1].strip().replace(" ", "")
         except Exception:
-            pass
+            logger.warning(
+                "[UBS] extract_account_identifier failed for %s",
+                filepath,
+                exc_info=True,
+            )
         return None
 
     def extract_balance(self, filepath: Path) -> float | None:
@@ -200,13 +209,14 @@ class UBSConnector(BaseConnector):
             with open(filepath, encoding="utf-8-sig") as f:
                 for i, line in enumerate(f, start=1):
                     if i == 6:
-                        # "Solde final:;7281.45;"
                         parts = line.strip().split(";")
                         if len(parts) >= 2:
                             return float(parts[1].strip())
                         break
         except Exception:
-            pass
+            logger.warning(
+                "[UBS] extract_balance failed for %s", filepath, exc_info=True
+            )
         return None
 
     @classmethod
@@ -242,7 +252,8 @@ class UBSConnector(BaseConnector):
                     if columns == cls.COLUMN_SIGNATURE:
                         return True
         except Exception:
-            pass
+            logger.warning("[UBS] matches_file failed for %s", filepath, exc_info=True)
+            return False
         return False
 
     # =========================================================================
@@ -278,10 +289,13 @@ class UBSConnector(BaseConnector):
             part for part in [description1, description2, description3] if part
         )
 
-        # Merchant name: Description1 is usually the best source.
-        # It's already a clean merchant name (UBS provides "FEEL EAT SARL LA CHAUX-D")
-        # We collapse multiple spaces (padding artifact) and title-case it.
-        merchant_name = self._clean_merchant(description1)
+        # display_name: apply UBS-specific cleaning to description1 (first segment).
+        # _clean_merchant() strips UBS structural prefixes ("Auftrag:", "Gutschrift",
+        # "E-Banking") that pollute the merchant name, then normalizes whitespace.
+        # We use description1 directly (not description_raw) to avoid having to
+        # re-split the already-joined string.
+        display_name = self._clean_merchant(description1)
+        merchant_name = display_name  # pre-fill override
 
         # Card last four: UBS doesn't use "**** XXXX" format.
         # Description2 contains "21303625-0 12/28; Paiement carte de debit" for card tx.
@@ -289,11 +303,20 @@ class UBSConnector(BaseConnector):
         # not the visible card number. TODO: match via contract number in Phase 2.
         card_last_four = None
 
-        # import_hash: SHA256 of the fields that uniquely identify this transaction.
-        # description2 added to reduce collisions on same-day same-amount transfers
+        # import_hash — see CONTRACT in base.py.
+        #
+        # UBS assigns a globally unique "No de transaction" per row (e.g. "9999125BN1308361").
+        # When present, it's the most stable identifier possible: guaranteed unique by the bank,
+        # immune to column reordering or description changes across re-exports.
+        #
+        # Fallback (should never happen with modern UBS exports) : date+time+amount+descriptions.
+        # The fallback uses description2 to reduce collisions on same-day same-amount transfers
         # (e.g. two salary advances with identical date/time/amount/description1).
-        description2 = row.get("Description2", "").strip()
-        raw = f"{date_str}|{time_str}|{amount}|{description1}|{description2}"
+        no_transaction = row.get("No de transaction", "").strip()
+        if no_transaction:
+            raw = f"ubs_tx|{no_transaction}"
+        else:
+            raw = f"{date_str}|{time_str}|{amount}|{description1}|{description2}"
         import_hash = hashlib.sha256(raw.encode()).hexdigest()
 
         return TransactionDict(
@@ -302,9 +325,13 @@ class UBSConnector(BaseConnector):
             amount=amount,
             currency=currency,
             description_raw=description_raw,
+            display_name=display_name,
             merchant_name=merchant_name,
             card_last_four=card_last_four,
             import_hash=import_hash,
+            # UBS provides a single closing balance in the file header (Solde final),
+            # not a per-row running balance. Daily BalanceSnapshots will use that header value.
+            balance_after=None,
         )
 
     def _parse_amount(self, row: dict) -> tuple[float, str]:
@@ -330,15 +357,28 @@ class UBSConnector(BaseConnector):
         else:
             raise ValueError("Both Débit and Crédit are empty")
 
+    # Préfixes UBS structurels — jamais un nom de marchand.
+    # "Auftrag:" = ordre de virement en allemand (même dans les exports FR)
+    # "Gutschrift" = crédit / remboursement
+    # "E-Banking" = libellé virement en ligne UBS
+    # "Debit Direct" = prélèvement automatique UBS
+    _UBS_PREFIX_RE = re.compile(
+        r"^(?:Auftrag\s*:|Gutschrift|E-Banking|Debit Direct)\s*",
+        re.IGNORECASE,
+    )
+
     def _clean_merchant(self, description1: str) -> str:
         """
         Produce a clean merchant name from UBS Description1.
 
-        UBS pads merchant names with multiple spaces:
-            "FEEL EAT SARL            LA CHAUX-D"
-        → collapse all consecutive spaces to one, then title-case.
-        Result: "Feel Eat Sarl La Chaux-D"
+        Two passes:
+          1. Strip UBS-specific structural prefixes ("Auftrag:", "Gutschrift",
+             "E-Banking", "Debit Direct") — they are never merchant names.
+          2. Delegate to base _normalize_merchant() for whitespace/casing.
 
-        Delegates to the shared _normalize_merchant() base helper.
+        Example: "Gutschrift ANTEIS SA" → "ANTEIS SA"
+                 "Auftrag: Loyer appartement" → "LOYER APPARTEMENT"
+                 "FEEL EAT SARL            LA CHAUX-D" → "FEEL EAT SARL LA CHAUX-D"
         """
-        return self._normalize_merchant(description1)
+        text = self._UBS_PREFIX_RE.sub("", description1).strip()
+        return self._normalize_merchant(text)

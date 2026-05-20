@@ -110,6 +110,7 @@ class Profile(models.Model):
     # NEVER write: ForeignKey("auth.User", ...)
     # Always use: settings.AUTH_USER_MODEL — works even if the User model changes later.
     from django.conf import settings
+
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,

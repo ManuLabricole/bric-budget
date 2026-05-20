@@ -115,6 +115,7 @@ def make_tx(
     amount: float = -25.40,
     currency: str = "CHF",
     description_raw: str = "TEST SHOP LAUSANNE",
+    display_name: str = "Test Shop Lausanne",
     merchant_name: str = "Test Shop",
 ) -> TransactionDict:
     """
@@ -134,9 +135,11 @@ def make_tx(
         amount=amount,
         currency=currency,
         description_raw=description_raw,
+        display_name=display_name,
         merchant_name=merchant_name,
         card_last_four=None,
         import_hash=import_hash,
+        balance_after=None,
     )
 
 

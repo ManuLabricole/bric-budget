@@ -133,6 +133,27 @@ window.BricCharts = window.BricCharts || {};
         }
       });
 
+      // ── Y max intelligent : exclure les imports initiaux (outliers) ────────
+      // Problème : le premier import bulk (milliers de tx) écrase l'axe et rend
+      // les imports quotidiens (quelques tx) invisibles.
+      //
+      // Solution : calculer le max de l'axe sur le 90e percentile des valeurs
+      // non-nulles × 1.5. Les barres qui dépassent sont visuellement tronquées
+      // mais le tooltip affiche toujours la vraie valeur.
+      //
+      // Si toutes les valeurs sont dans le même ordre de grandeur (pas d'outlier),
+      // le 90e percentile ≈ le max réel → comportement identique à l'auto-scale.
+      var bucketTotals = bb.keys.map(function (k) {
+        return data.banks.reduce(function (s, b) { return s + counts[b][k]; }, 0);
+      });
+      var nonZero = bucketTotals.filter(function (v) { return v > 0; }).sort(function (a, b) { return a - b; });
+      var yMax;
+      if (nonZero.length > 1) {
+        var p90 = nonZero[Math.floor(nonZero.length * 0.9)];
+        yMax = Math.max(p90 * 1.5, 10);
+      }
+      // nonZero.length <= 1 → undefined → ECharts auto-scale (pas de données = pas de problème)
+
       var series = data.banks.map(function (bank, i) {
         var isTop = i === data.banks.length - 1; // série empilée du dessus
         return {
@@ -183,8 +204,11 @@ window.BricCharts = window.BricCharts || {};
               .map(function (p) {
                 return p.marker + " " + p.seriesName + " <b>" + p.value + "</b>";
               });
+            var suffix = (yMax !== undefined && total > yMax)
+              ? "<br><span style='opacity:0.55;font-size:10px'>↑ hors échelle</span>"
+              : "";
             return params[0].axisValueLabel + "<br>" + lines.join("<br>") +
-              (lines.length > 1 ? "<br><b>Total : " + total + "</b>" : "");
+              (lines.length > 1 ? "<br><b>Total : " + total + "</b>" : "") + suffix;
           },
         },
         xAxis: {
@@ -205,6 +229,7 @@ window.BricCharts = window.BricCharts || {};
           show: true,
           position: "left",
           minInterval: 1,
+          max: yMax,
           axisLabel: {
             color: T["text-disabled"],
             fontSize: 9,

@@ -64,6 +64,24 @@ Layout :
             </div>
             <h1 class="text-sm font-semibold text-text-base">{{ category.name }}</h1>
         </div>
+        {# Bouton supprimer — uniquement pour les catégories créées par l'utilisateur #}
+        {% if not category.is_system %}
+            <button type="button"
+                    hx-get="{% url 'budget:category_delete_confirm' 'category' category.slug %}"
+                    hx-target="#modal-content"
+                    hx-swap="innerHTML"
+                    title="Supprimer cette catégorie"
+                    class="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-expense/60 hover:text-expense border border-expense/15 hover:border-expense/40 rounded-full transition-colors flex-shrink-0">
+                <svg class="w-3 h-3"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="2"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                </svg>
+                Supprimer
+            </button>
+        {% endif %}
         {# Dropdown filtre compte + Period nav alignés à droite #}
         <div class="ml-auto flex items-center gap-2">
             {% include "components/filters/filter_accounts.html" with accounts=accounts filter_account_ids=filter_account_ids %}
@@ -71,75 +89,12 @@ Layout :
         </div>
     </div>
     {# ── Carte Cashflow — Sankey + KPI strip ─────────────────────────────────── #}
-    {# Même structure que la carte Cashflow de index.html :                       #}
-    {#   header "Cashflow" → Sankey → KPI strip collée en bas (divide-x)          #}
     {# overflow-hidden : clippe le border-b du tab strip aux coins arrondis de la card. #}
+    {# L'inner HTML est extrait dans _category_cashflow_card_inner.html pour être     #}
+    {# rechargé en partiel (HTMX GET) après un toggle is_ignored depuis le panneau.   #}
     <div id="cashflow-card"
-         class="bg-surface-3 rounded-xl mb-4 overflow-hidden">
-        <div class="flex items-center justify-between px-5 pt-5 pb-2">
-            <h2 class="text-sm font-semibold text-text-base">Cashflow</h2>
-            <span class="text-[10px] text-text-disabled">{{ period_label }}</span>
-        </div>
-        {% if has_sankey %}
-            <div class="px-5 pb-2">
-                <div id="sankey-chart" class="w-full" style="height: 220px;"></div>
-                {{ sankey_data|json_script:"sankey-data" }}
-            </div>
-        {% endif %}
-        {# KPI strip — 3 onglets cliquables (sélecteurs de tab).                           #}
-        {# Clic → budget:set_cat_tab → session budget_cat_tab → redirect referer.         #}
-        {# Actif : border-b-2 border-gold + label/valeur text-gold.                       #}
-        {# Transactions = montant total · Sous-catégories = count distinct · Objectif     #}
-        {# KPI strip — même pattern que index.html : flex items-end, active = border-b border-gold -mb-px #}
-        <div class="flex items-end gap-0 border-b border-edge px-5 pt-3 mt-2">
-            {# ── Onglet Transactions — montant total sur la période ── #}
-            <a href="{% url 'budget:set_cat_tab' 'transactions' %}"
-               class="group flex flex-col items-start gap-1 pb-3 pr-8 cursor-pointer transition-colors {% if cat_tab == 'transactions' %}text-gold border-b border-gold -mb-px{% else %}text-text-base hover:text-gold{% endif %}">
-                <span class="text-[9px] font-medium uppercase tracking-wide {% if cat_tab == 'transactions' %}text-gold{% else %}text-text-muted group-hover:text-gold{% endif %}">Transactions</span>
-                {% if total_amount >= 0 %}
-                    <span class="text-base font-bold tabular-nums {% if cat_tab != 'transactions' %}text-income{% endif %}">+{{ total_amount|chf }} CHF</span>
-                {% else %}
-                    <span class="text-base font-bold tabular-nums {% if cat_tab != 'transactions' %}text-expense{% endif %}">−{{ total_amount|chf }} CHF</span>
-                {% endif %}
-            </a>
-            {# ── Onglet Sous-catégories — nombre de sous-cats distinctes ── #}
-            <a href="{% url 'budget:set_cat_tab' 'subcategories' %}"
-               class="group flex flex-col items-start gap-1 pb-3 pr-8 cursor-pointer transition-colors {% if cat_tab == 'subcategories' %}text-gold border-b border-gold -mb-px{% else %}text-text-base hover:text-gold{% endif %}">
-                <span class="text-[9px] font-medium uppercase tracking-wide {% if cat_tab == 'subcategories' %}text-gold{% else %}text-text-muted group-hover:text-gold{% endif %}">Sous-catégories</span>
-                <span class="text-base font-bold tabular-nums">{{ subcat_count }}</span>
-            </a>
-            {# ── Onglet Objectif — montant mis à l'échelle + bouton modifier ── #}
-            {# Le bouton ✏️ HTMX est à l'intérieur du <a> → stopPropagation      #}
-            {# pour éviter que son clic déclenche la navigation vers set_cat_tab. #}
-            <a href="{% url 'budget:set_cat_tab' 'objectif' %}"
-               class="group flex flex-col items-start gap-1 pb-3 pr-8 cursor-pointer transition-colors {% if cat_tab == 'objectif' %}text-gold border-b border-gold -mb-px{% else %}text-text-base hover:text-gold{% endif %}">
-                <span class="text-[9px] font-medium uppercase tracking-wide {% if cat_tab == 'objectif' %}text-gold{% else %}text-text-muted group-hover:text-gold{% endif %}">Objectif</span>
-                {% if budget_target %}
-                    <div class="flex items-center gap-2">
-                        <p class="text-base font-bold tabular-nums {% if cat_tab == 'objectif' %}text-gold{% else %}text-text-base{% endif %}">
-                            {{ target_amount|chf }} CHF
-                        </p>
-                        {# Mini gauge inline — couleur catégorie, w-8 #}
-                        {% include "budget/_gauge.html" with gauge_fill_px=arc_fill_px gauge_color=category.colour_hex gauge_class="w-8" %}
-                    </div>
-                {% else %}
-                    <button hx-get="{% url 'budget:modal_target_create' %}?category_id={{ category.id }}"
-                            hx-target="#modal-content"
-                            hx-swap="innerHTML"
-                            onclick="event.stopPropagation(); event.preventDefault();"
-                            class="w-6 h-6 rounded-full border border-dashed border-edge/50 hover:border-gold/50 flex items-center justify-center text-text-disabled hover:text-gold transition-colors"
-                            title="Définir un objectif mensuel">
-                        <svg class="w-3 h-3"
-                             fill="none"
-                             viewBox="0 0 24 24"
-                             stroke-width="2.5"
-                             stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                        </svg>
-                    </button>
-                {% endif %}
-            </a>
-        </div>
+         class="bg-surface-3/70 backdrop-blur-xl border border-edge/60 rounded-xl mb-4 overflow-hidden">
+        {% include "budget/_category_cashflow_card_inner.html" %}
     </div>
     {# ── Contenu principal — conditionnel selon cat_tab ────────────────────────── #}
     {# Tab "subcategories" → liste des sous-catégories avec leurs montants.        #}
@@ -156,7 +111,7 @@ Layout :
             {% if subcat_list %}
                 <div class="divide-y divide-edge/40">
                     {% for sub in subcat_list %}
-                        <div class="flex items-center gap-3 px-4 py-3">
+                        <div class="group/subrow flex items-center gap-3 px-4 py-3">
                             {# Cercle icône — même rendu que la liste catégories de index.html #}
                             <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center"
                                  style="background-color: {{ category.colour_hex|default:'#2d3033' }}40">
@@ -390,7 +345,13 @@ Layout :
                                 <span class="text-[10px] font-medium text-text-muted">{{ tx.date|date:"j F Y" }}</span>
                             </div>
                         {% endifchanged %}
-                        {% include "budget/_panel_tx_row.html" with tx=tx bank_icon_url=tx.bank_icon_url panel_source="category" panel_target="#cat-tx-detail" %}
+                        {% comment %}
+                        panel_source="category" → close_on_back=True dans le panneau détail
+                        (bouton ← ferme l'overlay plutôt que de revenir à la liste).
+                        panel_target non défini → hx-target="#panel-content" (overlay droit,
+                        même que le budget index). Suppression du div #cat-tx-detail.
+                        {% endcomment %}
+                        {% include "budget/_panel_tx_row.html" with tx=tx bank_icon_url=tx.bank_icon_url panel_source="category" %}
                     {% endfor %}
                 </div>
             {% else %}
@@ -412,7 +373,7 @@ Layout :
         <aside class="flex-[1] min-w-0">
             {# Spacer invisible — même hauteur que le header gauche (h-8 mb-4) #}
             <div class="h-8 mb-4"></div>
-            <div class="bg-surface-3 rounded-xl px-5 pt-5 pb-5">
+            <div class="bg-surface-3/70 backdrop-blur-xl border border-edge/60 rounded-xl px-5 pt-5 pb-5">
                 {# Titre + ligne Objectif mensuel + bouton Modifier — tout dans la card   #}
                 <div class="flex items-center justify-between mb-5">
                     <h2 class="text-sm font-semibold text-text-base">Objectif</h2>
@@ -471,7 +432,8 @@ Layout :
         <aside class="flex-[1] min-w-0 flex flex-col gap-4">
             {# h-8 (32px) + gap-4 (16px) = 48px = breadcrumb gauche (32px) + mb-4 (16px) #}
             <div class="h-8"></div>
-            <div id="donut-card" class="bg-surface-3 rounded-xl">
+            <div id="donut-card"
+                 class="bg-surface-3/70 backdrop-blur-xl border border-edge/60 rounded-xl">
                 {# Donut ECharts — même pattern que index.html #}
                 <div id="donut-chart" class="w-full px-4" style="height: 220px;"></div>
                 {{ donut_data|json_script:"donut-data" }}
@@ -491,18 +453,6 @@ Layout :
                             {% endif %}
                         </div>
                     {% endfor %}
-                </div>
-            </div>
-            {# ── Div fixe détail transaction — apparaît quand on clique une ligne ── #}
-            {# hx-target="#cat-tx-detail" dans _panel_tx_row.html remplace innerHTML. #}
-            {# Placeholder visible jusqu'au premier clic.                             #}
-            <div id="cat-tx-detail" class="bg-surface-3 rounded-xl overflow-hidden">
-                <div class="flex flex-col items-center justify-center py-8 px-4 text-center">
-                    <p class="text-xs text-text-disabled leading-relaxed">
-                        Cliquez sur une transaction
-                        <br>
-                        pour voir les détails
-                    </p>
                 </div>
             </div>
         </aside>
@@ -552,4 +502,44 @@ Layout :
   }
         </script>
     {% endif %}
+    <script>
+  // Refresh du Sankey + KPIs après toggle is_ignored depuis le panneau détail.
+  //
+  // Flux :
+  //   1. toggle_ignore (close_on_back=True) injecte [data-cashflow-refresh] dans
+  //      le panneau → #panel-content est swappé par HTMX → htmx:afterSwap fire.
+  //   2. Le listener détecte le signal, déclenche htmx.ajax vers /cashflow/
+  //      → #cashflow-card innerHTML est remplacé → second htmx:afterSwap fire.
+  //   3. Le second listener ré-initialise ECharts sur le nouveau #sankey-chart.
+  document.addEventListener("htmx:afterSwap", function (evt) {
+    var target = evt.detail && evt.detail.target;
+    if (!target) return;
+
+    // Étape 1 : panel-content swappé → chercher le signal cashflow-refresh
+    if (target.id === "panel-content") {
+      var refreshEl = target.querySelector("[data-cashflow-refresh]");
+      if (refreshEl) {
+        htmx.ajax("GET", refreshEl.getAttribute("data-cashflow-refresh"), {
+          target: "#cashflow-card",
+          swap: "innerHTML"
+        });
+      }
+    }
+
+    // Étape 2 : cashflow-card swappé → ré-init Sankey + ré-aligner hauteur donut
+    if (target.id === "cashflow-card") {
+      var sankeyEl = document.getElementById("sankey-chart");
+      if (sankeyEl && typeof BricCharts !== "undefined") {
+        var dataEl = document.getElementById("sankey-data");
+        if (dataEl) {
+          BricCharts.initSankey(sankeyEl, JSON.parse(dataEl.textContent));
+        }
+      }
+      var donutCardEl = document.getElementById("donut-card");
+      if (donutCardEl) {
+        donutCardEl.style.minHeight = target.offsetHeight + "px";
+      }
+    }
+  });
+    </script>
 {% endblock %}

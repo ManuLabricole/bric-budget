@@ -1,0 +1,77 @@
+{% load budget_filters static %}
+{% comment %}
+budget/_rule_standalone_preview.html — Preview transactions pour le formulaire standalone
+
+Contexte attendu :
+    txs             — list Transaction (avec .bank_icon_url attaché par la vue)
+    total_count     — int total des transactions matchantes
+    kw_list         — list[str] des mots-clés courants
+    combined_keyword — str "MOT1 MOT2" (pour le message)
+    cat_display_name — str nom catégorie cible (affiché en doré)
+
+Structure :
+    État vide (0 chips)   → "Ajoutez un mot-clé…"
+    État aucun match       → "Aucune transaction similaire…"
+    État avec résultats   → count + 5 premières rangées + "et X autres · Voir plus"
+
+Rangée compacte (réutilise nos composants) :
+    [date] [account_badge] [icône cat + nom cat] [montant]
+    Pas d'HTMX sur les rangées — lecture seule, pas de navigation depuis la preview.
+
+Ref : Phase 2G — T2
+{% endcomment %}
+{% if not kw_list %}
+    {# Aucun chip encore — invite l'utilisateur à saisir un premier mot-clé #}
+    <p class="px-5 py-4 text-xs text-text-disabled italic">
+        Tapez un mot-clé et appuyez sur Entrée pour voir les transactions correspondantes.
+    </p>
+{% elif not txs %}
+    {# Chips présents mais aucune transaction ne matche le keyword composé #}
+    <p class="px-5 py-4 text-xs text-text-disabled italic">
+        Aucune transaction contenant
+        {% for kw in kw_list %}
+            <span class="font-semibold text-text-muted not-italic">« {{ kw }} »</span>
+            {% if not forloop.last %}et{% endif %}
+        {% endfor %}
+        détectée. La règle s'appliquera aux prochains imports.
+    </p>
+{% else %}
+    {# ── Header : count + catégorie cible ── #}
+    <div class="px-5 pb-1 pt-2">
+        <p class="text-[10px] text-text-muted leading-relaxed">
+            <span class="text-gold font-semibold">{{ total_count }}</span>
+            transaction
+            {% if total_count > 1 %}s{% endif %}
+            {% if cat_display_name %}
+                seront catégorisées en <span class="text-text-secondary font-medium">{{ cat_display_name }}</span>
+            {% else %}
+                correspondent à ce filtre
+            {% endif %}
+        </p>
+    </div>
+    {# ── 5 premières rangées — toujours visibles ── #}
+    <div class="divide-y divide-edge/30">
+        {% for tx in txs|slice:":5" %}
+            {% include "budget/_rule_standalone_preview_row.html" %}
+        {% endfor %}
+    </div>
+    {# ── Rangées supplémentaires — masquées par défaut ── #}
+    {% if total_count > 5 %}
+        <div id="standalone-preview-more" class="hidden divide-y divide-edge/30">
+            {% for tx in txs|slice:"5:" %}
+                {% include "budget/_rule_standalone_preview_row.html" %}
+            {% endfor %}
+        </div>
+        {# Bouton "et X autres · Voir plus" — toggle JS pur, pas d'HTMX #}
+        <div id="standalone-preview-more-toggle"
+             class="px-5 py-2.5 border-t border-edge/30">
+            <button type="button"
+                    onclick=" document.getElementById('standalone-preview-more').classList.remove('hidden'); document.getElementById('standalone-preview-more-toggle').classList.add('hidden'); "
+                    class="text-[11px] text-text-muted hover:text-gold transition-colors">
+                et {{ total_count|add:"-5" }} autre
+                {% if total_count|add:"-5" > 1 %}s{% endif %}
+                · <span class="underline underline-offset-2">Voir plus</span>
+            </button>
+        </div>
+    {% endif %}
+{% endif %}

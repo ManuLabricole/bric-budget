@@ -4,7 +4,7 @@
 {% block panel_left %}
     <div class="flex flex-col gap-4 h-full">
         {# ── Activité — hero section ──────────────────────────────────────────── #}
-        <div class="bg-surface-3 rounded-xl p-5 flex flex-col">
+        <div class="bg-surface-3/70 backdrop-blur-xl border border-edge/60 rounded-xl p-5 flex flex-col">
             <div class="flex items-center justify-between mb-3">
                 <h2 class="text-sm font-semibold text-text-base">Activité</h2>
                 <div class="flex items-center gap-1">
@@ -48,7 +48,7 @@
         {# l'espace restant en 2×1fr) :                                            #}
         {#   Logo · Banque · Compte · Relevé · Match · Transactions · Date · →    #}
         {# CIC multi-feuilles est aplati : chaque compte = 1 ligne indépendante.   #}
-        <div class="bg-surface-3 rounded-xl p-5">
+        <div class="bg-surface-3/70 backdrop-blur-xl border border-edge/60 rounded-xl p-5">
             <h2 class="text-sm font-semibold text-text-base mb-4">Historique</h2>
             {% if grouped_logs %}
                 {# Lignes — on aplatit : pour chaque groupe, pour chaque entrée → 1 row #}
@@ -70,8 +70,18 @@
                                 <p class="text-xs font-medium text-text-base truncate group-hover/btn:text-gold transition-colors">
                                     {{ entry.account.name }}
                                 </p>
-                                {# Col 4 — Nom du relevé (fichier) #}
-                                <p class="text-[10px] text-text-disabled truncate">{{ group.filename }}</p>
+                                {# Col 4 — Période des transactions (date_min → date_max) #}
+                                <p class="text-[10px] text-text-muted tabular-nums truncate">
+                                    {% if entry.date_min and entry.date_max %}
+                                        {% if entry.date_min == entry.date_max %}
+                                            {{ entry.date_min|date:"d M Y" }}
+                                        {% else %}
+                                            {{ entry.date_min|date:"d M y" }} → {{ entry.date_max|date:"d M y" }}
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="text-text-disabled">—</span>
+                                    {% endif %}
+                                </p>
                                 {# Col 5 — Badge matching avec tooltip explicatif #}
                                 <div class="flex justify-center">
                                     {% if entry.match_method == "iban" %}
@@ -127,7 +137,7 @@
 {% block panel_right %}
     <aside class="flex-[1] min-w-0 flex flex-col gap-4">
         {# ── Upload ──────────────────────────────────────────────────────────── #}
-        <div class="bg-surface-3 rounded-xl p-5">
+        <div class="bg-surface-3/70 backdrop-blur-xl border border-edge/60 rounded-xl p-5">
             <h2 class="text-sm font-semibold text-text-base mb-3">Importer</h2>
             <form id="upload-form"
                   hx-post="{% url 'imports:upload' %}"
@@ -174,7 +184,7 @@
             <div id="import-steps"></div>
         </div>
         {# ── Synchronisation — groupé par banque ─────────────────────────────── #}
-        <div class="bg-surface-3 rounded-xl p-5">
+        <div class="bg-surface-3/70 backdrop-blur-xl border border-edge/60 rounded-xl p-5">
             <h2 class="text-sm font-semibold text-text-base mb-3">Synchronisation</h2>
             {% if bank_groups %}
                 <div class="flex flex-col gap-4">
@@ -229,8 +239,8 @@
     if (!el) return;
 
     var ch            = BricCharts.initActivity(el, data);
-    var curPeriod     = "1a";
-    var curMetric     = "created";
+    var curPeriod     = sessionStorage.getItem("import_graph_period") || "1a";
+    var curMetric     = sessionStorage.getItem("import_graph_metric") || "created";
     var PERIOD_IDS    = ["period-1m", "period-3m", "period-1a"];
     var METRIC_IDS    = ["toggle-created", "toggle-total"];
 
@@ -250,15 +260,24 @@
 
     window.activitySetPeriod = function (p) {
       curPeriod = p;
+      sessionStorage.setItem("import_graph_period", p);
       ch.renderActivity(curPeriod, curMetric);
       setActive("period-" + p, PERIOD_IDS);
     };
 
     window.activitySetMetric = function (m) {
       curMetric = m;
+      sessionStorage.setItem("import_graph_metric", m);
       ch.renderActivity(curPeriod, curMetric);
       setActive(m === "created" ? "toggle-created" : "toggle-total", METRIC_IDS);
     };
+
+    // Appliquer l'état sauvegardé au chargement si différent du défaut HTML
+    if (curPeriod !== "1a" || curMetric !== "created") {
+      ch.renderActivity(curPeriod, curMetric);
+      setActive("period-" + curPeriod, PERIOD_IDS);
+      setActive(curMetric === "created" ? "toggle-created" : "toggle-total", METRIC_IDS);
+    }
 
     window.addEventListener("resize", function () { ch.resize(); });
   })();

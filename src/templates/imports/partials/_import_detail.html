@@ -34,6 +34,23 @@
             <div class="min-w-0">
                 <p class="text-sm font-semibold text-text-base truncate">{{ log.filename }}</p>
                 <p class="text-xs text-text-muted mt-0.5">{{ log.get_status_display }}</p>
+                {# Nom canonique du fichier archivé (absent pour les imports CLI) #}
+                {% if log.stored_filename %}
+                    <div class="flex items-center gap-1 mt-1">
+                        <p class="text-[10px] text-text-disabled font-mono truncate">{{ log.stored_filename }}</p>
+                        {% if log.is_encrypted %}
+                            {# Badge chiffré — Fernet AES-128 #}
+                            <svg class="w-3 h-3 text-income flex-shrink-0"
+                                 fill="none"
+                                 viewBox="0 0 24 24"
+                                 stroke-width="2"
+                                 stroke="currentColor"
+                                 title="Fichier chiffré (Fernet)">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+                            </svg>
+                        {% endif %}
+                    </div>
+                {% endif %}
             </div>
         </div>
         <button onclick="closePanel()"
@@ -58,9 +75,10 @@
                 <div class="min-w-0">
                     <p class="text-sm font-medium text-text-base">{{ log.account.name }}</p>
                     <p class="text-xs text-text-muted">{{ log.account.bank.name }} · {{ log.account.currency }}</p>
-                    {# Identifiant : IBAN masqué si dispo, sinon numéro de contrat (RIB pour CIC) #}
-                    {% if log.account.checking_account.iban %}
-                        <p class="text-[10px] text-text-disabled font-mono mt-0.5">{{ log.account.checking_account.iban_display }}</p>
+                    {# Identifiant : IBAN masqué si dispo (checking + savings + futures cartes),  #}
+                    {# sinon numéro de contrat (RIB CIC, n° Finpension, n° police assurance). #}
+                    {% if log.account.iban %}
+                        <p class="text-[10px] text-text-disabled font-mono mt-0.5">{{ log.account.iban_display }}</p>
                     {% elif log.account.contract_number %}
                         <p class="text-[10px] text-text-disabled font-mono mt-0.5">{{ log.account.contract_number }}</p>
                     {% endif %}
@@ -91,6 +109,18 @@
         <div>
             <p class="text-[10px] font-semibold uppercase tracking-wide text-text-muted mb-2">Détails</p>
             <div class="flex flex-col gap-2">
+                {% if log.date_min and log.date_max %}
+                    <div class="flex justify-between">
+                        <span class="text-xs text-text-muted">Période</span>
+                        <span class="text-xs text-text-base font-medium tabular-nums">
+                            {% if log.date_min == log.date_max %}
+                                {{ log.date_min|date:"d M Y" }}
+                            {% else %}
+                                {{ log.date_min|date:"d M Y" }} → {{ log.date_max|date:"d M Y" }}
+                            {% endif %}
+                        </span>
+                    </div>
+                {% endif %}
                 <div class="flex justify-between">
                     <span class="text-xs text-text-muted">Date d'import</span>
                     <span class="text-xs text-text-base font-medium tabular-nums">{{ log.imported_at|date:"d M Y à H:i" }}</span>

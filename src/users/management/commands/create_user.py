@@ -38,7 +38,7 @@ class Command(BaseCommand):
         """
         parser.add_argument(
             "--superuser",
-            action="store_true",   # boolean flag: present = True, absent = False
+            action="store_true",  # boolean flag: present = True, absent = False
             help="Creates a superuser (Django admin access) instead of a regular user",
         )
 
@@ -65,12 +65,8 @@ class Command(BaseCommand):
         if options["superuser"]:
             # create_superuser: is_staff=True + is_superuser=True + hashed password
             User.objects.create_superuser(email=email, password=password)
-            self.stdout.write(
-                self.style.SUCCESS(f"Superuser created: {email}")
-            )
+            self.stdout.write(self.style.SUCCESS(f"Superuser created: {email}"))
         else:
             # create_user: regular user, no Django admin access
             User.objects.create_user(email=email, password=password)
-            self.stdout.write(
-                self.style.SUCCESS(f"User created: {email}")
-            )
+            self.stdout.write(self.style.SUCCESS(f"User created: {email}"))

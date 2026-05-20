@@ -62,6 +62,16 @@ def chf_dec(value):
     return _format_amount(value, decimal_places=2)
 
 
+@register.filter
+def chf_pref(value, show_decimals):
+    """Format monétaire selon préférence session : entiers ou 2 décimales.
+    Usage : {{ amount|chf_pref:show_decimals }}
+    """
+    if show_decimals:
+        return _format_amount(value, decimal_places=2)
+    return _format_amount(value, decimal_places=0)
+
+
 # ── Gauge demi-cercle SVG ──────────────────────────────────────────────────────
 # Demi-périmètre = π × r = π × 40 = 125.66 (r=40 dans le viewBox 100×52).
 

@@ -34,11 +34,7 @@ Utilisé de deux façons :
                     {{ tx.date|date:"d/m" }}
                 </span>
                 <span class="flex-1 text-[11px] text-text-muted uppercase tracking-wide truncate leading-none">
-                    {% if tx.merchant_name %}
-                        {{ tx.merchant_name|upper|slice:":45" }}
-                    {% else %}
-                        {{ tx.description_raw|slice:":45" }}
-                    {% endif %}
+                    {{ tx.display_name|upper }}
                 </span>
                 <span class="text-[11px] font-medium tabular-nums flex-shrink-0 leading-none {% if tx.amount >= 0 %}text-income{% else %}text-expense{% endif %}">
                     {% if tx.amount >= 0 %}
