@@ -61,6 +61,10 @@ CSRF_TRUSTED_ORIGINS = [
 
 # En production (DEBUG=False) : forcer HTTPS et sécuriser les cookies.
 if not DEBUG:
+    # Railway termine SSL en amont (edge proxy) → Django reçoit HTTP en interne.
+    # Sans SECURE_PROXY_SSL_HEADER, SECURE_SSL_REDIRECT crée une boucle infinie.
+    # Ce header indique à Django que le proxy a déjà géré HTTPS.
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
