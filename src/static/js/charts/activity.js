@@ -1,6 +1,8 @@
 // BricBudget — Activity chart (imports/upload.html).
 //
-// Bar chart empilé : transactions importées par banque, filtrable par période et métrique.
+// Bar chart empilé : transactions par date réelle, filtrable par période et métrique.
+// Les barres représentent l'activité financière réelle (Transaction.date),
+// pas la date d'import. Des marqueurs verticaux indiquent les dates d'import.
 //
 // Signature :
 //   var ch = BricCharts.initActivity(el, data)
@@ -8,8 +10,9 @@
 //
 //   el   : élément DOM conteneur
 //   data : {
-//     banks : ["Yuh", "UBS", "CIC", ...]
-//     logs  : [{ date: "YYYY-MM-DD", bank: "Yuh", created: N, total: N }, ...]
+//     banks          : ["Yuh", "UBS", "CIC", ...]
+//     logs           : [{ date: "YYYY-MM-DD", bank: "Yuh", created: N, total: N }, ...]
+//     import_markers : [{ date: "YYYY-MM-DD", filename: "yuh.csv", total: N, bank: "Yuh" }, ...]
 //   }
 //
 // Périodes :
@@ -133,16 +136,21 @@ window.BricCharts = window.BricCharts || {};
         }
       });
 
-      // ── Y max intelligent : exclure les imports initiaux (outliers) ────────
-      // Problème : le premier import bulk (milliers de tx) écrase l'axe et rend
-      // les imports quotidiens (quelques tx) invisibles.
-      //
-      // Solution : calculer le max de l'axe sur le 90e percentile des valeurs
-      // non-nulles × 1.5. Les barres qui dépassent sont visuellement tronquées
-      // mais le tooltip affiche toujours la vraie valeur.
-      //
-      // Si toutes les valeurs sont dans le même ordre de grandeur (pas d'outlier),
-      // le 90e percentile ≈ le max réel → comportement identique à l'auto-scale.
+      // ── Lookup marqueurs d'import par bucket ────────────────────────────────
+      // Pour chaque bucket de l'axe X, on mémorise les imports qui tombent dedans.
+      // Utilisé par le tooltip (info textuelle) et la markLine (ligne verticale).
+      var markersByKey = {};
+      if (data.import_markers) {
+        data.import_markers.forEach(function (m) {
+          var k = bucketKey(parseLocal(m.date), gran);
+          if (!markersByKey[k]) markersByKey[k] = [];
+          markersByKey[k].push(m);
+        });
+      }
+
+      // ── Y max — 90e percentile pour absorber les pics d'activité ────────────
+      // Si un mois a une activité anormalement haute (soldes rattrapés, corrections),
+      // le p90 × 1.5 empêche l'axe de s'écraser. Le tooltip affiche toujours la vraie valeur.
       var bucketTotals = bb.keys.map(function (k) {
         return data.banks.reduce(function (s, b) { return s + counts[b][k]; }, 0);
       });
@@ -156,7 +164,7 @@ window.BricCharts = window.BricCharts || {};
 
       var series = data.banks.map(function (bank, i) {
         var isTop = i === data.banks.length - 1; // série empilée du dessus
-        return {
+        var s = {
           name: bank,
           type: "bar",
           stack: "total",
@@ -171,6 +179,31 @@ window.BricCharts = window.BricCharts || {};
           barMaxWidth: period === "1m" ? 18 : 10,
           barMinHeight: 2,
         };
+        // Marqueurs d'import sur la dernière série (une seule markLine par graphique).
+        // Ligne verticale pointillée à chaque date d'import dans la fenêtre.
+        if (isTop) {
+          var markerData = [];
+          bb.keys.forEach(function (k) {
+            if (markersByKey[k]) {
+              markerData.push({ xAxis: k });
+            }
+          });
+          if (markerData.length) {
+            s.markLine = {
+              silent: true,
+              symbol: ["none", "none"],
+              data: markerData,
+              lineStyle: {
+                type: "dashed",
+                color: T["text-disabled"],
+                width: 1,
+                opacity: 0.45,
+              },
+              label: { show: false },
+            };
+          }
+        }
+        return s;
       });
 
       chart.setOption({
@@ -198,7 +231,10 @@ window.BricCharts = window.BricCharts || {};
           textStyle: { color: T["text-base"], fontSize: 11, fontFamily: FONT },
           formatter: function (params) {
             var total = params.reduce(function (s, p) { return s + p.value; }, 0);
-            if (total === 0) return null;
+            // Marqueurs d'import sur ce bucket — affichés même si total = 0
+            var key = bb.keys[params[0].dataIndex];
+            var markers = markersByKey[key] || [];
+            if (total === 0 && markers.length === 0) return null;
             var lines = params
               .filter(function (p) { return p.value > 0; })
               .map(function (p) {
@@ -207,13 +243,24 @@ window.BricCharts = window.BricCharts || {};
             var suffix = (yMax !== undefined && total > yMax)
               ? "<br><span style='opacity:0.55;font-size:10px'>↑ hors échelle</span>"
               : "";
+            if (markers.length) {
+              var mLines = markers.map(function (m) {
+                var d = parseLocal(m.date);
+                var dateStr = d.getDate() + " " + d.toLocaleString("fr", { month: "short" }) + " " + d.getFullYear();
+                return "<span style='opacity:0.6;font-size:10px'>↓ import " + m.bank + " — " + m.filename + " — " + m.total + " tx (" + dateStr + ")</span>";
+              });
+              suffix += (lines.length ? "<br>" : "") + mLines.join("<br>");
+            }
+            if (total === 0) return suffix.replace(/^<br>/, "");
             return params[0].axisValueLabel + "<br>" + lines.join("<br>") +
               (lines.length > 1 ? "<br><b>Total : " + total + "</b>" : "") + suffix;
           },
         },
         xAxis: {
           type: "category",
-          data: bb.labels,
+          // bb.keys (YYYY-MM-DD) comme données — permet markLine par date string.
+          // Le formatter restitue les labels visuels calculés dans bb.labels.
+          data: bb.keys,
           axisLine: { show: false },
           axisTick: { show: false },
           axisLabel: {
@@ -221,6 +268,9 @@ window.BricCharts = window.BricCharts || {};
             fontSize: 9,
             fontFamily: FONT,
             interval: 0,
+            formatter: function (value, index) {
+              return bb.labels[index] || "";
+            },
           },
           splitLine: { show: false },
         },

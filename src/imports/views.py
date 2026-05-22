@@ -32,7 +32,7 @@ from connectors.resolver import (
     detect_connector,
     resolve_accounts,
 )
-from transactions.models import ImportLog
+from transactions.models import ImportLog, Transaction
 from transactions.services import ImportService, compute_file_hash
 
 
@@ -103,41 +103,35 @@ def import_upload(request):
         {"bank": bank, "accounts": accounts} for bank, accounts in banks_map.items()
     ]
 
-    # ── Chart — données brutes journalières sur 12 mois ─────────────────────
-    # On envoie les logs bruts (1 point = 1 import). Le JS agrège selon la période
-    # choisie (1M=jours, 3M=semaines, 1A=mois) et empile par banque.
+    # ── Chart — transactions groupées par date réelle sur 12 mois ───────────
+    # Axe X = date de la transaction (pas date d'import).
+    # Raison : l'import initial bulk (ex: 4 000 tx Yuh) crée un spike géant
+    # sur la date d'import, masquant toute l'activité réelle. En utilisant
+    # Transaction.date, les mouvements se répartissent sur leurs vraies dates.
+    # IDOR : filtre account__members=request.user — jamais de transactions cross-user.
     from datetime import timedelta
 
+    from django.db.models import Count
+
     cutoff_12m = today - timedelta(days=365)
-    logs_12m = list(
-        ImportLog.objects.filter(imported_at__date__gte=cutoff_12m)
+    tx_by_day = list(
+        Transaction.objects.filter(
+            account__members=request.user,
+            date__gte=cutoff_12m,
+            is_ignored=False,
+        )
         .select_related("account__bank")
-        .order_by("imported_at")
+        .values("date", "account__bank__name")
+        .annotate(count=Count("id"))
+        .order_by("date")
     )
 
-    # Banques présentes dans la fenêtre (ordre d'apparition)
+    # Banques présentes dans la fenêtre (ordre d'apparition chronologique)
     seen_bank_names = []
-    for log in logs_12m:
-        name = log.account.bank.name
+    for row in tx_by_day:
+        name = row["account__bank__name"]
         if name not in seen_bank_names:
             seen_bank_names.append(name)
-
-    # NE PAS appeler json.dumps() ici — json_script dans le template sérialise lui-même.
-    # Un dict Python passé à json_script → JSON valide dans le script tag.
-    # Si on pré-sérialise avec json.dumps(), json_script ré-encode la string → double
-    # encodage → raw devient une string JS au lieu d'un objet → raw.banks = undefined.
-    chart_data = {
-        "banks": seen_bank_names,
-        "logs": [
-            {
-                "date": log.imported_at.strftime("%Y-%m-%d"),
-                "bank": log.account.bank.name,
-                "created": log.count_created,
-                "total": log.count_created + log.count_skipped,
-            }
-            for log in logs_12m
-        ],
-    }
 
     # ── Historique groupé par fichier (file_hash) ───────────────────────────
     # Un même fichier CIC génère N ImportLogs (1 par feuille/compte).
@@ -186,6 +180,35 @@ def import_upload(request):
                 entry.match_method = "rib"
             else:
                 entry.match_method = "convention"
+
+    # NE PAS appeler json.dumps() ici — json_script dans le template sérialise lui-même.
+    # Un dict Python passé à json_script → JSON valide dans le script tag.
+    # chart_data construit ici (après grouped_logs) pour pouvoir inclure import_markers.
+    chart_data = {
+        "banks": seen_bank_names,
+        # logs : une entrée par (date, banque) — date = date réelle de la transaction.
+        "logs": [
+            {
+                "date": row["date"].strftime("%Y-%m-%d"),
+                "bank": row["account__bank__name"],
+                "created": row["count"],
+                "total": row["count"],
+            }
+            for row in tx_by_day
+        ],
+        # import_markers : un marqueur par upload groupé dans la fenêtre 12 mois.
+        # Affichés comme lignes verticales sur l'axe X du graphique.
+        "import_markers": [
+            {
+                "date": group["imported_at"].strftime("%Y-%m-%d"),
+                "filename": group["filename"] or "?",
+                "total": group["total_created"],
+                "bank": group["bank"].name,
+            }
+            for group in grouped_logs
+            if group["imported_at"].date() >= cutoff_12m
+        ],
+    }
 
     return render(
         request,
