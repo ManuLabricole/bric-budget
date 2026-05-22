@@ -8,6 +8,12 @@
             <div class="flex items-center justify-between mb-3">
                 <h2 class="text-sm font-semibold text-text-base">Activité</h2>
                 <div class="flex items-center gap-1">
+                    {# Navigation ‹ › — recule/avance d'une fenêtre selon la période active #}
+                    <button id="nav-prev"
+                            onclick="activityPrev()"
+                            class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-colors text-text-muted hover:text-gold hover:bg-gold/15">
+                        ‹
+                    </button>
                     {# Période — style identique aux boutons ronds du Sankey (period_nav) #}
                     <button id="period-1m"
                             onclick="activitySetPeriod('1m')"
@@ -23,6 +29,12 @@
                             onclick="activitySetPeriod('1a')"
                             class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-colors text-gold bg-gold/15">
                         1A
+                    </button>
+                    <button id="nav-next"
+                            onclick="activityNext()"
+                            disabled
+                            class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-colors opacity-30 cursor-not-allowed text-text-muted">
+                        ›
                     </button>
                     {# Séparateur #}
                     <span class="w-px h-4 bg-edge mx-1"></span>
@@ -241,6 +253,7 @@
     var ch            = BricCharts.initActivity(el, data);
     var curPeriod     = sessionStorage.getItem("import_graph_period") || "1a";
     var curMetric     = sessionStorage.getItem("import_graph_metric") || "created";
+    var curOffset     = 0;
     var PERIOD_IDS    = ["period-1m", "period-3m", "period-1a"];
     var METRIC_IDS    = ["toggle-created", "toggle-total"];
 
@@ -258,23 +271,53 @@
       });
     }
 
+    function updateNavButtons() {
+      var nextBtn = document.getElementById("nav-next");
+      if (!nextBtn) return;
+      if (curOffset === 0) {
+        nextBtn.disabled = true;
+        nextBtn.classList.add("opacity-30", "cursor-not-allowed");
+        nextBtn.classList.remove("hover:text-gold", "hover:bg-gold/15");
+      } else {
+        nextBtn.disabled = false;
+        nextBtn.classList.remove("opacity-30", "cursor-not-allowed");
+        nextBtn.classList.add("hover:text-gold", "hover:bg-gold/15");
+      }
+    }
+
     window.activitySetPeriod = function (p) {
       curPeriod = p;
+      curOffset = 0;
       sessionStorage.setItem("import_graph_period", p);
-      ch.renderActivity(curPeriod, curMetric);
+      ch.renderActivity(curPeriod, curMetric, curOffset);
       setActive("period-" + p, PERIOD_IDS);
+      updateNavButtons();
     };
 
     window.activitySetMetric = function (m) {
       curMetric = m;
       sessionStorage.setItem("import_graph_metric", m);
-      ch.renderActivity(curPeriod, curMetric);
+      ch.renderActivity(curPeriod, curMetric, curOffset);
       setActive(m === "created" ? "toggle-created" : "toggle-total", METRIC_IDS);
+    };
+
+    window.activityPrev = function () {
+      curOffset += 1;
+      ch.renderActivity(curPeriod, curMetric, curOffset);
+      updateNavButtons();
+    };
+
+    window.activityNext = function () {
+      if (curOffset > 0) {
+        curOffset -= 1;
+        ch.renderActivity(curPeriod, curMetric, curOffset);
+        updateNavButtons();
+      }
     };
 
     // Appliquer l'état sauvegardé au chargement si différent du défaut HTML
     if (curPeriod !== "1a" || curMetric !== "created") {
-      ch.renderActivity(curPeriod, curMetric);
+      ch.renderActivity(curPeriod, curMetric, curOffset);
       setActive("period-" + curPeriod, PERIOD_IDS);
       setActive(curMetric === "created" ? "toggle-created" : "toggle-total", METRIC_IDS);
     }

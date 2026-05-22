@@ -73,9 +73,12 @@ window.BricCharts = window.BricCharts || {};
 
     // ── Construction des buckets selon la période ───────────────────────────
     // Retourne { keys: [...], labels: [...] } — même longueur, indexés ensemble.
-    function buildBuckets(period) {
+    function buildBuckets(period, offset) {
       var today = new Date();
       today.setHours(0, 0, 0, 0);
+      // Décaler la date de référence selon l'offset et la taille de la fenêtre
+      var windowDays = period === "1m" ? 30 : period === "3m" ? 91 : 365;
+      today.setDate(today.getDate() - (offset || 0) * windowDays);
       var keys   = [];
       var labels = [];
 
@@ -116,9 +119,9 @@ window.BricCharts = window.BricCharts || {};
     }
 
     // ── Rendu principal ─────────────────────────────────────────────────────
-    function render(period, metric) {
+    function render(period, metric, offset) {
       var gran = period === "1m" ? "day" : "week";
-      var bb   = buildBuckets(period);
+      var bb   = buildBuckets(period, offset);
 
       // Initialiser les compteurs à zéro pour chaque banque × bucket
       var counts = {};
@@ -267,7 +270,7 @@ window.BricCharts = window.BricCharts || {};
             color: T["text-disabled"],
             fontSize: 9,
             fontFamily: FONT,
-            interval: 0,
+            interval: "auto",
             formatter: function (value, index) {
               return bb.labels[index] || "";
             },
@@ -299,9 +302,9 @@ window.BricCharts = window.BricCharts || {};
       }, true);
     }
 
-    // Exposer render pour que les boutons HTML puissent appeler ch.render(p, m)
+    // Exposer render pour que les boutons HTML puissent appeler ch.renderActivity(p, m, offset)
     chart.renderActivity = render;
-    render("1a", "created");
+    render("1a", "created", 0);
     return chart;
   };
 })(window.BricCharts);
