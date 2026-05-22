@@ -100,7 +100,7 @@ Données hardcodées — prochaine étape : brancher la vue Django.
                         </details>
                     {% endwith %}
                     {# Dropdown comptes — multi-select, filtre le Sankey + Donut + liste #}
-                    {% include "components/filters/filter_accounts.html" with accounts=accounts filter_account_ids=filter_account_ids %}
+                    {% include "components/filters/filter_accounts.html" with accounts=accounts filter_account_ids=filter_account_ids toggle_url_name="budget:toggle_filter_account" %}
                     {# Icônes copie + expand — Soon (juste désactivées, pas de badge) #}
                     <button class="w-7 h-7 flex items-center justify-center rounded-full text-text-disabled opacity-30 cursor-not-allowed"
                             title="Bientôt disponible"

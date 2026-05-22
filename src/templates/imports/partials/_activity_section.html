@@ -12,7 +12,7 @@ Le <script> inline ré-initialise ECharts après chaque swap.
 {# 2. Titre + filtre compte — identique au row "Cashflow" du Sankey #}
 <div class="flex items-center justify-between pb-2">
 <h2 class="text-sm font-semibold text-text-base">Activité</h2>
-{% include "imports/partials/_filter_accounts.html" with accounts=accounts filter_account_ids=filter_account_ids filter_open=filter_open %}
+{% include "components/filters/filter_accounts.html" with accounts=accounts filter_account_ids=filter_account_ids toggle_url_name="imports:toggle_filter_account" htmx_target="#activity-chart-section" filter_open=filter_open %}
 </div>
 {{ chart_data|json_script:"import-chart-data" }}
 <div id="import-chart" style="height: 220px; width: 100%;"></div>
