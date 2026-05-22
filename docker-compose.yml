@@ -6,12 +6,13 @@ services:
     container_name: bricbudget-db
     restart: unless-stopped
 
-    # Variables d'environnement lues depuis .env au niveau du docker-compose
-    # Ces valeurs doivent correspondre exactement à celles dans .env
+    # Credentials du container PostgreSQL local (dev uniquement — non-secrets).
+    # Correspondent aux valeurs dans DATABASE_URL du .env local :
+    #   postgresql://bricbudget:bricbudget@localhost:5433/bricbudget
     environment:
-      POSTGRES_DB: ${DB_NAME}
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: bricbudget
+      POSTGRES_USER: bricbudget
+      POSTGRES_PASSWORD: bricbudget
 
     ports:
       # Expose PostgreSQL sur localhost:5432 pour que Django (sur le Mac) puisse s'y connecter
@@ -26,7 +27,7 @@ services:
 
     healthcheck:
       # Vérifie que PostgreSQL est prêt à accepter des connexions
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      test: ["CMD-SHELL", "pg_isready -U bricbudget -d bricbudget"]
       interval: 5s
       timeout: 5s
       retries: 5
