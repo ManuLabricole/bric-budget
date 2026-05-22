@@ -197,6 +197,25 @@
     <script src="{% static 'js/vendor/echarts.min.js' %}"></script>
     <script src="{% static 'js/charts/utils.js' %}"></script>
     <script src="{% static 'js/charts/activity.js' %}"></script>
-    {# Le graphique est initialisé par le <script> inline dans _activity_section.html, #}
-    {# qui s'exécute aussi bien au chargement initial qu'après un swap HTMX.            #}
+    <script>
+  // Chargement initial : le <script> inline du partial s'est exécuté AVANT ce bloc
+  // (extra_js vient après panel_left dans le DOM), donc BricCharts n'était pas défini.
+  // On appelle initActivityChart() maintenant que les vendors sont chargés.
+  // Pour les swaps HTMX suivants, le <script> inline du partial s'exécute directement
+  // car les vendors sont déjà présents — pas besoin de re-appeler ici.
+  window.initActivityChart = function () {
+    var el = document.getElementById("import-chart");
+    if (!el) return;
+    if (typeof echarts !== "undefined" && echarts.getInstanceByDom(el)) {
+      echarts.dispose(el);
+    }
+    var dataEl = document.getElementById("import-chart-data");
+    if (!dataEl) return;
+    var data = JSON.parse(dataEl.textContent);
+    var ch = BricCharts.initActivity(el, data);
+    ch.renderActivity("{{ period_mode }}", "created", {{ period_offset }});
+    window.addEventListener("resize", function () { ch.resize(); });
+  };
+  initActivityChart();
+</script>
 {% endblock %}
