@@ -68,8 +68,12 @@ if not DEBUG:
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    SECURE_HSTS_SECONDS = 60  # augmenter à 31536000 après validation en prod
+    SECURE_HSTS_SECONDS = 31536000  # 1 an — validé en prod
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    # Permissions-Policy : désactive les APIs navigateur non utilisées.
+    # Réduit la surface d'attaque côté client (caméra, micro, géoloc...).
+    PERMISSIONS_POLICY = "camera=(), microphone=(), geolocation=(), payment=()"
 
 
 # =============================================================================
@@ -119,6 +123,8 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # Injecte le header Permissions-Policy (non géré par SecurityMiddleware).
+    "config.middleware.PermissionsPolicyMiddleware",
 ]
 
 # ROOT_URLCONF: the Python module Django reads to resolve URLs.
