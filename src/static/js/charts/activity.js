@@ -83,27 +83,38 @@ window.BricCharts = window.BricCharts || {};
       var labels = [];
 
       if (period === "1m") {
-        // 30 jours — un label tous les 7 jours + dernier jour
+        // 30 jours — label tous les 7 jours (≈ 5 labels réguliers)
         for (var i = 29; i >= 0; i--) {
           var d = new Date(today);
           d.setDate(today.getDate() - i);
           keys.push(bucketKey(d, "day"));
-          labels.push((i % 7 === 0 || i === 0)
-            ? d.getDate() + " " + d.toLocaleString("fr", { month: "short" })
+          labels.push(i % 7 === 0
+            ? d.getDate() + " " + d.toLocaleString("fr", { month: "short" })
             : "");
         }
-      } else {
-        // 3M = 13 semaines / 1A = 52 semaines
-        // Label affiché uniquement en début de mois (quand le mois change)
-        var weeks = period === "3m" ? 13 : 52; // 1y
+      } else if (period === "3m") {
+        // 13 semaines — label toutes les 2 semaines (≈ 7 labels réguliers)
+        var weeks = 13;
         var start = monday(today);
         start.setDate(start.getDate() - (weeks - 1) * 7);
-
         for (var i = 0; i < weeks; i++) {
           var d = new Date(start);
           d.setDate(start.getDate() + i * 7);
           keys.push(bucketKey(d, "week"));
-
+          labels.push(i % 2 === 0
+            ? d.getDate() + " " + d.toLocaleString("fr", { month: "short" })
+            : "");
+        }
+      } else {
+        // 1y = 52 semaines — 1 label par mois (≈ 12 labels réguliers)
+        // Premier lundi d'un nouveau mois = le label affiché.
+        var weeks = 52;
+        var start = monday(today);
+        start.setDate(start.getDate() - (weeks - 1) * 7);
+        for (var i = 0; i < weeks; i++) {
+          var d = new Date(start);
+          d.setDate(start.getDate() + i * 7);
+          keys.push(bucketKey(d, "week"));
           var isNewMonth = i === 0;
           if (!isNewMonth) {
             var prev = new Date(start);
@@ -111,7 +122,7 @@ window.BricCharts = window.BricCharts || {};
             isNewMonth = monday(prev).getMonth() !== monday(d).getMonth();
           }
           labels.push(isNewMonth
-            ? d.getDate() + " " + d.toLocaleString("fr", { month: "short" })
+            ? d.toLocaleString("fr", { month: "short" }).replace(/^./, function (c) { return c.toUpperCase(); })
             : "");
         }
       }
@@ -158,12 +169,21 @@ window.BricCharts = window.BricCharts || {};
         return data.banks.reduce(function (s, b) { return s + counts[b][k]; }, 0);
       });
       var nonZero = bucketTotals.filter(function (v) { return v > 0; }).sort(function (a, b) { return a - b; });
+      // niceMax : arrondit vers le haut à la valeur "ronde" suivante pour que
+      // l'axe Y affiche des graduations propres (ex: 0/5/10/15 et non 0/4/8/12).
+      function niceMax(val) {
+        if (val <= 0) return 10;
+        var mag = Math.pow(10, Math.floor(Math.log10(val)));
+        var n   = val / mag;
+        var nice = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
+        return nice * mag;
+      }
       var yMax;
       if (nonZero.length > 1) {
         var p90 = nonZero[Math.floor(nonZero.length * 0.9)];
-        yMax = Math.max(p90 * 1.5, 10);
+        yMax = niceMax(Math.max(p90 * 1.5, 5));
       }
-      // nonZero.length <= 1 → undefined → ECharts auto-scale (pas de données = pas de problème)
+      // nonZero.length <= 1 → undefined → ECharts auto-scale
 
       var series = data.banks.map(function (bank, i) {
         var isTop = i === data.banks.length - 1; // série empilée du dessus
@@ -270,7 +290,9 @@ window.BricCharts = window.BricCharts || {};
             color: T["text-disabled"],
             fontSize: 9,
             fontFamily: FONT,
-            interval: "auto",
+            // interval:0 = montrer tous les ticks, le formatter filtre les vides.
+            // Cela garantit un placement régulier calculé dans buildBuckets.
+            interval: 0,
             formatter: function (value, index) {
               return bb.labels[index] || "";
             },
@@ -283,6 +305,9 @@ window.BricCharts = window.BricCharts || {};
           position: "left",
           minInterval: 1,
           max: yMax,
+          // splitNumber : suggestion ECharts pour le nb de graduations.
+          // ECharts ajuste pour tomber sur des valeurs rondes.
+          splitNumber: 4,
           axisLabel: {
             color: T["text-disabled"],
             fontSize: 9,

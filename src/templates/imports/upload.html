@@ -3,16 +3,15 @@
 {% block panels_align %}items-start{% endblock %}
 {% block panel_left %}
     <div class="flex flex-col gap-4 h-full">
-        {# ── Activité — hero section ──────────────────────────────────────────── #}
+        {# ── Activité — hero section — layout identique au Sankey budget ───────── #}
         <div class="bg-surface-3/70 backdrop-blur-xl border border-edge/60 rounded-xl p-5 flex flex-col">
-            <div class="mb-3 flex flex-col gap-2">
-                <div class="flex items-center justify-between">
-                    <h2 class="text-sm font-semibold text-text-base">Activité</h2>
-                    {# Filtre compte — identique au Sankey, URLs imports: #}
-                    {% include "imports/partials/_filter_accounts.html" with accounts=accounts filter_account_ids=filter_account_ids %}
-                </div>
-                {# Navigation période — composant réutilisable identique au Sankey #}
-                {% include "components/period/period_nav.html" with period_mode=period_mode period_display=period_display can_go_next=can_go_next nav_url_name="imports:set_period" %}
+            {# 1. Navigation période — full width, comme dans budget/index.html #}
+            {% include "components/period/period_nav.html" with period_mode=period_mode period_display=period_display can_go_next=can_go_next nav_url_name="imports:set_period" %}
+            <div class="border-t border-edge my-3"></div>
+            {# 2. Titre à gauche + filtre compte à droite — identique au "Cashflow" row #}
+            <div class="flex items-center justify-between pb-2">
+                <h2 class="text-sm font-semibold text-text-base">Activité</h2>
+                {% include "imports/partials/_filter_accounts.html" with accounts=accounts filter_account_ids=filter_account_ids %}
             </div>
             {{ chart_data|json_script:"import-chart-data" }}
             <div id="import-chart" style="height: 220px; width: 100%;"></div>
