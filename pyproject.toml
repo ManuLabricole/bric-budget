@@ -1,6 +1,6 @@
 [project]
 name = "bric-budget"
-version = "0.1.0"
+version = "0.2.0"
 description = "Personal budget tracker"
 authors = [
     {name = "ManuLabricole",email = "emmanuel.barriol@gmail.com"}
@@ -99,7 +99,7 @@ exclude = [
 #   test     — adding or updating tests
 #   style    — formatting, no logic change
 name = "cz_conventional_commits"
-version = "0.1.0"
+version = "0.2.0"
 version_files = ["pyproject.toml:version"]
 tag_format = "v$version"
 

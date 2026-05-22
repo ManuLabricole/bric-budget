@@ -20,7 +20,7 @@ from pathlib import Path
 
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
@@ -32,7 +32,7 @@ from connectors.resolver import (
     detect_connector,
     resolve_accounts,
 )
-from transactions.models import ImportLog
+from transactions.models import ImportLog, Transaction
 from transactions.services import ImportService, compute_file_hash
 
 
@@ -60,11 +60,37 @@ def import_upload(request):
     if request.method == "POST":
         return _handle_dry_run(request)
 
+    from datetime import timedelta
+
     from django.utils import timezone
 
     from accounts.models import Account
 
     today = timezone.now().date()
+
+    # ── Période du graphique d'activité ──────────────────────────────────────
+    # Lue depuis la session — modifiée par set_period().
+    period_mode = request.session.get("import_period_mode", "1y")
+    period_offset = request.session.get("import_period_offset", 0)
+    filter_account_ids = list(request.session.get("import_filter_account_ids", []))
+
+    window_days = {"1m": 30, "3m": 91, "1y": 365}[period_mode]
+    end_date = today - timedelta(days=period_offset * window_days)
+    start_date = end_date - timedelta(days=window_days)
+
+    # Label affiché dans la pill centrale de period_nav
+    # Exemple : "23 mars – 22 avr. 2026"
+    def _month_label(d):
+        return str(d.day) + " " + d.strftime("%b")
+
+    period_display = (
+        _month_label(start_date)
+        + " – "
+        + _month_label(end_date)
+        + " "
+        + str(end_date.year)
+    )
+    can_go_next = period_offset > 0
 
     # ── Sync status groupé par banque ────────────────────────────────────────
     # Règles couleur :
@@ -103,41 +129,38 @@ def import_upload(request):
         {"bank": bank, "accounts": accounts} for bank, accounts in banks_map.items()
     ]
 
-    # ── Chart — données brutes journalières sur 12 mois ─────────────────────
-    # On envoie les logs bruts (1 point = 1 import). Le JS agrège selon la période
-    # choisie (1M=jours, 3M=semaines, 1A=mois) et empile par banque.
-    from datetime import timedelta
+    # ── Chart — transactions groupées par date réelle sur 12 mois ───────────
+    # Axe X = date de la transaction (pas date d'import).
+    # Raison : l'import initial bulk (ex: 4 000 tx Yuh) crée un spike géant
+    # sur la date d'import, masquant toute l'activité réelle. En utilisant
+    # Transaction.date, les mouvements se répartissent sur leurs vraies dates.
+    # IDOR : filtre account__members=request.user — jamais de transactions cross-user.
+    from django.db.models import Count
 
-    cutoff_12m = today - timedelta(days=365)
-    logs_12m = list(
-        ImportLog.objects.filter(imported_at__date__gte=cutoff_12m)
-        .select_related("account__bank")
-        .order_by("imported_at")
+    tx_qs = Transaction.objects.filter(
+        account__members=request.user,
+        date__gt=start_date,
+        date__lte=end_date,
+        is_ignored=False,
+    )
+    # Filtre compte : scopé à l'user (la contrainte account__members ci-dessus
+    # garantit qu'on ne peut filtrer que sur ses propres comptes).
+    if filter_account_ids:
+        tx_qs = tx_qs.filter(account_id__in=filter_account_ids)
+
+    tx_by_day = list(
+        tx_qs.select_related("account__bank")
+        .values("date", "account__bank__name")
+        .annotate(count=Count("id"))
+        .order_by("date")
     )
 
-    # Banques présentes dans la fenêtre (ordre d'apparition)
+    # Banques présentes dans la fenêtre (ordre d'apparition chronologique)
     seen_bank_names = []
-    for log in logs_12m:
-        name = log.account.bank.name
+    for row in tx_by_day:
+        name = row["account__bank__name"]
         if name not in seen_bank_names:
             seen_bank_names.append(name)
-
-    # NE PAS appeler json.dumps() ici — json_script dans le template sérialise lui-même.
-    # Un dict Python passé à json_script → JSON valide dans le script tag.
-    # Si on pré-sérialise avec json.dumps(), json_script ré-encode la string → double
-    # encodage → raw devient une string JS au lieu d'un objet → raw.banks = undefined.
-    chart_data = {
-        "banks": seen_bank_names,
-        "logs": [
-            {
-                "date": log.imported_at.strftime("%Y-%m-%d"),
-                "bank": log.account.bank.name,
-                "created": log.count_created,
-                "total": log.count_created + log.count_skipped,
-            }
-            for log in logs_12m
-        ],
-    }
 
     # ── Historique groupé par fichier (file_hash) ───────────────────────────
     # Un même fichier CIC génère N ImportLogs (1 par feuille/compte).
@@ -187,6 +210,42 @@ def import_upload(request):
             else:
                 entry.match_method = "convention"
 
+    # NE PAS appeler json.dumps() ici — json_script dans le template sérialise lui-même.
+    # Un dict Python passé à json_script → JSON valide dans le script tag.
+    # chart_data construit ici (après grouped_logs) pour pouvoir inclure import_markers.
+    chart_data = {
+        "banks": seen_bank_names,
+        # logs : une entrée par (date, banque) — date = date réelle de la transaction.
+        "logs": [
+            {
+                "date": row["date"].strftime("%Y-%m-%d"),
+                "bank": row["account__bank__name"],
+                "created": row["count"],
+                "total": row["count"],
+            }
+            for row in tx_by_day
+        ],
+        # import_markers : un marqueur par upload groupé dans la fenêtre 12 mois.
+        # Affichés comme lignes verticales sur l'axe X du graphique.
+        "import_markers": [
+            {
+                "date": group["imported_at"].strftime("%Y-%m-%d"),
+                "filename": group["filename"] or "?",
+                "total": group["total_created"],
+                "bank": group["bank"].name,
+            }
+            for group in grouped_logs
+            if start_date < group["imported_at"].date() <= end_date
+        ],
+    }
+
+    # Comptes de l'utilisateur — pour le filtre dropdown du graphique
+    user_accounts = (
+        Account.objects.filter(is_active=True, members=request.user)
+        .select_related("bank")
+        .order_by("bank__name", "name")
+    )
+
     return render(
         request,
         "imports/upload.html",
@@ -194,6 +253,14 @@ def import_upload(request):
             "grouped_logs": grouped_logs,
             "bank_groups": bank_groups,
             "chart_data": chart_data,
+            # Période graphique
+            "period_mode": period_mode,
+            "period_offset": period_offset,
+            "period_display": period_display,
+            "can_go_next": can_go_next,
+            # Filtre comptes
+            "accounts": user_accounts,
+            "filter_account_ids": filter_account_ids,
         },
     )
 
@@ -921,6 +988,179 @@ def import_select_account(request):
         )
     except Exception as e:
         return _error(request, f"Erreur lors du dry-run : {e}")
+
+
+@login_required
+def set_period(request, action):
+    """
+    Met à jour la période et l'offset du graphique d'activité dans la session.
+
+    Si requête HTMX → retourne le partial _activity_section.html (swap sans rechargement).
+    Sinon → redirect vers la page d'import (accès direct à l'URL).
+
+    action : "1m" | "3m" | "1y"  → change la période, remet l'offset à 0
+             "prev"               → recule d'une fenêtre (offset++)
+             "next"               → avance d'une fenêtre (offset--), min 0
+    """
+    period_mode = request.session.get("import_period_mode", "1y")
+    offset = request.session.get("import_period_offset", 0)
+
+    if action in ("1m", "3m", "1y"):
+        period_mode = action
+        offset = 0
+    elif action == "prev":
+        offset += 1
+    elif action == "next":
+        offset = max(0, offset - 1)
+
+    request.session["import_period_mode"] = period_mode
+    request.session["import_period_offset"] = offset
+
+    if request.headers.get("HX-Request"):
+        return _render_activity_section(request, period_mode, offset, filter_open=False)
+    return redirect("imports:upload")
+
+
+@login_required
+def toggle_filter_account(request, account_id):
+    """
+    Active/désactive un compte dans le filtre du graphique d'activité.
+    account_id=0 réinitialise le filtre (tous les comptes).
+    IDOR : le filtrage en DB reste scopé à request.user dans import_upload.
+
+    Si requête HTMX → retourne le partial avec filter_open=True (dropdown reste ouvert).
+    Sinon → redirect.
+    """
+    ids = list(request.session.get("import_filter_account_ids", []))
+    if account_id == 0:
+        ids = []
+    elif account_id in ids:
+        ids.remove(account_id)
+    else:
+        ids.append(account_id)
+    request.session["import_filter_account_ids"] = ids
+
+    if request.headers.get("HX-Request"):
+        period_mode = request.session.get("import_period_mode", "1y")
+        offset = request.session.get("import_period_offset", 0)
+        return _render_activity_section(request, period_mode, offset, filter_open=True)
+    return redirect("imports:upload")
+
+
+def _render_activity_section(request, period_mode, period_offset, filter_open=False):
+    """
+    Construit le contexte du graphique d'activité et retourne le partial
+    _activity_section.html (utilisé pour les swaps HTMX depuis set_period
+    et toggle_filter_account).
+    """
+    from datetime import timedelta
+
+    from django.db.models import Count
+    from django.utils import timezone
+
+    today = timezone.now().date()
+    filter_account_ids = list(request.session.get("import_filter_account_ids", []))
+
+    window_days = {"1m": 30, "3m": 91, "1y": 365}[period_mode]
+    end_date = today - timedelta(days=period_offset * window_days)
+    start_date = end_date - timedelta(days=window_days)
+
+    def _month_label(d):
+        return str(d.day) + " " + d.strftime("%b")
+
+    period_display = (
+        _month_label(start_date)
+        + " – "
+        + _month_label(end_date)
+        + " "
+        + str(end_date.year)
+    )
+    can_go_next = period_offset > 0
+
+    tx_qs = Transaction.objects.filter(
+        account__members=request.user,
+        date__gt=start_date,
+        date__lte=end_date,
+        is_ignored=False,
+    )
+    if filter_account_ids:
+        tx_qs = tx_qs.filter(account_id__in=filter_account_ids)
+
+    tx_by_day = list(
+        tx_qs.select_related("account__bank")
+        .values("date", "account__bank__name")
+        .annotate(count=Count("id"))
+        .order_by("date")
+    )
+
+    seen_bank_names = []
+    for row in tx_by_day:
+        name = row["account__bank__name"]
+        if name not in seen_bank_names:
+            seen_bank_names.append(name)
+
+    from accounts.models import Account
+
+    user_accounts = (
+        Account.objects.filter(is_active=True, members=request.user)
+        .select_related("bank")
+        .order_by("bank__name", "name")
+    )
+
+    # Marqueurs d'import dans la fenêtre — mêmes règles IDOR que le chemin full-page.
+    import_logs = list(
+        ImportLog.objects.filter(
+            account__members=request.user,
+            imported_at__date__gt=start_date,
+            imported_at__date__lte=end_date,
+        )
+        .select_related("account__bank")
+        .order_by("imported_at")
+    )
+    # Dédupliquer par file_hash (un fichier CIC = N ImportLogs, 1 seul marqueur)
+    seen_hashes_m: dict = {}
+    import_markers = []
+    for log in import_logs:
+        key = log.file_hash or log.pk
+        if key not in seen_hashes_m:
+            seen_hashes_m[key] = True
+            import_markers.append(
+                {
+                    "date": log.imported_at.strftime("%Y-%m-%d"),
+                    "filename": log.filename or "?",
+                    "total": log.count_created,
+                    "bank": log.account.bank.name,
+                }
+            )
+
+    chart_data = {
+        "banks": seen_bank_names,
+        "logs": [
+            {
+                "date": row["date"].strftime("%Y-%m-%d"),
+                "bank": row["account__bank__name"],
+                "created": row["count"],
+                "total": row["count"],
+            }
+            for row in tx_by_day
+        ],
+        "import_markers": import_markers,
+    }
+
+    return render(
+        request,
+        "imports/partials/_activity_section.html",
+        {
+            "chart_data": chart_data,
+            "period_mode": period_mode,
+            "period_offset": period_offset,
+            "period_display": period_display,
+            "can_go_next": can_go_next,
+            "accounts": user_accounts,
+            "filter_account_ids": filter_account_ids,
+            "filter_open": filter_open,
+        },
+    )
 
 
 def _error(request, message, hint=None, admin_url=None, admin_label=None):

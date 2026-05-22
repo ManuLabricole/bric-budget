@@ -1,6 +1,8 @@
 // BricBudget — Activity chart (imports/upload.html).
 //
-// Bar chart empilé : transactions importées par banque, filtrable par période et métrique.
+// Bar chart empilé : transactions par date réelle, filtrable par période et métrique.
+// Les barres représentent l'activité financière réelle (Transaction.date),
+// pas la date d'import. Des marqueurs verticaux indiquent les dates d'import.
 //
 // Signature :
 //   var ch = BricCharts.initActivity(el, data)
@@ -8,16 +10,17 @@
 //
 //   el   : élément DOM conteneur
 //   data : {
-//     banks : ["Yuh", "UBS", "CIC", ...]
-//     logs  : [{ date: "YYYY-MM-DD", bank: "Yuh", created: N, total: N }, ...]
+//     banks          : ["Yuh", "UBS", "CIC", ...]
+//     logs           : [{ date: "YYYY-MM-DD", bank: "Yuh", created: N, total: N }, ...]
+//     import_markers : [{ date: "YYYY-MM-DD", filename: "yuh.csv", total: N, bank: "Yuh" }, ...]
 //   }
 //
 // Périodes :
 //   1m → 1 barre par jour  (30 barres)
 //   3m → 1 barre par semaine (13 barres)
-//   1a → 1 barre par semaine (52 barres)
+//   1y → 1 barre par semaine (52 barres)
 //
-// Métriques : "created" (nouvelles tx) | "total" (created + skipped)
+// Métrique : "created" (nouvelles tx)
 //
 // ⛔ Règle : jamais de hex hardcodé ici — tout vient de BC.T. Police via BC.FONT.
 
@@ -70,34 +73,48 @@ window.BricCharts = window.BricCharts || {};
 
     // ── Construction des buckets selon la période ───────────────────────────
     // Retourne { keys: [...], labels: [...] } — même longueur, indexés ensemble.
-    function buildBuckets(period) {
+    function buildBuckets(period, offset) {
       var today = new Date();
       today.setHours(0, 0, 0, 0);
+      // Décaler la date de référence selon l'offset et la taille de la fenêtre
+      var windowDays = period === "1m" ? 30 : period === "3m" ? 91 : 365; // 1y
+      today.setDate(today.getDate() - (offset || 0) * windowDays);
       var keys   = [];
       var labels = [];
 
       if (period === "1m") {
-        // 30 jours — un label tous les 7 jours + dernier jour
+        // 30 jours — label tous les 7 jours (≈ 5 labels réguliers)
         for (var i = 29; i >= 0; i--) {
           var d = new Date(today);
           d.setDate(today.getDate() - i);
           keys.push(bucketKey(d, "day"));
-          labels.push((i % 7 === 0 || i === 0)
-            ? d.getDate() + " " + d.toLocaleString("fr", { month: "short" })
+          labels.push(i % 7 === 0
+            ? d.getDate() + " " + d.toLocaleString("fr", { month: "short" })
             : "");
         }
-      } else {
-        // 3M = 13 semaines / 1A = 52 semaines
-        // Label affiché uniquement en début de mois (quand le mois change)
-        var weeks = period === "3m" ? 13 : 52;
+      } else if (period === "3m") {
+        // 13 semaines — label toutes les 2 semaines (≈ 7 labels réguliers)
+        var weeks = 13;
         var start = monday(today);
         start.setDate(start.getDate() - (weeks - 1) * 7);
-
         for (var i = 0; i < weeks; i++) {
           var d = new Date(start);
           d.setDate(start.getDate() + i * 7);
           keys.push(bucketKey(d, "week"));
-
+          labels.push(i % 2 === 0
+            ? d.getDate() + " " + d.toLocaleString("fr", { month: "short" })
+            : "");
+        }
+      } else {
+        // 1y = 52 semaines — 1 label par mois (≈ 12 labels réguliers)
+        // Premier lundi d'un nouveau mois = le label affiché.
+        var weeks = 52;
+        var start = monday(today);
+        start.setDate(start.getDate() - (weeks - 1) * 7);
+        for (var i = 0; i < weeks; i++) {
+          var d = new Date(start);
+          d.setDate(start.getDate() + i * 7);
+          keys.push(bucketKey(d, "week"));
           var isNewMonth = i === 0;
           if (!isNewMonth) {
             var prev = new Date(start);
@@ -105,7 +122,7 @@ window.BricCharts = window.BricCharts || {};
             isNewMonth = monday(prev).getMonth() !== monday(d).getMonth();
           }
           labels.push(isNewMonth
-            ? d.getDate() + " " + d.toLocaleString("fr", { month: "short" })
+            ? d.toLocaleString("fr", { month: "short" }).replace(/^./, function (c) { return c.toUpperCase(); })
             : "");
         }
       }
@@ -113,9 +130,9 @@ window.BricCharts = window.BricCharts || {};
     }
 
     // ── Rendu principal ─────────────────────────────────────────────────────
-    function render(period, metric) {
-      var gran = period === "1m" ? "day" : "week";
-      var bb   = buildBuckets(period);
+    function render(period, metric, offset) {
+      var gran = period === "1m" ? "day" : "week"; // 1y and 3m use weekly buckets
+      var bb   = buildBuckets(period, offset);
 
       // Initialiser les compteurs à zéro pour chaque banque × bucket
       var counts = {};
@@ -133,30 +150,35 @@ window.BricCharts = window.BricCharts || {};
         }
       });
 
-      // ── Y max intelligent : exclure les imports initiaux (outliers) ────────
-      // Problème : le premier import bulk (milliers de tx) écrase l'axe et rend
-      // les imports quotidiens (quelques tx) invisibles.
-      //
-      // Solution : calculer le max de l'axe sur le 90e percentile des valeurs
-      // non-nulles × 1.5. Les barres qui dépassent sont visuellement tronquées
-      // mais le tooltip affiche toujours la vraie valeur.
-      //
-      // Si toutes les valeurs sont dans le même ordre de grandeur (pas d'outlier),
-      // le 90e percentile ≈ le max réel → comportement identique à l'auto-scale.
+      // ── Lookup marqueurs d'import par bucket ────────────────────────────────
+      // Pour chaque bucket de l'axe X, on mémorise les imports qui tombent dedans.
+      // Utilisé par le tooltip (info textuelle) et la markLine (ligne verticale).
+      var markersByKey = {};
+      if (data.import_markers) {
+        data.import_markers.forEach(function (m) {
+          var k = bucketKey(parseLocal(m.date), gran);
+          if (!markersByKey[k]) markersByKey[k] = [];
+          markersByKey[k].push(m);
+        });
+      }
+
+      // ── Y max — 90e percentile pour absorber les pics d'activité ────────────
+      // Si un mois a une activité anormalement haute (soldes rattrapés, corrections),
+      // le p90 × 1.5 empêche l'axe de s'écraser. Le tooltip affiche toujours la vraie valeur.
       var bucketTotals = bb.keys.map(function (k) {
         return data.banks.reduce(function (s, b) { return s + counts[b][k]; }, 0);
       });
       var nonZero = bucketTotals.filter(function (v) { return v > 0; }).sort(function (a, b) { return a - b; });
-      var yMax;
-      if (nonZero.length > 1) {
-        var p90 = nonZero[Math.floor(nonZero.length * 0.9)];
-        yMax = Math.max(p90 * 1.5, 10);
-      }
-      // nonZero.length <= 1 → undefined → ECharts auto-scale (pas de données = pas de problème)
+      // yMax = dizaine supérieure du max réel (ex: 56 → 60, 10 → 10, 0 → 10).
+      // Sous-graduation : 5 si échelle ≥ 20, 2 sinon (toujours des valeurs rondes).
+      var realMax = nonZero.length > 0 ? nonZero[nonZero.length - 1] : 0;
+      var yMax = realMax <= 0 ? 10 : Math.ceil(realMax / 10) * 10;
+      if (yMax < 10) yMax = 10;
+      var yMinInterval = yMax >= 20 ? 5 : 2;
 
       var series = data.banks.map(function (bank, i) {
         var isTop = i === data.banks.length - 1; // série empilée du dessus
-        return {
+        var s = {
           name: bank,
           type: "bar",
           stack: "total",
@@ -168,12 +190,41 @@ window.BricCharts = window.BricCharts || {};
             opacity: 0.85,
           },
           emphasis: { itemStyle: { opacity: 1 } },
-          barMaxWidth: period === "1m" ? 18 : 10,
+          barMaxWidth: period === "1m" ? 18 : 10, // 1y and 3m are narrower
           barMinHeight: 2,
         };
+        // Marqueurs d'import sur la dernière série (une seule markLine par graphique).
+        // Ligne verticale pointillée à chaque date d'import dans la fenêtre.
+        if (isTop) {
+          var markerData = [];
+          bb.keys.forEach(function (k) {
+            if (markersByKey[k]) {
+              markerData.push({ xAxis: k });
+            }
+          });
+          if (markerData.length) {
+            s.markLine = {
+              silent: true,
+              symbol: ["none", "none"],
+              data: markerData,
+              lineStyle: {
+                type: "dashed",
+                color: T["text-disabled"],
+                width: 1,
+                opacity: 0.45,
+              },
+              label: { show: false },
+            };
+          }
+        }
+        return s;
       });
 
       chart.setOption({
+        animation: true,
+        animationDuration: 300,
+        animationDurationUpdate: 150,
+        animationEasing: "cubicOut",
         backgroundColor: "transparent",
         grid: {
           left: 0,
@@ -198,29 +249,46 @@ window.BricCharts = window.BricCharts || {};
           textStyle: { color: T["text-base"], fontSize: 11, fontFamily: FONT },
           formatter: function (params) {
             var total = params.reduce(function (s, p) { return s + p.value; }, 0);
-            if (total === 0) return null;
+            // Marqueurs d'import sur ce bucket — affichés même si total = 0
+            var key = bb.keys[params[0].dataIndex];
+            var markers = markersByKey[key] || [];
+            if (total === 0 && markers.length === 0) return null;
             var lines = params
               .filter(function (p) { return p.value > 0; })
               .map(function (p) {
                 return p.marker + " " + p.seriesName + " <b>" + p.value + "</b>";
               });
-            var suffix = (yMax !== undefined && total > yMax)
-              ? "<br><span style='opacity:0.55;font-size:10px'>↑ hors échelle</span>"
-              : "";
+            var suffix = "";
+            if (markers.length) {
+              var mLines = markers.map(function (m) {
+                var d = parseLocal(m.date);
+                var dateStr = d.getDate() + " " + d.toLocaleString("fr", { month: "short" }) + " " + d.getFullYear();
+                return "<span style='opacity:0.6;font-size:10px'>↓ import " + m.bank + " — " + m.filename + " — " + m.total + " tx (" + dateStr + ")</span>";
+              });
+              suffix += (lines.length ? "<br>" : "") + mLines.join("<br>");
+            }
+            if (total === 0) return suffix.replace(/^<br>/, "");
             return params[0].axisValueLabel + "<br>" + lines.join("<br>") +
               (lines.length > 1 ? "<br><b>Total : " + total + "</b>" : "") + suffix;
           },
         },
         xAxis: {
           type: "category",
-          data: bb.labels,
+          // bb.keys (YYYY-MM-DD) comme données — permet markLine par date string.
+          // Le formatter restitue les labels visuels calculés dans bb.labels.
+          data: bb.keys,
           axisLine: { show: false },
           axisTick: { show: false },
           axisLabel: {
             color: T["text-disabled"],
             fontSize: 9,
             fontFamily: FONT,
+            // interval:0 = montrer tous les ticks, le formatter filtre les vides.
+            // Cela garantit un placement régulier calculé dans buildBuckets.
             interval: 0,
+            formatter: function (value, index) {
+              return bb.labels[index] || "";
+            },
           },
           splitLine: { show: false },
         },
@@ -228,8 +296,12 @@ window.BricCharts = window.BricCharts || {};
           type: "value",
           show: true,
           position: "left",
-          minInterval: 1,
+          min: 0,
           max: yMax,
+          // interval fixe = 10 → graduations principales régulières (0, 10, 20...).
+          // minInterval garantit que les sous-graduations sont rondes.
+          interval: 10,
+          minInterval: yMinInterval,
           axisLabel: {
             color: T["text-disabled"],
             fontSize: 9,
@@ -249,9 +321,9 @@ window.BricCharts = window.BricCharts || {};
       }, true);
     }
 
-    // Exposer render pour que les boutons HTML puissent appeler ch.render(p, m)
+    // Exposer render pour que les boutons HTML puissent appeler ch.renderActivity(p, m, offset)
     chart.renderActivity = render;
-    render("1a", "created");
+    render("1y", "created", 0);
     return chart;
   };
 })(window.BricCharts);

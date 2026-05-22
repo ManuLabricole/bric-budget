@@ -68,8 +68,12 @@ if not DEBUG:
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    SECURE_HSTS_SECONDS = 60  # augmenter à 31536000 après validation en prod
+    SECURE_HSTS_SECONDS = 31536000  # 1 an — validé en prod
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    # Permissions-Policy : désactive les APIs navigateur non utilisées.
+    # Réduit la surface d'attaque côté client (caméra, micro, géoloc...).
+    PERMISSIONS_POLICY = "camera=(), microphone=(), geolocation=(), payment=()"
 
 
 # =============================================================================
@@ -119,6 +123,8 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # Injecte le header Permissions-Policy (non géré par SecurityMiddleware).
+    "config.middleware.PermissionsPolicyMiddleware",
 ]
 
 # ROOT_URLCONF: the Python module Django reads to resolve URLs.
@@ -195,36 +201,24 @@ WSGI_APPLICATION = "config.wsgi.application"
 # 5. Database
 # =============================================================================
 
-# En production Railway, DATABASE_URL est injectée automatiquement.
-# En local, on utilise les variables DB_* du .env.
-_db_url = config("DATABASE_URL", default="")
-if _db_url:
-    _u = urlparse(_db_url)
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": _u.path.lstrip("/"),
-            "USER": _u.username,
-            "PASSWORD": _u.password,
-            "HOST": _u.hostname,
-            "PORT": _u.port or 5432,
-            "CONN_MAX_AGE": 60,
-        }
+# Convention 12-factor : une seule variable décrit toute la connexion DB.
+# Local  : postgresql://bricbudget:bricbudget@localhost:5433/bricbudget  (port 5433 = Docker)
+# CI     : postgresql://bricbudget:bricbudget@localhost:5432/bricbudget
+# Railway: injectée automatiquement via Variable Reference depuis le service Postgres
+# Si DATABASE_URL est absente, decouple lève UndefinedValueError avec un message clair.
+_db_url = config("DATABASE_URL")
+_u = urlparse(_db_url)
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": _u.path.lstrip("/"),
+        "USER": _u.username,
+        "PASSWORD": _u.password,
+        "HOST": _u.hostname,
+        "PORT": _u.port or 5432,
+        "CONN_MAX_AGE": 60,
     }
-else:
-    # DB_PORT default: 5433 because port 5432 is taken by Homebrew PostgreSQL on this Mac.
-    # Inside Docker the container still uses 5432 — only the Mac-side port differs.
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": config("DB_NAME", default="bricbudget"),
-            "USER": config("DB_USER", default="bricbudget"),
-            "PASSWORD": config("DB_PASSWORD", default="bricbudget"),
-            "HOST": config("DB_HOST", default="localhost"),
-            "PORT": config("DB_PORT", default="5432"),
-            "CONN_MAX_AGE": 60,
-        }
-    }
+}
 
 
 # =============================================================================
