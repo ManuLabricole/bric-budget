@@ -169,21 +169,12 @@ window.BricCharts = window.BricCharts || {};
         return data.banks.reduce(function (s, b) { return s + counts[b][k]; }, 0);
       });
       var nonZero = bucketTotals.filter(function (v) { return v > 0; }).sort(function (a, b) { return a - b; });
-      // niceMax : arrondit vers le haut à la valeur "ronde" suivante pour que
-      // l'axe Y affiche des graduations propres (ex: 0/5/10/15 et non 0/4/8/12).
-      function niceMax(val) {
-        if (val <= 0) return 10;
-        var mag = Math.pow(10, Math.floor(Math.log10(val)));
-        var n   = val / mag;
-        var nice = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
-        return nice * mag;
-      }
-      var yMax;
-      if (nonZero.length > 1) {
-        var p90 = nonZero[Math.floor(nonZero.length * 0.9)];
-        yMax = niceMax(Math.max(p90 * 1.5, 5));
-      }
-      // nonZero.length <= 1 → undefined → ECharts auto-scale
+      // yMax = dizaine supérieure du max réel (ex: 56 → 60, 10 → 10, 0 → 10).
+      // Sous-graduation : 5 si échelle ≥ 20, 2 sinon (toujours des valeurs rondes).
+      var realMax = nonZero.length > 0 ? nonZero[nonZero.length - 1] : 0;
+      var yMax = realMax <= 0 ? 10 : Math.ceil(realMax / 10) * 10;
+      if (yMax < 10) yMax = 10;
+      var yMinInterval = yMax >= 20 ? 5 : 2;
 
       var series = data.banks.map(function (bank, i) {
         var isTop = i === data.banks.length - 1; // série empilée du dessus
@@ -267,9 +258,7 @@ window.BricCharts = window.BricCharts || {};
               .map(function (p) {
                 return p.marker + " " + p.seriesName + " <b>" + p.value + "</b>";
               });
-            var suffix = (yMax !== undefined && total > yMax)
-              ? "<br><span style='opacity:0.55;font-size:10px'>↑ hors échelle</span>"
-              : "";
+            var suffix = "";
             if (markers.length) {
               var mLines = markers.map(function (m) {
                 var d = parseLocal(m.date);
@@ -307,11 +296,12 @@ window.BricCharts = window.BricCharts || {};
           type: "value",
           show: true,
           position: "left",
-          minInterval: 1,
+          min: 0,
           max: yMax,
-          // splitNumber : suggestion ECharts pour le nb de graduations.
-          // ECharts ajuste pour tomber sur des valeurs rondes.
-          splitNumber: 4,
+          // interval fixe = 10 → graduations principales régulières (0, 10, 20...).
+          // minInterval garantit que les sous-graduations sont rondes.
+          interval: 10,
+          minInterval: yMinInterval,
           axisLabel: {
             color: T["text-disabled"],
             fontSize: 9,
