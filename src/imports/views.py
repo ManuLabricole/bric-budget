@@ -1107,6 +1107,32 @@ def _render_activity_section(request, period_mode, period_offset, filter_open=Fa
         .order_by("bank__name", "name")
     )
 
+    # Marqueurs d'import dans la fenêtre — mêmes règles IDOR que le chemin full-page.
+    import_logs = list(
+        ImportLog.objects.filter(
+            account__members=request.user,
+            imported_at__date__gt=start_date,
+            imported_at__date__lte=end_date,
+        )
+        .select_related("account__bank")
+        .order_by("imported_at")
+    )
+    # Dédupliquer par file_hash (un fichier CIC = N ImportLogs, 1 seul marqueur)
+    seen_hashes_m: dict = {}
+    import_markers = []
+    for log in import_logs:
+        key = log.file_hash or log.pk
+        if key not in seen_hashes_m:
+            seen_hashes_m[key] = True
+            import_markers.append(
+                {
+                    "date": log.imported_at.strftime("%Y-%m-%d"),
+                    "filename": log.filename or "?",
+                    "total": log.count_created,
+                    "bank": log.account.bank.name,
+                }
+            )
+
     chart_data = {
         "banks": seen_bank_names,
         "logs": [
@@ -1118,7 +1144,7 @@ def _render_activity_section(request, period_mode, period_offset, filter_open=Fa
             }
             for row in tx_by_day
         ],
-        "import_markers": [],
+        "import_markers": import_markers,
     }
 
     return render(
