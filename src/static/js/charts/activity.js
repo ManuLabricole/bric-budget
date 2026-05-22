@@ -230,6 +230,10 @@ window.BricCharts = window.BricCharts || {};
       });
 
       chart.setOption({
+        animation: true,
+        animationDuration: 300,
+        animationDurationUpdate: 150,
+        animationEasing: "cubicOut",
         backgroundColor: "transparent",
         grid: {
           left: 0,

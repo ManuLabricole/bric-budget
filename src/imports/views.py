@@ -993,8 +993,10 @@ def import_select_account(request):
 @login_required
 def set_period(request, action):
     """
-    Met à jour la période et l'offset du graphique d'activité dans la session,
-    puis redirige vers la page d'import.
+    Met à jour la période et l'offset du graphique d'activité dans la session.
+
+    Si requête HTMX → retourne le partial _activity_section.html (swap sans rechargement).
+    Sinon → redirect vers la page d'import (accès direct à l'URL).
 
     action : "1m" | "3m" | "1y"  → change la période, remet l'offset à 0
              "prev"               → recule d'une fenêtre (offset++)
@@ -1013,6 +1015,9 @@ def set_period(request, action):
 
     request.session["import_period_mode"] = period_mode
     request.session["import_period_offset"] = offset
+
+    if request.headers.get("HX-Request"):
+        return _render_activity_section(request, period_mode, offset, filter_open=False)
     return redirect("imports:upload")
 
 
@@ -1022,6 +1027,9 @@ def toggle_filter_account(request, account_id):
     Active/désactive un compte dans le filtre du graphique d'activité.
     account_id=0 réinitialise le filtre (tous les comptes).
     IDOR : le filtrage en DB reste scopé à request.user dans import_upload.
+
+    Si requête HTMX → retourne le partial avec filter_open=True (dropdown reste ouvert).
+    Sinon → redirect.
     """
     ids = list(request.session.get("import_filter_account_ids", []))
     if account_id == 0:
@@ -1031,7 +1039,102 @@ def toggle_filter_account(request, account_id):
     else:
         ids.append(account_id)
     request.session["import_filter_account_ids"] = ids
+
+    if request.headers.get("HX-Request"):
+        period_mode = request.session.get("import_period_mode", "1y")
+        offset = request.session.get("import_period_offset", 0)
+        return _render_activity_section(request, period_mode, offset, filter_open=True)
     return redirect("imports:upload")
+
+
+def _render_activity_section(request, period_mode, period_offset, filter_open=False):
+    """
+    Construit le contexte du graphique d'activité et retourne le partial
+    _activity_section.html (utilisé pour les swaps HTMX depuis set_period
+    et toggle_filter_account).
+    """
+    from datetime import timedelta
+
+    from django.db.models import Count
+    from django.utils import timezone
+
+    today = timezone.now().date()
+    filter_account_ids = list(request.session.get("import_filter_account_ids", []))
+
+    window_days = {"1m": 30, "3m": 91, "1y": 365}[period_mode]
+    end_date = today - timedelta(days=period_offset * window_days)
+    start_date = end_date - timedelta(days=window_days)
+
+    def _month_label(d):
+        return str(d.day) + " " + d.strftime("%b")
+
+    period_display = (
+        _month_label(start_date)
+        + " – "
+        + _month_label(end_date)
+        + " "
+        + str(end_date.year)
+    )
+    can_go_next = period_offset > 0
+
+    tx_qs = Transaction.objects.filter(
+        account__members=request.user,
+        date__gt=start_date,
+        date__lte=end_date,
+        is_ignored=False,
+    )
+    if filter_account_ids:
+        tx_qs = tx_qs.filter(account_id__in=filter_account_ids)
+
+    tx_by_day = list(
+        tx_qs.select_related("account__bank")
+        .values("date", "account__bank__name")
+        .annotate(count=Count("id"))
+        .order_by("date")
+    )
+
+    seen_bank_names = []
+    for row in tx_by_day:
+        name = row["account__bank__name"]
+        if name not in seen_bank_names:
+            seen_bank_names.append(name)
+
+    from accounts.models import Account
+
+    user_accounts = (
+        Account.objects.filter(is_active=True, members=request.user)
+        .select_related("bank")
+        .order_by("bank__name", "name")
+    )
+
+    chart_data = {
+        "banks": seen_bank_names,
+        "logs": [
+            {
+                "date": row["date"].strftime("%Y-%m-%d"),
+                "bank": row["account__bank__name"],
+                "created": row["count"],
+                "total": row["count"],
+            }
+            for row in tx_by_day
+        ],
+        "import_markers": [],
+    }
+
+    return render(
+        request,
+        "imports/partials/_activity_section.html",
+        {
+            "chart_data": chart_data,
+            "period_mode": period_mode,
+            "period_offset": period_offset,
+            "period_display": period_display,
+            "can_go_next": can_go_next,
+            "accounts": user_accounts,
+            "filter_account_ids": filter_account_ids,
+            "filter_open": filter_open,
+        },
+    )
 
 
 def _error(request, message, hint=None, admin_url=None, admin_label=None):

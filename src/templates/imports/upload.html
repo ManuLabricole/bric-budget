@@ -3,18 +3,9 @@
 {% block panels_align %}items-start{% endblock %}
 {% block panel_left %}
     <div class="flex flex-col gap-4 h-full">
-        {# ── Activité — hero section — layout identique au Sankey budget ───────── #}
+        {# ── Activité — hero section — swappable via HTMX (period + filtre compte) #}
         <div class="bg-surface-3/70 backdrop-blur-xl border border-edge/60 rounded-xl p-5 flex flex-col">
-            {# 1. Navigation période — full width, comme dans budget/index.html #}
-            {% include "components/period/period_nav.html" with period_mode=period_mode period_display=period_display can_go_next=can_go_next nav_url_name="imports:set_period" %}
-            <div class="border-t border-edge my-3"></div>
-            {# 2. Titre à gauche + filtre compte à droite — identique au "Cashflow" row #}
-            <div class="flex items-center justify-between pb-2">
-                <h2 class="text-sm font-semibold text-text-base">Activité</h2>
-                {% include "imports/partials/_filter_accounts.html" with accounts=accounts filter_account_ids=filter_account_ids %}
-            </div>
-            {{ chart_data|json_script:"import-chart-data" }}
-            <div id="import-chart" style="height: 220px; width: 100%;"></div>
+            {% include "imports/partials/_activity_section.html" %}
         </div>
         {# ── Historique des imports ── table 1 ligne par entrée ─────────────── #}
         {#                                                                          #}
@@ -206,22 +197,6 @@
     <script src="{% static 'js/vendor/echarts.min.js' %}"></script>
     <script src="{% static 'js/charts/utils.js' %}"></script>
     <script src="{% static 'js/charts/activity.js' %}"></script>
-    <script>
-  (function () {
-    var data = JSON.parse(document.getElementById("import-chart-data").textContent);
-    var el   = document.getElementById("import-chart");
-    if (!el) return;
-
-    // period_mode et period_offset viennent de la session Django (via la vue import_upload).
-    // Le serveur est la source de vérité — pas de sessionStorage côté JS.
-    var ch          = BricCharts.initActivity(el, data);
-    var curPeriod   = "{{ period_mode }}";
-    var curOffset   = {{ period_offset }};
-
-    // Rendu initial avec la période et l'offset du serveur
-    ch.renderActivity(curPeriod, "created", curOffset);
-
-    window.addEventListener("resize", function () { ch.resize(); });
-  })();
-    </script>
+    {# Le graphique est initialisé par le <script> inline dans _activity_section.html, #}
+    {# qui s'exécute aussi bien au chargement initial qu'après un swap HTMX.            #}
 {% endblock %}
