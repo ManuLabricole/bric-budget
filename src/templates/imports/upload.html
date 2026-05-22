@@ -36,19 +36,6 @@
                             class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-colors opacity-30 cursor-not-allowed text-text-muted">
                         ›
                     </button>
-                    {# Séparateur #}
-                    <span class="w-px h-4 bg-edge mx-1"></span>
-                    {# Métrique #}
-                    <button id="toggle-created"
-                            onclick="activitySetMetric('created')"
-                            class="h-8 px-3 rounded-full flex items-center justify-center text-xs font-medium transition-colors text-gold bg-gold/15">
-                        Nouvelles
-                    </button>
-                    <button id="toggle-total"
-                            onclick="activitySetMetric('total')"
-                            class="h-8 px-3 rounded-full flex items-center justify-center text-xs font-medium transition-colors text-text-muted hover:text-gold hover:bg-gold/15">
-                        Total
-                    </button>
                 </div>
             </div>
             {{ chart_data|json_script:"import-chart-data" }}
@@ -251,11 +238,9 @@
     if (!el) return;
 
     var ch            = BricCharts.initActivity(el, data);
-    var curPeriod     = sessionStorage.getItem("import_graph_period") || "1a";
-    var curMetric     = sessionStorage.getItem("import_graph_metric") || "created";
-    var curOffset     = 0;
+    var curPeriod = sessionStorage.getItem("import_graph_period") || "1a";
+    var curOffset = 0;
     var PERIOD_IDS    = ["period-1m", "period-3m", "period-1a"];
-    var METRIC_IDS    = ["toggle-created", "toggle-total"];
 
     function setActive(activeId, allIds) {
       allIds.forEach(function (id) {
@@ -289,37 +274,29 @@
       curPeriod = p;
       curOffset = 0;
       sessionStorage.setItem("import_graph_period", p);
-      ch.renderActivity(curPeriod, curMetric, curOffset);
+      ch.renderActivity(curPeriod, "created", curOffset);
       setActive("period-" + p, PERIOD_IDS);
       updateNavButtons();
     };
 
-    window.activitySetMetric = function (m) {
-      curMetric = m;
-      sessionStorage.setItem("import_graph_metric", m);
-      ch.renderActivity(curPeriod, curMetric, curOffset);
-      setActive(m === "created" ? "toggle-created" : "toggle-total", METRIC_IDS);
-    };
-
     window.activityPrev = function () {
       curOffset += 1;
-      ch.renderActivity(curPeriod, curMetric, curOffset);
+      ch.renderActivity(curPeriod, "created", curOffset);
       updateNavButtons();
     };
 
     window.activityNext = function () {
       if (curOffset > 0) {
         curOffset -= 1;
-        ch.renderActivity(curPeriod, curMetric, curOffset);
+        ch.renderActivity(curPeriod, "created", curOffset);
         updateNavButtons();
       }
     };
 
     // Appliquer l'état sauvegardé au chargement si différent du défaut HTML
-    if (curPeriod !== "1a" || curMetric !== "created") {
-      ch.renderActivity(curPeriod, curMetric, curOffset);
+    if (curPeriod !== "1a") {
+      ch.renderActivity(curPeriod, "created", curOffset);
       setActive("period-" + curPeriod, PERIOD_IDS);
-      setActive(curMetric === "created" ? "toggle-created" : "toggle-total", METRIC_IDS);
     }
 
     window.addEventListener("resize", function () { ch.resize(); });
