@@ -18,9 +18,9 @@
 // Périodes :
 //   1m → 1 barre par jour  (30 barres)
 //   3m → 1 barre par semaine (13 barres)
-//   1a → 1 barre par semaine (52 barres)
+//   1y → 1 barre par semaine (52 barres)
 //
-// Métriques : "created" (nouvelles tx) | "total" (created + skipped)
+// Métrique : "created" (nouvelles tx)
 //
 // ⛔ Règle : jamais de hex hardcodé ici — tout vient de BC.T. Police via BC.FONT.
 
@@ -77,7 +77,7 @@ window.BricCharts = window.BricCharts || {};
       var today = new Date();
       today.setHours(0, 0, 0, 0);
       // Décaler la date de référence selon l'offset et la taille de la fenêtre
-      var windowDays = period === "1m" ? 30 : period === "3m" ? 91 : 365;
+      var windowDays = period === "1m" ? 30 : period === "3m" ? 91 : 365; // 1y
       today.setDate(today.getDate() - (offset || 0) * windowDays);
       var keys   = [];
       var labels = [];
@@ -95,7 +95,7 @@ window.BricCharts = window.BricCharts || {};
       } else {
         // 3M = 13 semaines / 1A = 52 semaines
         // Label affiché uniquement en début de mois (quand le mois change)
-        var weeks = period === "3m" ? 13 : 52;
+        var weeks = period === "3m" ? 13 : 52; // 1y
         var start = monday(today);
         start.setDate(start.getDate() - (weeks - 1) * 7);
 
@@ -120,7 +120,7 @@ window.BricCharts = window.BricCharts || {};
 
     // ── Rendu principal ─────────────────────────────────────────────────────
     function render(period, metric, offset) {
-      var gran = period === "1m" ? "day" : "week";
+      var gran = period === "1m" ? "day" : "week"; // 1y and 3m use weekly buckets
       var bb   = buildBuckets(period, offset);
 
       // Initialiser les compteurs à zéro pour chaque banque × bucket
@@ -179,7 +179,7 @@ window.BricCharts = window.BricCharts || {};
             opacity: 0.85,
           },
           emphasis: { itemStyle: { opacity: 1 } },
-          barMaxWidth: period === "1m" ? 18 : 10,
+          barMaxWidth: period === "1m" ? 18 : 10, // 1y and 3m are narrower
           barMinHeight: 2,
         };
         // Marqueurs d'import sur la dernière série (une seule markLine par graphique).
@@ -304,7 +304,7 @@ window.BricCharts = window.BricCharts || {};
 
     // Exposer render pour que les boutons HTML puissent appeler ch.renderActivity(p, m, offset)
     chart.renderActivity = render;
-    render("1a", "created", 0);
+    render("1y", "created", 0);
     return chart;
   };
 })(window.BricCharts);

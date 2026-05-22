@@ -20,7 +20,7 @@ from pathlib import Path
 
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
@@ -60,11 +60,37 @@ def import_upload(request):
     if request.method == "POST":
         return _handle_dry_run(request)
 
+    from datetime import timedelta
+
     from django.utils import timezone
 
     from accounts.models import Account
 
     today = timezone.now().date()
+
+    # ── Période du graphique d'activité ──────────────────────────────────────
+    # Lue depuis la session — modifiée par set_period().
+    period_mode = request.session.get("import_period_mode", "1y")
+    period_offset = request.session.get("import_period_offset", 0)
+    filter_account_ids = list(request.session.get("import_filter_account_ids", []))
+
+    window_days = {"1m": 30, "3m": 91, "1y": 365}[period_mode]
+    end_date = today - timedelta(days=period_offset * window_days)
+    start_date = end_date - timedelta(days=window_days)
+
+    # Label affiché dans la pill centrale de period_nav
+    # Exemple : "23 mars – 22 avr. 2026"
+    def _month_label(d):
+        return str(d.day) + " " + d.strftime("%b")
+
+    period_display = (
+        _month_label(start_date)
+        + " – "
+        + _month_label(end_date)
+        + " "
+        + str(end_date.year)
+    )
+    can_go_next = period_offset > 0
 
     # ── Sync status groupé par banque ────────────────────────────────────────
     # Règles couleur :
@@ -109,18 +135,21 @@ def import_upload(request):
     # sur la date d'import, masquant toute l'activité réelle. En utilisant
     # Transaction.date, les mouvements se répartissent sur leurs vraies dates.
     # IDOR : filtre account__members=request.user — jamais de transactions cross-user.
-    from datetime import timedelta
-
     from django.db.models import Count
 
-    cutoff_12m = today - timedelta(days=365)
+    tx_qs = Transaction.objects.filter(
+        account__members=request.user,
+        date__gt=start_date,
+        date__lte=end_date,
+        is_ignored=False,
+    )
+    # Filtre compte : scopé à l'user (la contrainte account__members ci-dessus
+    # garantit qu'on ne peut filtrer que sur ses propres comptes).
+    if filter_account_ids:
+        tx_qs = tx_qs.filter(account_id__in=filter_account_ids)
+
     tx_by_day = list(
-        Transaction.objects.filter(
-            account__members=request.user,
-            date__gte=cutoff_12m,
-            is_ignored=False,
-        )
-        .select_related("account__bank")
+        tx_qs.select_related("account__bank")
         .values("date", "account__bank__name")
         .annotate(count=Count("id"))
         .order_by("date")
@@ -206,9 +235,16 @@ def import_upload(request):
                 "bank": group["bank"].name,
             }
             for group in grouped_logs
-            if group["imported_at"].date() >= cutoff_12m
+            if start_date < group["imported_at"].date() <= end_date
         ],
     }
+
+    # Comptes de l'utilisateur — pour le filtre dropdown du graphique
+    user_accounts = (
+        Account.objects.filter(is_active=True, members=request.user)
+        .select_related("bank")
+        .order_by("bank__name", "name")
+    )
 
     return render(
         request,
@@ -217,6 +253,14 @@ def import_upload(request):
             "grouped_logs": grouped_logs,
             "bank_groups": bank_groups,
             "chart_data": chart_data,
+            # Période graphique
+            "period_mode": period_mode,
+            "period_offset": period_offset,
+            "period_display": period_display,
+            "can_go_next": can_go_next,
+            # Filtre comptes
+            "accounts": user_accounts,
+            "filter_account_ids": filter_account_ids,
         },
     )
 
@@ -944,6 +988,50 @@ def import_select_account(request):
         )
     except Exception as e:
         return _error(request, f"Erreur lors du dry-run : {e}")
+
+
+@login_required
+def set_period(request, action):
+    """
+    Met à jour la période et l'offset du graphique d'activité dans la session,
+    puis redirige vers la page d'import.
+
+    action : "1m" | "3m" | "1y"  → change la période, remet l'offset à 0
+             "prev"               → recule d'une fenêtre (offset++)
+             "next"               → avance d'une fenêtre (offset--), min 0
+    """
+    period_mode = request.session.get("import_period_mode", "1y")
+    offset = request.session.get("import_period_offset", 0)
+
+    if action in ("1m", "3m", "1y"):
+        period_mode = action
+        offset = 0
+    elif action == "prev":
+        offset += 1
+    elif action == "next":
+        offset = max(0, offset - 1)
+
+    request.session["import_period_mode"] = period_mode
+    request.session["import_period_offset"] = offset
+    return redirect("imports:upload")
+
+
+@login_required
+def toggle_filter_account(request, account_id):
+    """
+    Active/désactive un compte dans le filtre du graphique d'activité.
+    account_id=0 réinitialise le filtre (tous les comptes).
+    IDOR : le filtrage en DB reste scopé à request.user dans import_upload.
+    """
+    ids = list(request.session.get("import_filter_account_ids", []))
+    if account_id == 0:
+        ids = []
+    elif account_id in ids:
+        ids.remove(account_id)
+    else:
+        ids.append(account_id)
+    request.session["import_filter_account_ids"] = ids
+    return redirect("imports:upload")
 
 
 def _error(request, message, hint=None, admin_url=None, admin_label=None):

@@ -5,38 +5,14 @@
     <div class="flex flex-col gap-4 h-full">
         {# ── Activité — hero section ──────────────────────────────────────────── #}
         <div class="bg-surface-3/70 backdrop-blur-xl border border-edge/60 rounded-xl p-5 flex flex-col">
-            <div class="flex items-center justify-between mb-3">
-                <h2 class="text-sm font-semibold text-text-base">Activité</h2>
-                <div class="flex items-center gap-1">
-                    {# Navigation ‹ › — recule/avance d'une fenêtre selon la période active #}
-                    <button id="nav-prev"
-                            onclick="activityPrev()"
-                            class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-colors text-text-muted hover:text-gold hover:bg-gold/15">
-                        ‹
-                    </button>
-                    {# Période — style identique aux boutons ronds du Sankey (period_nav) #}
-                    <button id="period-1m"
-                            onclick="activitySetPeriod('1m')"
-                            class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-colors text-text-muted hover:text-gold hover:bg-gold/15">
-                        1M
-                    </button>
-                    <button id="period-3m"
-                            onclick="activitySetPeriod('3m')"
-                            class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-colors text-text-muted hover:text-gold hover:bg-gold/15">
-                        3M
-                    </button>
-                    <button id="period-1a"
-                            onclick="activitySetPeriod('1a')"
-                            class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-colors text-gold bg-gold/15">
-                        1A
-                    </button>
-                    <button id="nav-next"
-                            onclick="activityNext()"
-                            disabled
-                            class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-colors opacity-30 cursor-not-allowed text-text-muted">
-                        ›
-                    </button>
+            <div class="mb-3 flex flex-col gap-2">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-sm font-semibold text-text-base">Activité</h2>
+                    {# Filtre compte — identique au Sankey, URLs imports: #}
+                    {% include "imports/partials/_filter_accounts.html" with accounts=accounts filter_account_ids=filter_account_ids %}
                 </div>
+                {# Navigation période — composant réutilisable identique au Sankey #}
+                {% include "components/period/period_nav.html" with period_mode=period_mode period_display=period_display can_go_next=can_go_next nav_url_name="imports:set_period" %}
             </div>
             {{ chart_data|json_script:"import-chart-data" }}
             <div id="import-chart" style="height: 220px; width: 100%;"></div>
@@ -237,67 +213,14 @@
     var el   = document.getElementById("import-chart");
     if (!el) return;
 
-    var ch            = BricCharts.initActivity(el, data);
-    var curPeriod = sessionStorage.getItem("import_graph_period") || "1a";
-    var curOffset = 0;
-    var PERIOD_IDS    = ["period-1m", "period-3m", "period-1a"];
+    // period_mode et period_offset viennent de la session Django (via la vue import_upload).
+    // Le serveur est la source de vérité — pas de sessionStorage côté JS.
+    var ch          = BricCharts.initActivity(el, data);
+    var curPeriod   = "{{ period_mode }}";
+    var curOffset   = {{ period_offset }};
 
-    function setActive(activeId, allIds) {
-      allIds.forEach(function (id) {
-        var btn = document.getElementById(id);
-        if (!btn) return;
-        if (id === activeId) {
-          btn.classList.remove("text-text-muted", "hover:text-gold", "hover:bg-gold/15");
-          btn.classList.add("text-gold", "bg-gold/15");
-        } else {
-          btn.classList.remove("text-gold", "bg-gold/15");
-          btn.classList.add("text-text-muted", "hover:text-gold", "hover:bg-gold/15");
-        }
-      });
-    }
-
-    function updateNavButtons() {
-      var nextBtn = document.getElementById("nav-next");
-      if (!nextBtn) return;
-      if (curOffset === 0) {
-        nextBtn.disabled = true;
-        nextBtn.classList.add("opacity-30", "cursor-not-allowed");
-        nextBtn.classList.remove("hover:text-gold", "hover:bg-gold/15");
-      } else {
-        nextBtn.disabled = false;
-        nextBtn.classList.remove("opacity-30", "cursor-not-allowed");
-        nextBtn.classList.add("hover:text-gold", "hover:bg-gold/15");
-      }
-    }
-
-    window.activitySetPeriod = function (p) {
-      curPeriod = p;
-      curOffset = 0;
-      sessionStorage.setItem("import_graph_period", p);
-      ch.renderActivity(curPeriod, "created", curOffset);
-      setActive("period-" + p, PERIOD_IDS);
-      updateNavButtons();
-    };
-
-    window.activityPrev = function () {
-      curOffset += 1;
-      ch.renderActivity(curPeriod, "created", curOffset);
-      updateNavButtons();
-    };
-
-    window.activityNext = function () {
-      if (curOffset > 0) {
-        curOffset -= 1;
-        ch.renderActivity(curPeriod, "created", curOffset);
-        updateNavButtons();
-      }
-    };
-
-    // Appliquer l'état sauvegardé au chargement si différent du défaut HTML
-    if (curPeriod !== "1a") {
-      ch.renderActivity(curPeriod, "created", curOffset);
-      setActive("period-" + curPeriod, PERIOD_IDS);
-    }
+    // Rendu initial avec la période et l'offset du serveur
+    ch.renderActivity(curPeriod, "created", curOffset);
 
     window.addEventListener("resize", function () { ch.resize(); });
   })();
