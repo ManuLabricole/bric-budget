@@ -8,7 +8,7 @@
 
 from django.urls import path
 
-from . import views
+from . import views, views_categories, views_rules, views_transactions
 
 app_name = "budget"  # namespace — permet {% url 'budget:index' %} dans les templates
 
@@ -30,87 +30,97 @@ urlpatterns = [
     # /budget/panel/transactions/ → partial HTMX — liste transactions dans le right panel
     path(
         "panel/transactions/",
-        views.budget_panel_transactions,
+        views_transactions.budget_panel_transactions,
         name="panel_transactions",
     ),
     # /budget/panel/transactions/<action>/ → met à jour la période puis retourne le fragment
     path(
         "panel/transactions/<str:action>/",
-        views.budget_panel_navigate,
+        views_transactions.budget_panel_navigate,
         name="panel_navigate",
     ),
     # /budget/transactions/<tx_id>/toggle-ignore/ → bascule is_ignored (POST HTMX)
     path(
         "transactions/<int:tx_id>/toggle-ignore/",
-        views.budget_toggle_ignore,
+        views_transactions.budget_toggle_ignore,
         name="toggle_ignore",
     ),
     # /budget/panel/category-picker/?tx_id=X → picker catégorie (fragment HTMX)
     path(
         "panel/category-picker/",
-        views.budget_panel_category_picker,
+        views_transactions.budget_panel_category_picker,
         name="panel_category_picker",
     ),
     # /budget/transactions/categorize/ → assigne category + subcategory (POST HTMX)
     path(
         "transactions/categorize/",
-        views.budget_categorize_transaction,
+        views_transactions.budget_categorize_transaction,
         name="categorize",
     ),
     # /budget/panel/tx-detail/?tx_id=X → détail d'une transaction (fragment HTMX)
-    path("panel/tx-detail/", views.budget_panel_tx_detail, name="panel_tx_detail"),
+    path(
+        "panel/tx-detail/",
+        views_transactions.budget_panel_tx_detail,
+        name="panel_tx_detail",
+    ),
     # /budget/transactions/<tx_id>/toggle-reconcile/ → bascule is_reconciled (POST HTMX)
     path(
         "transactions/<int:tx_id>/toggle-reconcile/",
-        views.budget_toggle_reconcile,
+        views_transactions.budget_toggle_reconcile,
         name="toggle_reconcile",
     ),
     # /budget/panel/rule-create/?tx_id=X&keyword=MIGROS → formulaire création règle (fragment HTMX)
     path(
-        "panel/rule-create/", views.budget_panel_rule_create, name="panel_rule_create"
+        "panel/rule-create/",
+        views_rules.budget_panel_rule_create,
+        name="panel_rule_create",
     ),
     # /budget/panel/rule-create-standalone/ → formulaire création règle sans transaction source (fragment HTMX)
     path(
         "panel/rule-create-standalone/",
-        views.budget_panel_rule_create_standalone,
+        views_rules.budget_panel_rule_create_standalone,
         name="panel_rule_create_standalone",
     ),
     # /budget/panel/rule-standalone-preview/ → aperçu live multi-keywords (GET HTMX)
     path(
         "panel/rule-standalone-preview/",
-        views.budget_rule_standalone_preview,
+        views_rules.budget_rule_standalone_preview,
         name="rule_standalone_preview",
     ),
     # /budget/transactions/rule-create-standalone/ → crée N règles + bulk apply (POST)
     path(
         "transactions/rule-create-standalone/",
-        views.budget_rule_create_standalone_submit,
+        views_rules.budget_rule_create_standalone_submit,
         name="rule_create_standalone_submit",
     ),
     # /budget/transactions/rule-preview/ → prévisualise l'impact d'une règle (POST)
-    path("transactions/rule-preview/", views.budget_rule_preview, name="rule_preview"),
+    path(
+        "transactions/rule-preview/",
+        views_rules.budget_rule_preview,
+        name="rule_preview",
+    ),
     # /budget/transactions/rule-live-preview/ → aperçu live des transactions matchées (GET HTMX)
     path(
         "transactions/rule-live-preview/",
-        views.budget_rule_live_preview,
+        views_rules.budget_rule_live_preview,
         name="rule_live_preview",
     ),
     # /budget/transactions/rule-create/ → crée la règle + bulk apply (POST)
     path(
         "transactions/rule-create/",
-        views.budget_rule_create_submit,
+        views_rules.budget_rule_create_submit,
         name="rule_create_submit",
     ),
     # /budget/modal/target-create/ → modal création / modification d'un objectif mensuel
     path(
         "modal/target-create/",
-        views.budget_modal_target_create,
+        views_transactions.budget_modal_target_create,
         name="modal_target_create",
     ),
     # /budget/modal/rule-intro/ → modal step 1 wizard règle : confirmation avant keyword selection
     path(
         "modal/rule-intro/",
-        views.budget_modal_rule_intro,
+        views_rules.budget_modal_rule_intro,
         name="modal_rule_intro",
     ),
     # /budget/categorie/tab/<tab>/ → bascule l'onglet actif de la page catégorie
@@ -123,13 +133,15 @@ urlpatterns = [
     ),
     # /budget/categorie/<slug>/ → page détail d'une catégorie (Sankey sous-catégories + transactions)
     path(
-        "categorie/<slug:slug>/", views.budget_category_detail, name="category_detail"
+        "categorie/<slug:slug>/",
+        views_categories.budget_category_detail,
+        name="category_detail",
     ),
     # /budget/categorie/<slug>/cashflow/ → partial HTMX : inner HTML de #cashflow-card
     # Appelé par JS après toggle is_ignored depuis le panneau détail.
     path(
         "categorie/<slug:slug>/cashflow/",
-        views.budget_category_cashflow_fragment,
+        views_categories.budget_category_cashflow_fragment,
         name="category_cashflow_fragment",
     ),
     # ── Filtres multi-select (T1 + T2) ──────────────────────────────────────
@@ -151,72 +163,72 @@ urlpatterns = [
     # /budget/export/rules/ → télécharge les règles de catégorisation en JSON
     path(
         "export/rules/",
-        views.budget_export_rules_download,
+        views_rules.budget_export_rules_download,
         name="export_rules_download",
     ),
     # ── Gestion Catégories — liste + détail (Phase 2G T3) ───────────────────────
     # /budget/panel/category-manage/ → liste de toutes les catégories (fragment HTMX → #modal-content)
     path(
         "panel/category-manage/",
-        views.budget_panel_category_manage,
+        views_categories.budget_panel_category_manage,
         name="panel_category_manage",
     ),
     # /budget/panel/category-manage/<slug>/ → détail d'une catégorie (sous-cats + règles)
     path(
         "panel/category-manage/<slug:slug>/",
-        views.budget_panel_category_manage_detail,
+        views_categories.budget_panel_category_manage_detail,
         name="panel_category_manage_detail",
     ),
     # ── Création / Suppression Catégories (Phase 2G T3) ────────────────────────
     # /budget/panel/category-create/ → panel création catégorie ou sous-catégorie (fragment HTMX → #modal-content)
     path(
         "panel/category-create/",
-        views.budget_panel_category_create,
+        views_categories.budget_panel_category_create,
         name="panel_category_create",
     ),
     # /budget/category/create/submit/ → crée la catégorie ou sous-catégorie en DB (POST HTMX)
     path(
         "category/create/submit/",
-        views.budget_category_create_submit,
+        views_categories.budget_category_create_submit,
         name="category_create_submit",
     ),
     # /budget/category/<obj_type>/<slug>/delete-confirm/ → panel warning avant suppression (GET HTMX)
     # obj_type : "category" | "subcategory"
     path(
         "category/<str:obj_type>/<slug:slug>/delete-confirm/",
-        views.budget_panel_category_delete_confirm,
+        views_categories.budget_panel_category_delete_confirm,
         name="category_delete_confirm",
     ),
     # /budget/category/<obj_type>/<slug>/delete/ → supprime l'objet en DB (POST HTMX)
     path(
         "category/<str:obj_type>/<slug:slug>/delete/",
-        views.budget_category_delete,
+        views_categories.budget_category_delete,
         name="category_delete",
     ),
     # ── CRUD Règles (Phase 2G) ───────────────────────────────────────────────
     # /budget/panel/rules/ → panel liste des règles (fragment HTMX → #modal-content)
-    path("panel/rules/", views.budget_panel_rules_list, name="panel_rules_list"),
+    path("panel/rules/", views_rules.budget_panel_rules_list, name="panel_rules_list"),
     # /budget/rules/<id>/toggle/ → inverse is_active, retourne la ligne (POST HTMX)
     path(
         "rules/<int:rule_id>/toggle/",
-        views.budget_rule_toggle_active,
+        views_rules.budget_rule_toggle_active,
         name="rule_toggle_active",
     ),
     # /budget/rules/<id>/delete/ → supprime la règle, retourne vide (POST HTMX)
     path(
         "rules/<int:rule_id>/delete/",
-        views.budget_rule_delete,
+        views_rules.budget_rule_delete,
         name="rule_delete",
     ),
     # /budget/rules/<id>/edit/ → GET = formulaire édition, POST = sauvegarde
     path(
         "rules/<int:rule_id>/edit/",
-        views.budget_rule_row_edit,
+        views_rules.budget_rule_row_edit,
         name="rule_row_edit",
     ),
     path(
         "rules/<int:rule_id>/edit/submit/",
-        views.budget_rule_edit_submit,
+        views_rules.budget_rule_edit_submit,
         name="rule_edit_submit",
     ),
     # ── Paramètres (T6) ─────────────────────────────────────────────────────

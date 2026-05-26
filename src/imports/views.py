@@ -14,17 +14,24 @@ Stockage temporaire :
 """
 
 import hashlib
+import logging
 import os
 import tempfile
+from collections import defaultdict
+from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 
 from django.contrib.auth.decorators import login_required
+from django.db import transaction as db_transaction
+from django.db.models import Count, Max, Min
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from accounts.models import Account, CheckingAccount, SavingsAccount
+from accounts.models import Account, Bank, CheckingAccount, SavingsAccount
 from connectors.cic.parser import CICConnector
 from connectors.resolver import (
     AccountAmbiguous,
@@ -32,8 +39,37 @@ from connectors.resolver import (
     detect_connector,
     resolve_accounts,
 )
+from imports.storage import build_import_filename, save_import_file
 from transactions.models import ImportLog, Transaction
 from transactions.services import ImportService, compute_file_hash
+
+logger = logging.getLogger(__name__)
+
+
+def _month_label(d) -> str:
+    """Formate un jour : '23 mars' → '23 Mar' (str.day + strftime %b).   = espace insécable."""
+    return str(d.day) + " " + d.strftime("%b")
+
+
+def _activity_window(period_mode: str, period_offset: int):
+    """
+    Calcule la fenêtre temporelle du graphique d'activité.
+    Retourne (start_date, end_date, period_display, can_go_next).
+    Partagé entre import_upload (GET) et _render_activity_section.
+    """
+    today = timezone.now().date()
+    window_days = {"1m": 30, "3m": 91, "1y": 365}[period_mode]
+    end_date = today - timedelta(days=period_offset * window_days)
+    start_date = end_date - timedelta(days=window_days)
+    period_display = (
+        _month_label(start_date)
+        + " – "
+        + _month_label(end_date)
+        + " "
+        + str(end_date.year)
+    )
+    can_go_next = period_offset > 0
+    return start_date, end_date, period_display, can_go_next
 
 
 def _account_file_hash(file_hash: str, sheet_name: str | None) -> str:
@@ -60,12 +96,6 @@ def import_upload(request):
     if request.method == "POST":
         return _handle_dry_run(request)
 
-    from datetime import timedelta
-
-    from django.utils import timezone
-
-    from accounts.models import Account
-
     today = timezone.now().date()
 
     # ── Période du graphique d'activité ──────────────────────────────────────
@@ -74,23 +104,9 @@ def import_upload(request):
     period_offset = request.session.get("import_period_offset", 0)
     filter_account_ids = list(request.session.get("import_filter_account_ids", []))
 
-    window_days = {"1m": 30, "3m": 91, "1y": 365}[period_mode]
-    end_date = today - timedelta(days=period_offset * window_days)
-    start_date = end_date - timedelta(days=window_days)
-
-    # Label affiché dans la pill centrale de period_nav
-    # Exemple : "23 mars – 22 avr. 2026"
-    def _month_label(d):
-        return str(d.day) + " " + d.strftime("%b")
-
-    period_display = (
-        _month_label(start_date)
-        + " – "
-        + _month_label(end_date)
-        + " "
-        + str(end_date.year)
+    start_date, end_date, period_display, can_go_next = _activity_window(
+        period_mode, period_offset
     )
-    can_go_next = period_offset > 0
 
     # ── Sync status groupé par banque ────────────────────────────────────────
     # Règles couleur :
@@ -99,13 +115,12 @@ def import_upload(request):
     #   ≥ 1 semaine      → badge "stale"  → orange (text-warning)
     #   jamais importé   → badge "never"  → dim   (text-text-disabled)
     active_accounts = (
-        Account.objects.filter(is_active=True)
+        Account.objects.for_user(request.user)
+        .filter(is_active=True)
         .select_related("bank")
         .order_by("bank__name", "name")
     )
     # Construire un dict bank → liste de comptes
-    from collections import defaultdict
-
     banks_map = defaultdict(list)
     for account in active_accounts:
         last_log = (
@@ -135,8 +150,6 @@ def import_upload(request):
     # sur la date d'import, masquant toute l'activité réelle. En utilisant
     # Transaction.date, les mouvements se répartissent sur leurs vraies dates.
     # IDOR : filtre account__members=request.user — jamais de transactions cross-user.
-    from django.db.models import Count
-
     tx_qs = Transaction.objects.filter(
         account__members=request.user,
         date__gt=start_date,
@@ -593,20 +606,10 @@ def _persist_import_file(
     mais on ne lève pas d'exception — l'import est déjà en DB, l'utilisateur
     ne doit pas perdre ses données pour un problème de fichier.
     """
-    import logging
-
-    from django.db.models import Count, Max, Min
-    from django.utils import timezone
-
-    from imports.storage import build_import_filename, save_import_file
-    from transactions.models import Transaction
-
-    _log = logging.getLogger(__name__)
-
     log_pks = [r.log_pk for r in service_results if r.log_pk]
     if not log_pks:
         # Aucun ImportLog créé (toutes les runs ont échoué tôt) → pas de stockage
-        _log.warning(
+        logger.warning(
             "[import_storage] No log_pk found after confirm — skipping file storage."
         )
         return
@@ -627,8 +630,6 @@ def _persist_import_file(
         ]
 
         # Première balance disponible (None si aucun connecteur ne l'extrait)
-        from decimal import Decimal
-
         raw_balance = next(iter(balances.values()), None)
         balance_dec = Decimal(str(raw_balance)) if raw_balance is not None else None
 
@@ -656,7 +657,7 @@ def _persist_import_file(
             is_encrypted=is_enc,
         )
 
-        _log.info(
+        logger.info(
             "[import_storage] Saved %s → %s (encrypted=%s)",
             filename,
             stored_rel,
@@ -667,7 +668,7 @@ def _persist_import_file(
         # Le stockage a échoué APRÈS que l'import a été committé en DB.
         # On logge sans crasher : l'utilisateur a ses transactions, le fichier
         # source n'est juste pas archivé. Il peut réimporter depuis l'original.
-        _log.error(
+        logger.error(
             "[import_storage] Failed to persist %s: %s",
             filename,
             exc,
@@ -729,8 +730,6 @@ def import_create_account(request):
     Après création, relance le dry-run automatiquement (le fichier temp est
     toujours en session) et retourne _steps_result.html comme si de rien n'était.
     """
-    from accounts.models import Bank
-
     bank_slug = request.POST.get("bank_slug", "")
     account_name = request.POST.get("account_name", "").strip()
     account_type = request.POST.get("account_type", "")
@@ -762,8 +761,6 @@ def import_create_account(request):
         )
 
     # Créer l'Account + spécialisation dans une transaction atomique
-    from django.db import transaction as db_transaction
-
     try:
         with db_transaction.atomic():
             account = Account.objects.create(
@@ -1053,29 +1050,11 @@ def _render_activity_section(request, period_mode, period_offset, filter_open=Fa
     _activity_section.html (utilisé pour les swaps HTMX depuis set_period
     et toggle_filter_account).
     """
-    from datetime import timedelta
-
-    from django.db.models import Count
-    from django.utils import timezone
-
-    today = timezone.now().date()
     filter_account_ids = list(request.session.get("import_filter_account_ids", []))
 
-    window_days = {"1m": 30, "3m": 91, "1y": 365}[period_mode]
-    end_date = today - timedelta(days=period_offset * window_days)
-    start_date = end_date - timedelta(days=window_days)
-
-    def _month_label(d):
-        return str(d.day) + " " + d.strftime("%b")
-
-    period_display = (
-        _month_label(start_date)
-        + " – "
-        + _month_label(end_date)
-        + " "
-        + str(end_date.year)
+    start_date, end_date, period_display, can_go_next = _activity_window(
+        period_mode, period_offset
     )
-    can_go_next = period_offset > 0
 
     tx_qs = Transaction.objects.filter(
         account__members=request.user,
@@ -1098,8 +1077,6 @@ def _render_activity_section(request, period_mode, period_offset, filter_open=Fa
         name = row["account__bank__name"]
         if name not in seen_bank_names:
             seen_bank_names.append(name)
-
-    from accounts.models import Account
 
     user_accounts = (
         Account.objects.filter(is_active=True, members=request.user)

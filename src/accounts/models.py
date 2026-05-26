@@ -280,13 +280,6 @@ class CheckingAccount(models.Model):
         """True si les champs bancaires essentiels sont renseignés (IBAN + BIC)."""
         return bool(self.iban and self.bic)
 
-    @property
-    def iban_display(self):
-        """IBAN masqué pour l'affichage : FR76 **** **** **** **** **** 108"""
-        if not self.iban:
-            return None
-        return self.iban[:4] + " **** **** **** **** " + self.iban[-3:]
-
 
 # =============================================================================
 # SavingsAccount — Account specialisation for savings accounts (Livret A, LDDS...)

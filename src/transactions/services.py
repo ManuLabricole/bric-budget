@@ -269,10 +269,9 @@ class ImportService:
         result = ImportResult()
 
         # ── 1. File-level deduplication ───────────────────────────────────────
-        # If this exact file was already imported, abort immediately.
-        # ImportLog.file_hash is unique=True — importing twice would raise IntegrityError
-        # at the DB level anyway, but we want a clean error message, not a crash.
-        if ImportLog.objects.filter(file_hash=file_hash).exists():
+        # If this exact file was already imported for this account, abort immediately.
+        # Scoped to account so different users can import the same file into their own accounts.
+        if ImportLog.objects.filter(file_hash=file_hash, account=account).exists():
             result.count_errors = 1
             result.error_detail.append(
                 f"File '{filename}' was already imported (file_hash match). "
