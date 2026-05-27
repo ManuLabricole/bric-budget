@@ -57,7 +57,22 @@
         <script>
       window.BRICBUDGET_TOKENS = tailwind.config.theme.extend.colors;
       window.BRICBUDGET_FONT   = tailwind.config.theme.extend.fontFamily.sans.join(", ");
+      // Palette catégories — exposée par budget.context_processors.design_tokens.
+      // Source de vérité : budget/constants.py CATEGORY_COLOR_PALETTE.
+      window.BRICBUDGET_TOKENS.categories = {{ category_palette_json|safe }};
         </script>
+        <style>
+      /* Fallback unique pour toutes les couleurs catégories (pastilles, dots, badges).
+         Utilisé par .cat-dot quand colour_hex est absent côté template. */
+      :root { --cat-fallback: #2d3033; }
+      .cat-dot {
+        display: inline-block;
+        width: 0.5rem; height: 0.5rem;
+        border-radius: 9999px; flex-shrink: 0;
+        background-color: var(--cat-color, var(--cat-fallback));
+      }
+      .cat-dot-lg { width: 0.75rem; height: 0.75rem; }
+        </style>
         {% comment %}
       BACKGROUND FINARY — 3 couches :
         1. Base noire (#07070f)
