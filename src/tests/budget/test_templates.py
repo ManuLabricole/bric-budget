@@ -23,12 +23,16 @@ from transactions.models import Category
 
 
 @pytest.fixture
-def auth_client(db):
+def user(db):
     from django.contrib.auth import get_user_model
 
-    get_user_model().objects.create_user(email="tpl@t.ch", password="p")
+    return get_user_model().objects.create_user(email="tpl@t.ch", password="p")
+
+
+@pytest.fixture
+def auth_client(user):
     c = Client()
-    c.login(email="tpl@t.ch", password="p")
+    c.force_login(user)
     return c
 
 

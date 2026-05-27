@@ -801,6 +801,7 @@ def import_create_account(request):
                 contract_number=contract_number,
                 is_active=True,
             )
+            account.members.add(request.user)  # for_user() sinon invisible
             if account_type == Account.AccountType.CHECKING:
                 CheckingAccount.objects.create(account=account, iban=iban, bic=bic)
             else:

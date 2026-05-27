@@ -143,7 +143,7 @@ def test_chart_data_uses_transaction_date(db, user_a, account_a, category):
     make_tx(account_a, category, tx_date)
 
     client = Client()
-    client.login(email="usera@chart-test.ch", password="pass")
+    client.force_login(user_a)
     response = client.get(reverse("imports:upload"))
 
     assert response.status_code == 200
@@ -159,7 +159,7 @@ def test_chart_data_import_markers_present(db, user_a, account_a, category):
     make_import_log(account_a, import_date, count_created=42, filename="yuh.csv")
 
     client = Client()
-    client.login(email="usera@chart-test.ch", password="pass")
+    client.force_login(user_a)
     response = client.get(reverse("imports:upload"))
 
     assert response.status_code == 200
@@ -178,7 +178,7 @@ def test_chart_data_idor_isolation(db, user_a, account_a, user_b, account_b, cat
     make_tx(account_b, category, tx_date, amount="-999.00")
 
     client = Client()
-    client.login(email="usera@chart-test.ch", password="pass")
+    client.force_login(user_a)
     response = client.get(reverse("imports:upload"))
 
     assert response.status_code == 200
@@ -195,7 +195,7 @@ def test_chart_data_excludes_ignored_transactions(db, user_a, account_a, categor
     make_tx(account_a, category, tx_date, is_ignored=True)
 
     client = Client()
-    client.login(email="usera@chart-test.ch", password="pass")
+    client.force_login(user_a)
     response = client.get(reverse("imports:upload"))
 
     assert response.status_code == 200

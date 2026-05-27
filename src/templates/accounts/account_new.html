@@ -1,0 +1,89 @@
+{% extends "base_app.html" %}
+{% block panel_left %}
+    <div class="max-w-2xl mx-auto py-8 px-4">
+        <h1 class="text-lg font-semibold text-text-base mb-6">Nouveau compte</h1>
+        {% if errors %}
+            <div class="mb-4 p-3 bg-expense/10 border border-expense/30 rounded-lg">
+                {% for error in errors %}<p class="text-sm text-expense">{{ error }}</p>{% endfor %}
+            </div>
+        {% endif %}
+        <form method="post">
+            {% csrf_token %}
+            {% comment %}Étape 1 — Type de compte{% endcomment %}
+            <p class="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">Type de compte</p>
+            <div class="grid grid-cols-2 gap-3 mb-6">
+                <label class="flex items-center gap-3 p-4 bg-surface-3 border border-edge rounded-xl cursor-pointer has-[:checked]:border-gold">
+                    <input type="radio"
+                           name="account_type"
+                           value="checking"
+                           class="hidden"
+                           {% if not form_data or form_data.account_type == "CHECKING" %}checked{% endif %}>
+                    <span class="text-sm font-medium text-text-base">Compte courant</span>
+                </label>
+                <label class="flex items-center gap-3 p-4 bg-surface-3 border border-edge rounded-xl cursor-pointer has-[:checked]:border-gold">
+                    <input type="radio"
+                           name="account_type"
+                           value="savings"
+                           class="hidden"
+                           {% if form_data.account_type == "SAVINGS" %}checked{% endif %}>
+                    <span class="text-sm font-medium text-text-base">Épargne</span>
+                </label>
+                <div class="flex items-center gap-3 p-4 bg-surface-3 border border-edge rounded-xl opacity-50 cursor-not-allowed">
+                    <span class="text-sm text-text-muted">Investissement</span>
+                    {% include "components/badges/soon.html" with extra_class="ml-auto" %}
+                </div>
+                <div class="flex items-center gap-3 p-4 bg-surface-3 border border-edge rounded-xl opacity-50 cursor-not-allowed">
+                    <span class="text-sm text-text-muted">Prévoyance</span>
+                    {% include "components/badges/soon.html" with extra_class="ml-auto" %}
+                </div>
+            </div>
+            {% comment %}Étape 2 — Banque{% endcomment %}
+            <p class="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">Banque</p>
+            <div class="grid grid-cols-3 gap-3 mb-6">
+                {% for bank in banks %}
+                    <label class="flex flex-col items-center gap-2 p-4 bg-surface-3 border border-edge rounded-xl cursor-pointer has-[:checked]:border-gold">
+                        <input type="radio"
+                               name="bank_slug"
+                               value="{{ bank.slug }}"
+                               class="hidden"
+                               {% if form_data.bank_slug == bank.slug %}checked{% endif %}>
+                        {% include "components/banks/bank_logo.html" with bank=bank size="md" %}
+                        <span class="text-xs text-text-muted">{{ bank.name }}</span>
+                    </label>
+                {% endfor %}
+            </div>
+            {% comment %}Étape 3 — Détails{% endcomment %}
+            <p class="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">Détails</p>
+            <div class="space-y-3 mb-6">
+                <input type="text"
+                       name="account_name"
+                       value="{{ form_data.account_name|default:'' }}"
+                       placeholder="Nom du compte (ex: Yuh Principal)"
+                       class="w-full px-3 py-2 bg-surface-3 border border-edge rounded-lg text-sm text-text-base placeholder:text-text-disabled focus:outline-none focus:border-gold">
+                <input type="text"
+                       name="iban"
+                       value="{{ form_data.iban|default:'' }}"
+                       placeholder="IBAN (ex: CH56 0483 5012 3456 7800 9)"
+                       class="w-full px-3 py-2 bg-surface-3 border border-edge rounded-lg text-sm text-text-base placeholder:text-text-disabled focus:outline-none focus:border-gold">
+                <input type="text"
+                       name="bic"
+                       value="{{ form_data.bic|default:'' }}"
+                       placeholder="BIC (optionnel)"
+                       class="w-full px-3 py-2 bg-surface-3 border border-edge rounded-lg text-sm text-text-base placeholder:text-text-disabled focus:outline-none focus:border-gold">
+                <select name="currency"
+                        class="w-full px-3 py-2 bg-surface-3 border border-edge rounded-lg text-sm text-text-base focus:outline-none focus:border-gold">
+                    {% for code in currencies %}
+                        <option value="{{ code }}"
+                                {% if form_data.currency == code or not form_data and code == "CHF" %}selected{% endif %}>
+                            {{ code }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit"
+                    class="w-full py-3 bg-gold text-surface-1 font-semibold rounded-xl hover:opacity-90 transition-opacity">
+                Créer le compte
+            </button>
+        </form>
+    </div>
+{% endblock panel_left %}

@@ -41,14 +41,14 @@ def other_user(db):
 @pytest.fixture
 def auth_client(user):
     c = Client()
-    c.login(email="views@budget.ch", password="pass")
+    c.force_login(user)
     return c
 
 
 @pytest.fixture
 def other_client(other_user):
     c = Client()
-    c.login(email="other-views@budget.ch", password="pass")
+    c.force_login(other_user)
     return c
 
 
