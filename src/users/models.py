@@ -15,7 +15,7 @@ from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 
 
-class CustomUserManager(BaseUserManager):
+class CustomUserManager(BaseUserManager["CustomUser"]):
     """
     Custom manager for CustomUser.
 
@@ -37,7 +37,7 @@ class CustomUserManager(BaseUserManager):
         email = self.normalize_email(email)
         user = self.model(email=email, **extra_fields)
         # set_password hashes the password — never store in plain text
-        user.set_password(password)
+        user.set_password(password)  # type: ignore[union-attr]
         user.save(using=self._db)
         return user
 
@@ -63,11 +63,11 @@ class CustomUser(AbstractUser):
     """
 
     # Wire our custom manager — replaces Django's default UserManager
-    objects = CustomUserManager()
+    objects = CustomUserManager()  # type: ignore[misc, assignment]
 
     # Remove the username field inherited from AbstractUser.
     # None = the field does not exist on our model, not even as a DB column.
-    username = None
+    username = None  # type: ignore[assignment]
 
     # email becomes the primary field — must be unique (no two accounts with the same email)
     email = models.EmailField(unique=True)

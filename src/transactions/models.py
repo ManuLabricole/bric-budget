@@ -572,4 +572,4 @@ class BudgetTarget(models.Model):
         ordering = ["category__order"]
 
     def __str__(self):
-        return f"{self.period:%Y-%m} | {self.category} → {self.amount} CHF"
+        return f"{self.category} → {self.amount} CHF/month"

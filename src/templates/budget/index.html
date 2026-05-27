@@ -133,7 +133,10 @@ Données hardcodées — prochaine étape : brancher la vue Django.
             <div id="sankey-chart"
                  class="w-full mb-2"
                  style="height: 38vh;
-                        min-height: 180px"></div>
+                        min-height: 180px"
+                 data-chart="sankey"
+                 data-chart-data="sankey-data"
+                 data-on-click-url="/budget/categorie/{slug}/"></div>
             {# ── KPIs — tabs cliquables ───────────────────────────────────────────── #}
             {# Pattern actif  : texte gold + underline gold (-mb-px déborde sur le border-b du parent) #}
             {# Pattern inactif: texte blanc + hover gold (via group + group-hover sur le label)         #}
@@ -534,7 +537,12 @@ Données hardcodées — prochaine étape : brancher la vue Django.
             <h2 class="text-sm font-semibold text-text-base flex-shrink-0">Distribution</h2>
             {# Donut ECharts — synchronisé avec le KPI actif                           #}
             {{ donut_data|json_script:"donut-data" }}
-            <div id="donut-chart" class="w-full flex-shrink-0" style="height: 220px;"></div>
+            <div id="donut-chart"
+                 class="w-full flex-shrink-0"
+                 style="height: 220px"
+                 data-chart="donut"
+                 data-chart-data="donut-data"
+                 data-on-click-url="/budget/categorie/{slug}/"></div>
             {# Légende textuelle sous le donut — même ordre que les segments #}
             {% if donut_categories %}
                 <div class="flex flex-col gap-2">
@@ -555,32 +563,11 @@ Données hardcodées — prochaine étape : brancher la vue Django.
 {% endblock %}
 {% block extra_js %}
     {# ── ECharts + charts BricBudget — servis en local (pas de CDN) ───────────── #}
+    {# auto-init.js scanne le DOM pour [data-chart] et initialise les charts.    #}
+    {# Plus de <script> d'init inline — voir static/js/charts/auto-init.js.       #}
     <script src="{% static 'js/vendor/echarts.min.js' %}"></script>
     <script src="{% static 'js/charts/utils.js' %}"></script>
     <script src="{% static 'js/charts/sankey.js' %}"></script>
     <script src="{% static 'js/charts/donut.js' %}"></script>
-    <script>
-  // Init Sankey — les données viennent du json_script Django (pas de variable globale).
-  // onNodeClick redirige vers la page détail de la catégorie cliquée.
-  var sankeyEl = document.getElementById("sankey-chart");
-  if (sankeyEl) {
-    var sankeyData = JSON.parse(document.getElementById("sankey-data").textContent);
-    BricCharts.initSankey(sankeyEl, sankeyData, {
-      onNodeClick: function (node) {
-        if (node.slug) window.location.href = "/budget/categorie/" + node.slug + "/";
-      },
-    });
-  }
-
-  // Init Donut — même principe.
-  var donutEl = document.getElementById("donut-chart");
-  if (donutEl) {
-    var donutData = JSON.parse(document.getElementById("donut-data").textContent);
-    BricCharts.initDonut(donutEl, donutData, {
-      onSegmentClick: function (segment) {
-        if (segment.slug) window.location.href = "/budget/categorie/" + segment.slug + "/";
-      },
-    });
-  }
-    </script>
+    <script src="{% static 'js/charts/auto-init.js' %}"></script>
 {% endblock %}

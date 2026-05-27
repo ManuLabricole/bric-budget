@@ -128,7 +128,7 @@ class Command(BaseCommand):
                 "description_raw": tx.description_raw or "",
             }
 
-            matched = service._find_rule(tx_dict, rules)
+            matched = service._find_rule(tx_dict, rules)  # type: ignore[arg-type]
 
             if matched:
                 new_cat = matched.category

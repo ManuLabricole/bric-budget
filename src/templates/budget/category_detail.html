@@ -154,7 +154,11 @@ Layout :
                     <span class="text-xs text-text-base">Objectif {{ budget_target.amount|chf }} CHF / mois</span>
                 </div>
                 {% if has_history %}
-                    <div id="bar-chart" class="w-full px-2" style="height: 190px;"></div>
+                    <div id="bar-chart"
+                         class="w-full px-2"
+                         style="height: 190px"
+                         data-chart="bar"
+                         data-chart-data="history-data"></div>
                     {{ history_chart_data|json_script:"history-data" }}
                 {% else %}
                     <p class="text-xs text-text-disabled text-center py-8">Aucune donnée sur 12 mois</p>
@@ -435,7 +439,11 @@ Layout :
             <div id="donut-card"
                  class="bg-surface-3/70 backdrop-blur-xl border border-edge/60 rounded-xl">
                 {# Donut ECharts — même pattern que index.html #}
-                <div id="donut-chart" class="w-full px-4" style="height: 220px;"></div>
+                <div id="donut-chart"
+                     class="w-full px-4"
+                     style="height: 220px"
+                     data-chart="donut"
+                     data-chart-data="donut-data"></div>
                 {{ donut_data|json_script:"donut-data" }}
                 {# Liste sous-catégories avec montants #}
                 <div class="px-5 pb-4 pt-2 flex flex-col gap-1">
@@ -459,6 +467,8 @@ Layout :
     {% endif %}
 {% endblock %}
 {% block extra_js %}
+    {# auto-init.js scanne [data-chart] et initialise les charts. Les containers Sankey/Donut/Bar #}
+    {# ont des data-chart, data-chart-data → init automatique sans <script> inline.               #}
     {% if has_sankey or has_donut or has_history %}
         <script src="{% static 'js/vendor/echarts.min.js' %}"></script>
         <script src="{% static 'js/charts/utils.js' %}"></script>
@@ -471,75 +481,7 @@ Layout :
         {% if has_history and cat_tab == 'objectif' %}
             <script src="{% static 'js/charts/bar.js' %}"></script>
         {% endif %}
-        <script>
-  {% if has_sankey %}
-  var sankeyEl = document.getElementById("sankey-chart");
-  if (sankeyEl) {
-    var sankeyData = JSON.parse(document.getElementById("sankey-data").textContent);
-    BricCharts.initSankey(sankeyEl, sankeyData);
-  }
-  {% endif %}
-  {% if has_donut %}
-  var donutEl = document.getElementById("donut-chart");
-  if (donutEl) {
-    var donutData = JSON.parse(document.getElementById("donut-data").textContent);
-    BricCharts.initDonut(donutEl, donutData);
-  }
-  {% endif %}
-  {% if has_history and cat_tab == 'objectif' %}
-  var barEl = document.getElementById("bar-chart");
-  if (barEl) {
-    var histData = JSON.parse(document.getElementById("history-data").textContent);
-    BricCharts.initBar(barEl, histData);
-  }
-  {% endif %}
-  // Align donut card height to cashflow card so both columns share the same row boundary.
-  // Runs after charts are initialized (charts add pixels to the DOM before this executes).
-  var cashflowCard = document.getElementById('cashflow-card');
-  var donutCard = document.getElementById('donut-card');
-  if (cashflowCard && donutCard) {
-    donutCard.style.minHeight = cashflowCard.offsetHeight + 'px';
-  }
-        </script>
+        <script src="{% static 'js/charts/auto-init.js' %}"></script>
+        <script src="{% static 'js/pages/category_detail.js' %}"></script>
     {% endif %}
-    <script>
-  // Refresh du Sankey + KPIs après toggle is_ignored depuis le panneau détail.
-  //
-  // Flux :
-  //   1. toggle_ignore (close_on_back=True) injecte [data-cashflow-refresh] dans
-  //      le panneau → #panel-content est swappé par HTMX → htmx:afterSwap fire.
-  //   2. Le listener détecte le signal, déclenche htmx.ajax vers /cashflow/
-  //      → #cashflow-card innerHTML est remplacé → second htmx:afterSwap fire.
-  //   3. Le second listener ré-initialise ECharts sur le nouveau #sankey-chart.
-  document.addEventListener("htmx:afterSwap", function (evt) {
-    var target = evt.detail && evt.detail.target;
-    if (!target) return;
-
-    // Étape 1 : panel-content swappé → chercher le signal cashflow-refresh
-    if (target.id === "panel-content") {
-      var refreshEl = target.querySelector("[data-cashflow-refresh]");
-      if (refreshEl) {
-        htmx.ajax("GET", refreshEl.getAttribute("data-cashflow-refresh"), {
-          target: "#cashflow-card",
-          swap: "innerHTML"
-        });
-      }
-    }
-
-    // Étape 2 : cashflow-card swappé → ré-init Sankey + ré-aligner hauteur donut
-    if (target.id === "cashflow-card") {
-      var sankeyEl = document.getElementById("sankey-chart");
-      if (sankeyEl && typeof BricCharts !== "undefined") {
-        var dataEl = document.getElementById("sankey-data");
-        if (dataEl) {
-          BricCharts.initSankey(sankeyEl, JSON.parse(dataEl.textContent));
-        }
-      }
-      var donutCardEl = document.getElementById("donut-card");
-      if (donutCardEl) {
-        donutCardEl.style.minHeight = target.offsetHeight + "px";
-      }
-    }
-  });
-    </script>
 {% endblock %}

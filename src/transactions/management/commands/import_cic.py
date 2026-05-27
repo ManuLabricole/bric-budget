@@ -19,6 +19,7 @@ Usage:
     make import-cic FILE=path/to/export.xlsx
 """
 
+import logging
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
@@ -27,6 +28,8 @@ from django.core.management.base import BaseCommand, CommandError
 from connectors.cic.parser import CICConnector
 from connectors.resolver import AccountMatch, detect_connector, resolve_accounts
 from transactions.services import ImportResult, ImportService, compute_file_hash
+
+logger = logging.getLogger(__name__)
 
 User = get_user_model()
 
@@ -83,7 +86,8 @@ class Command(BaseCommand):
         try:
             matches = resolve_accounts(connector, filepath)
         except Exception as e:
-            raise CommandError(str(e))
+            logger.exception("import_cic: resolve_accounts failed for %s", filepath)
+            raise CommandError(str(e)) from e
 
         self.stdout.write(f"\nFile    : {filepath.name}")
         self.stdout.write(f"Sheets  : {len(matches)} account(s) found")
@@ -167,7 +171,7 @@ class Command(BaseCommand):
             self.stdout.write(f"Balance : {balance:,.2f} {account.currency}")
 
         # ── Parse this sheet ──────────────────────────────────────────────────
-        transactions = connector.parse_sheet(filepath, sheet_name)
+        transactions = connector.parse_sheet(filepath, sheet_name)  # type: ignore[arg-type]
 
         # ── Unique file_hash per (file, sheet) ────────────────────────────────
         # ImportLog.file_hash is unique=True and CharField(max_length=40).
@@ -176,7 +180,9 @@ class Command(BaseCommand):
         # We hash the combination file_hash+sheet_name to produce a new 40-char SHA1.
         import hashlib
 
-        sheet_file_hash = hashlib.sha1(f"{file_hash}:{sheet_name}".encode()).hexdigest()
+        sheet_file_hash = hashlib.sha1(
+            f"{file_hash}:{sheet_name}".encode(), usedforsecurity=False
+        ).hexdigest()
 
         # ── Call service ──────────────────────────────────────────────────────
         result = ImportService().run(

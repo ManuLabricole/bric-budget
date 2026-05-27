@@ -136,6 +136,6 @@ def cic_file(tmp_path) -> Path:
     # Row 8 : footer
     ws_la.append([None, None, None, "Solde au 31/03/2026 : ", None, 5315.00, None])
 
-    filepath = tmp_path / "cic_export.xlsx"
+    filepath: Path = tmp_path / "cic_export.xlsx"
     wb.save(str(filepath))
     return filepath

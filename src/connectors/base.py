@@ -113,6 +113,12 @@ class BaseConnector(ABC):
     extract_account_identifier(), and extract_account_name().
     """
 
+    @classmethod
+    @abstractmethod
+    def matches_file(cls, filepath: Path) -> bool:
+        """Return True if this connector can parse the given file."""
+        ...
+
     @abstractmethod
     def parse(self, filepath: Path) -> list[TransactionDict]:
         """
@@ -184,6 +190,17 @@ class BaseConnector(ABC):
         # UBS stores "Merchant | CardContract | TxRef" — only the first part is useful.
         text = raw.split(" | ")[0]
         return self._normalize_merchant(text)
+
+    def parse_sheet(self, filepath: Path, sheet_name: str) -> list[TransactionDict]:
+        """
+        Parse a single named sheet from a multi-sheet source file.
+
+        Default: raises NotImplementedError. Override in connectors that support
+        multi-sheet files (e.g. CICConnector).
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support sheet-based parsing"
+        )
 
     def extract_account_name(self, filepath: Path) -> str | None:
         """

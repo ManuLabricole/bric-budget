@@ -1,0 +1,13 @@
+{
+  "name": "bricbudget-frontend",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Frontend assets for BricBudget — Tailwind CSS build pipeline (no runtime JS framework)",
+  "scripts": {
+    "build:css": "tailwindcss -i src/static/css/tailwind_input.css -o src/static/css/tailwind.css --minify",
+    "watch:css": "tailwindcss -i src/static/css/tailwind_input.css -o src/static/css/tailwind.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.0"
+  }
+}

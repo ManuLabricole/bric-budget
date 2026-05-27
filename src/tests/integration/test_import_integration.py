@@ -250,7 +250,9 @@ def test_ubs_full_import_creates_balance_snapshot(ubs_account, user):
 
     snapshots = BalanceSnapshot.objects.filter(account=ubs_account)
     assert snapshots.count() == 1
-    assert snapshots.first().balance == Decimal("12000.0")
+    snap = snapshots.first()
+    assert snap is not None
+    assert snap.balance == Decimal("12000.0")
 
 
 # =============================================================================

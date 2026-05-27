@@ -140,8 +140,12 @@
                         <div class="border-t border-edge/50 max-h-48 overflow-y-auto bb-scroll">
                             {% for cat, subcats in cats_with_subcats %}
                                 <button type="button"
-                                        onclick="catSelectParent({{ cat.id }}, '{{ cat.name|escapejs }}', '{{ cat.colour_hex|default:'#2d3033' }}', '{{ cat.icon }}')"
-                                        class="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-text-secondary hover:bg-surface-hover transition-colors">
+                                        class="js-cat-select w-full flex items-center gap-2.5 px-3 py-2 text-xs text-text-secondary hover:bg-surface-hover transition-colors"
+                                        data-cat-target="cat-create-parent"
+                                        data-cat-id="{{ cat.id }}"
+                                        data-cat-name="{{ cat.name }}"
+                                        data-cat-color="{{ cat.colour_hex|default:'#2d3033' }}"
+                                        data-cat-icon="{{ cat.icon }}">
                                     <div class="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center"
                                          style="background-color: {{ cat.colour_hex|default:'#2d3033' }}">
                                         {% if cat.icon %}
@@ -271,26 +275,31 @@
         catUpdateSubmit();
     };
 
-    // ── Sélection catégorie parente ───────────────────────────────────────────
-    window.catSelectParent = function (id, name, color, icon) {
-        document.getElementById('parent-id-input').value = id;
+    // ── Sélection catégorie parente — listener délégué sur data-cat-* ────────
+    // Convention : <button class="js-cat-select" data-cat-target="cat-create-parent" //   data-cat-id data-cat-name data-cat-color data-cat-icon>
+    function applyParentSelection(d) {
+        document.getElementById('parent-id-input').value = d.catId;
 
-        // Met à jour l'aperçu dans le <summary>
         var preview = document.getElementById('parent-icon-preview');
-        preview.style.backgroundColor = color;
-        if (icon) {
-            preview.innerHTML = '<img src="/static/icons/categories/' + icon + '.svg" width="12" height="12" class="w-3 h-3 brightness-0 invert" alt="">';
+        preview.style.backgroundColor = d.catColor;
+        if (d.catIcon) {
+            preview.innerHTML = '<img src="/static/icons/categories/' + d.catIcon + '.svg" width="12" height="12" class="w-3 h-3 brightness-0 invert" alt="">';
         } else {
             preview.innerHTML = '';
         }
-        document.getElementById('parent-label-preview').textContent = name;
-        document.getElementById('parent-label-preview').classList.remove('text-text-muted');
-        document.getElementById('parent-label-preview').classList.add('text-text-base');
+        var labelEl = document.getElementById('parent-label-preview');
+        labelEl.textContent = d.catName;
+        labelEl.classList.remove('text-text-muted');
+        labelEl.classList.add('text-text-base');
 
-        // Ferme le dropdown
         document.getElementById('parent-picker-details').removeAttribute('open');
         catUpdateSubmit();
-    };
+    }
+    document.body.addEventListener('click', function (e) {
+        var btn = e.target.closest('.js-cat-select[data-cat-target="cat-create-parent"]');
+        if (!btn) return;
+        applyParentSelection(btn.dataset);
+    });
 
     // ── Sélection icône ───────────────────────────────────────────────────────
     window.catSelectIcon = function (name) {
