@@ -100,6 +100,7 @@ INSTALLED_APPS = [
     "budget",
     # imports/ n'a pas de FK vers d'autres apps → déclaré en dernier
     "imports",
+    "axes",  # brute-force protection — doit être après contrib.auth
 ]
 
 # MIDDLEWARE: a stack of functions that wrap every request/response.
@@ -125,7 +126,21 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     # Injecte le header Permissions-Policy (non géré par SecurityMiddleware).
     "config.middleware.PermissionsPolicyMiddleware",
+    # AxesMiddleware doit être en DERNIER — il intercepte les réponses 401/403
+    # pour enregistrer les tentatives échouées. Si placé avant AuthenticationMiddleware,
+    # il ne voit pas encore request.user et ne peut pas logger correctement.
+    "axes.middleware.AxesMiddleware",
 ]
+
+AUTHENTICATION_BACKENDS = [
+    # AxesStandaloneBackend doit être en PREMIER — il lève PermissionDenied si le
+    # compte est verrouillé, avant que ModelBackend tente l'authentification.
+    "axes.backends.AxesStandaloneBackend",
+    "django.contrib.auth.backends.ModelBackend",
+]
+
+AXES_FAILURE_LIMIT = 5
+AXES_COOLOFF_TIME = 1  # heure avant déverrouillage automatique
 
 # ROOT_URLCONF: the Python module Django reads to resolve URLs.
 # Django imports config/urls.py and iterates urlpatterns top-to-bottom.

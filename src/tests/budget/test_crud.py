@@ -31,7 +31,7 @@ def user(db):
 @pytest.fixture
 def auth_client(user):
     c = Client()
-    c.login(email="crud@t.ch", password="p")
+    c.force_login(user)
     return c
 
 

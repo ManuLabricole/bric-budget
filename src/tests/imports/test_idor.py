@@ -41,14 +41,14 @@ def user_b(db):
 @pytest.fixture
 def client_a(user_a):
     c = Client()
-    c.login(email="usera@import-idor.ch", password="pass")
+    c.force_login(user_a)
     return c
 
 
 @pytest.fixture
 def client_b(user_b):
     c = Client()
-    c.login(email="userb@import-idor.ch", password="pass")
+    c.force_login(user_b)
     return c
 
 

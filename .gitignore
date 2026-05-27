@@ -4,6 +4,8 @@
 .claude/
 assets/private/
 
+node_modules/
+
 # ─── Environnement Python ───────────────────────────────────────
 __pycache__/
 *.py[cod]
