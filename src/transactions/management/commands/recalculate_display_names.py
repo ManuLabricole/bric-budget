@@ -1,6 +1,10 @@
 """
 transactions/management/commands/recalculate_display_names.py
 
+⛔ DEV ONLY — Refuse de tourner en prod (DEBUG=False). --force-prod pour override
+(par exemple après une amélioration de _clean_description() qu'on veut backfiller
+en prod — opération planifiée).
+
 Recomputes Transaction.display_name for all existing transactions using the
 current _clean_description() logic from connectors/base.py.
 
@@ -18,11 +22,15 @@ Usage:
 from django.core.management.base import BaseCommand
 
 from connectors.base import BaseConnector
+from transactions.management._dev_guard import (
+    add_force_prod_argument,
+    assert_dev_environment,
+)
 from transactions.models import Transaction
 
 
 class Command(BaseCommand):
-    help = "Recompute display_name for all transactions from description_raw"
+    help = "[DEV ONLY] Recompute display_name for all transactions from description_raw"
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -36,8 +44,12 @@ class Command(BaseCommand):
             default=None,
             help="Process only the first N transactions (for testing)",
         )
+        add_force_prod_argument(parser)
 
     def handle(self, *args, **options):
+        if not options.get("force_prod"):
+            assert_dev_environment("recalculate_display_names")
+
         dry_run = options["dry_run"]
         limit = options["limit"]
 
@@ -45,6 +57,10 @@ class Command(BaseCommand):
         # _clean_description() — it's an instance method but has no state.
         # This avoids duplicating the logic here.
         class _Cleaner(BaseConnector):
+            @classmethod
+            def matches_file(cls, filepath):
+                return False
+
             def parse(self, filepath):
                 return []
 

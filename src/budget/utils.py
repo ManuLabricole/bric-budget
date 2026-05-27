@@ -157,7 +157,7 @@ def _resolve_bank_icon_map():
     result = {}
     if miniature_dir.exists():
         EXTENSION_PRIORITY = {"svg": 0, "png": 1, "jpg": 2, "jpeg": 3}
-        _best = {}
+        _best: dict[str, tuple[int, str]] = {}
         for f in miniature_dir.iterdir():
             if not f.is_file() or f.name.startswith("."):
                 continue

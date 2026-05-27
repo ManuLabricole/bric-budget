@@ -62,12 +62,12 @@ def test_yuh_same_transaction_same_hash_regardless_of_line_number():
     connector = YuhConnector()
     row = _yuh_row()
 
-    counters_full_export = {}
+    counters_full_export: dict[str, int] = {}
     tx_line_45 = connector._parse_row(
         row, line_number=45, occurrence_counters=counters_full_export
     )
 
-    counters_monthly_export = {}
+    counters_monthly_export: dict[str, int] = {}
     tx_line_3 = connector._parse_row(
         row, line_number=3, occurrence_counters=counters_monthly_export
     )
@@ -86,7 +86,7 @@ def test_yuh_two_identical_transactions_same_day_get_different_hashes():
     connector = YuhConnector()
     row = _yuh_row()
 
-    counters = {}
+    counters: dict[str, int] = {}
     tx1 = connector._parse_row(row, line_number=1, occurrence_counters=counters)
     tx2 = connector._parse_row(row, line_number=2, occurrence_counters=counters)
 
@@ -113,13 +113,13 @@ def test_yuh_occurrence_index_stable_across_partial_exports():
     )
 
     # Import partiel janvier
-    counters_jan = {}
+    counters_jan: dict[str, int] = {}
     tx_jan = connector._parse_row(
         loyer, line_number=1, occurrence_counters=counters_jan
     )
 
     # Import full year — loyer est à la ligne 45 mais c'est toujours le 1er du groupe
-    counters_full = {}
+    counters_full: dict[str, int] = {}
     tx_full = connector._parse_row(
         loyer, line_number=45, occurrence_counters=counters_full
     )
@@ -140,7 +140,7 @@ def test_yuh_occurrence_index_increments_correctly_for_repeated_transactions():
     row = _yuh_row(name="Parking Migros")
 
     # Fichier mensuel : lignes 1, 2, 3
-    counters_monthly = {}
+    counters_monthly: dict[str, int] = {}
     monthly_hashes = [
         connector._parse_row(row, line_number=i, occurrence_counters=counters_monthly)[
             "import_hash"
@@ -149,7 +149,7 @@ def test_yuh_occurrence_index_increments_correctly_for_repeated_transactions():
     ]
 
     # Fichier complet : lignes 50, 51, 52
-    counters_full = {}
+    counters_full: dict[str, int] = {}
     full_hashes = [
         connector._parse_row(row, line_number=i, occurrence_counters=counters_full)[
             "import_hash"
@@ -164,7 +164,7 @@ def test_yuh_different_amounts_produce_different_hashes():
     """Deux transactions mêmes date/type/desc mais montants différents → hashes différents."""
     connector = YuhConnector()
 
-    counters = {}
+    counters: dict[str, int] = {}
     tx_2chf = connector._parse_row(
         _yuh_row(amount="2.00"), line_number=1, occurrence_counters=counters
     )
@@ -241,7 +241,7 @@ def test_cic_two_identical_transactions_same_day_get_different_hashes():
     Avec occurrence_index  : 1ère = index 0, 2ème = index 1 → hashes distincts.
     """
     connector = CICConnector()
-    counters = {}
+    counters: dict[str, int] = {}
     kwargs = _cic_row_kwargs(libelle="RATP", debit=-2.1)
 
     tx1 = connector._parse_row(**{**kwargs}, occurrence_counters=counters)
@@ -263,12 +263,12 @@ def test_cic_occurrence_index_stable_across_partial_exports():
     connector = CICConnector()
     kwargs = _cic_row_kwargs(libelle="RATP", debit=-2.1)
 
-    counters_full = {}
+    counters_full: dict[str, int] = {}
     tx_full = connector._parse_row(
         **{**kwargs, "row_idx": 150}, occurrence_counters=counters_full
     )
 
-    counters_monthly = {}
+    counters_monthly: dict[str, int] = {}
     tx_monthly = connector._parse_row(
         **{**kwargs, "row_idx": 8}, occurrence_counters=counters_monthly
     )

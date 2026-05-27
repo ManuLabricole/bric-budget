@@ -155,6 +155,7 @@ def test_rate_stored_in_db_after_api_call(db):
 
     assert ExchangeRate.objects.count() == 1
     stored = ExchangeRate.objects.first()
+    assert stored is not None
     assert stored.from_currency == "EUR"
     assert stored.to_currency == "CHF"
     assert stored.rate == Decimal("0.9321")

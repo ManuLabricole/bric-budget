@@ -202,7 +202,7 @@ def test_find_rule_matches_keyword_in_description_raw(db):
         "merchant_name": "Migros Lausanne",
         "display_name": "Migros Lausanne",
     }
-    assert service._find_rule(tx, [rule]) == rule
+    assert service._find_rule(tx, [rule]) == rule  # type: ignore[arg-type]
 
 
 @pytest.mark.django_db
@@ -228,7 +228,7 @@ def test_find_rule_matches_keyword_in_merchant_name(db):
         "merchant_name": "Coop Lausanne",
         "display_name": "Coop Lausanne",
     }
-    assert service._find_rule(tx, [rule]) == rule
+    assert service._find_rule(tx, [rule]) == rule  # type: ignore[arg-type]
 
 
 @pytest.mark.django_db
@@ -253,7 +253,7 @@ def test_find_rule_is_case_insensitive(db):
         "merchant_name": "Migros",
         "display_name": "Migros",
     }
-    assert service._find_rule(tx, [rule]) == rule
+    assert service._find_rule(tx, [rule]) == rule  # type: ignore[arg-type]
 
 
 def test_find_rule_returns_none_for_empty_rules_list():
@@ -269,7 +269,7 @@ def test_find_rule_returns_none_for_empty_rules_list():
         "merchant_name": "Random Shop",
         "display_name": "Random Shop",
     }
-    assert service._find_rule(tx, []) is None
+    assert service._find_rule(tx, []) is None  # type: ignore[arg-type]
 
 
 def test_find_rule_no_match_returns_none():
@@ -285,7 +285,7 @@ def test_find_rule_no_match_returns_none():
         "merchant_name": "Sncf Paris",
         "display_name": "Sncf Paris",
     }
-    assert service._find_rule(tx, [rule]) is None
+    assert service._find_rule(tx, [rule]) is None  # type: ignore[arg-type, list-item]
 
 
 # =============================================================================

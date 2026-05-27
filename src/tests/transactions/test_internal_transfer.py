@@ -211,11 +211,13 @@ def test_import_virements_category_sets_ignored_at_import(cat_virements, account
             "display_name": "VIREMENT YUH CIC",
             "description_raw": "VIREMENT YUH CIC",
             "merchant_name": "VIREMENT YUH CIC",
-            "amount": "-500",
+            "amount": -500.0,
             "currency": "CHF",
             "date": "2026-01-15",
             "time": None,
             "import_hash": hashlib.sha256(b"import-test-virement").hexdigest(),
+            "card_last_four": None,
+            "balance_after": None,
         },
         account=account,
         cards_by_last_four={},
@@ -244,11 +246,13 @@ def test_import_non_virements_category_does_not_set_ignored(cat_alim, account):
             "display_name": "MIGROS LAUSANNE",
             "description_raw": "MIGROS LAUSANNE",
             "merchant_name": "MIGROS LAUSANNE",
-            "amount": "-25",
+            "amount": -25.0,
             "currency": "CHF",
             "date": "2026-01-15",
             "time": None,
             "import_hash": hashlib.sha256(b"import-test-migros").hexdigest(),
+            "card_last_four": None,
+            "balance_after": None,
         },
         account=account,
         cards_by_last_four={},
@@ -269,7 +273,7 @@ def run_apply_rules():
     from io import StringIO
 
     cmd = ApplyRulesCommand()
-    cmd.stdout = StringIO()
+    cmd.stdout = StringIO()  # type: ignore[assignment]
     cmd.handle(dry_run=False, limit=None, reset=False)
 
 

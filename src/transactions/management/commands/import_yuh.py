@@ -19,6 +19,7 @@ Usage:
     make import-yuh FILE=path/to/export.csv
 """
 
+import logging
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
@@ -29,6 +30,7 @@ from connectors.yuh.parser import YuhConnector
 from transactions.services import ImportService, compute_file_hash
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
@@ -66,7 +68,8 @@ class Command(BaseCommand):
         try:
             matches = resolve_accounts(connector, filepath)
         except Exception as e:
-            raise CommandError(str(e))
+            logger.exception("import_yuh: resolve_accounts failed for %s", filepath)
+            raise CommandError(str(e)) from e
         account = matches[0].account
 
         # ── 3. Get importing user ─────────────────────────────────────────────

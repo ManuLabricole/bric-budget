@@ -250,7 +250,11 @@ def test_seen_in_batch_deduplicates_within_same_run(chf_account, user):
     tx_copy = dict(tx)  # même import_hash
 
     result = ImportService().run(
-        [tx, tx_copy], chf_account, user, "f.csv", make_file_hash("h8")
+        [tx, tx_copy],
+        chf_account,
+        user,
+        "f.csv",
+        make_file_hash("h8"),  # type: ignore[list-item]
     )
 
     assert result.count_created == 1
@@ -297,7 +301,7 @@ def test_seen_in_batch_and_existing_hashes_coexist(chf_account, user):
     tx_c = make_tx("c_new", amount=-15.0)
 
     result = ImportService().run(
-        [tx_a, tx_b, tx_b_copy, tx_c],
+        [tx_a, tx_b, tx_b_copy, tx_c],  # type: ignore[list-item]
         chf_account,
         user,
         "f.csv",

@@ -11,6 +11,7 @@ Contient les vues HTMX du right panel :
 
 import calendar
 import json
+import logging
 import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -35,6 +36,8 @@ from budget.utils import (
 from transactions.models import BudgetTarget, Category, SubCategory, Transaction
 from transactions.services import sync_internal_transfer
 
+logger = logging.getLogger(__name__)
+
 
 @login_required
 def budget_modal_target_create(request):
@@ -58,9 +61,17 @@ def budget_modal_target_create(request):
             amount = Decimal(str(amount_str))
         except (InvalidOperation, ValueError):
             return HttpResponse("Montant invalide", status=400)
-        BudgetTarget.objects.update_or_create(
+        _, created = BudgetTarget.objects.update_or_create(
             category=category,
             defaults={"amount": amount},
+        )
+        log = logger.info if created else logger.debug
+        log(
+            "BudgetTarget %s: category=%s amount=%s by user=%s",
+            "created" if created else "updated",
+            category.slug,
+            amount,
+            request.user.id,
         )
         response = HttpResponse()
         response["HX-Redirect"] = request.META.get("HTTP_REFERER", "/budget/")
@@ -375,6 +386,13 @@ def budget_toggle_ignore(request, tx_id):
 
     tx.is_ignored = not tx.is_ignored
     tx.save(update_fields=["is_ignored"])
+    logger.debug(
+        "Transaction %s: id=%s is_ignored=%s by user=%s",
+        "ignored" if tx.is_ignored else "unignored",
+        tx.id,
+        tx.is_ignored,
+        request.user.id,
+    )
 
     bank_icon_map = _resolve_bank_icon_map()
     slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
@@ -546,6 +564,15 @@ def budget_categorize_transaction(request):
         update_fields=["category", "subcategory", "categorization_source"]
         + extra_fields
     )
+    logger.debug(
+        "Transaction categorized: id=%s category=%s subcategory=%s "
+        "internal_transfer=%s by user=%s",
+        tx.id,
+        tx.category.slug if tx.category else None,
+        tx.subcategory.slug if tx.subcategory else None,
+        tx.is_internal_transfer,
+        request.user.id,
+    )
 
     # Extraction keyword + payload HX-Trigger — commun aux deux branches.
     tx_display = tx.display_name
@@ -688,6 +715,13 @@ def budget_toggle_reconcile(request, tx_id):
 
     tx.is_reconciled = not tx.is_reconciled
     tx.save(update_fields=["is_reconciled"])
+    logger.debug(
+        "Transaction %s: id=%s is_reconciled=%s by user=%s",
+        "reconciled" if tx.is_reconciled else "unreconciled",
+        tx.id,
+        tx.is_reconciled,
+        request.user.id,
+    )
 
     bank_icon_map = _resolve_bank_icon_map()
     slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""

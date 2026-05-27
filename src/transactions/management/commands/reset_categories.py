@@ -1,6 +1,8 @@
 """
 transactions/management/commands/reset_categories.py
 
+⛔ DEV ONLY — Refuse de tourner en prod (DEBUG=False). --force-prod pour override.
+
 Remet toutes les catégories à zéro selon un critère simple :
     amount > 0  →  Revenus   (slug: revenus)
     amount < 0  →  Inconnu   (slug: inconnu)
@@ -27,11 +29,18 @@ Usage :
 
 from django.core.management.base import BaseCommand
 
+from transactions.management._dev_guard import (
+    add_force_prod_argument,
+    assert_dev_environment,
+)
 from transactions.models import Category, Transaction
 
 
 class Command(BaseCommand):
-    help = "Remet toutes les catégories à zéro : positif → Revenus, négatif → Inconnu"
+    help = (
+        "[DEV ONLY] Remet toutes les catégories à zéro : "
+        "positif → Revenus, négatif → Inconnu"
+    )
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -39,8 +48,12 @@ class Command(BaseCommand):
             action="store_true",
             help="Affiche le nombre de transactions concernées sans modifier la DB.",
         )
+        add_force_prod_argument(parser)
 
     def handle(self, *args, **options):
+        if not options.get("force_prod"):
+            assert_dev_environment("reset_categories")
+
         dry_run = options["dry_run"]
 
         # ── 1. Charger les deux catégories cibles ─────────────────────────

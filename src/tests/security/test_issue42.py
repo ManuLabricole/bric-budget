@@ -12,6 +12,9 @@ Couvre :
 """
 
 import logging
+import os
+import tempfile
+from pathlib import Path
 
 import pytest
 from django.conf import settings
@@ -38,15 +41,15 @@ def test_logging_is_configured():
 
 
 def test_logging_has_console_handler():
-    assert "console" in settings.LOGGING.get("handlers", {})
+    assert "console" in settings.LOGGING.get("handlers", {})  # type: ignore[operator]
 
 
 def test_logging_connectors_logger_configured():
-    assert "connectors" in settings.LOGGING.get("loggers", {})
+    assert "connectors" in settings.LOGGING.get("loggers", {})  # type: ignore[operator]
 
 
 def test_logging_transactions_logger_configured():
-    assert "transactions" in settings.LOGGING.get("loggers", {})
+    assert "transactions" in settings.LOGGING.get("loggers", {})  # type: ignore[operator]
 
 
 # =============================================================================
@@ -74,9 +77,6 @@ def test_yuh_parser_warning_via_logger(tmp_path, caplog):
 
 
 def test_cic_parser_info_via_logger(caplog):
-    import os
-    import tempfile
-
     import openpyxl
 
     from connectors.cic.parser import CICConnector
@@ -94,7 +94,7 @@ def test_cic_parser_info_via_logger(caplog):
 
     connector = CICConnector()
     with caplog.at_level(logging.INFO, logger="connectors.cic.parser"):
-        connector.parse_sheet(tmp_path_str, "Cpt test")
+        connector.parse_sheet(Path(tmp_path_str), "Cpt test")
 
     os.unlink(tmp_path_str)
     info_records = [

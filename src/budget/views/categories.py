@@ -7,6 +7,7 @@ Contient :
 """
 
 import calendar
+import logging
 from datetime import date
 from decimal import Decimal
 
@@ -41,6 +42,8 @@ from transactions.models import (
     SubCategory,
     Transaction,
 )
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # _compute_category_cashflow_context — données communes Cashflow card + fragment
@@ -631,13 +634,19 @@ def budget_category_create_submit(request):
                     errors.append(f"Une catégorie « {name} » existe déjà.")
                 else:
                     slug = _generate_unique_slug(name, Category)
-                    Category.objects.create(
+                    cat = Category.objects.create(
                         name=name,
                         slug=slug,
                         icon=icon,
                         colour_hex=colour_hex,
                         order=100,  # placée en fin de liste par défaut
                         is_system=False,
+                    )
+                    logger.info(
+                        "Category created: id=%s slug=%s by user=%s",
+                        cat.id,
+                        cat.slug,
+                        request.user.id,
                     )
                     obj_label = name
                     obj_type_label = "catégorie principale"
@@ -656,12 +665,19 @@ def budget_category_create_submit(request):
                     )
                 else:
                     slug = _generate_unique_slug(name, SubCategory)
-                    SubCategory.objects.create(
+                    sub = SubCategory.objects.create(
                         category=parent,
                         name=name,
                         slug=slug,
                         icon=icon,
                         is_system=False,
+                    )
+                    logger.info(
+                        "SubCategory created: id=%s slug=%s parent=%s by user=%s",
+                        sub.id,
+                        sub.slug,
+                        parent.slug,
+                        request.user.id,
                     )
                     obj_label = f"{name} (sous {parent.name})"
                     obj_type_label = "sous-catégorie"
@@ -711,6 +727,7 @@ def budget_panel_category_delete_confirm(request, obj_type, slug):
 
     Les catégories/sous-catégories système (is_system=True) retournent 403.
     """
+    obj: Category | SubCategory
     if obj_type == "category":
         obj = get_object_or_404(Category, slug=slug)
         if obj.is_system:
@@ -771,6 +788,7 @@ def budget_category_delete(request, obj_type, slug):
 
     Après suppression, HTMX recharge /budget/ via l'en-tête HX-Redirect.
     """
+    obj: Category | SubCategory
     if obj_type == "category":
         obj = get_object_or_404(Category, slug=slug, is_system=False)
     elif obj_type == "subcategory":
@@ -778,6 +796,13 @@ def budget_category_delete(request, obj_type, slug):
     else:
         return HttpResponse("Type invalide.", status=400)
 
+    logger.info(
+        "Category/SubCategory deleted: type=%s slug=%s id=%s by user=%s",
+        obj_type,
+        obj.slug,
+        obj.id,
+        request.user.id,
+    )
     obj.delete()
 
     # HX-Redirect demande à HTMX de naviguer vers /budget/ après la suppression.

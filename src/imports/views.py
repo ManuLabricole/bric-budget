@@ -18,9 +18,10 @@ import logging
 import os
 import tempfile
 from collections import defaultdict
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
+from typing import Any, cast
 
 from django.contrib.auth.decorators import login_required
 from django.db import transaction as db_transaction
@@ -46,7 +47,7 @@ from transactions.services import ImportService, compute_file_hash
 logger = logging.getLogger(__name__)
 
 
-def _month_label(d) -> str:
+def _month_label(d: date) -> str:
     """Formate un jour : '23 mars' → '23 Mar' (str.day + strftime %b).   = espace insécable."""
     return str(d.day) + " " + d.strftime("%b")
 
@@ -183,8 +184,8 @@ def import_upload(request):
             "account__bank", "account__checking_account"
         ).order_by("-imported_at")
     )
-    seen_hashes = {}
-    grouped_logs = []
+    seen_hashes: dict[Any, dict[str, Any]] = {}
+    grouped_logs: list[dict[str, Any]] = []
     for log in all_logs:
         key = log.file_hash or log.pk  # fallback si file_hash NULL (anciens imports)
         if key not in seen_hashes:
@@ -200,18 +201,22 @@ def import_upload(request):
 
     # Calculer les totaux par groupe + méthode de matching par entrée
     for group in grouped_logs:
-        group["total_created"] = sum(e.count_created for e in group["entries"])
-        group["total_skipped"] = sum(e.count_skipped for e in group["entries"])
-        group["total_errors"] = sum(e.count_errors for e in group["entries"])
+        entries = cast(list, group["entries"])
+        n_created: int = sum(e.count_created for e in entries)
+        n_skipped: int = sum(e.count_skipped for e in entries)
+        n_errors: int = sum(e.count_errors for e in entries)
+        group["total_created"] = n_created
+        group["total_skipped"] = n_skipped
+        group["total_errors"] = n_errors
         # total_transactions = tout ce que le fichier contenait (new + doublons)
-        group["total_transactions"] = group["total_created"] + group["total_skipped"]
-        group["multi"] = len(group["entries"]) > 1
-        group["bank"] = group["entries"][0].account.bank
+        group["total_transactions"] = n_created + n_skipped
+        group["multi"] = len(entries) > 1
+        group["bank"] = entries[0].account.bank
         # Méthode de matching par compte — détermine le badge de confiance affiché
         # iban     : matching par IBAN extrait du fichier      → fiabilité maximale
         # rib      : matching par RIB/contrat extrait du fichier → fiabilité haute
         # convention : seul compte actif de cette banque       → risque si doublon
-        for entry in group["entries"]:
+        for entry in entries:
             acc = entry.account
             # Account.iban est le champ universel (checking + savings + futures cartes).
             # contract_number couvre CIC RIB, Finpension, assurances.
@@ -307,6 +312,7 @@ def _handle_dry_run(request):
         tmp.close()
         tmp_path = Path(tmp.name)
     except Exception as e:
+        logger.exception("import_upload: tmp file write failed")
         tmp.close()
         os.unlink(tmp.name)
         return _error(request, f"Erreur lors de la sauvegarde : {e}")
@@ -404,6 +410,7 @@ def _handle_dry_run(request):
                 },
             )
         except Exception as e:
+            logger.exception("import_upload: resolve_accounts unexpected failure")
             os.unlink(tmp_path)
             return _error(
                 request,
@@ -428,7 +435,7 @@ def _handle_dry_run(request):
 
         # ── Dry-run par compte ───────────────────────────────────────────────
         service = ImportService()
-        dry_results = []
+        dry_results: list[dict[str, Any]] = []
 
         for match in matches:
             if match.sheet_name is not None:
@@ -484,6 +491,7 @@ def _handle_dry_run(request):
         )
 
     except Exception as e:
+        logger.exception("import_upload: unexpected failure during dry-run")
         if tmp_path.exists():
             os.unlink(tmp_path)
         return _error(request, f"Erreur inattendue : {e}")
@@ -555,6 +563,20 @@ def import_confirm(request):
             )
             service_results.append(result)
 
+        # Audit log : import réussi — événement métier critique pour traçabilité prod.
+        total_created = sum(r.count_created for r in service_results)
+        total_skipped = sum(r.count_skipped for r in service_results)
+        logger.info(
+            "import_confirm: filename=%s connector=%s accounts=%d "
+            "created=%d skipped=%d by user=%s",
+            filename,
+            type(connector).__name__,
+            len(matches),
+            total_created,
+            total_skipped,
+            request.user.id,
+        )
+
         # ── Stockage permanent du fichier source ─────────────────────────────
         # On stocke le fichier AVANT le finally (qui supprime tmp_path) et
         # uniquement si au moins un ImportLog a été créé (log_pk non None).
@@ -570,6 +592,7 @@ def import_confirm(request):
         )
 
     except Exception as e:
+        logger.exception("import_confirm: import failed")
         return _error(request, f"Erreur lors de l'import : {e}")
 
     finally:
@@ -712,6 +735,13 @@ def import_log_delete(request, pk):
     tx_count = log.transactions.count()
     log.transactions.all().delete()
     log.delete()
+    logger.info(
+        "import_log_delete: log_pk=%s filename=%s tx_deleted=%d by user=%s",
+        pk,
+        log.filename,
+        tx_count,
+        request.user.id,
+    )
 
     response = HttpResponse()
     response["HX-Redirect"] = reverse("imports:upload")
@@ -775,7 +805,16 @@ def import_create_account(request):
                 CheckingAccount.objects.create(account=account, iban=iban, bic=bic)
             else:
                 SavingsAccount.objects.create(account=account, interest_rate=0)
+        # Audit log : compte créé pendant l'import (mutation métier critique).
+        logger.info(
+            "import_create_account: id=%s bank=%s type=%s by user=%s",
+            account.id,
+            bank.slug,
+            account_type,
+            request.user.id,
+        )
     except Exception as e:
+        logger.exception("import_create_account: account creation failed")
         return _error(request, f"Erreur lors de la création du compte : {e}")
 
     # Compte créé — relancer le dry-run avec le fichier toujours en session
@@ -794,6 +833,10 @@ def import_create_account(request):
     # Relancer le dry-run complet (même logique que _handle_dry_run)
     try:
         connector = detect_connector(tmp_path)
+        if connector is None:
+            return _error(
+                request, "Format de fichier non reconnu. Recommencez l'import."
+            )
         matches = resolve_accounts(connector, tmp_path, user=request.user)
 
         if isinstance(connector, CICConnector):
@@ -809,7 +852,7 @@ def import_create_account(request):
             balances = {None: raw_balance}
 
         service = ImportService()
-        dry_results = []
+        dry_results: list[dict[str, Any]] = []
         file_hash = pending["file_hash"]
         filename = pending["filename"]
         connector_label = type(connector).__name__.replace("Connector", "")
@@ -877,6 +920,7 @@ def import_create_account(request):
             },
         )
     except Exception as e:
+        logger.exception("imports: dry-run re-trigger failed")
         return _error(request, f"Erreur lors du dry-run : {e}")
 
 
@@ -943,10 +987,10 @@ def import_select_account(request):
         )
 
         raw_balance = connector.extract_balance(tmp_path)
-        balances = {None: raw_balance}
+        balances: dict[str | None, float | None] = {None: raw_balance}
 
         service = ImportService()
-        dry_results = []
+        dry_results: list[dict[str, Any]] = []
         connector_label = type(connector).__name__.replace("Connector", "")
 
         for match in matches:
@@ -984,6 +1028,7 @@ def import_select_account(request):
             },
         )
     except Exception as e:
+        logger.exception("imports: dry-run re-trigger failed")
         return _error(request, f"Erreur lors du dry-run : {e}")
 
 

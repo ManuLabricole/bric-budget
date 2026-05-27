@@ -125,7 +125,7 @@ class Command(BaseCommand):
             self.stdout.write(f"→ {filepath.name}  [{command_name}]")
             self.stdout.write("=" * 60)
             call_command(
-                command_name,
+                command_name,  # type: ignore[arg-type]
                 file=str(filepath),
                 commit=options["commit"],
                 stdout=self.stdout,

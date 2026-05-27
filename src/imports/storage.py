@@ -102,7 +102,7 @@ def encrypt_bytes(data: bytes) -> bytes:
 
     L'import de _get_fernet() est retardé pour permettre @override_settings dans les tests.
     """
-    return _get_fernet().encrypt(data)
+    return _get_fernet().encrypt(data)  # type: ignore[no-any-return]
 
 
 def decrypt_bytes(data: bytes) -> bytes:
@@ -113,7 +113,7 @@ def decrypt_bytes(data: bytes) -> bytes:
     Lève cryptography.fernet.InvalidToken si aucune clé ne correspond
     ou si les données sont altérées.
     """
-    return _get_fernet().decrypt(data)
+    return _get_fernet().decrypt(data)  # type: ignore[no-any-return]
 
 
 # =============================================================================

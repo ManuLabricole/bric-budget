@@ -319,7 +319,7 @@ def test_gradient_structure():
 
 
 def test_gradient_none_color_fallback():
-    g = _gradient(None, 0.8, 0.1)
+    g = _gradient(None, 0.8, 0.1)  # type: ignore[arg-type]
     assert "rgba" in g["colorStops"][0]["color"]
 
 

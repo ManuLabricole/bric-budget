@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+{% load static %}
 <html lang="fr" class="h-full" style="font-size: 13px">
     <head>
         <meta charset="UTF-8" />
@@ -13,52 +14,16 @@
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
               rel="stylesheet" />
-        <script src="https://cdn.tailwindcss.com"></script>
-        {% comment %}
-      DESIGN TOKENS — SOURCE UNIQUE DE VÉRITÉ (palette Finary, 2026-04-06)
-      Dans les templates : text-gold, bg-surface-2, border-edge...
-      NE PAS utiliser hex ou classes Tailwind arbitraires dans les templates.
-        {% endcomment %}
+        {% comment %}Tailwind CSS — build statique local (PAS de CDN runtime).
+           Build : `make build-css` → src/static/css/tailwind.css (minifié, ~34 KB).
+           Palette : tailwind.config.js (source de vérité côté CSS).
+        Pre-commit hook + test pytest interdisent tout CDN dans les templates.{% endcomment %}
+        <link rel="stylesheet" href="{% static 'css/tailwind.css' %}" />
+        {# Design tokens JS — synchronisés avec tailwind.config.js via test pytest. #}
+        <script src="{% static 'js/tokens.js' %}"></script>
         <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            fontFamily: {
-              sans: ['Inter', 'ui-sans-serif', 'system-ui'],
-            },
-            colors: {
-              "surface-1":      "#0e0e27",
-              "surface-2":      "#131314",
-              "surface-3":      "#131314",
-              "surface-hover":  "#1c1c1e",
-              "edge":           "#2a2a2e",
-              "edge-subtle":    "#3a3a3f",
-              "text-base":      "#edf0f5",
-              "text-secondary": "#e0e2e7",
-              "text-muted":     "#8b8d97",
-              "text-disabled":  "#4a4c55",
-              "gold":           "#f2c086",
-              "gold-hover":     "#e8ab6a",
-              "income":         "#4dbf93",
-              "expense":        "#e5494a",
-              "warning":        "#f97316",
-            }
-          }
-        }
-      }
-        </script>
-        {% comment %}
-        Design tokens globaux — SOURCE UNIQUE DE VÉRITÉ pour tous les scripts JS.
-        Principe : tailwind.config contient la palette. On expose les tokens en globaux JS
-        pour éviter de dupliquer les hex dans chaque template.
-        Utilisation : window.BRICBUDGET_TOKENS['gold'] → "#f2c086"
-        RÈGLE : Ne JAMAIS hardcoder couleur/police dans un script JS de template.
-        {% endcomment %}
-        <script>
-      window.BRICBUDGET_TOKENS = tailwind.config.theme.extend.colors;
-      window.BRICBUDGET_FONT   = tailwind.config.theme.extend.fontFamily.sans.join(", ");
       // Palette catégories — exposée par budget.context_processors.design_tokens.
-      // Source de vérité : budget/constants.py CATEGORY_COLOR_PALETTE.
+      // Source de vérité Python : budget/constants.py CATEGORY_COLOR_PALETTE.
       window.BRICBUDGET_TOKENS.categories = {{ category_palette_json|safe }};
         </script>
         <style>
@@ -123,7 +88,12 @@
           hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
         {# hx-headers : CSRF global pour tous les hx-post enfants. Pattern standard Django+HTMX. #}
         {% block body %}{% endblock %}
-        <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+        {# HTMX 2.0.4 via CDN — pinned version + SRI hash (supply chain protection).
+           Si le CDN sert un fichier modifié, le navigateur refuse de l'exécuter.
+           Rotation : recalculer le hash avec `curl ... | openssl dgst -sha384 -binary | openssl base64 -A`. #}
+        <script src="https://unpkg.com/htmx.org@2.0.4"
+                integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+                crossorigin="anonymous"></script>
         {% block extra_js %}{% endblock %}
     </body>
 </html>

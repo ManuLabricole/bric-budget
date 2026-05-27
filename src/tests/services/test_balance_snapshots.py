@@ -237,7 +237,9 @@ def test_reimport_overlapping_period_updates_snapshot_not_duplicates(eur_account
         account=eur_account, date=date(2026, 3, 15)
     )
     assert snapshots.count() == 1  # pas de doublon
-    assert snapshots.first().balance == Decimal("1050.0")  # valeur mise à jour
+    snap = snapshots.first()
+    assert snap is not None
+    assert snap.balance == Decimal("1050.0")  # valeur mise à jour
 
 
 # =============================================================================
@@ -290,7 +292,7 @@ def test_closing_snapshot_created_from_balance_parameter(chf_account, user):
         {**make_tx("close_3"), "date": "2026-03-31"},
     ]
     service.run(
-        transactions,
+        transactions,  # type: ignore[arg-type]
         chf_account,
         user,
         "file.csv",
@@ -360,7 +362,7 @@ def test_computed_balance_calculated_from_previous_snapshot(chf_account, user):
     # Import 1 : établit la baseline
     tx_baseline = [{**make_tx("base"), "date": "2026-03-15"}]
     service.run(
-        tx_baseline,
+        tx_baseline,  # type: ignore[arg-type]
         chf_account,
         user,
         "file1.csv",
@@ -375,7 +377,12 @@ def test_computed_balance_calculated_from_previous_snapshot(chf_account, user):
         {**make_tx("comp_c"), "date": "2026-03-22", "amount": -50.0},
     ]
     service.run(
-        txs_new, chf_account, user, "file2.csv", make_file_hash("comp2"), balance=None
+        txs_new,
+        chf_account,
+        user,
+        "file2.csv",
+        make_file_hash("comp2"),
+        balance=None,  # type: ignore[arg-type]
     )
 
     from datetime import date

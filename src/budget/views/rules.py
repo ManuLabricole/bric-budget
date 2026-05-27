@@ -5,6 +5,7 @@ Contient le wizard de création de règle (transaction-first + standalone),
 les previews live, et le panel CRUD (liste, toggle, delete, edit).
 """
 
+import logging
 import re
 from datetime import date
 
@@ -18,6 +19,8 @@ from django.views.decorators.http import require_POST
 from budget.constants import RULE_NOISE_TOKENS
 from budget.utils import _cats_with_subcats, _keyword_q, _resolve_bank_icon_map
 from transactions.models import CategorizationRule, Category, SubCategory, Transaction
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # budget_modal_rule_intro — Modal step 1 : "Appliquer [cat] aux transactions similaires"
@@ -373,6 +376,17 @@ def budget_rule_create_standalone_submit(request):
             categorization_source="rule",
             categorization_rule=rule,
         )
+    )
+
+    log = logger.info if created else logger.debug
+    log(
+        "CategorizationRule %s: id=%s keyword=%r cat=%s applied to %d tx by user=%s",
+        "created" if created else "reused",
+        rule.id,
+        keyword,
+        category.slug,
+        updated_count,
+        request.user.id,
     )
 
     return render(
@@ -755,6 +769,12 @@ def budget_rule_delete(request, rule_id):
            hx-confirm="Supprimer ?" (confirmation navigateur native)
     """
     rule = get_object_or_404(CategorizationRule, id=rule_id)
+    logger.info(
+        "CategorizationRule deleted: id=%s keyword=%r by user=%s",
+        rule.id,
+        rule.keyword,
+        request.user.id,
+    )
     rule.delete()
     return HttpResponse("")
 

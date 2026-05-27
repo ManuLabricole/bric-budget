@@ -57,8 +57,24 @@ backups/
 
 # ─── Coverage & tests ───────────────────────────────────────────
 .coverage
+.coverage.*
 htmlcov/
+coverage.xml
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+
+# ─── Node / Tailwind ────────────────────────────────────────────
+node_modules/
+# package-lock.json EST commit (lockfile = reproductibilité prod)
+# src/static/css/tailwind.css EST commit (généré, mais évite npm install sur Railway)
+
+# ─── Sécurité (rapports outils) ─────────────────────────────────
+bandit-report.*
+pip-audit-report.*
+.bandit/
 
 # ─── MCP config — chemins absolus machine-spécifiques, ne pas partager ───────
 .mcp.json
