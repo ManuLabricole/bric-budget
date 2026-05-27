@@ -54,8 +54,9 @@
         </svg>
         Importer
     </a>
-    <a href="{% url 'accounts:account_new' %}"
-       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-1 {% if request.resolver_match.app_name == 'accounts' %} text-gold bg-surface-hover/30 {% else %} text-text-muted hover:text-gold hover:bg-surface-hover/30 {% endif %}">
+    {# Comptes — Phase 3A #}
+    <a href="#"
+       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-text-disabled cursor-not-allowed">
         <svg class="w-5 h-5 flex-shrink-0"
              fill="none"
              viewBox="0 0 24 24"
@@ -64,6 +65,7 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.332A48.36 48.36 0 0 0 12 9.75c-2.551 0-5.056.2-7.5.582V21M3 21h18M12 6.75h.008v.008H12V6.75Z" />
         </svg>
         <span>Comptes</span>
+        {% include "components/badges/soon.html" with extra_class="ml-auto" %}
     </a>
 </nav>
 <!-- PARAMÈTRES — ancré en bas, juste au-dessus du profil -->
