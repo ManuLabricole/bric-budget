@@ -1,0 +1,12 @@
+/* tailwind_input.css — Source d'entrée du build Tailwind.
+ *
+ * Build : `npm run build:css` → src/static/css/tailwind.css (minifié).
+ *
+ * Les classes utilitaires Tailwind viennent d'ici. Les composants custom (cat-dot,
+ * scrollbar, toast-drain) sont définis dans base.html dans une <style> séparée pour
+ * rester avec le HTML qui les utilise. Au prochain palier on les rapatriera ici.
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
