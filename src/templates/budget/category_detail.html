@@ -35,7 +35,10 @@ Layout :
    PANEL GAUCHE
    ══════════════════════════════════════════════════════════════════════════════ #}
 {% block panel_left %}
-    {# ── Header — breadcrumb + period nav ───────────────────────────────────── #}
+    {# ── Ligne 1 : navigation période (comme budget index) ───────────────────── #}
+    {% include "components/period/period_nav.html" with period_mode=period_mode period_display=period_display can_go_next=can_go_next nav_url_name="budget:set_period" %}
+    <div class="border-t border-edge my-3"></div>
+    {# ── Ligne 2 : breadcrumb + titre à gauche, filtres à droite ─────────────── #}
     <div class="flex items-center gap-3 mb-4">
         {# Breadcrumb ← Budget / icône + nom #}
         <a href="{% url 'budget:index' %}"
@@ -82,10 +85,9 @@ Layout :
                 Supprimer
             </button>
         {% endif %}
-        {# Dropdown filtre compte + Period nav alignés à droite #}
+        {# Filtre compte — aligné à droite #}
         <div class="ml-auto flex items-center gap-2">
-            {% include "components/filters/filter_accounts.html" with accounts=accounts filter_account_ids=filter_account_ids toggle_url_name="budget:toggle_filter_account" %}
-            {% include "components/period/period_nav.html" with period_mode=period_mode period_display=period_display can_go_next=can_go_next nav_url_name="budget:set_period" %}
+            {% include "components/filters/filter_accounts.html" with accounts=accounts hidden_account_ids=filter_account_ids toggle_url_name="budget:toggle_filter_account" %}
         </div>
     </div>
     {# ── Carte Cashflow — Sankey + KPI strip ─────────────────────────────────── #}

@@ -66,7 +66,7 @@ def _compute_category_cashflow_context(request, category):
             f"{MOIS_FR[period_end.month]} {period_end.year}"
         )
 
-    filter_account_ids = request.session.get("budget_filter_accounts", [])
+    filter_account_ids = request.session.get("budget_filter_accounts_hidden", [])
 
     base_qs = Transaction.objects.for_user(request.user).filter(
         category=category,
@@ -74,7 +74,7 @@ def _compute_category_cashflow_context(request, category):
         date__lte=period_end,
     )
     if filter_account_ids:
-        base_qs = base_qs.filter(account_id__in=filter_account_ids)
+        base_qs = base_qs.exclude(account_id__in=filter_account_ids)
     txs_active = base_qs.filter(is_ignored=False)
 
     total_amount = (
@@ -241,6 +241,37 @@ def budget_category_cashflow_fragment(request, slug):
             "target_amount": cc["target_amount"],
             "arc_fill_px": cc["arc_fill_px"],
         },
+    )
+
+
+# =============================================================================
+# budget_category_tx_fragment — Fragment liste transactions (search HTMX)
+# =============================================================================
+
+
+@login_required
+def budget_category_tx_fragment(request, slug):
+    """
+    Partial HTMX — liste de transactions filtrées par catégorie + recherche.
+
+    URL      : GET /budget/categorie/<slug>/transactions/?q=<search>
+    Target   : #cat-tx-results  swap="outerHTML"
+    Template : budget/partials/_category_tx_fragment.html
+    """
+    category = get_object_or_404(Category, slug=slug)
+    q = request.GET.get("q", "").strip()
+    qs = Transaction.objects.for_user(request.user).filter(
+        category=category, is_ignored=False
+    )
+    if q:
+        qs = qs.filter(display_name__icontains=q)
+    qs = qs.select_related("account", "account__bank", "subcategory").order_by("-date")[
+        :50
+    ]
+    return render(
+        request,
+        "budget/partials/_category_tx_fragment.html",
+        {"transactions": qs, "q": q, "category": category},
     )
 
 

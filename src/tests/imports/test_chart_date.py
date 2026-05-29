@@ -12,6 +12,7 @@ import datetime
 import pytest
 from django.test import Client
 from django.urls import reverse
+from django.utils import timezone
 
 from transactions.models import ImportLog, Transaction
 
@@ -155,7 +156,7 @@ def test_chart_data_uses_transaction_date(db, user_a, account_a, category):
 
 def test_chart_data_import_markers_present(db, user_a, account_a, category):
     """import_markers contient les métadonnées de chaque import."""
-    import_date = datetime.datetime.now()
+    import_date = timezone.now()
     make_import_log(account_a, import_date, count_created=42, filename="yuh.csv")
 
     client = Client()

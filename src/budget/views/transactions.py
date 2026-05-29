@@ -165,14 +165,16 @@ def budget_panel_transactions(request):
     amount_min = _parse_amount_filter(request.GET.get("amount_min", ""))
     amount_max = _parse_amount_filter(request.GET.get("amount_max", ""))
 
-    # ── Filtre compte actif (même session que budget_index) ──────────────────
-    filter_account_ids = request.session.get("budget_filter_accounts", [])
+    # ── Filtres actifs — partagés avec budget_index via session ─────────────
+    filter_account_ids = request.session.get("budget_filter_accounts_hidden", [])
+    hidden_cat_slugs = request.session.get("budget_filter_categories_hidden", [])
     accounts = (
         Account.objects.for_user(request.user)
         .filter(is_active=True)
         .select_related("bank")
         .order_by("bank__name", "name")
     )
+    all_categories = Category.objects.filter(is_active=True).order_by("order", "name")
 
     # ── Queryset transactions ─────────────────────────────────────────────────
     #
@@ -194,7 +196,9 @@ def budget_panel_transactions(request):
         .order_by("-date", "-id")
     )
     if filter_account_ids:
-        qs = qs.filter(account_id__in=filter_account_ids)
+        qs = qs.exclude(account_id__in=filter_account_ids)
+    if hidden_cat_slugs:
+        qs = qs.exclude(category__slug__in=hidden_cat_slugs)
     if q:
         qs = qs.filter(display_name__icontains=q)
     if amount_min is not None or amount_max is not None:
@@ -274,9 +278,12 @@ def budget_panel_transactions(request):
             "period_mode": period_mode,
             "period_label": period_label,
             "can_go_next": can_go_next,
-            # Filtre compte — partagé via la session
+            # Filtres — partagés via la session
             "accounts": accounts,
             "filter_account_ids": filter_account_ids,
+            "acc_filter_open": getattr(request, "_panel_acc_filter_open", False),
+            "all_categories": all_categories,
+            "hidden_cat_slugs": hidden_cat_slugs,
             "page_obj": page_obj,
             # q + montant transmis au template pour l'URL du sentinel scroll infini
             "q": q,

@@ -363,3 +363,165 @@ def test_category_detail_contains_cashflow_card(auth_client, cf_category):
         reverse("budget:category_detail", args=[cf_category.slug])
     )
     assert 'id="cashflow-card"' in response.content.decode()
+
+
+# =============================================================================
+# Panel transactions — filtre catégories blacklist
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_panel_transactions_excludes_hidden_categories(
+    auth_client, account, cf_category
+):
+    """Le panel exclut les transactions des catégories masquées en session."""
+    from datetime import date
+
+    tx = Transaction.objects.create(
+        account=account,
+        category=cf_category,
+        date=date.today().replace(day=1),
+        amount=Decimal("-30.00"),
+        currency="CHF",
+        amount_chf=Decimal("-30.00"),
+        description_raw="EXCLUDED BY CAT FILTER",
+        display_name="EXCLUDED BY CAT FILTER",
+        import_hash="panel_hidden_cat_test_001",
+    )
+    session = auth_client.session
+    session["budget_filter_categories_hidden"] = [cf_category.slug]
+    session.save()
+    response = auth_client.get(reverse("budget:panel_transactions"))
+    assert response.status_code == 200
+    assert tx.display_name.encode() not in response.content
+
+
+@pytest.mark.django_db
+def test_panel_transactions_shows_all_when_no_hidden(auth_client, account, cf_category):
+    """Aucune exclusion en session → toutes les transactions visibles."""
+    from datetime import date
+
+    tx = Transaction.objects.create(
+        account=account,
+        category=cf_category,
+        date=date.today().replace(day=1),
+        amount=Decimal("-42.00"),
+        currency="CHF",
+        amount_chf=Decimal("-42.00"),
+        description_raw="VISIBLE TX NO FILTER",
+        display_name="VISIBLE TX NO FILTER",
+        import_hash="panel_no_filter_test_001",
+    )
+    response = auth_client.get(reverse("budget:panel_transactions"))
+    assert response.status_code == 200
+    assert tx.display_name.encode() in response.content
+
+
+# =============================================================================
+# budget_category_tx_fragment
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_category_tx_fragment_requires_login(client, cf_category):
+    r = client.get(reverse("budget:category_tx_fragment", args=[cf_category.slug]))
+    assert r.status_code == 302
+    assert "/login/" in r["Location"]
+
+
+@pytest.mark.django_db
+def test_category_tx_fragment_returns_200(auth_client, cf_category):
+    r = auth_client.get(reverse("budget:category_tx_fragment", args=[cf_category.slug]))
+    assert r.status_code == 200
+
+
+@pytest.mark.django_db
+def test_category_tx_fragment_returns_inner_html_only(auth_client, cf_category):
+    r = auth_client.get(reverse("budget:category_tx_fragment", args=[cf_category.slug]))
+    assert b"<!DOCTYPE html>" not in r.content
+    assert b"<html" not in r.content
+
+
+@pytest.mark.django_db
+def test_category_tx_fragment_returns_404_for_unknown_slug(auth_client):
+    r = auth_client.get(
+        reverse("budget:category_tx_fragment", args=["slug-qui-nexiste-pas"])
+    )
+    assert r.status_code == 404
+
+
+@pytest.mark.django_db
+def test_category_tx_fragment_shows_matching_transactions(
+    auth_client, account, cf_category
+):
+    """Search q=MIGROS → transaction MIGROS présente dans le fragment."""
+    from datetime import date
+
+    Transaction.objects.create(
+        account=account,
+        category=cf_category,
+        date=date.today().replace(day=1),
+        amount=Decimal("-55.00"),
+        currency="CHF",
+        amount_chf=Decimal("-55.00"),
+        description_raw="MIGROS GENEVE",
+        display_name="MIGROS GENEVE",
+        import_hash="cat_tx_frag_migros_001",
+    )
+    r = auth_client.get(
+        reverse("budget:category_tx_fragment", args=[cf_category.slug]),
+        {"q": "MIGROS"},
+    )
+    assert r.status_code == 200
+    assert b"MIGROS" in r.content
+
+
+@pytest.mark.django_db
+def test_category_tx_fragment_search_excludes_non_matching(
+    auth_client, account, cf_category
+):
+    """Search q=COOP → transaction MIGROS absente du fragment."""
+    from datetime import date
+
+    Transaction.objects.create(
+        account=account,
+        category=cf_category,
+        date=date.today().replace(day=1),
+        amount=Decimal("-20.00"),
+        currency="CHF",
+        amount_chf=Decimal("-20.00"),
+        description_raw="MIGROS LAUSANNE",
+        display_name="MIGROS LAUSANNE",
+        import_hash="cat_tx_frag_migros_002",
+    )
+    r = auth_client.get(
+        reverse("budget:category_tx_fragment", args=[cf_category.slug]),
+        {"q": "COOP"},
+    )
+    assert r.status_code == 200
+    assert b"MIGROS" not in r.content
+
+
+@pytest.mark.django_db
+def test_category_tx_fragment_idor_other_user_sees_no_data(
+    other_client, account, cf_category
+):
+    """Autre user → 200 mais transactions du premier user invisibles."""
+    from datetime import date
+
+    Transaction.objects.create(
+        account=account,
+        category=cf_category,
+        date=date.today().replace(day=1),
+        amount=Decimal("-77.00"),
+        currency="CHF",
+        amount_chf=Decimal("-77.00"),
+        description_raw="SECRET TX OTHER",
+        display_name="SECRET TX OTHER",
+        import_hash="cat_tx_frag_idor_001",
+    )
+    r = other_client.get(
+        reverse("budget:category_tx_fragment", args=[cf_category.slug])
+    )
+    assert r.status_code == 200
+    assert b"SECRET TX OTHER" not in r.content

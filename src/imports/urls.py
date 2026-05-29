@@ -11,7 +11,7 @@ urlpatterns = [
     path("select-account/", views.import_select_account, name="select_account"),
     path("set-period/<str:action>/", views.set_period, name="set_period"),
     path(
-        "filter-account/<int:account_id>/",
+        "filter-account/<slug:account_ref>/",
         views.toggle_filter_account,
         name="toggle_filter_account",
     ),

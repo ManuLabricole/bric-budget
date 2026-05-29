@@ -127,7 +127,9 @@ profile = "django"
 #   H021 — inline styles : nécessaires pour le glassmorphism (gradient borders, backdrop-blur)
 #           Tailwind ne supporte pas ces propriétés en classes utilitaires.
 #   T003 — endblock sans nom : choix Django 6 (endblock vide = moins de bruit)
-ignore = "H021,T003"
+#   H025 — "orphan tag" : faux positif sur les templates partiels inclus via {% include %}
+#           (ex: <details> à la racine sans parent HTML explicite dans le fichier).
+ignore = "H021,T003,H025"
 
 
 # =============================================================================
