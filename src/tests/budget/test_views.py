@@ -417,9 +417,64 @@ def test_panel_transactions_shows_all_when_no_hidden(auth_client, account, cf_ca
     assert tx.display_name.encode() in response.content
 
 
+@pytest.mark.django_db
+def test_panel_transactions_contains_category_filter(auth_client, cf_category):
+    """Le panel transactions expose le composant filtre catégories dans le HTML."""
+    r = auth_client.get(reverse("budget:panel_transactions"))
+    assert r.status_code == 200
+    assert b"categories-filter-details" in r.content
+
+
 # =============================================================================
 # budget_category_tx_fragment
 # =============================================================================
+
+
+@pytest.mark.django_db
+def test_category_tx_fragment_respects_period(auth_client, account, cf_category):
+    """Les transactions hors-période active ne doivent pas apparaître dans le fragment."""
+    import calendar
+    from datetime import date
+
+    today = date.today()
+    period_start = today.replace(day=1)
+    period_end = today.replace(day=calendar.monthrange(today.year, today.month)[1])
+
+    # Tx dans la période courante
+    Transaction.objects.create(
+        account=account,
+        category=cf_category,
+        date=period_start,
+        amount=Decimal("-10.00"),
+        currency="CHF",
+        amount_chf=Decimal("-10.00"),
+        description_raw="TX DANS PERIODE",
+        display_name="TX DANS PERIODE",
+        import_hash="cat_frag_period_in_001",
+    )
+    # Tx hors-période : mois précédent
+    prev_month = 12 if today.month == 1 else today.month - 1
+    prev_year = today.year - 1 if today.month == 1 else today.year
+    Transaction.objects.create(
+        account=account,
+        category=cf_category,
+        date=date(prev_year, prev_month, 1),
+        amount=Decimal("-99.00"),
+        currency="CHF",
+        amount_chf=Decimal("-99.00"),
+        description_raw="TX HORS PERIODE",
+        display_name="TX HORS PERIODE",
+        import_hash="cat_frag_period_out_001",
+    )
+    session = auth_client.session
+    session["budget_period_start"] = period_start.isoformat()
+    session["budget_period_end"] = period_end.isoformat()
+    session.save()
+
+    r = auth_client.get(reverse("budget:category_tx_fragment", args=[cf_category.slug]))
+    assert r.status_code == 200
+    assert b"TX DANS PERIODE" in r.content
+    assert b"TX HORS PERIODE" not in r.content
 
 
 @pytest.mark.django_db

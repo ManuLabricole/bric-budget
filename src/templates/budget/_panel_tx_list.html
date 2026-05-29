@@ -81,6 +81,8 @@ Données :
             </button>
         {% endif %}
     </form>
+    {# Filtre catégories — même session que l'index Budget, HTMX → recharge le panel #}
+    {% include "components/filters/filter_categories.html" with all_categories=all_categories hidden_cat_slugs=hidden_cat_slugs toggle_url_name="budget:toggle_filter_category" htmx_target="#panel-content" htmx_swap="innerHTML" %}
     {# Filtre compte — composant partagé, HTMX → recharge le panel #}
     {% include "components/filters/filter_accounts.html" with accounts=accounts hidden_account_ids=filter_account_ids toggle_url_name="budget:toggle_filter_account" htmx_target="#panel-content" htmx_swap="innerHTML" filter_open=acc_filter_open %}
 </div>
