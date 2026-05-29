@@ -22,6 +22,11 @@ on:
       - development
       - main
 
+# Un seul run CI par branche/PR à la fois — annule le run précédent si un nouveau push arrive.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ── Lint ────────────────────────────────────────────────────────────────────
   # Vérifie le style Python (ruff) et les templates Django (djlint).
