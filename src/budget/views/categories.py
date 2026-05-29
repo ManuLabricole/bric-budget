@@ -260,8 +260,13 @@ def budget_category_tx_fragment(request, slug):
     """
     category = get_object_or_404(Category, slug=slug)
     q = request.GET.get("q", "").strip()
+    # Respecter la période active en session — même clé que budget_index
+    period_start, period_end = _period_from_session(request.session)
     qs = Transaction.objects.for_user(request.user).filter(
-        category=category, is_ignored=False
+        category=category,
+        is_ignored=False,
+        date__gte=period_start,
+        date__lte=period_end,
     )
     if q:
         qs = qs.filter(display_name__icontains=q)
