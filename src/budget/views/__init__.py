@@ -17,6 +17,7 @@ from .categories import (
     budget_category_create_submit,
     budget_category_delete,
     budget_category_detail,
+    budget_category_tx_fragment,
     budget_panel_category_create,
     budget_panel_category_delete_confirm,
     budget_panel_category_manage,

@@ -1,0 +1,29 @@
+{% load budget_filters bank_icons %}
+{% comment %}
+budget/partials/_category_tx_fragment.html — Fragment HTMX : liste transactions par catégorie
+
+Paramètres :
+  transactions — queryset Transaction (annoté, ordonné)
+  q            — str — terme de recherche courant
+  category     — Category
+{% endcomment %}
+<div id="cat-tx-results">
+    {% if transactions %}
+        {% for tx in transactions %}
+            {% ifchanged tx.date %}
+                <div class="px-4 py-1.5 sticky top-0 z-10 bg-surface-2/90 backdrop-blur-sm">
+                    <span class="text-[10px] font-medium text-text-muted">{{ tx.date|date:"j F Y" }}</span>
+                </div>
+            {% endifchanged %}
+            {% bank_icon_url tx.account.bank as bicon %}
+            {% include "budget/_panel_tx_row.html" with bank_icon_url=bicon panel_source="category" panel_target="#cat-tx-detail" %}
+        {% endfor %}
+    {% else %}
+        <div class="flex flex-col items-center justify-center py-12 text-text-disabled">
+            <p class="text-xs">
+                Aucune transaction
+                {% if q %}pour « {{ q }} »{% endif %}
+            </p>
+        </div>
+    {% endif %}
+</div>

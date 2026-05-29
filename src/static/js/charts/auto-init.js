@@ -67,4 +67,17 @@
   document.body.addEventListener("htmx:afterSwap", function (e) {
     initChartsIn(e.target);
   });
+
+  // Ferme tous les <details> de filtres quand on clique en dehors.
+  // querySelectorAll au lieu de getElementById : plusieurs instances peuvent coexister
+  // (ex: filtre comptes dans la page principale ET dans le right panel).
+  document.addEventListener("click", function (e) {
+    ["accounts-filter-details", "categories-filter-details"].forEach(function (id) {
+      document.querySelectorAll("#" + id + "[open]").forEach(function (el) {
+        if (!el.contains(e.target)) {
+          el.removeAttribute("open");
+        }
+      });
+    });
+  });
 })();

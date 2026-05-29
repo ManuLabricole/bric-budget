@@ -174,30 +174,41 @@ def test_toggle_filter_account_requires_login(client, account):
 
 
 @pytest.mark.django_db
-def test_toggle_filter_account_adds_id_to_session(auth_client, account):
+def test_toggle_filter_account_adds_id_to_hidden(auth_client, account):
+    """Toggler un compte → ID ajouté à la blacklist (masqué)."""
     auth_client.get(reverse("budget:toggle_filter_account", args=[account.id]))
-    assert account.id in auth_client.session.get("budget_filter_accounts", [])
+    assert account.id in auth_client.session.get("budget_filter_accounts_hidden", [])
 
 
 @pytest.mark.django_db
-def test_toggle_filter_account_removes_id_when_already_present(auth_client, account):
-    """Toggle 2× = retiré de la liste."""
+def test_toggle_filter_account_removes_id_when_already_hidden(auth_client, account):
+    """Toggle 2× = retiré de la blacklist (de nouveau visible)."""
     auth_client.get(reverse("budget:toggle_filter_account", args=[account.id]))
     auth_client.get(reverse("budget:toggle_filter_account", args=[account.id]))
-    assert account.id not in auth_client.session.get("budget_filter_accounts", [])
+    assert account.id not in auth_client.session.get(
+        "budget_filter_accounts_hidden", []
+    )
 
 
 @pytest.mark.django_db
-def test_toggle_filter_account_zero_resets_list(auth_client, account):
-    """account_id=0 → reset complet."""
+def test_toggle_filter_account_all_resets_hidden_list(auth_client, account):
+    """account_ref='all' → reset complet (aucun masqué)."""
     auth_client.get(reverse("budget:toggle_filter_account", args=[account.id]))
-    assert auth_client.session.get("budget_filter_accounts")  # non vide
-    auth_client.get(reverse("budget:toggle_filter_account", args=[0]))
-    assert auth_client.session.get("budget_filter_accounts") == []
+    assert auth_client.session.get("budget_filter_accounts_hidden")  # non vide
+    auth_client.get(reverse("budget:toggle_filter_account", args=["all"]))
+    assert auth_client.session.get("budget_filter_accounts_hidden") == []
+
+
+@pytest.mark.django_db
+def test_toggle_filter_account_none_hides_all(auth_client, account):
+    """account_ref='none' → tous les comptes masqués."""
+    auth_client.get(reverse("budget:toggle_filter_account", args=["none"]))
+    hidden = auth_client.session.get("budget_filter_accounts_hidden", [])
+    assert account.id in hidden
 
 
 # =============================================================================
-# toggle_filter_category
+# toggle_filter_category  — blacklist (budget_filter_categories_hidden)
 # =============================================================================
 
 
@@ -208,21 +219,45 @@ def test_toggle_filter_category_requires_login(client, cat):
 
 
 @pytest.mark.django_db
-def test_toggle_filter_category_adds_slug_to_session(auth_client, cat):
+def test_toggle_filter_category_hides_slug(auth_client, cat):
+    # Premier clic → slug ajouté aux EXCLUSIONS (catégorie masquée)
     auth_client.get(reverse("budget:toggle_filter_category", args=[cat.slug]))
-    assert cat.slug in auth_client.session.get("budget_filter_categories", [])
+    assert cat.slug in auth_client.session.get("budget_filter_categories_hidden", [])
 
 
 @pytest.mark.django_db
-def test_toggle_filter_category_removes_slug_when_already_present(auth_client, cat):
+def test_toggle_filter_category_shows_when_clicked_twice(auth_client, cat):
+    # Double clic → slug retiré des exclusions (catégorie ré-affichée)
     auth_client.get(reverse("budget:toggle_filter_category", args=[cat.slug]))
     auth_client.get(reverse("budget:toggle_filter_category", args=[cat.slug]))
-    assert cat.slug not in auth_client.session.get("budget_filter_categories", [])
+    assert cat.slug not in auth_client.session.get(
+        "budget_filter_categories_hidden", []
+    )
 
 
 @pytest.mark.django_db
-def test_toggle_filter_category_all_resets_list(auth_client, cat):
+def test_toggle_filter_category_all_clears_hidden(auth_client, cat):
+    # slug="all" → vide la liste hidden (Tout sélectionner)
     auth_client.get(reverse("budget:toggle_filter_category", args=[cat.slug]))
-    assert auth_client.session.get("budget_filter_categories")
+    assert auth_client.session.get("budget_filter_categories_hidden")
     auth_client.get(reverse("budget:toggle_filter_category", args=["all"]))
-    assert auth_client.session.get("budget_filter_categories") == []
+    assert auth_client.session.get("budget_filter_categories_hidden") == []
+
+
+@pytest.mark.django_db
+def test_toggle_filter_category_none_hides_all(auth_client, cat):
+    # slug="none" → toutes les catégories actives ajoutées aux exclusions
+    auth_client.get(reverse("budget:toggle_filter_category", args=["none"]))
+    hidden = auth_client.session.get("budget_filter_categories_hidden", [])
+    assert cat.slug in hidden
+
+
+@pytest.mark.django_db
+def test_toggle_filter_category_htmx_returns_panel_fragment(auth_client, cat):
+    # Requête HTMX → retourne fragment panel (pas redirect index)
+    response = auth_client.get(
+        reverse("budget:toggle_filter_category", args=[cat.slug]),
+        HTTP_HX_REQUEST="true",
+    )
+    assert response.status_code == 200
+    assert b"<!DOCTYPE html>" not in response.content

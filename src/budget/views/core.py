@@ -116,18 +116,17 @@ def budget_index(request):
     # ── 2b. Filtres multi-select actifs ──────────────────────────────────────
     #
     # Deux filtres stockés en session (vide = pas de filtre = tout afficher) :
-    #   budget_filter_accounts   → list[int]  : IDs des comptes sélectionnés
-    #   budget_filter_categories → list[str]  : slugs des catégories sélectionnées
+    #   budget_filter_accounts          → list[int]  : IDs des comptes sélectionnés
+    #   budget_filter_categories_hidden → list[str]  : slugs des catégories MASQUÉES (blacklist)
     #
-    # La liste vide est le cas "aucun filtre" : le queryset n'est pas restreint.
-    # Quand au moins un ID/slug est présent, seul ce sous-ensemble est affiché dans
-    # le Sankey, le Donut et la liste des catégories.
+    # Blacklist catégories : vide = tout afficher, non-vide = exclure ces slugs.
+    # Tous les cercles sont dorés par défaut (= tout visible). Cliquer masque (exclut).
     #
     # On charge aussi les données pour les dropdowns du template :
     #   accounts       → tous les comptes actifs (pour le sélecteur "Tous les comptes")
     #   all_categories → toutes les catégories actives (pour le sélecteur catégories)
-    filter_account_ids = request.session.get("budget_filter_accounts", [])
-    filter_cat_slugs = request.session.get("budget_filter_categories", [])
+    filter_account_ids = request.session.get("budget_filter_accounts_hidden", [])
+    hidden_cat_slugs = request.session.get("budget_filter_categories_hidden", [])
     accounts = (
         Account.objects.for_user(request.user)
         .filter(is_active=True)
@@ -157,11 +156,11 @@ def budget_index(request):
         is_ignored=False,
         is_internal_transfer=False,
     )
-    # Appliquer les filtres multi-select si actifs (vide = tout afficher)
+    # Appliquer les filtres multi-select si actifs (vide = tout afficher, blacklist)
     if filter_account_ids:
-        qs = qs.filter(account_id__in=filter_account_ids)
-    if filter_cat_slugs:
-        qs = qs.filter(category__slug__in=filter_cat_slugs)
+        qs = qs.exclude(account_id__in=filter_account_ids)
+    if hidden_cat_slugs:
+        qs = qs.exclude(category__slug__in=hidden_cat_slugs)
 
     # ── 4. KPIs ───────────────────────────────────────────────────────────────
     #
@@ -560,11 +559,22 @@ def budget_index(request):
         "accounts": accounts,
         "filter_account_ids": filter_account_ids,
         "all_categories": all_categories,
-        "filter_cat_slugs": filter_cat_slugs,
+        "hidden_cat_slugs": hidden_cat_slugs,
         # Préférence affichage décimales (toggle Paramètres)
         # False (défaut) → entiers (32 232 CHF) | True → décimales (32 232,50 CHF)
         "show_decimals": request.session.get("show_decimals", False),
     }
+
+    # HX-Target = "budget-left-section" → swap partiel depuis toggle_filter_*
+    # _open_filter indique quel dropdown garder ouvert :
+    #   "categories" → cat_filter_open (défaut)
+    #   "accounts"   → acc_filter_open
+    if request.headers.get("HX-Target") == "budget-left-section":
+        _open = getattr(request, "_open_filter", "categories")
+        context["cat_filter_open"] = _open == "categories"
+        context["acc_filter_open"] = _open == "accounts"
+        context["is_htmx_partial"] = True
+        return render(request, "budget/partials/_budget_left_section.html", context)
 
     return render(request, "budget/index.html", context)
 
@@ -744,34 +754,47 @@ def budget_set_period_month(request, year, month):
 
 
 @login_required
-def budget_toggle_filter_account(request, account_id):
+def budget_toggle_filter_account(request, account_ref):
     """
-    Toggle un compte dans le filtre multi-select stocké en session.
+    Toggle un compte dans le filtre blacklist stocké en session.
 
-    URL : /budget/filter/account/<account_id>/
-    account_id=0 → vide la liste (afficher tous les comptes)
+    URL : /budget/filter/account/<account_ref>/
+    account_ref="all"/"0" → réinitialise (aucun masqué = tout visible)
+    account_ref="none"    → masque tous les comptes
+    account_ref="<int>"   → toggle le compte spécifique
 
-    Principe :
-        La session stocke une liste d'IDs. Ce endpoint ajoute ou retire l'ID.
-        Vide = pas de filtre = tout afficher.
-        Après la mise à jour, on redirige vers la page appelante (HTTP_REFERER)
-        pour que la page se recharge avec le nouveau filtre appliqué.
+    Blacklist : budget_filter_accounts_hidden = IDs des comptes EXCLUS.
+    Vide = tout visible (cercles dorés par défaut). Non-vide = ces comptes masqués.
     """
-    ids = request.session.get("budget_filter_accounts", [])
+    hidden = request.session.get("budget_filter_accounts_hidden", [])
 
-    if account_id == 0:
-        # Réinitialiser → tous les comptes
-        ids = []
-    elif account_id in ids:
-        # Décocher
-        ids = [i for i in ids if i != account_id]
+    if account_ref in ("all", "0", 0):
+        # Tout sélectionner → aucune exclusion
+        hidden = []
+    elif account_ref == "none":
+        # Tout masquer → exclure tous les comptes actifs de l'utilisateur
+        hidden = list(
+            Account.objects.for_user(request.user)
+            .filter(is_active=True)
+            .values_list("id", flat=True)
+        )
     else:
-        # Cocher
-        ids = ids + [account_id]
+        try:
+            account_id = int(account_ref)
+        except (ValueError, TypeError):
+            account_id = None
+        if account_id is not None:
+            if account_id in hidden:
+                hidden = [i for i in hidden if i != account_id]
+            else:
+                hidden = hidden + [account_id]
 
-    request.session["budget_filter_accounts"] = ids
-    # HTMX request → retourne le fragment panel directement (pas de redirect pleine page)
+    request.session["budget_filter_accounts_hidden"] = hidden
     if request.headers.get("HX-Request"):
+        if request.headers.get("HX-Target") == "budget-left-section":
+            request._open_filter = "accounts"
+            return budget_index(request)
+        request._panel_acc_filter_open = True
         return budget_panel_transactions(request)
     return redirect(request.META.get("HTTP_REFERER", "budget:index"))
 
@@ -784,25 +807,46 @@ def budget_toggle_filter_account(request, account_id):
 @login_required
 def budget_toggle_filter_category(request, slug):
     """
-    Toggle une catégorie dans le filtre multi-select stocké en session.
+    Toggle une catégorie dans le filtre blacklist stocké en session.
 
     URL : /budget/filter/category/<slug>/
-    slug="all" → vide la liste (afficher toutes les catégories)
+    slug="all"  → réinitialise (tout visible — vide la liste hidden)
+    slug="none" → masque toutes les catégories actives
+    Autre slug  → toggle : visible ↔ masqué
 
-    Principe : même pattern que budget_toggle_filter_account.
-    Seule différence : stocké comme list[str] (slugs) au lieu de list[int] (ids).
+    Blacklist : budget_filter_categories_hidden = slugs des catégories EXCLUES.
+    Vide = tout visible. Non-vide = ces catégories sont masquées du budget.
+
+    HTMX : si HX-Request → retourne le fragment panel_transactions (même que toggle_account).
+    Non-HTMX : redirect vers budget_index.
     """
-    slugs = request.session.get("budget_filter_categories", [])
+    hidden = request.session.get("budget_filter_categories_hidden", [])
 
     if slug == "all":
-        slugs = []
-    elif slug in slugs:
-        slugs = [s for s in slugs if s != slug]
+        # Tout sélectionner → aucune exclusion
+        hidden = []
+    elif slug == "none":
+        # Tout masquer → exclure toutes les catégories actives
+        hidden = list(
+            Category.objects.filter(is_active=True).values_list("slug", flat=True)
+        )
+    elif slug in hidden:
+        # Ré-afficher → retirer de la liste d'exclusion
+        hidden = [s for s in hidden if s != slug]
     else:
-        slugs = slugs + [slug]
+        # Masquer → ajouter à la liste d'exclusion
+        hidden = hidden + [slug]
 
-    request.session["budget_filter_categories"] = slugs
-    # Redirige toujours vers budget_index — le filtre catégorie n'existe que là.
+    request.session["budget_filter_categories_hidden"] = hidden
+
+    if request.headers.get("HX-Request"):
+        # HX-Target indique le contexte d'appel :
+        #   "budget-left-section" → swap section gauche index (dropdown reste ouvert)
+        #   autre / absent        → fragment panel transactions (Étape 4)
+        if request.headers.get("HX-Target") == "budget-left-section":
+            request._open_filter = "categories"
+            return budget_index(request)
+        return budget_panel_transactions(request)
     return redirect("budget:index")
 
 

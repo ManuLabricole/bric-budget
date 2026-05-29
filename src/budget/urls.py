@@ -144,11 +144,19 @@ urlpatterns = [
         views.budget_category_cashflow_fragment,
         name="category_cashflow_fragment",
     ),
-    # ── Filtres multi-select (T1 + T2) ──────────────────────────────────────
-    # /budget/filter/account/<account_id>/ → toggle compte dans le filtre session
-    # account_id=0 → réinitialise (tous les comptes)
+    # /budget/categorie/<slug>/transactions/ → fragment liste tx (search HTMX)
     path(
-        "filter/account/<int:account_id>/",
+        "categorie/<slug:slug>/transactions/",
+        views.budget_category_tx_fragment,
+        name="category_tx_fragment",
+    ),
+    # ── Filtres multi-select (T1 + T2) ──────────────────────────────────────
+    # /budget/filter/account/<account_ref>/ → toggle compte dans le filtre session
+    # account_ref="all" (ou "0") → réinitialise (tous les comptes — aucun masqué)
+    # account_ref="none" → masque tous les comptes
+    # account_ref="<int>" → toggle le compte spécifique
+    path(
+        "filter/account/<slug:account_ref>/",
         views.budget_toggle_filter_account,
         name="toggle_filter_account",
     ),

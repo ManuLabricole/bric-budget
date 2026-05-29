@@ -103,7 +103,7 @@ def import_upload(request):
     # Lue depuis la session — modifiée par set_period().
     period_mode = request.session.get("import_period_mode", "1y")
     period_offset = request.session.get("import_period_offset", 0)
-    filter_account_ids = list(request.session.get("import_filter_account_ids", []))
+    filter_account_ids = list(request.session.get("import_filter_accounts_hidden", []))
 
     start_date, end_date, period_display, can_go_next = _activity_window(
         period_mode, period_offset
@@ -157,10 +157,9 @@ def import_upload(request):
         date__lte=end_date,
         is_ignored=False,
     )
-    # Filtre compte : scopé à l'user (la contrainte account__members ci-dessus
-    # garantit qu'on ne peut filtrer que sur ses propres comptes).
+    # Filtre compte (blacklist) : scopé à l'user (account__members ci-dessus).
     if filter_account_ids:
-        tx_qs = tx_qs.filter(account_id__in=filter_account_ids)
+        tx_qs = tx_qs.exclude(account_id__in=filter_account_ids)
 
     tx_by_day = list(
         tx_qs.select_related("account__bank")
@@ -247,7 +246,7 @@ def import_upload(request):
         # Affichés comme lignes verticales sur l'axe X du graphique.
         "import_markers": [
             {
-                "date": group["imported_at"].strftime("%Y-%m-%d"),
+                "date": timezone.localtime(group["imported_at"]).strftime("%Y-%m-%d"),
                 "filename": group["filename"] or "?",
                 "total": group["total_created"],
                 "bank": group["bank"].name,
@@ -1065,23 +1064,40 @@ def set_period(request, action):
 
 
 @login_required
-def toggle_filter_account(request, account_id):
+def toggle_filter_account(request, account_ref):
     """
     Active/désactive un compte dans le filtre du graphique d'activité.
-    account_id=0 réinitialise le filtre (tous les comptes).
+    account_ref="all"/"0" → réinitialise (aucun masqué = tout visible).
+    account_ref="none"    → masque tous les comptes.
+    account_ref="<int>"   → toggle le compte spécifique.
     IDOR : le filtrage en DB reste scopé à request.user dans import_upload.
 
+    Blacklist : import_filter_accounts_hidden = IDs des comptes EXCLUS.
     Si requête HTMX → retourne le partial avec filter_open=True (dropdown reste ouvert).
     Sinon → redirect.
     """
-    ids = list(request.session.get("import_filter_account_ids", []))
-    if account_id == 0:
-        ids = []
-    elif account_id in ids:
-        ids.remove(account_id)
+    hidden = list(request.session.get("import_filter_accounts_hidden", []))
+
+    if account_ref in ("all", "0"):
+        hidden = []
+    elif account_ref == "none":
+        hidden = list(
+            Account.objects.filter(is_active=True, members=request.user).values_list(
+                "id", flat=True
+            )
+        )
     else:
-        ids.append(account_id)
-    request.session["import_filter_account_ids"] = ids
+        try:
+            account_id = int(account_ref)
+        except (ValueError, TypeError):
+            account_id = None
+        if account_id is not None:
+            if account_id in hidden:
+                hidden = [i for i in hidden if i != account_id]
+            else:
+                hidden = hidden + [account_id]
+
+    request.session["import_filter_accounts_hidden"] = hidden
 
     if request.headers.get("HX-Request"):
         period_mode = request.session.get("import_period_mode", "1y")
@@ -1096,7 +1112,7 @@ def _render_activity_section(request, period_mode, period_offset, filter_open=Fa
     _activity_section.html (utilisé pour les swaps HTMX depuis set_period
     et toggle_filter_account).
     """
-    filter_account_ids = list(request.session.get("import_filter_account_ids", []))
+    filter_account_ids = list(request.session.get("import_filter_accounts_hidden", []))
 
     start_date, end_date, period_display, can_go_next = _activity_window(
         period_mode, period_offset
@@ -1109,7 +1125,7 @@ def _render_activity_section(request, period_mode, period_offset, filter_open=Fa
         is_ignored=False,
     )
     if filter_account_ids:
-        tx_qs = tx_qs.filter(account_id__in=filter_account_ids)
+        tx_qs = tx_qs.exclude(account_id__in=filter_account_ids)
 
     tx_by_day = list(
         tx_qs.select_related("account__bank")
@@ -1149,7 +1165,7 @@ def _render_activity_section(request, period_mode, period_offset, filter_open=Fa
             seen_hashes_m[key] = True
             import_markers.append(
                 {
-                    "date": log.imported_at.strftime("%Y-%m-%d"),
+                    "date": timezone.localtime(log.imported_at).strftime("%Y-%m-%d"),
                     "filename": log.filename or "?",
                     "total": log.count_created,
                     "bank": log.account.bank.name,
