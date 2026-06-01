@@ -17,6 +17,11 @@
 # prepare-commit-msg, used below to stamp the .claude config version.
 default_install_hook_types: [pre-commit, commit-msg, prepare-commit-msg, pre-push]
 
+# Sans ceci, un hook sans `stages:` tourne à CHAQUE stage installé (3× ruff/djlint
+# par commit !). On limite le défaut à pre-commit ; les hooks à stage explicite
+# (stamp=prepare-commit-msg, commitizen=commit-msg, pytest=pre-push) gardent le leur.
+default_stages: [pre-commit]
+
 repos:
   # ---------------------------------------------------------------------------
   # Ruff — linter + formatter (replaces flake8, black, isort)
