@@ -9,6 +9,7 @@
 .claude/*
 !.claude/commands/
 !.claude/agents/
+!.claude/rules/
 !.claude/scripts/
 !.claude/CLAUDE.md
 !.claude/README.md

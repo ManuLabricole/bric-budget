@@ -26,9 +26,12 @@ uniquement (jamais d'édition) et tu rapportes des findings priorisés avec corr
   accède à des relations en boucle ou en template.
 - `.exists()` plutôt que `if queryset:`, `.count()` plutôt que `len(qs)`.
 
-### Formulaires
-- Validation dans les forms (`clean()` / `clean_<field>()`), pas dans les vues.
-- Erreurs toujours renvoyées à l'utilisateur (messages Django ou partial avec `form.errors`).
+### POST & validation (PAS de Django Forms en front)
+- BricBudget n'utilise PAS de `forms.Form`/`ModelForm` dans les vues (uniquement dans l'admin) :
+  les POST sont parsés à la main via `request.POST.get(...)`. Vérifie donc que **chaque champ lu
+  est validé, casté et borné dans la vue** (type, longueur, valeurs autorisées) — il n'y a pas de
+  `clean()` centralisé pour rattraper un oubli.
+- Erreurs toujours renvoyées à l'utilisateur (messages Django ou partial d'erreur).
 
 ### Templates HTMX / Tailwind
 - Partials préfixés `_`. Commentaires multilignes en `{% comment %}`, **jamais** `{# #}` multiligne.
