@@ -12,3 +12,11 @@ rules:
     # Capture l'anti-pattern explicite Decimal(float(...)). Le cas Decimal(var_float)
     # n'est pas détectable statiquement (type inconnu) — couvert par convention + revue.
     pattern: Decimal(float(...))
+    metadata:
+      category: correctness
+      technology: [python, django]
+      confidence: HIGH
+      cwe:
+        - "CWE-682: Incorrect Calculation"
+      references:
+        - https://docs.python.org/3/library/decimal.html#decimal.Decimal
