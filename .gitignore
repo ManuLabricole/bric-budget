@@ -8,6 +8,7 @@
 # settings.json, plan_*/research_*) reste local.
 .claude/*
 !.claude/commands/
+!.claude/agents/
 !.claude/scripts/
 !.claude/CLAUDE.md
 !.claude/README.md
