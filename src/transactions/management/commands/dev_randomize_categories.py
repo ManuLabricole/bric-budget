@@ -228,11 +228,11 @@ class Command(BaseCommand):
                 rich_idx += 1
 
                 # Grab any single transaction from the donor category
-                donor_tx: Transaction = (
+                donor_tx = (
                     Transaction.objects.filter(category=donor, amount__lt=0)
                     .order_by("?")
                     .first()
-                )  # type: ignore[assignment]
+                )
                 if donor_tx:
                     donor_tx.category = missing_cat
                     subcats = subcat_map.get(missing_cat.id, [])

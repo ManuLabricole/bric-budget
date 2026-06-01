@@ -247,7 +247,7 @@ def test_seen_in_batch_deduplicates_within_same_run(chf_account, user):
     unique import_hash.
     """
     tx = make_tx("dup", amount=-50.0)
-    tx_copy = dict(tx)  # même import_hash
+    tx_copy = make_tx("dup", amount=-50.0)  # même seed → même import_hash
 
     result = ImportService().run(
         [tx, tx_copy],

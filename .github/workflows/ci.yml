@@ -71,6 +71,15 @@ jobs:
       - name: pip-audit — dependency CVEs
         run: poetry run pip-audit
 
+      # mypy — vérification de types (plugin Django). SECRET_KEY/DATABASE_URL dummy :
+      # mypy charge les settings pour introspecter les models mais ne se connecte PAS à la DB.
+      - name: mypy — type check
+        env:
+          SECRET_KEY: "ci-mypy-only-aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY3z"
+          DATABASE_URL: "postgresql://u:p@localhost:5432/db"
+          DEBUG: "True"
+        run: cd src && poetry run mypy . --config-file ../pyproject.toml
+
   # ── Tests ───────────────────────────────────────────────────────────────────
   # Lance les 323 tests pytest avec une vraie DB PostgreSQL.
   # Django crée un test_bricbudget automatiquement, le détruit en fin de job.

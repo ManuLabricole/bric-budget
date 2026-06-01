@@ -112,6 +112,7 @@ def eur_account(db, eur_bank):
 
 def make_tx(
     seed: str,
+    date: str = "2026-03-17",
     amount: float = -25.40,
     currency: str = "CHF",
     description_raw: str = "TEST SHOP LAUSANNE",
@@ -132,7 +133,7 @@ def make_tx(
         f"test:{seed}".encode(), usedforsecurity=False
     ).hexdigest()
     return TransactionDict(
-        date="2026-03-17",
+        date=date,
         time=None,
         amount=amount,
         currency=currency,

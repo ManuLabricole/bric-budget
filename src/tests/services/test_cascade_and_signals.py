@@ -321,9 +321,9 @@ def test_import_service_sets_date_min_and_date_max(chf_account, user):
     """
     service = ImportService()
     transactions = [
-        {**make_tx("d1"), "date": "2026-01-15"},
-        {**make_tx("d2"), "date": "2026-02-20"},
-        {**make_tx("d3"), "date": "2026-03-05"},
+        make_tx("d1", date="2026-01-15"),
+        make_tx("d2", date="2026-02-20"),
+        make_tx("d3", date="2026-03-05"),
     ]
 
     result = service.run(
@@ -344,7 +344,7 @@ def test_import_service_sets_date_min_and_date_max(chf_account, user):
 def test_import_service_date_min_max_same_when_single_transaction(chf_account, user):
     """Import d'une seule transaction → date_min == date_max."""
     service = ImportService()
-    transactions = [{**make_tx("single"), "date": "2026-06-01"}]
+    transactions = [make_tx("single", date="2026-06-01")]
 
     result = service.run(
         transactions,
