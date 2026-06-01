@@ -84,6 +84,15 @@ repos:
         entry: bash scripts/stamp_claude_version.sh
         always_run: true
 
+      # Bloque tout commit DIRECT sur main / development (feature branches only).
+      # N'affecte PAS les merges (git merge → hook pre-merge-commit, pas pre-commit).
+      - id: no-commit-on-protected-branch
+        name: No direct commits on main / development
+        language: system
+        always_run: true
+        pass_filenames: false
+        entry: bash scripts/guard_protected_branch.sh
+
   # ---------------------------------------------------------------------------
   # Commitizen — enforces Conventional Commits message format
   # Runs at commit-msg stage (after you type your message).
