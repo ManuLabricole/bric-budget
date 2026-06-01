@@ -128,7 +128,9 @@ def make_tx(
     → Les tests d'ImportService ne doivent pas dépendre du parsing.
        On injecte des données contrôlées pour tester le service en isolation.
     """
-    import_hash = hashlib.sha1(f"test:{seed}".encode()).hexdigest()
+    import_hash = hashlib.sha1(
+        f"test:{seed}".encode(), usedforsecurity=False
+    ).hexdigest()
     return TransactionDict(
         date="2026-03-17",
         time=None,
@@ -145,4 +147,4 @@ def make_tx(
 
 def make_file_hash(seed: str) -> str:
     """Génère un file_hash de test depuis une graine courte."""
-    return hashlib.sha1(f"file:{seed}".encode()).hexdigest()
+    return hashlib.sha1(f"file:{seed}".encode(), usedforsecurity=False).hexdigest()

@@ -61,6 +61,17 @@ jobs:
       - name: djlint — lint templates
         run: poetry run djlint src/templates/ --profile=django --lint
 
+      # bandit — linter sécurité Python (PyCQA). Seuil médium+ : on ignore les Low
+      # (essentiellement les `assert` de pytest = B101, non pertinents).
+      - name: bandit — Python security lint
+        run: poetry run bandit -r src/ --severity-level medium
+
+      # pip-audit — CVE des dépendances installées (PyPA). --ignore-vuln cible
+      # PYSEC-2022-42969 = `py` 1.11.0 (transitif, EOL, ReDoS dans py.path.svnwc/SVN
+      # non utilisé, aucune version corrigée). Toute AUTRE CVE fait échouer la CI.
+      - name: pip-audit — dependency CVEs
+        run: poetry run pip-audit --ignore-vuln PYSEC-2022-42969
+
   # ── Tests ───────────────────────────────────────────────────────────────────
   # Lance les 323 tests pytest avec une vraie DB PostgreSQL.
   # Django crée un test_bricbudget automatiquement, le détruit en fin de job.
