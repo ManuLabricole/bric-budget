@@ -98,6 +98,15 @@ repos:
         pass_filenames: false
         entry: bash scripts/guard_protected_branch.sh
 
+      # gitleaks — scan secrets sur les fichiers STAGÉS (couche 1 locale, avant commit).
+      # Via Docker (aucune install requise) ; `protect --staged` = scan du diff stagé,
+      # rapide. Toute clé/token/secret détecté bloque le commit avant qu'il entre dans git.
+      - id: gitleaks-staged
+        name: gitleaks (secrets — staged)
+        language: docker_image
+        entry: ghcr.io/gitleaks/gitleaks:v8.30.1 protect --staged --redact --no-banner
+        pass_filenames: false
+
   # ---------------------------------------------------------------------------
   # Commitizen — enforces Conventional Commits message format
   # Runs at commit-msg stage (after you type your message).
