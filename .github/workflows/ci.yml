@@ -66,11 +66,10 @@ jobs:
       - name: bandit — Python security lint
         run: poetry run bandit -r src/ --severity-level medium
 
-      # pip-audit — CVE des dépendances installées (PyPA). --ignore-vuln cible
-      # PYSEC-2022-42969 = `py` 1.11.0 (transitif, EOL, ReDoS dans py.path.svnwc/SVN
-      # non utilisé, aucune version corrigée). Toute AUTRE CVE fait échouer la CI.
+      # pip-audit — CVE des dépendances installées (PyPA). Aucune exception :
+      # toute CVE fait échouer la CI.
       - name: pip-audit — dependency CVEs
-        run: poetry run pip-audit --ignore-vuln PYSEC-2022-42969
+        run: poetry run pip-audit
 
   # ── Tests ───────────────────────────────────────────────────────────────────
   # Lance les 323 tests pytest avec une vraie DB PostgreSQL.
