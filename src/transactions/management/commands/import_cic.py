@@ -180,7 +180,7 @@ class Command(BaseCommand):
         # We hash the combination file_hash+sheet_name to produce a new 40-char SHA1.
         import hashlib
 
-        sheet_file_hash = hashlib.sha1(
+        sheet_file_hash = hashlib.sha1(  # nosemgrep
             f"{file_hash}:{sheet_name}".encode(), usedforsecurity=False
         ).hexdigest()
 

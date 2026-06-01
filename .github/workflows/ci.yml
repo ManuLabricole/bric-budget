@@ -123,3 +123,23 @@ jobs:
 
       - name: Run tests
         run: cd src && poetry run pytest --color=yes -q
+
+  # ── Security (semgrep SAST) ──────────────────────────────────────────────────
+  # Analyse statique de sécurité avec les rulesets registry semgrep (Django / OWASP
+  # / secrets), maintenus par la communauté. `--error` fait échouer la CI sur toute
+  # NOUVELLE faille. Les findings acceptés ou faux positifs sont neutralisés par des
+  # commentaires `# nosemgrep` (ex: SHA1 de déduplication non-crypto). La règle
+  # django-no-csrf-token est exclue : faux positifs sur nos forms qui ONT déjà le
+  # token, et CsrfViewMiddleware impose le CSRF au runtime (form sans token = 403).
+  security:
+    name: Security (semgrep SAST)
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: semgrep scan
+        run: semgrep scan --config p/django --config p/python --config p/secrets --exclude-rule python.django.security.django-no-csrf-token.django-no-csrf-token --error --metrics off src/

@@ -32,6 +32,7 @@ from budget.utils import (
     _period_end_from_start,
     _period_from_session,
     _resolve_bank_icon_map,
+    safe_referer,
 )
 from transactions.models import BudgetTarget, Category, SubCategory, Transaction
 from transactions.services import sync_internal_transfer
@@ -74,7 +75,7 @@ def budget_modal_target_create(request):
             request.user.id,
         )
         response = HttpResponse()
-        response["HX-Redirect"] = request.META.get("HTTP_REFERER", "/budget/")
+        response["HX-Redirect"] = safe_referer(request, "/budget/")
         return response
 
     # GET sans category_id → liste de toutes les catégories avec leur objectif actuel
@@ -462,7 +463,7 @@ def budget_toggle_ignore(request, tx_id):
     # HTMX suit la redirection → category_detail recalcule tout avec les données fraîches.
     if request.POST.get("source") == "category":
         response = HttpResponse()
-        response["HX-Redirect"] = request.META.get("HTTP_REFERER", "/budget/")
+        response["HX-Redirect"] = safe_referer(request, "/budget/")
         return response
 
     # source=list (défaut) → appelé depuis la liste panel → retourner juste la ligne
