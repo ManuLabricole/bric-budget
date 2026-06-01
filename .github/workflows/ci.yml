@@ -134,6 +134,17 @@ jobs:
       - name: Run tests
         run: cd src && poetry run pytest --color=yes -q
 
+      # Checklist sécu natif Django, en mode PROD (DEBUG=False) : vérifie HSTS,
+      # SSL redirect, cookies sécurisés, SECRET_KEY… --fail-level WARNING => toute
+      # régression de config sécu fait échouer la CI. SECRET_KEY dummy >50 car.
+      # (sinon faux W009), DATABASE_URL héritée du job (check statique, pas de connexion).
+      - name: Django deploy check (prod config)
+        env:
+          DEBUG: "False"
+          SECRET_KEY: "ci-deploy-check-only-aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY3z"
+          ALLOWED_HOSTS: "example.com"
+        run: cd src && poetry run python manage.py check --deploy --fail-level WARNING
+
   # ── Security (semgrep SAST) ──────────────────────────────────────────────────
   # Analyse statique de sécurité avec les rulesets registry semgrep (Django / OWASP
   # / secrets), maintenus par la communauté. `--error` fait échouer la CI sur toute
