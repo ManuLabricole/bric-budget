@@ -16,6 +16,7 @@
 !.claude/README.md
 !.claude/VERSION
 !.claude/SECURITY_RULES.md
+!.claude/settings.json
 assets/private/
 
 # Docs privés sortis de .claude/ (références AI-coding + sorties d'audits CTO)
