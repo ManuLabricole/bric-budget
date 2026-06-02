@@ -5,7 +5,8 @@ paths:
 
 # Django — conventions BricBudget (chargé sur le code Python)
 
-> Conventions courtes et **obligatoires**. Détail/exemples → skills `django-*` + `.claude/SECURITY_RULES.md`.
+> Conventions courtes et **obligatoires** (chargées par chemin, toujours présentes sur le code Python).
+> Détail/exemples → skill `security` (SR-XX, OWASP, LLM) + `.claude/SECURITY_RULES.md` (source de vérité).
 
 ## Sécurité (non négociable — SR-XX)
 - **IDOR (SR-001)** : accès toujours scopé utilisateur — `Transaction.objects.for_user(request.user)`,
