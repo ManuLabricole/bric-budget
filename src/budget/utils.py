@@ -16,10 +16,29 @@ from pathlib import Path
 from django.conf import settings
 from django.db.models import Q
 from django.templatetags.static import static
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.text import slugify
 
 from budget.constants import PERIOD_MODE_MONTHS
 from transactions.models import Category, SubCategory
+
+
+def safe_referer(request, fallback="budget:index"):
+    """
+    Retourne l'URL du Referer UNIQUEMENT si elle pointe vers notre propre hôte,
+    sinon `fallback`. Protège contre les open-redirects (CWE-601) : le Referer
+    est envoyé par le client et ne doit jamais être suivi sans validation.
+
+    Usage : `return redirect(safe_referer(request))` dans les vues PRG d'état UI.
+    """
+    referer = request.META.get("HTTP_REFERER", "")
+    if referer and url_has_allowed_host_and_scheme(
+        referer,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return referer
+    return fallback
 
 
 def _period_from_session(session):

@@ -1,8 +1,27 @@
 # ─── Fichier .gitignore pour BudgetTracker ─────────────────────────────
 
-# --- Claude (local uniquement — JAMAIS sur GitHub) ---
-.claude/
+# --- Claude — WHITELIST : tout privé par défaut, on publie sélectivement ---
+# Règle : nouveau fichier dans .claude/ = privé par défaut (jamais publié par accident).
+# Publié = config Claude Code : skills/ commands/ agents/ rules/ hooks/ + CLAUDE.md
+# + README + VERSION + SECURITY_RULES.md (pas de secret) + settings.json (config équipe).
+# Privé (via .claude/* ci-dessous) = project/ (DECISIONS, UBIQUITOUS_LANGUAGE, ops,
+# history/ avec CHANGELOG+MEMO archivés), settings.local.json, plan_*/research_*.
+.claude/*
+!.claude/skills/
+!.claude/hooks/
+!.claude/commands/
+!.claude/agents/
+!.claude/rules/
+!.claude/CLAUDE.md
+!.claude/README.md
+!.claude/VERSION
+!.claude/SECURITY_RULES.md
+!.claude/settings.json
 assets/private/
+
+# Docs privés sortis de .claude/ (références AI-coding + sorties d'audits CTO)
+docs/references/
+docs/audits/
 
 node_modules/
 

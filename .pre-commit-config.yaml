@@ -13,6 +13,15 @@
 #   If ruff auto-fixes something, the commit is blocked so you can
 #   review the fix and re-stage before committing.
 
+# Install ALL hook stages with a single `pre-commit install` — including
+# prepare-commit-msg, used below to stamp the .claude config version.
+default_install_hook_types: [pre-commit, commit-msg, prepare-commit-msg, pre-push]
+
+# Sans ceci, un hook sans `stages:` tourne à CHAQUE stage installé (3× ruff/djlint
+# par commit !). On limite le défaut à pre-commit ; les hooks à stage explicite
+# (stamp=prepare-commit-msg, commitizen=commit-msg, pytest=pre-push) gardent le leur.
+default_stages: [pre-commit]
+
 repos:
   # ---------------------------------------------------------------------------
   # Ruff — linter + formatter (replaces flake8, black, isort)
@@ -51,7 +60,7 @@ repos:
       #   - RIB CIC    : séquence de 20-22 chiffres consécutifs (numéros de contrat)
       # Les fichiers .env, .env.example, et les migrations sont exclus.
       # Si ce hook bloque un faux positif, ajouter le fichier dans exclude ci-dessous.
-      # Lance la suite de tests pytest avant chaque commit.
+      # Lance pytest avant chaque PUSH (pas chaque commit — sinon ~3 min à chaque commit).
       # pass_filenames: false → pytest reçoit ses args depuis pyproject.toml, pas la liste des fichiers modifiés.
       # always_run: true → tourne même si aucun fichier Python n'a changé (ex: commit de template seul).
       # La DB PostgreSQL doit tourner (make up) — si elle est arrêtée, pytest échoue et bloque le commit.
@@ -61,6 +70,7 @@ repos:
         entry: poetry run pytest --tb=short -q
         pass_filenames: false
         always_run: true
+        stages: [pre-push]   # ← tourne avant `git push`, PAS à chaque commit
 
       - id: no-hardcoded-bank-ids
         name: No hardcoded bank identifiers (IBAN / RIB)
@@ -68,6 +78,34 @@ repos:
         entry: '(CH\d{2}[A-Z0-9]{15,}|FR\d{2}[A-Z0-9]{20,}|\b\d{20,22}\b)'
         types: [python]
         exclude: ^(src/[^/]+/migrations/|src/tests/|\.env)
+
+      # Stamp the .claude config version (.claude/VERSION) as a
+      # `Claude-Config: vX.Y.Z` git trailer on EVERY commit. Idempotent, never blocks.
+      # Runs at prepare-commit-msg, BEFORE commitizen validates at commit-msg.
+      - id: stamp-claude-config-version
+        name: Stamp .claude config version
+        language: system
+        stages: [prepare-commit-msg]
+        entry: bash scripts/stamp_claude_version.sh
+        always_run: true
+
+      # Bloque tout commit DIRECT sur main / development (feature branches only).
+      # N'affecte PAS les merges (git merge → hook pre-merge-commit, pas pre-commit).
+      - id: no-commit-on-protected-branch
+        name: No direct commits on main / development
+        language: system
+        always_run: true
+        pass_filenames: false
+        entry: bash scripts/guard_protected_branch.sh
+
+      # gitleaks — scan secrets sur les fichiers STAGÉS (couche 1 locale, avant commit).
+      # Via Docker (aucune install requise) ; `protect --staged` = scan du diff stagé,
+      # rapide. Toute clé/token/secret détecté bloque le commit avant qu'il entre dans git.
+      - id: gitleaks-staged
+        name: gitleaks (secrets — staged)
+        language: docker_image
+        entry: ghcr.io/gitleaks/gitleaks:v8.30.1 protect --staged --redact --no-banner
+        pass_filenames: false
 
   # ---------------------------------------------------------------------------
   # Commitizen — enforces Conventional Commits message format

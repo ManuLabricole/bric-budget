@@ -41,6 +41,7 @@ from budget.utils import (
     _gradient,
     _period_end_from_start,
     _period_from_session,
+    safe_referer,
 )
 from budget.views.transactions import budget_panel_transactions
 from transactions.models import (
@@ -658,8 +659,7 @@ def budget_set_period(request, action):
     # Redirect vers la page appelante (Referer) — permet d'utiliser set_period
     # depuis n'importe quelle page (index, category_detail…) sans URL dédiée.
     # Fallback sur budget:index si pas de Referer (direct URL, test, etc.).
-    referer = request.META.get("HTTP_REFERER", "")
-    return redirect(referer or "budget:index")
+    return redirect(safe_referer(request))
 
 
 # =============================================================================
@@ -711,8 +711,7 @@ def budget_set_cat_tab(request, tab):
     if tab in VALID_TABS:
         request.session["budget_cat_tab"] = tab
 
-    referer = request.META.get("HTTP_REFERER", "")
-    return redirect(referer or "budget:index")
+    return redirect(safe_referer(request))
 
 
 # =============================================================================
@@ -737,15 +736,14 @@ def budget_set_period_month(request, year, month):
     try:
         target_date = date(int(year), int(month), 1)
     except ValueError:
-        return redirect(request.META.get("HTTP_REFERER", "") or "budget:index")
+        return redirect(safe_referer(request))
 
     last_day = calendar.monthrange(target_date.year, target_date.month)[1]
     request.session["budget_period_mode"] = "1m"
     request.session["budget_period_start"] = target_date.isoformat()
     request.session["budget_period_end"] = target_date.replace(day=last_day).isoformat()
 
-    referer = request.META.get("HTTP_REFERER", "")
-    return redirect(referer or "budget:index")
+    return redirect(safe_referer(request))
 
 
 # =============================================================================
@@ -796,7 +794,7 @@ def budget_toggle_filter_account(request, account_ref):
             return budget_index(request)
         request._panel_acc_filter_open = True
         return budget_panel_transactions(request)
-    return redirect(request.META.get("HTTP_REFERER", "budget:index"))
+    return redirect(safe_referer(request))
 
 
 # =============================================================================

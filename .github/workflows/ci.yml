@@ -61,6 +61,25 @@ jobs:
       - name: djlint — lint templates
         run: poetry run djlint src/templates/ --profile=django --lint
 
+      # bandit — linter sécurité Python (PyCQA). Seuil médium+ : on ignore les Low
+      # (essentiellement les `assert` de pytest = B101, non pertinents).
+      - name: bandit — Python security lint
+        run: poetry run bandit -r src/ --severity-level medium
+
+      # pip-audit — CVE des dépendances installées (PyPA). Aucune exception :
+      # toute CVE fait échouer la CI.
+      - name: pip-audit — dependency CVEs
+        run: poetry run pip-audit
+
+      # mypy — vérification de types (plugin Django). SECRET_KEY/DATABASE_URL dummy :
+      # mypy charge les settings pour introspecter les models mais ne se connecte PAS à la DB.
+      - name: mypy — type check
+        env:
+          SECRET_KEY: "not-a-secret-ci-mypy-only"
+          DATABASE_URL: "postgresql://u:p@localhost:5432/db"
+          DEBUG: "True"
+        run: cd src && poetry run mypy . --config-file ../pyproject.toml
+
   # ── Tests ───────────────────────────────────────────────────────────────────
   # Lance les 323 tests pytest avec une vraie DB PostgreSQL.
   # Django crée un test_bricbudget automatiquement, le détruit en fin de job.
@@ -123,3 +142,52 @@ jobs:
 
       - name: Run tests
         run: cd src && poetry run pytest --color=yes -q
+
+      # Checklist sécu natif Django, en mode PROD (DEBUG=False) : vérifie HSTS,
+      # SSL redirect, cookies sécurisés, SECRET_KEY… --fail-level WARNING => toute
+      # régression de config sécu fait échouer la CI. SECRET_KEY dummy >50 car.
+      # (sinon faux W009), DATABASE_URL héritée du job (check statique, pas de connexion).
+      - name: Django deploy check (prod config)
+        env:
+          DEBUG: "False"
+          SECRET_KEY: "not-a-secret-ci-deploy-check-only-xxxxxxxxxxxxxxxxxxxx"
+          ALLOWED_HOSTS: "example.com"
+        run: cd src && poetry run python manage.py check --deploy --fail-level WARNING
+
+  # ── Security (semgrep SAST) ──────────────────────────────────────────────────
+  # Analyse statique de sécurité avec les rulesets registry semgrep (Django / OWASP
+  # / secrets), maintenus par la communauté. `--error` fait échouer la CI sur toute
+  # NOUVELLE faille. Les findings acceptés ou faux positifs sont neutralisés par des
+  # commentaires `# nosemgrep` (ex: SHA1 de déduplication non-crypto). La règle
+  # django-no-csrf-token est exclue : faux positifs sur nos forms qui ONT déjà le
+  # token, et CsrfViewMiddleware impose le CSRF au runtime (form sans token = 403).
+  security:
+    name: Security (semgrep SAST)
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: semgrep scan
+        run: semgrep scan --config .semgrep/ --config p/django --config p/python --config p/secrets --exclude-rule python.django.security.django-no-csrf-token.django-no-csrf-token --error --metrics off src/
+
+  # ── Secrets (gitleaks) ───────────────────────────────────────────────────────
+  # Scanne tout l'historique git à la recherche de secrets (clés API, tokens, IBAN…).
+  # fetch-depth: 0 = historique complet. Toute fuite détectée fait échouer la CI.
+  secrets:
+    name: Secrets (gitleaks)
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/gitleaks/gitleaks:latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: gitleaks detect
+        run: gitleaks detect --source . --redact --no-banner

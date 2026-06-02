@@ -98,7 +98,7 @@ def compute_file_hash(filepath: Path) -> str:
     # usedforsecurity=False : on utilise SHA1 pour de l'équality check (déduplication),
     # pas pour la crypto. Sans ce flag, bandit B324 et certains environnements FIPS
     # rejettent SHA1 — alors qu'on n'en fait pas un usage cryptographique.
-    sha1 = hashlib.sha1(usedforsecurity=False)
+    sha1 = hashlib.sha1(usedforsecurity=False)  # nosemgrep
     with open(filepath, "rb") as f:
         for chunk in iter(lambda: f.read(65536), b""):
             sha1.update(chunk)

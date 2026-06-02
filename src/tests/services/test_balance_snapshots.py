@@ -372,9 +372,9 @@ def test_computed_balance_calculated_from_previous_snapshot(chf_account, user):
 
     # Import 2 : nouvelles transactions à partir de mars 20
     txs_new = [
-        {**make_tx("comp_a"), "date": "2026-03-20", "amount": -100.0},
-        {**make_tx("comp_b"), "date": "2026-03-21", "amount": 200.0},
-        {**make_tx("comp_c"), "date": "2026-03-22", "amount": -50.0},
+        make_tx("comp_a", date="2026-03-20", amount=-100.0),
+        make_tx("comp_b", date="2026-03-21", amount=200.0),
+        make_tx("comp_c", date="2026-03-22", amount=-50.0),
     ]
     service.run(
         txs_new,

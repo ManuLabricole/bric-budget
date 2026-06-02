@@ -202,7 +202,7 @@ def _make_hash(
     Le salt est un compteur pour gérer les doublons même date+montant+marchant.
     """
     raw = f"dev_seed|{account_id}|{tx_date}|{amount}|{desc}|{salt}"
-    return hashlib.sha1(raw.encode(), usedforsecurity=False).hexdigest()
+    return hashlib.sha1(raw.encode(), usedforsecurity=False).hexdigest()  # nosemgrep
 
 
 class Command(BaseCommand):
