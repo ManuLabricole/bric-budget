@@ -90,7 +90,7 @@ def compute_file_hash(filepath: Path) -> str:
     Why SHA1?
     - Same choice as import_hash (per-row deduplication in connectors)
     - SHA1 is fast, and we're not using it for security — just equality checks
-    - 40-char hex fits our CharField(max_length=40)
+    - 40-char hex — fits CharField(max_length=64) qui couvre aussi les SHA256 dérivés CIC
 
     Why read in 64KB chunks?
     - Avoids loading the entire file into memory — safe for large Excel files
