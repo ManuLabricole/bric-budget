@@ -109,6 +109,30 @@ def import_upload(request):
         period_mode, period_offset
     )
 
+    # ── Période du graphique d'activité ──────────────────────────────────────
+    # Lue depuis la session — modifiée par set_period().
+    period_mode = request.session.get("import_period_mode", "1y")
+    period_offset = request.session.get("import_period_offset", 0)
+    filter_account_ids = list(request.session.get("import_filter_account_ids", []))
+
+    window_days = {"1m": 30, "3m": 91, "1y": 365}[period_mode]
+    end_date = today - timedelta(days=period_offset * window_days)
+    start_date = end_date - timedelta(days=window_days)
+
+    # Label affiché dans la pill centrale de period_nav
+    # Exemple : "23 mars – 22 avr. 2026"
+    def _month_label(d):
+        return str(d.day) + " " + d.strftime("%b")
+
+    period_display = (
+        _month_label(start_date)
+        + " – "
+        + _month_label(end_date)
+        + " "
+        + str(end_date.year)
+    )
+    can_go_next = period_offset > 0
+
     # ── Sync status groupé par banque ────────────────────────────────────────
     # Règles couleur :
     #   today (days==0)  → badge "ok"     → vert  (text-income)
