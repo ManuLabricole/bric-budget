@@ -75,7 +75,7 @@ jobs:
       # mypy charge les settings pour introspecter les models mais ne se connecte PAS à la DB.
       - name: mypy — type check
         env:
-          SECRET_KEY: "ci-mypy-only-aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY3z"
+          SECRET_KEY: "not-a-secret-ci-mypy-only"
           DATABASE_URL: "postgresql://u:p@localhost:5432/db"
           DEBUG: "True"
         run: cd src && poetry run mypy . --config-file ../pyproject.toml
@@ -150,7 +150,7 @@ jobs:
       - name: Django deploy check (prod config)
         env:
           DEBUG: "False"
-          SECRET_KEY: "ci-deploy-check-only-aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY3z"
+          SECRET_KEY: "not-a-secret-ci-deploy-check-only-xxxxxxxxxxxxxxxxxxxx"
           ALLOWED_HOSTS: "example.com"
         run: cd src && poetry run python manage.py check --deploy --fail-level WARNING
 
