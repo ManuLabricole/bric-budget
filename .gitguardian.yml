@@ -1,8 +1,0 @@
-version: 2
-
-# Les workflows CI contiennent des SECRET_KEY factices (dummy values) nécessaires
-# pour que Django puisse démarrer pendant les étapes mypy / deploy-check.
-# Ces valeurs ne signent rien, ne donnent accès à rien — elles sont structurellement
-# requises par Django mais intentionnellement inutiles.
-paths-ignore:
-  - ".github/workflows/ci.yml"
