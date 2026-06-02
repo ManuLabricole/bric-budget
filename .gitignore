@@ -2,23 +2,21 @@
 
 # --- Claude — WHITELIST : tout privé par défaut, on publie sélectivement ---
 # Règle : nouveau fichier dans .claude/ = privé par défaut (jamais publié par accident).
-# On ne publie que skills/ + commands/ + agents/ + rules/ + scripts/ + config d'entrée (CLAUDE.md)
-# + le template settings + le README. Le reste (CHANGELOG, CONTEXT, MEMO, DECISIONS,
-# SECURITY_RULES, UBIQUITOUS_LANGUAGE, history/, audits/, ai_code_references/,
-# settings.json, plan_*/research_*) reste local.
+# Publié = config Claude Code : skills/ commands/ agents/ rules/ hooks/ + CLAUDE.md
+# + README + VERSION + SECURITY_RULES.md (pas de secret) + settings.json (config équipe).
+# Privé (via .claude/* ci-dessous) = project/ (DECISIONS, UBIQUITOUS_LANGUAGE, ops,
+# history/ avec CHANGELOG+MEMO archivés), settings.local.json, plan_*/research_*.
 .claude/*
 !.claude/skills/
 !.claude/hooks/
 !.claude/commands/
 !.claude/agents/
 !.claude/rules/
-!.claude/scripts/
 !.claude/CLAUDE.md
 !.claude/README.md
 !.claude/VERSION
 !.claude/SECURITY_RULES.md
 !.claude/settings.json
-# settings.local.json + project/ restent privés via .claude/* ci-dessus
 assets/private/
 
 # Docs privés sortis de .claude/ (références AI-coding + sorties d'audits CTO)
