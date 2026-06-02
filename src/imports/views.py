@@ -203,9 +203,9 @@ def import_upload(request):
     # Un même fichier CIC génère N ImportLogs (1 par feuille/compte).
     # On les regroupe pour afficher une seule ligne par upload avec sous-lignes.
     all_logs = list(
-        ImportLog.objects.select_related(
-            "account__bank", "account__checking_account"
-        ).order_by("-imported_at")
+        ImportLog.objects.filter(account__members=request.user)
+        .select_related("account__bank", "account__checking_account")
+        .order_by("-imported_at")
     )
     seen_hashes: dict[Any, dict[str, Any]] = {}
     grouped_logs: list[dict[str, Any]] = []
