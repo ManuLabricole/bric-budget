@@ -41,5 +41,19 @@
       ".claude"
     ]
   },
-  "enableAllProjectMcpServers": true
+  "enableAllProjectMcpServers": true,
+  "_comment_hooks": "PostToolUse : ruff format auto du .py édité (en plus du pre-commit). Script : .claude/hooks/ruff_format.sh",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/ruff_format.sh"
+          }
+        ]
+      }
+    ]
+  }
 }
