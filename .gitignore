@@ -18,8 +18,7 @@
 !.claude/VERSION
 !.claude/SECURITY_RULES.md
 !.claude/settings.json
-!.claude/*.example.md
-# settings.local.json reste privé (override perso) via .claude/* ci-dessus
+# settings.local.json + project/ restent privés via .claude/* ci-dessus
 assets/private/
 
 # Docs privés sortis de .claude/ (références AI-coding + sorties d'audits CTO)

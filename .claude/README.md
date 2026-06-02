@@ -31,7 +31,6 @@ reste (notes de session, état projet, audits) est local.
 | `settings.json` | Config d'équipe committée : permissions + hook ruff-format |
 | `SECURITY_RULES.md` | Source de vérité sécurité (SR-XX) — référencée par le skill `security` |
 | `VERSION` | Version de la config (stampée en footer de chaque commit) |
-| `*.example.md` | Squelettes des docs privés (CONTEXT, CHANGELOG, DECISIONS, SECURITY_RULES, UBIQUITOUS_LANGUAGE, MEMO) |
 | `README.md` | Ce fichier |
 
 ## Ce qui est local (gitignoré — voir `.gitignore` racine)
