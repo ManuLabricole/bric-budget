@@ -14,7 +14,7 @@
 !.claude/CLAUDE.md
 !.claude/README.md
 !.claude/VERSION
-!.claude/settings.json.example
+!.claude/settings.example.json
 !.claude/*.example.md
 assets/private/
 
