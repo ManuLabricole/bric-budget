@@ -66,6 +66,8 @@ if not DEBUG:
     # Ce header indique à Django que le proxy a déjà géré HTTPS.
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SECURE_SSL_REDIRECT = True
+    # Le healthcheck Railway arrive en HTTP interne — exempter du redirect HTTPS.
+    SECURE_REDIRECT_EXEMPT = [r"^healthz/$"]
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_HSTS_SECONDS = 31536000  # 1 an — validé en prod
