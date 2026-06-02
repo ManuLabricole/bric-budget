@@ -20,3 +20,7 @@ paths:
 
 ## État UI
 - Filtres / période / onglets vivent en **session Django** — pas d'URL params, pas d'état en JS.
+
+## Composants inclus plusieurs fois
+- Un partial `{% include %}` peut apparaître 2× dans le DOM (page + panel) → IDs dupliqués.
+  `getElementById` ne voit que le 1er → utiliser `document.querySelectorAll("#foo")` + `forEach`.

@@ -33,3 +33,6 @@ paths:
 - Un module qui grossit → **package** (`views/` package + `__init__.py`, pas de `views_xxx.py` à plat).
 - Type hints (mypy passe, `make type`), pas de `Any` gratuit.
 - Commenter le **POURQUOI**, pas le QUOI. Pas de sur-abstraction — ROI d'abord.
+
+## Pièges
+- **Dates** : `DateTimeField` est stocké en UTC (`USE_TZ=True`). Toujours `timezone.localtime(dt).strftime(...)` — `dt.strftime()` direct donne l'UTC (bug silencieux la nuit en UTC+N). Tests : `timezone.now()`, jamais `datetime.now()` naïf.
