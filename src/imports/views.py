@@ -14,17 +14,25 @@ Stockage temporaire :
 """
 
 import hashlib
+import logging
 import os
 import tempfile
+from collections import defaultdict
+from datetime import date, timedelta
+from decimal import Decimal
 from pathlib import Path
+from typing import Any, cast
 
 from django.contrib.auth.decorators import login_required
+from django.db import transaction as db_transaction
+from django.db.models import Count, Max, Min
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from accounts.models import Account, CheckingAccount, SavingsAccount
+from accounts.models import Account, Bank, CheckingAccount, SavingsAccount
 from connectors.cic.parser import CICConnector
 from connectors.resolver import (
     AccountAmbiguous,
@@ -32,8 +40,37 @@ from connectors.resolver import (
     detect_connector,
     resolve_accounts,
 )
+from imports.storage import build_import_filename, save_import_file
 from transactions.models import ImportLog, Transaction
 from transactions.services import ImportService, compute_file_hash
+
+logger = logging.getLogger(__name__)
+
+
+def _month_label(d: date) -> str:
+    """Formate un jour : '23 mars' → '23 Mar' (str.day + strftime %b).   = espace insécable."""
+    return str(d.day) + " " + d.strftime("%b")
+
+
+def _activity_window(period_mode: str, period_offset: int):
+    """
+    Calcule la fenêtre temporelle du graphique d'activité.
+    Retourne (start_date, end_date, period_display, can_go_next).
+    Partagé entre import_upload (GET) et _render_activity_section.
+    """
+    today = timezone.now().date()
+    window_days = {"1m": 30, "3m": 91, "1y": 365}[period_mode]
+    end_date = today - timedelta(days=period_offset * window_days)
+    start_date = end_date - timedelta(days=window_days)
+    period_display = (
+        _month_label(start_date)
+        + " – "
+        + _month_label(end_date)
+        + " "
+        + str(end_date.year)
+    )
+    can_go_next = period_offset > 0
+    return start_date, end_date, period_display, can_go_next
 
 
 def _account_file_hash(file_hash: str, sheet_name: str | None) -> str:
@@ -60,13 +97,17 @@ def import_upload(request):
     if request.method == "POST":
         return _handle_dry_run(request)
 
-    from datetime import timedelta
-
-    from django.utils import timezone
-
-    from accounts.models import Account
-
     today = timezone.now().date()
+
+    # ── Période du graphique d'activité ──────────────────────────────────────
+    # Lue depuis la session — modifiée par set_period().
+    period_mode = request.session.get("import_period_mode", "1y")
+    period_offset = request.session.get("import_period_offset", 0)
+    filter_account_ids = list(request.session.get("import_filter_accounts_hidden", []))
+
+    start_date, end_date, period_display, can_go_next = _activity_window(
+        period_mode, period_offset
+    )
 
     # ── Période du graphique d'activité ──────────────────────────────────────
     # Lue depuis la session — modifiée par set_period().
@@ -99,13 +140,12 @@ def import_upload(request):
     #   ≥ 1 semaine      → badge "stale"  → orange (text-warning)
     #   jamais importé   → badge "never"  → dim   (text-text-disabled)
     active_accounts = (
-        Account.objects.filter(is_active=True)
+        Account.objects.for_user(request.user)
+        .filter(is_active=True)
         .select_related("bank")
         .order_by("bank__name", "name")
     )
     # Construire un dict bank → liste de comptes
-    from collections import defaultdict
-
     banks_map = defaultdict(list)
     for account in active_accounts:
         last_log = (
@@ -135,18 +175,15 @@ def import_upload(request):
     # sur la date d'import, masquant toute l'activité réelle. En utilisant
     # Transaction.date, les mouvements se répartissent sur leurs vraies dates.
     # IDOR : filtre account__members=request.user — jamais de transactions cross-user.
-    from django.db.models import Count
-
     tx_qs = Transaction.objects.filter(
         account__members=request.user,
         date__gt=start_date,
         date__lte=end_date,
         is_ignored=False,
     )
-    # Filtre compte : scopé à l'user (la contrainte account__members ci-dessus
-    # garantit qu'on ne peut filtrer que sur ses propres comptes).
+    # Filtre compte (blacklist) : scopé à l'user (account__members ci-dessus).
     if filter_account_ids:
-        tx_qs = tx_qs.filter(account_id__in=filter_account_ids)
+        tx_qs = tx_qs.exclude(account_id__in=filter_account_ids)
 
     tx_by_day = list(
         tx_qs.select_related("account__bank")
@@ -166,12 +203,12 @@ def import_upload(request):
     # Un même fichier CIC génère N ImportLogs (1 par feuille/compte).
     # On les regroupe pour afficher une seule ligne par upload avec sous-lignes.
     all_logs = list(
-        ImportLog.objects.select_related(
-            "account__bank", "account__checking_account"
-        ).order_by("-imported_at")
+        ImportLog.objects.filter(account__members=request.user)
+        .select_related("account__bank", "account__checking_account")
+        .order_by("-imported_at")
     )
-    seen_hashes = {}
-    grouped_logs = []
+    seen_hashes: dict[Any, dict[str, Any]] = {}
+    grouped_logs: list[dict[str, Any]] = []
     for log in all_logs:
         key = log.file_hash or log.pk  # fallback si file_hash NULL (anciens imports)
         if key not in seen_hashes:
@@ -187,18 +224,22 @@ def import_upload(request):
 
     # Calculer les totaux par groupe + méthode de matching par entrée
     for group in grouped_logs:
-        group["total_created"] = sum(e.count_created for e in group["entries"])
-        group["total_skipped"] = sum(e.count_skipped for e in group["entries"])
-        group["total_errors"] = sum(e.count_errors for e in group["entries"])
+        entries = cast(list, group["entries"])
+        n_created: int = sum(e.count_created for e in entries)
+        n_skipped: int = sum(e.count_skipped for e in entries)
+        n_errors: int = sum(e.count_errors for e in entries)
+        group["total_created"] = n_created
+        group["total_skipped"] = n_skipped
+        group["total_errors"] = n_errors
         # total_transactions = tout ce que le fichier contenait (new + doublons)
-        group["total_transactions"] = group["total_created"] + group["total_skipped"]
-        group["multi"] = len(group["entries"]) > 1
-        group["bank"] = group["entries"][0].account.bank
+        group["total_transactions"] = n_created + n_skipped
+        group["multi"] = len(entries) > 1
+        group["bank"] = entries[0].account.bank
         # Méthode de matching par compte — détermine le badge de confiance affiché
         # iban     : matching par IBAN extrait du fichier      → fiabilité maximale
         # rib      : matching par RIB/contrat extrait du fichier → fiabilité haute
         # convention : seul compte actif de cette banque       → risque si doublon
-        for entry in group["entries"]:
+        for entry in entries:
             acc = entry.account
             # Account.iban est le champ universel (checking + savings + futures cartes).
             # contract_number couvre CIC RIB, Finpension, assurances.
@@ -229,7 +270,7 @@ def import_upload(request):
         # Affichés comme lignes verticales sur l'axe X du graphique.
         "import_markers": [
             {
-                "date": group["imported_at"].strftime("%Y-%m-%d"),
+                "date": timezone.localtime(group["imported_at"]).strftime("%Y-%m-%d"),
                 "filename": group["filename"] or "?",
                 "total": group["total_created"],
                 "bank": group["bank"].name,
@@ -294,6 +335,7 @@ def _handle_dry_run(request):
         tmp.close()
         tmp_path = Path(tmp.name)
     except Exception as e:
+        logger.exception("import_upload: tmp file write failed")
         tmp.close()
         os.unlink(tmp.name)
         return _error(request, f"Erreur lors de la sauvegarde : {e}")
@@ -391,6 +433,7 @@ def _handle_dry_run(request):
                 },
             )
         except Exception as e:
+            logger.exception("import_upload: resolve_accounts unexpected failure")
             os.unlink(tmp_path)
             return _error(
                 request,
@@ -415,7 +458,7 @@ def _handle_dry_run(request):
 
         # ── Dry-run par compte ───────────────────────────────────────────────
         service = ImportService()
-        dry_results = []
+        dry_results: list[dict[str, Any]] = []
 
         for match in matches:
             if match.sheet_name is not None:
@@ -471,6 +514,7 @@ def _handle_dry_run(request):
         )
 
     except Exception as e:
+        logger.exception("import_upload: unexpected failure during dry-run")
         if tmp_path.exists():
             os.unlink(tmp_path)
         return _error(request, f"Erreur inattendue : {e}")
@@ -542,6 +586,20 @@ def import_confirm(request):
             )
             service_results.append(result)
 
+        # Audit log : import réussi — événement métier critique pour traçabilité prod.
+        total_created = sum(r.count_created for r in service_results)
+        total_skipped = sum(r.count_skipped for r in service_results)
+        logger.info(
+            "import_confirm: filename=%s connector=%s accounts=%d "
+            "created=%d skipped=%d by user=%s",
+            filename,
+            type(connector).__name__,
+            len(matches),
+            total_created,
+            total_skipped,
+            request.user.id,
+        )
+
         # ── Stockage permanent du fichier source ─────────────────────────────
         # On stocke le fichier AVANT le finally (qui supprime tmp_path) et
         # uniquement si au moins un ImportLog a été créé (log_pk non None).
@@ -557,6 +615,7 @@ def import_confirm(request):
         )
 
     except Exception as e:
+        logger.exception("import_confirm: import failed")
         return _error(request, f"Erreur lors de l'import : {e}")
 
     finally:
@@ -593,20 +652,10 @@ def _persist_import_file(
     mais on ne lève pas d'exception — l'import est déjà en DB, l'utilisateur
     ne doit pas perdre ses données pour un problème de fichier.
     """
-    import logging
-
-    from django.db.models import Count, Max, Min
-    from django.utils import timezone
-
-    from imports.storage import build_import_filename, save_import_file
-    from transactions.models import Transaction
-
-    _log = logging.getLogger(__name__)
-
     log_pks = [r.log_pk for r in service_results if r.log_pk]
     if not log_pks:
         # Aucun ImportLog créé (toutes les runs ont échoué tôt) → pas de stockage
-        _log.warning(
+        logger.warning(
             "[import_storage] No log_pk found after confirm — skipping file storage."
         )
         return
@@ -627,8 +676,6 @@ def _persist_import_file(
         ]
 
         # Première balance disponible (None si aucun connecteur ne l'extrait)
-        from decimal import Decimal
-
         raw_balance = next(iter(balances.values()), None)
         balance_dec = Decimal(str(raw_balance)) if raw_balance is not None else None
 
@@ -656,7 +703,7 @@ def _persist_import_file(
             is_encrypted=is_enc,
         )
 
-        _log.info(
+        logger.info(
             "[import_storage] Saved %s → %s (encrypted=%s)",
             filename,
             stored_rel,
@@ -667,7 +714,7 @@ def _persist_import_file(
         # Le stockage a échoué APRÈS que l'import a été committé en DB.
         # On logge sans crasher : l'utilisateur a ses transactions, le fichier
         # source n'est juste pas archivé. Il peut réimporter depuis l'original.
-        _log.error(
+        logger.error(
             "[import_storage] Failed to persist %s: %s",
             filename,
             exc,
@@ -711,6 +758,13 @@ def import_log_delete(request, pk):
     tx_count = log.transactions.count()
     log.transactions.all().delete()
     log.delete()
+    logger.info(
+        "import_log_delete: log_pk=%s filename=%s tx_deleted=%d by user=%s",
+        pk,
+        log.filename,
+        tx_count,
+        request.user.id,
+    )
 
     response = HttpResponse()
     response["HX-Redirect"] = reverse("imports:upload")
@@ -729,8 +783,6 @@ def import_create_account(request):
     Après création, relance le dry-run automatiquement (le fichier temp est
     toujours en session) et retourne _steps_result.html comme si de rien n'était.
     """
-    from accounts.models import Bank
-
     bank_slug = request.POST.get("bank_slug", "")
     account_name = request.POST.get("account_name", "").strip()
     account_type = request.POST.get("account_type", "")
@@ -762,8 +814,6 @@ def import_create_account(request):
         )
 
     # Créer l'Account + spécialisation dans une transaction atomique
-    from django.db import transaction as db_transaction
-
     try:
         with db_transaction.atomic():
             account = Account.objects.create(
@@ -774,11 +824,21 @@ def import_create_account(request):
                 contract_number=contract_number,
                 is_active=True,
             )
+            account.members.add(request.user)  # for_user() sinon invisible
             if account_type == Account.AccountType.CHECKING:
                 CheckingAccount.objects.create(account=account, iban=iban, bic=bic)
             else:
                 SavingsAccount.objects.create(account=account, interest_rate=0)
+        # Audit log : compte créé pendant l'import (mutation métier critique).
+        logger.info(
+            "import_create_account: id=%s bank=%s type=%s by user=%s",
+            account.id,
+            bank.slug,
+            account_type,
+            request.user.id,
+        )
     except Exception as e:
+        logger.exception("import_create_account: account creation failed")
         return _error(request, f"Erreur lors de la création du compte : {e}")
 
     # Compte créé — relancer le dry-run avec le fichier toujours en session
@@ -797,6 +857,10 @@ def import_create_account(request):
     # Relancer le dry-run complet (même logique que _handle_dry_run)
     try:
         connector = detect_connector(tmp_path)
+        if connector is None:
+            return _error(
+                request, "Format de fichier non reconnu. Recommencez l'import."
+            )
         matches = resolve_accounts(connector, tmp_path, user=request.user)
 
         if isinstance(connector, CICConnector):
@@ -812,7 +876,7 @@ def import_create_account(request):
             balances = {None: raw_balance}
 
         service = ImportService()
-        dry_results = []
+        dry_results: list[dict[str, Any]] = []
         file_hash = pending["file_hash"]
         filename = pending["filename"]
         connector_label = type(connector).__name__.replace("Connector", "")
@@ -880,6 +944,7 @@ def import_create_account(request):
             },
         )
     except Exception as e:
+        logger.exception("imports: dry-run re-trigger failed")
         return _error(request, f"Erreur lors du dry-run : {e}")
 
 
@@ -946,10 +1011,10 @@ def import_select_account(request):
         )
 
         raw_balance = connector.extract_balance(tmp_path)
-        balances = {None: raw_balance}
+        balances: dict[str | None, float | None] = {None: raw_balance}
 
         service = ImportService()
-        dry_results = []
+        dry_results: list[dict[str, Any]] = []
         connector_label = type(connector).__name__.replace("Connector", "")
 
         for match in matches:
@@ -987,6 +1052,7 @@ def import_select_account(request):
             },
         )
     except Exception as e:
+        logger.exception("imports: dry-run re-trigger failed")
         return _error(request, f"Erreur lors du dry-run : {e}")
 
 
@@ -1022,23 +1088,40 @@ def set_period(request, action):
 
 
 @login_required
-def toggle_filter_account(request, account_id):
+def toggle_filter_account(request, account_ref):
     """
     Active/désactive un compte dans le filtre du graphique d'activité.
-    account_id=0 réinitialise le filtre (tous les comptes).
+    account_ref="all"/"0" → réinitialise (aucun masqué = tout visible).
+    account_ref="none"    → masque tous les comptes.
+    account_ref="<int>"   → toggle le compte spécifique.
     IDOR : le filtrage en DB reste scopé à request.user dans import_upload.
 
+    Blacklist : import_filter_accounts_hidden = IDs des comptes EXCLUS.
     Si requête HTMX → retourne le partial avec filter_open=True (dropdown reste ouvert).
     Sinon → redirect.
     """
-    ids = list(request.session.get("import_filter_account_ids", []))
-    if account_id == 0:
-        ids = []
-    elif account_id in ids:
-        ids.remove(account_id)
+    hidden = list(request.session.get("import_filter_accounts_hidden", []))
+
+    if account_ref in ("all", "0"):
+        hidden = []
+    elif account_ref == "none":
+        hidden = list(
+            Account.objects.filter(is_active=True, members=request.user).values_list(
+                "id", flat=True
+            )
+        )
     else:
-        ids.append(account_id)
-    request.session["import_filter_account_ids"] = ids
+        try:
+            account_id = int(account_ref)
+        except (ValueError, TypeError):
+            account_id = None
+        if account_id is not None:
+            if account_id in hidden:
+                hidden = [i for i in hidden if i != account_id]
+            else:
+                hidden = hidden + [account_id]
+
+    request.session["import_filter_accounts_hidden"] = hidden
 
     if request.headers.get("HX-Request"):
         period_mode = request.session.get("import_period_mode", "1y")
@@ -1053,29 +1136,11 @@ def _render_activity_section(request, period_mode, period_offset, filter_open=Fa
     _activity_section.html (utilisé pour les swaps HTMX depuis set_period
     et toggle_filter_account).
     """
-    from datetime import timedelta
+    filter_account_ids = list(request.session.get("import_filter_accounts_hidden", []))
 
-    from django.db.models import Count
-    from django.utils import timezone
-
-    today = timezone.now().date()
-    filter_account_ids = list(request.session.get("import_filter_account_ids", []))
-
-    window_days = {"1m": 30, "3m": 91, "1y": 365}[period_mode]
-    end_date = today - timedelta(days=period_offset * window_days)
-    start_date = end_date - timedelta(days=window_days)
-
-    def _month_label(d):
-        return str(d.day) + " " + d.strftime("%b")
-
-    period_display = (
-        _month_label(start_date)
-        + " – "
-        + _month_label(end_date)
-        + " "
-        + str(end_date.year)
+    start_date, end_date, period_display, can_go_next = _activity_window(
+        period_mode, period_offset
     )
-    can_go_next = period_offset > 0
 
     tx_qs = Transaction.objects.filter(
         account__members=request.user,
@@ -1084,7 +1149,7 @@ def _render_activity_section(request, period_mode, period_offset, filter_open=Fa
         is_ignored=False,
     )
     if filter_account_ids:
-        tx_qs = tx_qs.filter(account_id__in=filter_account_ids)
+        tx_qs = tx_qs.exclude(account_id__in=filter_account_ids)
 
     tx_by_day = list(
         tx_qs.select_related("account__bank")
@@ -1098,8 +1163,6 @@ def _render_activity_section(request, period_mode, period_offset, filter_open=Fa
         name = row["account__bank__name"]
         if name not in seen_bank_names:
             seen_bank_names.append(name)
-
-    from accounts.models import Account
 
     user_accounts = (
         Account.objects.filter(is_active=True, members=request.user)
@@ -1126,7 +1189,7 @@ def _render_activity_section(request, period_mode, period_offset, filter_open=Fa
             seen_hashes_m[key] = True
             import_markers.append(
                 {
-                    "date": log.imported_at.strftime("%Y-%m-%d"),
+                    "date": timezone.localtime(log.imported_at).strftime("%Y-%m-%d"),
                     "filename": log.filename or "?",
                     "total": log.count_created,
                     "bank": log.account.bank.name,

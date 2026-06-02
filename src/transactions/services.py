@@ -90,12 +90,15 @@ def compute_file_hash(filepath: Path) -> str:
     Why SHA1?
     - Same choice as import_hash (per-row deduplication in connectors)
     - SHA1 is fast, and we're not using it for security — just equality checks
-    - 40-char hex fits our CharField(max_length=40)
+    - 40-char hex — fits CharField(max_length=64) qui couvre aussi les SHA256 dérivés CIC
 
     Why read in 64KB chunks?
     - Avoids loading the entire file into memory — safe for large Excel files
     """
-    sha1 = hashlib.sha1()
+    # usedforsecurity=False : on utilise SHA1 pour de l'équality check (déduplication),
+    # pas pour la crypto. Sans ce flag, bandit B324 et certains environnements FIPS
+    # rejettent SHA1 — alors qu'on n'en fait pas un usage cryptographique.
+    sha1 = hashlib.sha1(usedforsecurity=False)  # nosemgrep
     with open(filepath, "rb") as f:
         for chunk in iter(lambda: f.read(65536), b""):
             sha1.update(chunk)
@@ -157,7 +160,9 @@ def get_exchange_rate(
         # frankfurter.app bloque les requêtes sans User-Agent (répond 403).
         # On ajoute un header minimal pour identifier notre client.
         req = urllib.request.Request(url, headers={"User-Agent": "BricBudget/1.0"})
-        with urllib.request.urlopen(req, timeout=5) as response:
+        # nosec B310 : URL construite côté serveur avec scheme `https` hardcodé,
+        # pas d'input user → pas de risque d'exfiltration via file:// ou autre scheme.
+        with urllib.request.urlopen(req, timeout=5) as response:  # nosec B310
             data = json.loads(response.read().decode())
             rate = Decimal(str(data["rates"][to_currency]))
     except (urllib.error.URLError, KeyError, ValueError) as e:
@@ -269,10 +274,9 @@ class ImportService:
         result = ImportResult()
 
         # ── 1. File-level deduplication ───────────────────────────────────────
-        # If this exact file was already imported, abort immediately.
-        # ImportLog.file_hash is unique=True — importing twice would raise IntegrityError
-        # at the DB level anyway, but we want a clean error message, not a crash.
-        if ImportLog.objects.filter(file_hash=file_hash).exists():
+        # If this exact file was already imported for this account, abort immediately.
+        # Scoped to account so different users can import the same file into their own accounts.
+        if ImportLog.objects.filter(file_hash=file_hash, account=account).exists():
             result.count_errors = 1
             result.error_detail.append(
                 f"File '{filename}' was already imported (file_hash match). "
@@ -358,6 +362,13 @@ class ImportService:
                 transactions_to_create.append(obj)
             except Exception as e:
                 # Log the error but keep processing — a bad row shouldn't block the rest
+                logger.warning(
+                    "ImportService: row build failed (%s | %s): %s",
+                    tx.get("date"),
+                    tx.get("description_raw", "")[:60],
+                    e,
+                    exc_info=True,
+                )
                 result.count_errors += 1
                 result.error_detail.append(
                     f"Row {tx.get('date')} | {tx.get('description_raw', '')[:60]}: {e}"
@@ -556,6 +567,7 @@ class ImportService:
             }
         except Exception:
             # Should never happen, but never crash an import for card resolution
+            logger.exception("ImportService: card resolution unexpected failure")
             return {}
 
     def _build_transaction(
@@ -587,8 +599,8 @@ class ImportService:
 
         # time is optional — UBS provides it ("12:36:26"), Yuh/CIC don't.
         parsed_time = None
-        if tx.get("time"):
-            parsed_time = time_type.fromisoformat(tx["time"])
+        if raw_time := tx.get("time"):
+            parsed_time = time_type.fromisoformat(raw_time)
 
         # float → Decimal for monetary precision.
         # str(float) avoids floating-point representation issues:
@@ -669,7 +681,9 @@ class ImportService:
             import_hash=tx["import_hash"],
         )
 
-    def _find_rule(self, tx: TransactionDict, rules: list) -> CategorizationRule | None:
+    def _find_rule(
+        self, tx: TransactionDict, rules: list[CategorizationRule]
+    ) -> CategorizationRule | None:
         """
         Find the first categorisation rule whose keyword matches this transaction.
 

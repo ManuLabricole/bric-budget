@@ -46,7 +46,8 @@ help:
 	@printf "\n"
 	@printf "  $(CYAN)🧪 Qualité$(RESET)\n"
 	@printf "    $(BOLD)make lint$(RESET)            Lint Python (ruff) + templates (djlint)\n"
-	@printf "    $(BOLD)make check$(RESET)           Lint + tests (tout en un)\n"
+	@printf "    $(BOLD)make type$(RESET)            Vérification de types (mypy)\n"
+	@printf "    $(BOLD)make check$(RESET)           Lint + type + tests (tout en un)\n"
 	@printf "    $(BOLD)make test$(RESET)            Tests unitaires uniquement\n"
 	@printf "\n"
 	@printf "  $(CYAN)🧪 Dev tools$(RESET)\n"
@@ -122,16 +123,27 @@ test:
 	@poetry run pytest --color=yes
 	@printf "  ✅ $(GREEN)Tests terminés$(RESET)\n"
 
+coverage:
+	@printf "  📊 $(CYAN)Coverage report...$(RESET)\n"
+	@cd src && poetry run pytest --cov=. --cov-report=term-missing -q --tb=no
+	@printf "  ✅ $(GREEN)Coverage terminé$(RESET)\n"
+
 lint:
 	@printf "  🔍 $(CYAN)Linting Python (ruff) + templates (djlint)...$(RESET)\n"
 	@poetry run ruff check src/
 	@poetry run djlint src/templates/ --profile=django --lint
 	@printf "  ✅ $(GREEN)Lint OK$(RESET)\n"
 
+type:
+	@printf "  🔎 $(CYAN)Vérification de types (mypy)...$(RESET)\n"
+	@cd src && poetry run mypy . --config-file ../pyproject.toml
+	@printf "  ✅ $(GREEN)Types OK$(RESET)\n"
+
 check:
-	@printf "  🔍 $(CYAN)Lint + tests...$(RESET)\n"
+	@printf "  🔍 $(CYAN)Lint + types + tests...$(RESET)\n"
 	@poetry run ruff check src/
 	@poetry run djlint src/templates/ --profile=django --lint
+	@cd src && poetry run mypy . --config-file ../pyproject.toml
 	@poetry run pytest --color=yes
 	@printf "  ✅ $(GREEN)Tout est bon$(RESET)\n"
 
@@ -255,4 +267,4 @@ restore:
 	@printf "  ✅ $(GREEN)Restauration terminée$(RESET)\n"
 
 # =============================================================================
-.PHONY: help status up down logs run migrate makemigrations shell create-superuser seed reset-seed import-all import-yuh import-ubs import-cic backup restore dev-randomize dev-seed-realistic lint check test
+.PHONY: help status up down logs run migrate makemigrations shell create-superuser seed reset-seed import-all import-yuh import-ubs import-cic backup restore dev-randomize dev-seed-realistic lint type check test coverage

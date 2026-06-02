@@ -321,15 +321,20 @@ def test_import_service_sets_date_min_and_date_max(chf_account, user):
     """
     service = ImportService()
     transactions = [
-        {**make_tx("d1"), "date": "2026-01-15"},
-        {**make_tx("d2"), "date": "2026-02-20"},
-        {**make_tx("d3"), "date": "2026-03-05"},
+        make_tx("d1", date="2026-01-15"),
+        make_tx("d2", date="2026-02-20"),
+        make_tx("d3", date="2026-03-05"),
     ]
 
     result = service.run(
-        transactions, chf_account, user, "file.csv", make_file_hash("dates")
+        transactions,
+        chf_account,
+        user,
+        "file.csv",
+        make_file_hash("dates"),  # type: ignore[arg-type]
     )
 
+    assert result.log_pk is not None
     log = ImportLog.objects.get(pk=result.log_pk)
     assert log.date_min == date(2026, 1, 15)
     assert log.date_max == date(2026, 3, 5)
@@ -339,12 +344,17 @@ def test_import_service_sets_date_min_and_date_max(chf_account, user):
 def test_import_service_date_min_max_same_when_single_transaction(chf_account, user):
     """Import d'une seule transaction → date_min == date_max."""
     service = ImportService()
-    transactions = [{**make_tx("single"), "date": "2026-06-01"}]
+    transactions = [make_tx("single", date="2026-06-01")]
 
     result = service.run(
-        transactions, chf_account, user, "file.csv", make_file_hash("single")
+        transactions,
+        chf_account,
+        user,
+        "file.csv",
+        make_file_hash("single"),  # type: ignore[arg-type]
     )
 
+    assert result.log_pk is not None
     log = ImportLog.objects.get(pk=result.log_pk)
     assert log.date_min == log.date_max == date(2026, 6, 1)
 
@@ -372,6 +382,7 @@ def test_import_service_date_min_max_none_when_all_skipped(chf_account, user):
     # Deuxième import : même transaction, file_hash différent → tout skippé
     result = service.run([tx], chf_account, user, "file2.csv", make_file_hash("skip2"))
 
+    assert result.log_pk is not None
     log = ImportLog.objects.get(pk=result.log_pk)
     assert result.count_created == 0
     assert result.count_skipped == 1

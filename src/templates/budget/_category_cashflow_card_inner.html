@@ -5,7 +5,11 @@
 </div>
 {% if has_sankey %}
     <div class="px-5 pb-2">
-        <div id="sankey-chart" class="w-full" style="height: 220px;"></div>
+        <div id="sankey-chart"
+             class="w-full"
+             style="height: 220px"
+             data-chart="sankey"
+             data-chart-data="sankey-data"></div>
         {{ sankey_data|json_script:"sankey-data" }}
     </div>
 {% endif %}

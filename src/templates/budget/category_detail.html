@@ -35,7 +35,10 @@ Layout :
    PANEL GAUCHE
    ══════════════════════════════════════════════════════════════════════════════ #}
 {% block panel_left %}
-    {# ── Header — breadcrumb + period nav ───────────────────────────────────── #}
+    {# ── Ligne 1 : navigation période (comme budget index) ───────────────────── #}
+    {% include "components/period/period_nav.html" with period_mode=period_mode period_display=period_display can_go_next=can_go_next nav_url_name="budget:set_period" %}
+    <div class="border-t border-edge my-3"></div>
+    {# ── Ligne 2 : breadcrumb + titre à gauche, filtres à droite ─────────────── #}
     <div class="flex items-center gap-3 mb-4">
         {# Breadcrumb ← Budget / icône + nom #}
         <a href="{% url 'budget:index' %}"
@@ -82,10 +85,9 @@ Layout :
                 Supprimer
             </button>
         {% endif %}
-        {# Dropdown filtre compte + Period nav alignés à droite #}
+        {# Filtre compte — aligné à droite #}
         <div class="ml-auto flex items-center gap-2">
-            {% include "components/filters/filter_accounts.html" with accounts=accounts filter_account_ids=filter_account_ids toggle_url_name="budget:toggle_filter_account" %}
-            {% include "components/period/period_nav.html" with period_mode=period_mode period_display=period_display can_go_next=can_go_next nav_url_name="budget:set_period" %}
+            {% include "components/filters/filter_accounts.html" with accounts=accounts hidden_account_ids=filter_account_ids toggle_url_name="budget:toggle_filter_account" %}
         </div>
     </div>
     {# ── Carte Cashflow — Sankey + KPI strip ─────────────────────────────────── #}
@@ -154,7 +156,11 @@ Layout :
                     <span class="text-xs text-text-base">Objectif {{ budget_target.amount|chf }} CHF / mois</span>
                 </div>
                 {% if has_history %}
-                    <div id="bar-chart" class="w-full px-2" style="height: 190px;"></div>
+                    <div id="bar-chart"
+                         class="w-full px-2"
+                         style="height: 190px"
+                         data-chart="bar"
+                         data-chart-data="history-data"></div>
                     {{ history_chart_data|json_script:"history-data" }}
                 {% else %}
                     <p class="text-xs text-text-disabled text-center py-8">Aucune donnée sur 12 mois</p>
@@ -337,26 +343,13 @@ Layout :
                 <p class="text-[10px] text-text-muted uppercase tracking-wider">Transactions</p>
                 <span class="text-[10px] text-text-disabled">{{ tx_count }} au total</span>
             </div>
-            {% if txs %}
-                <div>
-                    {% for tx in txs %}
-                        {% ifchanged tx.date %}
-                            <div class="px-4 py-1.5 border-b border-edge/30">
-                                <span class="text-[10px] font-medium text-text-muted">{{ tx.date|date:"j F Y" }}</span>
-                            </div>
-                        {% endifchanged %}
-                        {% comment %}
-                        panel_source="category" → close_on_back=True dans le panneau détail
-                        (bouton ← ferme l'overlay plutôt que de revenir à la liste).
-                        panel_target non défini → hx-target="#panel-content" (overlay droit,
-                        même que le budget index). Suppression du div #cat-tx-detail.
-                        {% endcomment %}
-                        {% include "budget/_panel_tx_row.html" with tx=tx bank_icon_url=tx.bank_icon_url panel_source="category" %}
-                    {% endfor %}
-                </div>
-            {% else %}
-                <p class="text-xs text-text-disabled text-center py-8">Aucune transaction sur cette période</p>
-            {% endif %}
+            {# Barre search — HTMX swap outerHTML sur #cat-tx-results uniquement #}
+            {% url 'budget:category_tx_fragment' category.slug as cat_tx_url %}
+            <div class="px-4 pt-3 pb-2 border-b border-edge">
+                {% include "components/search/search_bar.html" with hx_url=cat_tx_url hx_target="#cat-tx-results" hx_select="#cat-tx-results" placeholder="Chercher" width="w-full" %}
+            </div>
+            {# Résultats initiaux — rendu server-side, mis à jour par HTMX search #}
+            {% include "budget/partials/_category_tx_fragment.html" with transactions=txs q="" category=category %}
         </div>
     {% endif %}
 {% endblock %}
@@ -435,7 +428,11 @@ Layout :
             <div id="donut-card"
                  class="bg-surface-3/70 backdrop-blur-xl border border-edge/60 rounded-xl">
                 {# Donut ECharts — même pattern que index.html #}
-                <div id="donut-chart" class="w-full px-4" style="height: 220px;"></div>
+                <div id="donut-chart"
+                     class="w-full px-4"
+                     style="height: 220px"
+                     data-chart="donut"
+                     data-chart-data="donut-data"></div>
                 {{ donut_data|json_script:"donut-data" }}
                 {# Liste sous-catégories avec montants #}
                 <div class="px-5 pb-4 pt-2 flex flex-col gap-1">
@@ -459,6 +456,8 @@ Layout :
     {% endif %}
 {% endblock %}
 {% block extra_js %}
+    {# auto-init.js scanne [data-chart] et initialise les charts. Les containers Sankey/Donut/Bar #}
+    {# ont des data-chart, data-chart-data → init automatique sans <script> inline.               #}
     {% if has_sankey or has_donut or has_history %}
         <script src="{% static 'js/vendor/echarts.min.js' %}"></script>
         <script src="{% static 'js/charts/utils.js' %}"></script>
@@ -471,75 +470,7 @@ Layout :
         {% if has_history and cat_tab == 'objectif' %}
             <script src="{% static 'js/charts/bar.js' %}"></script>
         {% endif %}
-        <script>
-  {% if has_sankey %}
-  var sankeyEl = document.getElementById("sankey-chart");
-  if (sankeyEl) {
-    var sankeyData = JSON.parse(document.getElementById("sankey-data").textContent);
-    BricCharts.initSankey(sankeyEl, sankeyData);
-  }
-  {% endif %}
-  {% if has_donut %}
-  var donutEl = document.getElementById("donut-chart");
-  if (donutEl) {
-    var donutData = JSON.parse(document.getElementById("donut-data").textContent);
-    BricCharts.initDonut(donutEl, donutData);
-  }
-  {% endif %}
-  {% if has_history and cat_tab == 'objectif' %}
-  var barEl = document.getElementById("bar-chart");
-  if (barEl) {
-    var histData = JSON.parse(document.getElementById("history-data").textContent);
-    BricCharts.initBar(barEl, histData);
-  }
-  {% endif %}
-  // Align donut card height to cashflow card so both columns share the same row boundary.
-  // Runs after charts are initialized (charts add pixels to the DOM before this executes).
-  var cashflowCard = document.getElementById('cashflow-card');
-  var donutCard = document.getElementById('donut-card');
-  if (cashflowCard && donutCard) {
-    donutCard.style.minHeight = cashflowCard.offsetHeight + 'px';
-  }
-        </script>
+        <script src="{% static 'js/charts/auto-init.js' %}"></script>
+        <script src="{% static 'js/pages/category_detail.js' %}"></script>
     {% endif %}
-    <script>
-  // Refresh du Sankey + KPIs après toggle is_ignored depuis le panneau détail.
-  //
-  // Flux :
-  //   1. toggle_ignore (close_on_back=True) injecte [data-cashflow-refresh] dans
-  //      le panneau → #panel-content est swappé par HTMX → htmx:afterSwap fire.
-  //   2. Le listener détecte le signal, déclenche htmx.ajax vers /cashflow/
-  //      → #cashflow-card innerHTML est remplacé → second htmx:afterSwap fire.
-  //   3. Le second listener ré-initialise ECharts sur le nouveau #sankey-chart.
-  document.addEventListener("htmx:afterSwap", function (evt) {
-    var target = evt.detail && evt.detail.target;
-    if (!target) return;
-
-    // Étape 1 : panel-content swappé → chercher le signal cashflow-refresh
-    if (target.id === "panel-content") {
-      var refreshEl = target.querySelector("[data-cashflow-refresh]");
-      if (refreshEl) {
-        htmx.ajax("GET", refreshEl.getAttribute("data-cashflow-refresh"), {
-          target: "#cashflow-card",
-          swap: "innerHTML"
-        });
-      }
-    }
-
-    // Étape 2 : cashflow-card swappé → ré-init Sankey + ré-aligner hauteur donut
-    if (target.id === "cashflow-card") {
-      var sankeyEl = document.getElementById("sankey-chart");
-      if (sankeyEl && typeof BricCharts !== "undefined") {
-        var dataEl = document.getElementById("sankey-data");
-        if (dataEl) {
-          BricCharts.initSankey(sankeyEl, JSON.parse(dataEl.textContent));
-        }
-      }
-      var donutCardEl = document.getElementById("donut-card");
-      if (donutCardEl) {
-        donutCardEl.style.minHeight = target.offsetHeight + "px";
-      }
-    }
-  });
-    </script>
 {% endblock %}

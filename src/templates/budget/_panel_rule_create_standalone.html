@@ -107,8 +107,14 @@ Ref : Phase 2G — T2 (Issue #33)
                             <div class="ml-5 mt-0.5 mb-1">
                                 {% with icon_path="icons/categories/"|add:cat.icon|add:".svg" %}
                                     <button type="button"
-                                            onclick="ruleStandaloneSelect({{ cat.id }}, '', '{{ cat.name }}', '{{ cat.colour_hex|default:'#4a4c55' }}', '{% static icon_path %}', false)"
-                                            class="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg mb-0.5 transition-colors hover:brightness-110"
+                                            class="js-cat-select w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg mb-0.5 transition-colors hover:brightness-110"
+                                            data-cat-target="rule-standalone"
+                                            data-cat-id="{{ cat.id }}"
+                                            data-cat-subcat-id=""
+                                            data-cat-label="{{ cat.name }}"
+                                            data-cat-color="{{ cat.colour_hex|default:'#4a4c55' }}"
+                                            data-cat-icon-url="{% static icon_path %}"
+                                            data-cat-is-subcat="false"
                                             style="background: {{ cat.colour_hex|default:'#4a4c55' }}26">
                                         <div class="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center"
                                              style="background: {{ cat.colour_hex|default:'#4a4c55' }}">
@@ -124,8 +130,14 @@ Ref : Phase 2G — T2 (Issue #33)
                                 {% endwith %}
                                 {% for sub in subcats %}
                                     <button type="button"
-                                            onclick="ruleStandaloneSelect({{ cat.id }}, {{ sub.id }}, '{{ cat.name }} › {{ sub.name }}', '{{ cat.colour_hex|default:'#4a4c55' }}', '{% if sub.icon %}{% with p="icons/categories/"|add:sub.icon|add:".svg" %}{% static p %}{% endwith %}{% else %}{% with p="icons/categories/"|add:cat.icon|add:".svg" %}{% static p %}{% endwith %}{% endif %}', true)"
-                                            class="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-text-secondary hover:bg-gold/10 hover:text-gold transition-colors">
+                                            class="js-cat-select w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-text-secondary hover:bg-gold/10 hover:text-gold transition-colors"
+                                            data-cat-target="rule-standalone"
+                                            data-cat-id="{{ cat.id }}"
+                                            data-cat-subcat-id="{{ sub.id }}"
+                                            data-cat-label="{{ cat.name }} › {{ sub.name }}"
+                                            data-cat-color="{{ cat.colour_hex|default:'#4a4c55' }}"
+                                            data-cat-icon-url="{% if sub.icon %}{% with p="icons/categories/"|add:sub.icon|add:".svg" %}{% static p %}{% endwith %}{% else %}{% with p="icons/categories/"|add:cat.icon|add:".svg" %}{% static p %}{% endwith %}{% endif %}"
+                                            data-cat-is-subcat="true">
                                         <div class="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center"
                                              style="background: {{ cat.colour_hex|default:'#4a4c55' }}66">
                                             {% if sub.icon %}
@@ -284,14 +296,23 @@ Ref : Phase 2G — T2 (Issue #33)
         }
     });
 
-    // ── Picker catégorie ─────────────────────────────────────────────────────
+    // ── Picker catégorie — listener délégué (data-attrs au lieu d'onclick inline) ──
+    //
+    // Convention HTML : <button class="js-cat-select" data-cat-target="rule-standalone" //   data-cat-id data-cat-subcat-id data-cat-label data-cat-color //   data-cat-icon-url data-cat-is-subcat="true|false">
+    //
+    // data-cat-target filtre le scope — évite de capturer les clicks d'AUTRES pickers
+    // sur la même page.
+    function applyStandaloneSelection(d) {
+        var catId    = d.catId;
+        var subcatId = d.catSubcatId || '';
+        var label    = d.catLabel;
+        var color    = d.catColor;
+        var iconUrl  = d.catIconUrl;
+        var isSubcat = d.catIsSubcat === 'true';
 
-    // isSubcat=true → fond light (colour + '40') + icône opacity-80
-    window.ruleStandaloneSelect = function (catId, subcatId, label, color, iconUrl, isSubcat) {
         document.getElementById('standalone-cat-id').value    = catId;
         document.getElementById('standalone-subcat-id').value = subcatId;
 
-        // Mise à jour visuelle du summary picker
         var iconEl = document.getElementById('standalone-picker-icon');
         if (iconEl) {
             iconEl.style.backgroundColor = isSubcat ? color + '40' : color;
@@ -306,10 +327,8 @@ Ref : Phase 2G — T2 (Issue #33)
             labelEl.classList.add('text-text-base');
         }
 
-        // Fermer le picker
         document.getElementById('standalone-picker').removeAttribute('open');
 
-        // Mettre à jour les data-attributes lus par standaloneFirePreview
         var zone = document.getElementById('rule-preview-zone');
         if (zone) {
             zone.dataset.catId    = catId;
@@ -318,6 +337,14 @@ Ref : Phase 2G — T2 (Issue #33)
 
         standaloneFirePreview();
         standaloneUpdateSubmit();
-    };
+    }
+
+    // Delegated listener : un seul handler attaché à body, fonctionne aussi sur les
+    // boutons réinjectés par HTMX (modal re-renders).
+    document.body.addEventListener('click', function (e) {
+        var btn = e.target.closest('.js-cat-select[data-cat-target="rule-standalone"]');
+        if (!btn) return;
+        applyStandaloneSelection(btn.dataset);
+    });
 })();
 </script>

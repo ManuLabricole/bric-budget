@@ -1,0 +1,16 @@
+{% comment %}
+components/category/color_dot.html — Pastille couleur d'une catégorie.
+
+Utilisation :
+    {% include "components/category/color_dot.html" with category=cat %}
+    {% include "components/category/color_dot.html" with category=cat size="lg" %}
+
+Paramètres :
+    category — instance Category (lit .colour_hex)
+    size     — "" (default) | "lg"
+
+Fallback : si colour_hex absent → var(--cat-fallback) défini dans base.html.
+Pas de hex hardcodé ici : tout passe par la CSS custom property --cat-color.
+{% endcomment %}
+<span class="cat-dot{% if size == 'lg' %} cat-dot-lg{% endif %}"
+      {% if category.colour_hex %}style="--cat-color: {{ category.colour_hex }};"{% endif %}></span>

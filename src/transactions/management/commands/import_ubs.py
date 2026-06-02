@@ -16,6 +16,7 @@ Usage:
     make import-ubs FILE=path/to/export.csv
 """
 
+import logging
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
@@ -25,6 +26,7 @@ from connectors.resolver import detect_connector, resolve_accounts
 from connectors.ubs.parser import UBSConnector
 from transactions.services import ImportService, compute_file_hash
 
+logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
@@ -63,7 +65,8 @@ class Command(BaseCommand):
         try:
             matches = resolve_accounts(connector, filepath)
         except Exception as e:
-            raise CommandError(str(e))
+            logger.exception("import_ubs: resolve_accounts failed for %s", filepath)
+            raise CommandError(str(e)) from e
         account = matches[0].account
 
         # ── 3. Get importing user ─────────────────────────────────────────────

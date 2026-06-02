@@ -64,11 +64,21 @@ class Command(BaseCommand):
                 self.stdout.write(f"  ⏭  {bank.name} — icon_slug vide, ignoré")
                 continue
 
+            # Validation : bank.domain doit ressembler à un domaine (lettres/chiffres/.-)
+            # → empêche injection de path ou scheme arbitraire dans l'URL construite.
+            import re
+
+            if not re.fullmatch(r"[a-z0-9.-]+", bank.domain or ""):
+                self.stderr.write(
+                    f"  ❌  {bank.name} — domain invalide : {bank.domain!r}"
+                )
+                continue
             url = f"https://www.google.com/s2/favicons?domain={bank.domain}&sz={size}"
             dest = icon_dir / f"{bank.icon_slug}.png"
 
             try:
-                urllib.request.urlretrieve(url, dest)
+                # nosec B310 : URL avec scheme https hardcodé + domain validé regex ci-dessus.
+                urllib.request.urlretrieve(url, dest)  # nosec B310
                 size_kb = dest.stat().st_size // 1024
                 self.stdout.write(
                     f"  ✅  {bank.name} ({bank.domain}) → {dest.name} ({size_kb}kb)"

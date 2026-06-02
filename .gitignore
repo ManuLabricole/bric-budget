@@ -1,8 +1,28 @@
 # ─── Fichier .gitignore pour BudgetTracker ─────────────────────────────
 
-# --- Claude (local uniquement — JAMAIS sur GitHub) ---
-.claude/
+# --- Claude — WHITELIST : tout privé par défaut, on publie sélectivement ---
+# Règle : nouveau fichier dans .claude/ = privé par défaut (jamais publié par accident).
+# Publié = config Claude Code : skills/ commands/ agents/ rules/ hooks/ + CLAUDE.md
+# + README + VERSION + SECURITY_RULES.md (pas de secret).
+# Privé = project/ (DECISIONS, UBIQUITOUS_LANGUAGE, ops, history/), settings.json,
+# settings.local.json, plan_*/research_*.
+.claude/*
+!.claude/skills/
+!.claude/hooks/
+!.claude/commands/
+!.claude/agents/
+!.claude/rules/
+!.claude/CLAUDE.md
+!.claude/README.md
+!.claude/VERSION
+!.claude/SECURITY_RULES.md
 assets/private/
+
+# Docs privés sortis de .claude/ (références AI-coding + sorties d'audits CTO)
+docs/references/
+docs/audits/
+
+node_modules/
 
 # ─── Environnement Python ───────────────────────────────────────
 __pycache__/
@@ -57,8 +77,24 @@ backups/
 
 # ─── Coverage & tests ───────────────────────────────────────────
 .coverage
+.coverage.*
 htmlcov/
+coverage.xml
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+
+# ─── Node / Tailwind ────────────────────────────────────────────
+node_modules/
+# package-lock.json EST commit (lockfile = reproductibilité prod)
+# src/static/css/tailwind.css EST commit (généré, mais évite npm install sur Railway)
+
+# ─── Sécurité (rapports outils) ─────────────────────────────────
+bandit-report.*
+pip-audit-report.*
+.bandit/
 
 # ─── MCP config — chemins absolus machine-spécifiques, ne pas partager ───────
 .mcp.json

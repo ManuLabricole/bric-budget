@@ -103,6 +103,7 @@ class TestImportServiceZeroNewTransactions:
         )
 
         second_log = ImportLog.objects.order_by("-imported_at").first()
+        assert second_log is not None
         assert second_log.status == ImportLog.Status.SUCCESS
         assert second_log.count_created == 0
         assert second_log.count_errors == 0

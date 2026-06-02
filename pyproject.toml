@@ -14,7 +14,9 @@ dependencies = [
     "openpyxl (>=3.1.5,<4.0.0)",
     "cryptography (>=48.0.0,<49.0.0)",
     "whitenoise (>=6.12.0,<7.0.0)",
-    "gunicorn (>=26.0.0,<27.0.0)"
+    "gunicorn (>=26.0.0,<27.0.0)",
+    "django-axes (>=8.3.1,<9.0.0)",
+    "pillow (>=12.2.0,<13.0.0)"
 ]
 
 
@@ -43,6 +45,13 @@ pytest-django = "^4.12"
 #   fonctionne sans package install ni PYTHONPATH manuel.
 # testpaths : limite la découverte à src/tests/ pour ne pas scanner tout le projet.
 # =============================================================================
+pytest-cov = "^7.1.0"
+bandit = "^1.9.4"
+vulture = "^2.16"
+mypy = "^2.1.0"
+django-stubs = "^6.0.5"
+djhtml = "^3.0.11"
+pip-audit = "^2.10.0"
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings"
@@ -71,7 +80,8 @@ target-version = "py313"
 #   F    = pyflakes (unused imports, undefined names...)
 #   I    = isort (import ordering)
 #   DJ   = flake8-django (Django-specific: model field checks, admin...)
-select = ["E", "W", "F", "I", "DJ"]
+#   T20  = flake8-print (interdit print() en prod — règle "jamais print()")
+select = ["E", "W", "F", "I", "DJ", "T20"]
 
 # Rules we intentionally ignore:
 ignore = [
@@ -119,4 +129,56 @@ profile = "django"
 #   H021 — inline styles : nécessaires pour le glassmorphism (gradient borders, backdrop-blur)
 #           Tailwind ne supporte pas ces propriétés en classes utilitaires.
 #   T003 — endblock sans nom : choix Django 6 (endblock vide = moins de bruit)
-ignore = "H021,T003"
+#   H025 — "orphan tag" : faux positif sur les templates partiels inclus via {% include %}
+#           (ex: <details> à la racine sans parent HTML explicite dans le fichier).
+ignore = "H021,T003,H025"
+
+
+# =============================================================================
+# mypy — vérification statique de types
+# Stratégie graduelle :
+#   - check_untyped_defs=true  : vérifie les corps même sans annotations
+#   - disallow_untyped_defs=false : code existant non-typé ne bloque pas
+#   - Nouveau code : toujours typé (signatures publiques annotées)
+#   - Migrations exclues (auto-générées, inutile de les typer)
+# =============================================================================
+[tool.mypy]
+python_version = "3.13"
+plugins = ["mypy_django_plugin.main"]
+
+# Permissif sur les imports sans stubs (openpyxl, cryptography, etc.)
+ignore_missing_imports = true
+
+# Checks utiles sans bloquer tout le projet
+warn_return_any = true
+warn_unused_configs = true
+warn_redundant_casts = true
+strict_equality = true
+extra_checks = true
+check_untyped_defs = true
+
+# Graduel : on n'impose pas encore les annotations sur tout le code existant
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+# Source path (aligne avec pytest pythonpath)
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["*.migrations.*", "manage"]
+ignore_errors = true
+
+[tool.django-stubs]
+django_settings_module = "config.settings"
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/migrations/*",
+    "*/tests/*",
+    "src/manage.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false

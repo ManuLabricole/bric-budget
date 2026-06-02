@@ -60,8 +60,17 @@ class Command(BaseCommand):
             action="store_true",
             help="Re-randomize ALL transactions, not just uncategorized ones",
         )
+        from transactions.management._dev_guard import add_force_prod_argument
+
+        add_force_prod_argument(parser)
 
     def handle(self, *args, **options):
+        # ── 0. Refuser de tourner en prod (DEBUG=False) ───────────────────
+        from transactions.management._dev_guard import assert_dev_environment
+
+        if not options.get("force_prod"):
+            assert_dev_environment("dev_randomize_categories")
+
         # ── 1. Safety warning ─────────────────────────────────────────────
         self.stdout.write(
             self.style.WARNING(
@@ -219,17 +228,17 @@ class Command(BaseCommand):
                 rich_idx += 1
 
                 # Grab any single transaction from the donor category
-                tx = (
+                donor_tx = (
                     Transaction.objects.filter(category=donor, amount__lt=0)
-                    .order_by("?")  # random pick
+                    .order_by("?")
                     .first()
                 )
-                if tx:
-                    tx.category = missing_cat
+                if donor_tx:
+                    donor_tx.category = missing_cat
                     subcats = subcat_map.get(missing_cat.id, [])
-                    tx.subcategory = random.choice(subcats) if subcats else None
-                    tx.categorization_source = Transaction.CategorizationSource.AI
-                    steal_batch.append(tx)
+                    donor_tx.subcategory = random.choice(subcats) if subcats else None
+                    donor_tx.categorization_source = Transaction.CategorizationSource.AI
+                    steal_batch.append(donor_tx)
                     self.stdout.write(
                         f"    ✓ '{missing_cat.name}' ← stolen from '{donor.name}'"
                     )
@@ -245,7 +254,7 @@ class Command(BaseCommand):
                     category=inc_cat, amount__gt=0
                 ).exists()
                 if not has_tx:
-                    tx = Transaction.objects.filter(amount__gt=0).order_by("?").first()
+                    tx = Transaction.objects.filter(amount__gt=0).order_by("?").first()  # type: ignore[assignment]
                     if tx:
                         tx.category = inc_cat
                         subcats = subcat_map.get(inc_cat.id, [])

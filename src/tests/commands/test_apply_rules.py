@@ -96,7 +96,7 @@ def run_command(*args):
     cmd = Command()
     cmd.style = cmd.style  # garde le style par défaut
     out = StringIO()
-    cmd.stdout = out
+    cmd.stdout = out  # type: ignore[assignment]
 
     options = {
         "dry_run": "--dry-run" in args,

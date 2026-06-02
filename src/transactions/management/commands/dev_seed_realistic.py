@@ -202,7 +202,7 @@ def _make_hash(
     Le salt est un compteur pour gérer les doublons même date+montant+marchant.
     """
     raw = f"dev_seed|{account_id}|{tx_date}|{amount}|{desc}|{salt}"
-    return hashlib.sha1(raw.encode()).hexdigest()
+    return hashlib.sha1(raw.encode(), usedforsecurity=False).hexdigest()  # nosemgrep
 
 
 class Command(BaseCommand):
@@ -220,8 +220,16 @@ class Command(BaseCommand):
             default=12,
             help="Nombre de mois à générer (défaut: 12)",
         )
+        from transactions.management._dev_guard import add_force_prod_argument
+
+        add_force_prod_argument(parser)
 
     def handle(self, *args, **options):
+        from transactions.management._dev_guard import assert_dev_environment
+
+        if not options.get("force_prod"):
+            assert_dev_environment("dev_seed_realistic")
+
         self.stdout.write(
             self.style.WARNING(
                 "\n⚠  DEV ONLY — seed réaliste de transactions.\n"

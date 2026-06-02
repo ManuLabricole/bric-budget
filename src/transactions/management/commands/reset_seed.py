@@ -1,7 +1,10 @@
 """
 transactions/management/commands/reset_seed.py
 
-Deletes all data created by seed_initial.
+⛔ DEV ONLY — Deletes all data created by seed_initial.
+
+Refuses to run when DEBUG=False (production).
+Pass --force-prod to override (rarely needed).
 
 Why a separate command (not Django's `flush`)?
 ----------------------------------------------
@@ -34,11 +37,18 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 
 from accounts.models import Account, Bank, Card, CheckingAccount, SavingsAccount
+from transactions.management._dev_guard import (
+    add_force_prod_argument,
+    assert_dev_environment,
+)
 from transactions.models import Category, ImportLog, SubCategory, Transaction
 
 
 class Command(BaseCommand):
-    help = "Deletes all data created by seed_initial (keeps superuser and Django internals)"
+    help = (
+        "[DEV ONLY] Deletes all data created by seed_initial "
+        "(keeps superuser and Django internals)"
+    )
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -46,8 +56,13 @@ class Command(BaseCommand):
             action="store_true",
             help="Skip confirmation prompt",
         )
+        add_force_prod_argument(parser)
 
     def handle(self, *args, **options):
+        # Guard : refuse de tourner en prod (DEBUG=False) sauf --force-prod
+        if not options.get("force_prod"):
+            assert_dev_environment("reset_seed")
+
         # Safety confirmation — destructive operation
         # --yes flag allows scripting (e.g. make reset-seed in CI)
         if not options["yes"]:

@@ -484,9 +484,13 @@ class ImportLog(models.Model):
     # (balance is encoded in the filename: "Activités_2026_03_17 - 33,344.CSV")
     filename = models.CharField(max_length=255)
 
-    # SHA256 hex digest — prevents importing the exact same file twice.
-    # max_length=64: SHA256 = 64 chars. CIC derived hashes (sha256(file_hash:sheet)) also 64.
-    file_hash = models.CharField(max_length=64, unique=True)
+    # hex digest — prevents importing the exact same file twice per account.
+    # Algorithm mixte selon le connecteur :
+    #   SHA1(contenu brut) → 40 chars  — fichiers mono-feuille (Yuh, UBS)
+    #   SHA256(sha1:sheet) → 64 chars  — fichiers multi-feuilles (CIC, 1 log par feuille)
+    # max_length=64 couvre les deux cas.
+    # Contrainte per-account (pas globale) : deux users peuvent importer le même fichier.
+    file_hash = models.CharField(max_length=64)
 
     imported_at = models.DateTimeField(auto_now_add=True)
 
@@ -532,6 +536,12 @@ class ImportLog(models.Model):
         verbose_name = "import log"
         verbose_name_plural = "import logs"
         ordering = ["-imported_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["file_hash", "account"],
+                name="importlog_file_hash_account_uniq",
+            )
+        ]
 
     def __str__(self):
         return f"{self.imported_at:%Y-%m-%d %H:%M} | {self.account} | {self.filename} ({self.status})"
@@ -572,4 +582,4 @@ class BudgetTarget(models.Model):
         ordering = ["category__order"]
 
     def __str__(self):
-        return f"{self.period:%Y-%m} | {self.category} → {self.amount} CHF"
+        return f"{self.category} → {self.amount} CHF/month"

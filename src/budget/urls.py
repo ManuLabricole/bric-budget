@@ -58,7 +58,11 @@ urlpatterns = [
         name="categorize",
     ),
     # /budget/panel/tx-detail/?tx_id=X → détail d'une transaction (fragment HTMX)
-    path("panel/tx-detail/", views.budget_panel_tx_detail, name="panel_tx_detail"),
+    path(
+        "panel/tx-detail/",
+        views.budget_panel_tx_detail,
+        name="panel_tx_detail",
+    ),
     # /budget/transactions/<tx_id>/toggle-reconcile/ → bascule is_reconciled (POST HTMX)
     path(
         "transactions/<int:tx_id>/toggle-reconcile/",
@@ -67,7 +71,9 @@ urlpatterns = [
     ),
     # /budget/panel/rule-create/?tx_id=X&keyword=MIGROS → formulaire création règle (fragment HTMX)
     path(
-        "panel/rule-create/", views.budget_panel_rule_create, name="panel_rule_create"
+        "panel/rule-create/",
+        views.budget_panel_rule_create,
+        name="panel_rule_create",
     ),
     # /budget/panel/rule-create-standalone/ → formulaire création règle sans transaction source (fragment HTMX)
     path(
@@ -88,7 +94,11 @@ urlpatterns = [
         name="rule_create_standalone_submit",
     ),
     # /budget/transactions/rule-preview/ → prévisualise l'impact d'une règle (POST)
-    path("transactions/rule-preview/", views.budget_rule_preview, name="rule_preview"),
+    path(
+        "transactions/rule-preview/",
+        views.budget_rule_preview,
+        name="rule_preview",
+    ),
     # /budget/transactions/rule-live-preview/ → aperçu live des transactions matchées (GET HTMX)
     path(
         "transactions/rule-live-preview/",
@@ -123,7 +133,9 @@ urlpatterns = [
     ),
     # /budget/categorie/<slug>/ → page détail d'une catégorie (Sankey sous-catégories + transactions)
     path(
-        "categorie/<slug:slug>/", views.budget_category_detail, name="category_detail"
+        "categorie/<slug:slug>/",
+        views.budget_category_detail,
+        name="category_detail",
     ),
     # /budget/categorie/<slug>/cashflow/ → partial HTMX : inner HTML de #cashflow-card
     # Appelé par JS après toggle is_ignored depuis le panneau détail.
@@ -132,11 +144,19 @@ urlpatterns = [
         views.budget_category_cashflow_fragment,
         name="category_cashflow_fragment",
     ),
-    # ── Filtres multi-select (T1 + T2) ──────────────────────────────────────
-    # /budget/filter/account/<account_id>/ → toggle compte dans le filtre session
-    # account_id=0 → réinitialise (tous les comptes)
+    # /budget/categorie/<slug>/transactions/ → fragment liste tx (search HTMX)
     path(
-        "filter/account/<int:account_id>/",
+        "categorie/<slug:slug>/transactions/",
+        views.budget_category_tx_fragment,
+        name="category_tx_fragment",
+    ),
+    # ── Filtres multi-select (T1 + T2) ──────────────────────────────────────
+    # /budget/filter/account/<account_ref>/ → toggle compte dans le filtre session
+    # account_ref="all" (ou "0") → réinitialise (tous les comptes — aucun masqué)
+    # account_ref="none" → masque tous les comptes
+    # account_ref="<int>" → toggle le compte spécifique
+    path(
+        "filter/account/<slug:account_ref>/",
         views.budget_toggle_filter_account,
         name="toggle_filter_account",
     ),

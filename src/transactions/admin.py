@@ -101,6 +101,8 @@ class CategorizationRuleForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        if cleaned_data is None:
+            return cleaned_data
         category = cleaned_data.get("category")
         subcategory = cleaned_data.get("subcategory")
         # Validation : subcategory doit appartenir à category
