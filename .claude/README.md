@@ -1,8 +1,8 @@
 # `.claude/` — Configuration Claude Code de BricBudget
 
 Ce dossier configure [Claude Code](https://claude.com/claude-code) pour le projet.
-Il est **partiellement publié** : seuls les outils réutilisables sont sur GitHub, le
-reste (notes de session, état projet, audits) est local.
+Il est **partiellement publié** : seuls les outils réutilisables (config Claude Code) sont
+sur GitHub ; les docs projet privées vivent dans `project/` (gitignoré).
 
 ## Les 5 couches (comment Claude charge le contexte)
 
@@ -35,9 +35,12 @@ reste (notes de session, état projet, audits) est local.
 
 ## Ce qui est local (gitignoré — voir `.gitignore` racine)
 
-`project/` (CONTEXT/CHANGELOG/MEMO/DECISIONS/UBIQUITOUS_LANGUAGE/ops),
-`settings.local.json`, et les scratchpads `plan_*.md` / `research_*.md`.
-(structure détaillée mise à jour en fin de refacto)
+- **`project/`** — docs durables privés : `DECISIONS.md` (ADRs), `UBIQUITOUS_LANGUAGE.md`
+  (glossaire), `ops.md` (config Railway), `history/` (CHANGELOG + MEMO archivés, figés).
+- **`settings.local.json`** — overrides perso.
+- Scratchpads `plan_*.md` / `research_*.md`.
+- L'état courant (git, version, roadmap) n'est plus un fichier : **GitHub Project** +
+  **auto-memory native** (`~/.claude/.../memory/`, chargée seule au démarrage).
 
 > **Whitelist** : le `.gitignore` racine ignore tout `.claude/` par défaut et ne
 > ré-inclut que les éléments ci-dessus. Un nouveau fichier est donc **privé par
@@ -56,7 +59,7 @@ crée un **`settings.local.json`** (gitignoré, Claude l'écrit aussi automatiqu
 
 ## Scratchpads `plan_*` / `research_*`
 
-Les skills `/research` et `/plan` écrivent des fichiers `research_<slug>.md` et
+Les commands `/research` et `/plan` écrivent des fichiers `research_<slug>.md` et
 `plan_<slug>.md` à la racine de `.claude/`. Ce sont des **scratchpads éphémères** :
 gitignorés, à supprimer dès que la feature est mergée. Le durable est distillé dans
-`DECISIONS.md` / `CHANGELOG.md` / `UBIQUITOUS_LANGUAGE.md`.
+`project/DECISIONS.md` / `project/UBIQUITOUS_LANGUAGE.md` + l'auto-memory native.
