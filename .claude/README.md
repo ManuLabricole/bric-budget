@@ -4,16 +4,33 @@ Ce dossier configure [Claude Code](https://claude.com/claude-code) pour le proje
 Il est **partiellement publié** : seuls les outils réutilisables sont sur GitHub, le
 reste (notes de session, état projet, audits) est local.
 
+## Les 5 couches (comment Claude charge le contexte)
+
+| Couche | Déclenchement | Pour quoi |
+|--------|---------------|-----------|
+| **`CLAUDE.md`** | Toujours (chaque session) | Règles absolues, stack, workflow git/PR |
+| **`rules/`** | Auto, **par chemin** (frontmatter `paths:`) | Conventions courtes always-on quand on touche un type de fichier |
+| **`commands/`** | **Manuel** (tu tapes `/xxx`) | Rituels délibérés |
+| **`skills/`** | Auto, **par intention** (frontmatter `description`) | Expertise riche + scripts, chargée à la demande |
+| **`hooks/`** | Sur **événement** (PostToolUse…) | Guardrails automatiques |
+| **`agents/`** | **Manuel** (délégation) | Sweep en contexte isolé |
+
+> Règle de séparation (D-025) : **rule** = court/path/always-on · **skill** = riche/intention/à la demande · **command** = rituel manuel · **agent** = contexte isolé. Cas critique (IDOR) = 1-ligne dans la rule + détail dans le skill.
+
 ## Ce qui est publié (versionné)
 
 | Élément | Rôle |
 |---------|------|
-| `CLAUDE.md` | Config d'entrée — règles toujours actives, stack, workflow git/PR, règles sécurité |
-| `commands/*.md` | Les skills (slash-commands) : `/hello`, `/research`, `/plan`, `/grill`, `/review-pr`, `/diagnose`, `/improve`, `/sync`, `/github`, `/audit_cto`, `/audit-tests`, `/help` |
-| `skills/security/` | Skill sécurité : SR-XX → OWASP 2025, LLM security, Python quirks, HTTP headers |
-| `skills/security/scripts/security_audit.sh` | Audit sécurité automatisé (SR-001/002/004/005/008/009 — IDOR, Decimal, print(), IBAN…) |
-| `settings.example.json` | Template de permissions — à copier |
-| `*.example.md` | Squelettes des docs privés (CONTEXT, CHANGELOG, DECISIONS, SECURITY_RULES, UBIQUITOUS_LANGUAGE, MEMO) — décrivent le rôle + la structure |
+| `CLAUDE.md` | Config d'entrée — règles toujours actives, stack, workflow git/PR, sécurité |
+| `rules/*.md` | Conventions path-scoped : `django.md` (`src/**/*.py`), `htmx.md` + `tailwind.md` (templates), `testing.md` (tests) |
+| `commands/*.md` | Slash-commands (tu les tapes) : `/hello`, `/research`, `/plan`, `/grill`, `/review-pr`, `/diagnose`, `/improve`, `/sync`, `/github`, `/audit_cto`, `/audit-tests`, `/help` |
+| `skills/security/` | Skill sécurité (auto par `description`) : SR-XX → OWASP 2025, LLM security, Python quirks, HTTP headers + `scripts/security_audit.sh` |
+| `skills/skill-creator/` | Outillage Anthropic (Apache-2.0) : valide/scaffolde/package les skills |
+| `agents/*.md` | Subagents : `security-auditor` (audit OWASP/SR-XX), `bricbudget-reviewer` (revue Django + structurelle) |
+| `hooks/ruff_format.sh` | Hook PostToolUse : `ruff format` auto du `.py` édité |
+| `settings.example.json` | Template permissions + hook — à copier vers `settings.json` |
+| `VERSION` | Version de la config (stampée en footer de chaque commit) |
+| `*.example.md` | Squelettes des docs privés (CONTEXT, CHANGELOG, DECISIONS, SECURITY_RULES, UBIQUITOUS_LANGUAGE, MEMO) |
 | `README.md` | Ce fichier |
 
 ## Ce qui est local (gitignoré — voir `.gitignore` racine)
