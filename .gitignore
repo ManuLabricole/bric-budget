@@ -17,8 +17,9 @@
 !.claude/README.md
 !.claude/VERSION
 !.claude/SECURITY_RULES.md
-!.claude/settings.example.json
+!.claude/settings.json
 !.claude/*.example.md
+# settings.local.json reste privé (override perso) via .claude/* ci-dessus
 assets/private/
 
 node_modules/

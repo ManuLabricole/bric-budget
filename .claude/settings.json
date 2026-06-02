@@ -1,0 +1,115 @@
+{
+  "permissions": {
+    "defaultMode": "default",
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "WebSearch",
+
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git branch*)",
+      "Bash(git rev-parse*)",
+      "Bash(git ls-files*)",
+      "Bash(git merge-base*)",
+      "Bash(git remote -v)",
+      "Bash(git config --get *)",
+      "Bash(git fetch*)",
+      "Bash(git pull *)",
+      "Bash(git -C *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push*)",
+      "Bash(git checkout *)",
+      "Bash(git restore *)",
+      "Bash(git reset *)",
+      "Bash(git rm *)",
+      "Bash(git stash*)",
+      "Bash(git worktree *)",
+
+      "Bash(unset GITHUB_TOKEN)",
+      "Bash(gh issue *)",
+      "Bash(gh pr *)",
+      "Bash(gh project:*)",
+      "Bash(gh milestone *)",
+      "Bash(gh repo *)",
+      "Bash(gh api *)",
+
+      "Bash(make *)",
+      "Bash(poetry *)",
+      "Bash(ruff check *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(node --version)",
+
+      "Bash(python3 *)",
+      "Bash(python -c *)",
+      "Bash(python -m pytest *)",
+      "Bash(.venv/bin/python *)",
+      "Bash(.venv/bin/ruff *)",
+      "Bash(.venv/bin/pip-audit)",
+      "Bash(pip show *)",
+
+      "Bash(docker *)",
+      "Bash(railway *)",
+
+      "Bash(ls*)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(grep *)",
+      "Bash(rg *)",
+      "Bash(find *)",
+      "Bash(tree *)",
+      "Bash(wc *)",
+      "Bash(sort *)",
+      "Bash(uniq *)",
+      "Bash(cut *)",
+      "Bash(tr *)",
+      "Bash(sed *)",
+      "Bash(awk *)",
+      "Bash(diff *)",
+      "Bash(jq *)",
+      "Bash(file *)",
+      "Bash(stat *)",
+      "Bash(which *)",
+      "Bash(command -v *)",
+      "Bash(basename *)",
+      "Bash(dirname *)",
+      "Bash(realpath *)",
+      "Bash(date *)",
+      "Bash(pwd)",
+      "Bash(env)",
+      "Bash(echo *)",
+      "Bash(printf *)",
+      "Bash(curl *)",
+
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(touch *)",
+      "Bash(xargs *)",
+      "Bash(cd *)"
+    ],
+    "additionalDirectories": [
+      ".claude"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/ruff_format.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

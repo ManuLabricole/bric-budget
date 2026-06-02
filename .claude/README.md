@@ -28,16 +28,17 @@ reste (notes de session, état projet, audits) est local.
 | `skills/skill-creator/` | Outillage Anthropic (Apache-2.0) : valide/scaffolde/package les skills |
 | `agents/*.md` | Subagents : `security-auditor` (audit OWASP/SR-XX), `bricbudget-reviewer` (revue Django + structurelle) |
 | `hooks/ruff_format.sh` | Hook PostToolUse : `ruff format` auto du `.py` édité |
-| `settings.example.json` | Template permissions + hook — à copier vers `settings.json` |
+| `settings.json` | Config d'équipe committée : permissions + hook ruff-format |
+| `SECURITY_RULES.md` | Source de vérité sécurité (SR-XX) — référencée par le skill `security` |
 | `VERSION` | Version de la config (stampée en footer de chaque commit) |
 | `*.example.md` | Squelettes des docs privés (CONTEXT, CHANGELOG, DECISIONS, SECURITY_RULES, UBIQUITOUS_LANGUAGE, MEMO) |
 | `README.md` | Ce fichier |
 
 ## Ce qui est local (gitignoré — voir `.gitignore` racine)
 
-`CHANGELOG.md`, `CONTEXT.md`, `MEMO.md`, `DECISIONS.md`, `SECURITY_RULES.md`,
-`UBIQUITOUS_LANGUAGE.md`, `history/`, `audits/`, `ai_code_references/`,
-`settings.json`, et les scratchpads `plan_*.md` / `research_*.md`.
+`project/` (CONTEXT/CHANGELOG/MEMO/DECISIONS/UBIQUITOUS_LANGUAGE/ops),
+`settings.local.json`, et les scratchpads `plan_*.md` / `research_*.md`.
+(structure détaillée mise à jour en fin de refacto)
 
 > **Whitelist** : le `.gitignore` racine ignore tout `.claude/` par défaut et ne
 > ré-inclut que les éléments ci-dessus. Un nouveau fichier est donc **privé par
@@ -45,12 +46,13 @@ reste (notes de session, état projet, audits) est local.
 
 ## Setup (après clone)
 
-```bash
-cp .claude/settings.example.json .claude/settings.json
-# adapter additionalDirectories si besoin (chemin relatif .claude par défaut)
+`settings.json` est **committé** (config d'équipe : permissions + hook ruff-format) et
+fonctionne tel quel. Pour tes préférences perso (modèle, chemins absolus, defaultMode),
+crée un **`settings.local.json`** (gitignoré, Claude l'écrit aussi automatiquement) :
 
-# puis créer les docs de travail à partir des squelettes, au besoin :
-cp .claude/CONTEXT.example.md .claude/CONTEXT.md   # etc. pour les autres .example.md
+```jsonc
+// .claude/settings.local.json
+{ "permissions": { "defaultMode": "dontAsk" } }
 ```
 
 ## Scratchpads `plan_*` / `research_*`
