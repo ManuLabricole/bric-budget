@@ -75,8 +75,8 @@ Pour **chaque vue qui prend un `pk` ou `tx_id` en paramètre**, tester qu'un aut
 # Pattern IDOR — à reproduire pour chaque vue avec pk
 @pytest.mark.django_db
 def test_idor_<vue>_blocked_for_other_user(client, django_user_model):
-    user_a = django_user_model.objects.create_user("alice", password="pw")
-    user_b = django_user_model.objects.create_user("bob", password="pw")
+    user_a = django_user_model.objects.create_user("alice", password="!")
+    user_b = django_user_model.objects.create_user("bob", password="!")
     # Créer l'objet appartenant à user_b
     account_b = Account.objects.create(name="Compte B", ...)
     account_b.members.add(user_b)
@@ -172,7 +172,7 @@ def test_category_cashflow_fragment_requires_login(client, category):
     assert response.status_code == 302
 
 def test_category_cashflow_fragment_idor_blocked(client, django_user_model, category):
-    other = django_user_model.objects.create_user("other", password="pw")
+    other = django_user_model.objects.create_user("other", password="!")
     client.force_login(other)
     # si la catégorie n'appartient pas à l'user → 404
     response = client.get(reverse("budget:category_cashflow_fragment", args=[category.slug]))
