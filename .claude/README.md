@@ -10,7 +10,8 @@ reste (notes de session, état projet, audits) est local.
 |---------|------|
 | `CLAUDE.md` | Config d'entrée — règles toujours actives, stack, workflow git/PR, règles sécurité |
 | `commands/*.md` | Les skills (slash-commands) : `/hello`, `/research`, `/plan`, `/grill`, `/review-pr`, `/diagnose`, `/improve`, `/sync`, `/github`, `/audit_cto`, `/audit-tests`, `/help` |
-| `scripts/security_audit.sh` | Audit sécurité automatisé (détection IDOR, IBAN hardcodés, `print()` en prod…) |
+| `skills/security/` | Skill sécurité : SR-XX → OWASP 2025, LLM security, Python quirks, HTTP headers |
+| `skills/security/scripts/security_audit.sh` | Audit sécurité automatisé (SR-001/002/004/005/008/009 — IDOR, Decimal, print(), IBAN…) |
 | `settings.example.json` | Template de permissions — à copier |
 | `*.example.md` | Squelettes des docs privés (CONTEXT, CHANGELOG, DECISIONS, SECURITY_RULES, UBIQUITOUS_LANGUAGE, MEMO) — décrivent le rôle + la structure |
 | `README.md` | Ce fichier |
