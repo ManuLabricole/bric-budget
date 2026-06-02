@@ -19,7 +19,7 @@
 
 ### 1. Identifier le périmètre
 
-Lire `CONTEXT.md` (état courant) et identifier l'issue GitHub cible :
+Identifier l'issue GitHub cible (état courant = GitHub Project + Milestones) :
 ```bash
 unset GITHUB_TOKEN && gh issue view <numéro>
 ```
