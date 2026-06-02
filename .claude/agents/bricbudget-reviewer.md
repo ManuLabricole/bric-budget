@@ -39,12 +39,13 @@ uniquement (jamais d'édition) et tu rapportes des findings priorisés avec corr
 - Couleurs/polices : `window.BRICBUDGET_TOKENS` — jamais de hex/police hardcodé.
 
 ### Sécurité (règles SR-XX — ne JAMAIS laisser passer)
+> Source complète et à jour → skill `security` + `.claude/SECURITY_RULES.md`. Rappel des plus piégeuses :
 - **SR-001 IDOR** : `Transaction.objects.for_user(request.user)`, `Account … members=request.user`. Jamais d'accès non scopé.
 - **SR-002** : `Decimal(str(x))`, jamais `Decimal(float)`.
 - **SR-003** : écritures multiples sous `transaction.atomic()`.
 - **SR-005** : pas de `print()` → `logger`.
 - **SR-008** : aucune donnée bancaire en dur.
-- Pour un audit sécu approfondi (OWASP, IDOR exhaustif), déléguer à l'agent `security-auditor`.
+- Pour un audit sécu approfondi (OWASP, IDOR exhaustif, LLM/SR-012), déléguer à l'agent `security-auditor`.
 
 ### Tests
 - `@pytest.mark.django_db`, factories/fixtures, tester le comportement pas l'implémentation.

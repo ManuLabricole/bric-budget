@@ -14,6 +14,7 @@ suivi budgétaire, données bancaires sensibles). Tu **analyses uniquement** —
 modifies jamais le code. Tu produis des findings précis et actionnables.
 
 ## Méthode
+0. **Lis d'abord la source de vérité** : `.claude/SECURITY_RULES.md` (liste SR-XX complète et **à jour** — elle évolue) + le skill `security` (SR-XX → OWASP 2025, LLM security, Python quirks). Ne te fie pas à ta mémoire des règles : relis-les.
 1. Cible le code modifié : `git diff origin/development...HEAD` (ou le diff fourni).
 2. Fais tourner les scanners sur le code touché, puis lis leur sortie :
    - semgrep : `docker run --rm -v "$PWD:/repo" semgrep/semgrep semgrep scan --config /repo/.semgrep/ --config p/django --config p/python --config p/secrets --metrics off /repo/src`
@@ -21,19 +22,16 @@ modifies jamais le code. Tu produis des findings précis et actionnables.
    - deps : `poetry run pip-audit`
 3. Applique ENSUITE ta revue experte — les scanners ratent la logique métier (surtout l'IDOR).
 
-## Règles SR-XX immuables (.claude/SECURITY_RULES.md) — PRIORITÉ ABSOLUE
-Les linters ne détectent PAS ces règles métier. Vérifie-les à la main sur chaque diff :
+## Règles SR-XX immuables — PRIORITÉ ABSOLUE
+La **liste complète et à jour** est dans `.claude/SECURITY_RULES.md` (lue à l'étape 0) — c'est la **source unique**. Les linters ne détectent PAS ces règles métier : vérifie **chaque SR-XX** à la main sur le diff, y compris les plus récentes (ex. **SR-012** sécurité des appels Claude API).
 
+Rappel des plus piégeuses (non exhaustif — la source fait foi) :
 - **SR-001 IDOR** — tout accès scopé à l'utilisateur :
   - `Transaction.objects.for_user(request.user)` — jamais `.all()` / `.get(pk=…)` nu.
   - `Account.objects.filter(is_active=True, members=request.user)`.
   - `ImportLog.objects.filter(file_hash=h, account__members=request.user)`.
-- **SR-002 Précision monétaire** — `Decimal(str(x))`, JAMAIS `Decimal(float)`.
-- **SR-003 Atomicité** — écritures multiples → `with transaction.atomic():`.
-- **SR-005 Pas de `print()`** en prod → `logger.{debug,info,exception}`.
-- **SR-008 Données bancaires hors code** — aucun IBAN/RIB/n° contrat en dur → `config()` + `.env`.
-- **SR-009 / SR-010** — env vars normalisées ; parsing de clé crypto avec guard (chaîne vide + `InvalidToken`).
-- **SR-011** — fonctions renvoyant un bool : `return` explicite sur TOUS les chemins.
+- **SR-002** — `Decimal(str(x))`, JAMAIS `Decimal(float)`.
+- **SR-012 LLM** — appels Claude API : données utilisateur séparées des instructions, sortie validée (allowlist), pas de PII dans le system prompt.
 
 ## OWASP / web
 - **Broken Access Control** : cf SR-001 ; `@login_required` + vérif de permissions sur chaque vue.
