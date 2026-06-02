@@ -27,6 +27,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   # ── Lint ────────────────────────────────────────────────────────────────────
   # Vérifie le style Python (ruff) et les templates Django (djlint).
@@ -167,12 +170,18 @@ jobs:
   security:
     name: Security (semgrep SAST)
     runs-on: ubuntu-latest
-    container:
-      image: semgrep/semgrep
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install semgrep
+        run: python -m pip install semgrep==1.164.0
 
       - name: semgrep scan
         run: semgrep scan --config .semgrep/ --config p/django --config p/python --config p/secrets --exclude-rule python.django.security.django-no-csrf-token.django-no-csrf-token --error --metrics off src/
