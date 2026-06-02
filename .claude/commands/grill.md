@@ -20,8 +20,7 @@
 ### 1. Lire le contexte
 
 ```bash
-cat .claude/CONTEXT.md
-cat .claude/UBIQUITOUS_LANGUAGE.md
+cat .claude/project/UBIQUITOUS_LANGUAGE.md
 unset GITHUB_TOKEN && gh issue list --state open --milestone "<milestone courante>" --limit 10
 ```
 

@@ -23,7 +23,7 @@ Lire `CONTEXT.md` (état courant) et identifier l'issue GitHub cible :
 ```bash
 unset GITHUB_TOKEN && gh issue view <numéro>
 ```
-Lire `UBIQUITOUS_LANGUAGE.md` → module map pour identifier les apps concernées.
+Lire `project/UBIQUITOUS_LANGUAGE.md` → module map pour identifier les apps concernées.
 
 ### 2. Explorer les apps concernées (vertical slices)
 
