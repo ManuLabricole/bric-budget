@@ -1,23 +1,20 @@
 # /help — Liste des commandes disponibles
 
-Display les commandes BricBudget avec leur fonction et quand les appeler.
-
-## Cycle de vie d'une session
+## Commandes (slash-commands — déclenchées par toi)
 
 ```
-/hello              Début — état git, tests, prochaine issue, warnings staleness
-/grill              Design concept partagé avant feature floue
-/research           Cartographier le codebase avant d'implémenter (> 1 fichier)
-/plan               Plan exécutable post-research (snippets + tests + étapes)
-/diagnose           Loop de debug structuré (reproduire → hypothèse → fix → régression)
-/improve            Audit d'opportunités de deepening (modules + interfaces)
-/audit-tests        Audit couverture + écriture tests manquants (Zulip-style)
-/audit_cto          Audit CTO mode (sécu + déploiement + scalabilité)
-/review-pr          Review PR via gh + CTO gate
-/deploy             Expert déploiement Railway
-/github             Maintenance GitHub Project (milestones, labels, phases)
-/sync               Fin — sync gate, met à jour TOUS les fichiers .claude/
-/compact            Fin — compression native du contexte (built-in Claude Code)
+/hello        Début de session — état git, issues, prochaine action
+/grill        Design concept partagé avant une feature floue
+/research     Cartographier le codebase avant d'implémenter (> 1 fichier)
+/plan         Plan exécutable post-research (snippets + tests + étapes)
+/diagnose     Loop de debug structuré (reproduire → hypothèse → fix → régression)
+/improve      Audit d'opportunités de deepening (modules + interfaces)
+/audit-tests  Audit couverture + écriture des tests manquants
+/audit_cto    Audit CTO (sécu + déploiement + scalabilité)
+/review-pr    Review PR via gh + CTO gate
+/github       Maintenance GitHub Project (milestones, labels, phases)
+/help         Cette liste
+/compact      Compaction native du contexte (built-in Claude Code)
 ```
 
 ## Quand appeler quoi
@@ -26,31 +23,29 @@ Display les commandes BricBudget avec leur fonction et quand les appeler.
 |---|---|
 | Je démarre une session | `/hello` |
 | Je veux savoir ce que je peux faire | `/help` |
-| L'utilisateur a une idée floue | `/grill` |
-| Feature claire mais codebase incertain | `/research` |
-| Codebase cartographié, prêt à coder | `/plan` |
+| Idée floue | `/grill` |
+| Feature claire mais codebase incertain | `/research` → `/plan` |
 | Bug à investiguer | `/diagnose` |
 | Refactor archi à envisager | `/improve` |
-| On vient d'arbitrer un trade-off important | `/decide` |
 | Avant d'ouvrir une PR | `/audit-tests` puis `/review-pr` |
-| Déployer / infra Railway | skill `use-railway` (ou skills Railway communautaires) |
-| Avant de fermer la session ou de merger | `/sync` puis `/compact` |
+| Déployer / infra Railway | skill `use-railway` |
 
-## Fichiers `.claude/` — qui écrit quoi
+## Mémoire & docs — qui porte quoi (plus de `/sync`)
 
-| Fichier | Sync gate | Quand mis à jour |
+| Surface | Chargement | Mise à jour |
 |---|---|---|
-| `CONTEXT.md` | `/sync` phase 2 | Chaque fin de session |
-| `CHANGELOG.md` | `/sync` phase 3 | Chaque fin de session (append) |
-| `DECISIONS.md` | `/sync` phase 4.1 | À chaque décision actée |
-| `SECURITY_RULES.md` | `/sync` phase 4.2 | À chaque nouvelle règle |
-| `UBIQUITOUS_LANGUAGE.md` | `/sync` phase 4.3 | À chaque nouveau concept |
-| `MEMO.md` | `/sync` phase 4.4 | À chaque nouveau pattern |
-| `CLAUDE.md` | `/sync` phase 4.5 (rare) | Quand règle globale change |
-| Memory | `/sync` phase 4.6 | À chaque feedback récurrent |
+| `MEMORY.md` (auto-memory native) | auto au démarrage | Claude écrit au fil de l'eau |
+| `rules/` | auto par chemin (`paths:`) | édition manuelle |
+| `skills/` | auto par intention (`description`) | édition manuelle |
+| `.claude/SECURITY_RULES.md` | via skill `security` | append à chaque règle (SR-XX) |
+| `project/DECISIONS.md` | sur demande | append à chaque décision actée |
+| `project/UBIQUITOUS_LANGUAGE.md` | sur demande | à chaque nouveau concept domaine |
+| `project/ops.md` | sur demande | infos prod/Railway |
 
-**Source de vérité roadmap** : GitHub Project + Milestones + Issues. Pas de fichier TASKS local.
+**Roadmap** = GitHub Project + Milestones + Issues. Pas de fichier TASKS local.
 
-## Règle
+## Fin de session
 
-`/sync` est le **sync gate** : met à jour tous les fichiers `.claude/`, puis `/compact` (built-in) compresse réellement le contexte de la conversation. Entre la création et le merge d'une branche, tous les fichiers `.claude/` doivent refléter l'état courant.
+Plus de `/sync` : l'**auto-memory native sauve automatiquement** ce qui mérite de l'être.
+`/compact` (built-in) compresse le contexte de la conversation. Les docs durables
+(`DECISIONS`, `SECURITY_RULES`…) se mettent à jour **quand l'événement arrive**, pas en batch.

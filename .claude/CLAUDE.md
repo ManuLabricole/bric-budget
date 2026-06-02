@@ -4,22 +4,21 @@
 
 ---
 
-## Références
+## Références & mémoire
 
-| Fichier | Sync gate | Contenu |
+| Surface | Chargement | Contenu |
 |---------|-----------|---------|
-| `CONTEXT.md` | /compact phase 2 | État git, version, tests |
-| `CHANGELOG.md` | /compact phase 3 | Append par session |
-| `DECISIONS.md` | /compact phase 4.1 | ADRs append-only |
-| `SECURITY_RULES.md` | /compact phase 4.2 | SR-XX source de vérité sécurité |
-| `UBIQUITOUS_LANGUAGE.md` | /compact phase 4.3 | Vocabulaire + module map |
-| `MEMO.md` | /compact phase 4.4 | Patterns Django/HTMX |
-| `CLAUDE.md` | /compact phase 4.5 (rare) | Règles toujours actives |
-| Memory `~/.claude/.../memory/` | /compact phase 4.6 | Préférences durables |
+| `rules/` | auto **par chemin** (`paths:`) | conventions courtes (django, htmx, tailwind, testing) |
+| `skills/` | auto **par intention** (`description`) | expertise (`security`) + outillage (`skill-creator`) |
+| `SECURITY_RULES.md` | via skill `security` | SR-XX — source de vérité sécurité (committé) |
+| `project/DECISIONS.md` | sur demande | ADRs append-only (privé) |
+| `project/UBIQUITOUS_LANGUAGE.md` | sur demande | vocabulaire + module map (privé) |
+| `project/ops.md` | sur demande | config prod / Railway (privé) |
+| Auto-memory `~/.claude/.../memory/` | auto au démarrage (`MEMORY.md`) | apprentissages + préférences durables |
 
 **Source de vérité roadmap** : GitHub Project + Milestones (issues, phases, releases). Pas de fichier TASKS local.
 
-**Règle structurelle** : `/sync` est le sync gate (met à jour les fichiers `.claude/`). Suivi de `/compact` (compression native du contexte). Entre création et merge d'une branche, tous les fichiers `.claude/` doivent refléter l'état courant. `/help` liste les commandes disponibles.
+**Mémoire** : l'**auto-memory native** sauve les apprentissages au fil de l'eau — **plus de `/sync`**. `/compact` = compaction native du contexte. Les docs durables (`DECISIONS`, `SECURITY_RULES`…) se mettent à jour **quand l'événement arrive**, pas en batch. `/help` liste les commandes.
 
 ---
 
@@ -89,7 +88,7 @@ Si hook bloque → corriger + recommiter. **Jamais `--no-verify`.**
 - Pas de sur-abstraction — ROI d'abord
 - Une fonction ou classe à la fois
 - Si grosse modif → expliquer → plan → step-by-step
-- **Tester GET + POST via `manage.py shell`** avant de déclarer terminé (voir MEMO.md)
+- **Tester GET + POST via `manage.py shell`** avant de déclarer terminé (voir `rules/testing.md`)
 - **Jamais `{# #}` multilignes dans les partials** → `{% comment %}`
 - Tokens design : `window.BRICBUDGET_TOKENS` — jamais de hex/font hardcodé en JS
 

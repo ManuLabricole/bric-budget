@@ -87,10 +87,10 @@ def test_<bug-name>_does_not_recur():
 
 ### 7. Documenter si surprise
 
-Si la cause était non-évidente, ajouter une mémoire :
-- Pattern récurrent → `feedback_<topic>.md`
-- Anti-pattern Django/HTMX → `MEMO.md` section "Pièges connus"
-- Décision archi → `/decide`
+Si la cause était non-évidente, consigner :
+- Pattern récurrent / préférence → auto-memory (`~/.claude/.../memory/feedback_<topic>.md`)
+- Anti-pattern Django/HTMX → `rules/django.md` (Pièges) ou `rules/htmx.md`
+- Décision archi → append `project/DECISIONS.md`
 
 ---
 
