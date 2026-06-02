@@ -741,7 +741,7 @@ Fonctions critiques SANS test = 🟠 :
 
 ## FORMAT DU RAPPORT
 
-Écrire dans `.claude/audits/YYYY-MM-DD-cto.md`.
+Écrire dans `docs/audits/YYYY-MM-DD-cto.md`.
 
 ```markdown
 ---
@@ -877,7 +877,7 @@ Synthèse : `N/10 règles respectées` → indiquer les violations dans le rappo
 
 ```
 → Invoquer /resolve pour créer les issues GitHub priorisées
-→ /resolve lit le rapport dans .claude/audits/YYYY-MM-DD-cto.md
+→ /resolve lit le rapport dans docs/audits/YYYY-MM-DD-cto.md
 → Crée une issue par finding 🔴/🟠
 → Met à jour TASKS.md avec les items bloquants
 ```
@@ -963,6 +963,6 @@ Ne jamais déclarer l'audit terminé sans avoir fait les 3 passes.
 - **PR reviews** : lire Qodo avant de commencer (0B-1) — un finding Qodo non traité = audit incomplet
 - **Ne pas remettre en question la stack** : Django/HTMX/Tailwind/PostgreSQL = FINAUX
 - **Fréquence recommandée** : avant tout merge sur `main`, fin de chaque phase, et avant déploiement prod
-- **Sauvegarder** dans `.claude/audits/YYYY-MM-DD-cto.md` à chaque exécution
+- **Sauvegarder** dans `docs/audits/YYYY-MM-DD-cto.md` à chaque exécution
 - **Post-audit** : toujours invoquer /resolve si findings 🔴/🟠
 - **Boucle d'apprentissage** : si Qodo trouve après l'audit → ÉTAPE 12 obligatoire

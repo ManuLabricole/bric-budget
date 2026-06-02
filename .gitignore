@@ -22,6 +22,10 @@
 # settings.local.json reste privé (override perso) via .claude/* ci-dessus
 assets/private/
 
+# Docs privés sortis de .claude/ (références AI-coding + sorties d'audits CTO)
+docs/references/
+docs/audits/
+
 node_modules/
 
 # ─── Environnement Python ───────────────────────────────────────
