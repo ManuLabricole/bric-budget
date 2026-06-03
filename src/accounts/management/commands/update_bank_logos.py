@@ -19,7 +19,7 @@ from pathlib import Path
 from django.conf import settings
 from django.core.management.base import BaseCommand
 
-from accounts.models import Bank
+from accounts.models import Institution
 
 
 class Command(BaseCommand):
@@ -48,7 +48,7 @@ class Command(BaseCommand):
         icon_dir = Path(settings.BASE_DIR) / "static" / "icons" / "banks" / "miniature"
         icon_dir.mkdir(parents=True, exist_ok=True)
 
-        banks = Bank.objects.all()
+        banks = Institution.objects.all()
         if target_slug:
             banks = banks.filter(slug=target_slug)
             if not banks.exists():

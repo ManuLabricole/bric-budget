@@ -12,7 +12,7 @@ from decimal import Decimal
 
 import pytest
 
-from accounts.models import Account, Bank
+from accounts.models import Account, Institution
 from budget.utils import _cats_with_subcats, _resolve_bank_icon_map
 from budget.views.categories import _compute_category_cashflow_context
 from transactions.models import BudgetTarget, Category, SubCategory, Transaction
@@ -40,7 +40,7 @@ def other_user(db):
 
 @pytest.fixture
 def bank(db):
-    return Bank.objects.create(
+    return Institution.objects.create(
         name="Helpers Bank",
         slug="helpers-bank",
         country="CH",
@@ -51,7 +51,10 @@ def bank(db):
 @pytest.fixture
 def account(db, bank, user):
     acc = Account.objects.create(
-        bank=bank, name="Helpers Account", account_type="checking", currency="CHF"
+        institution=bank,
+        name="Helpers Account",
+        account_type="checking",
+        currency="CHF",
     )
     acc.members.add(user)
     return acc
@@ -60,7 +63,10 @@ def account(db, bank, user):
 @pytest.fixture
 def account_other(db, bank, other_user):
     acc = Account.objects.create(
-        bank=bank, name="Other Helpers Account", account_type="checking", currency="CHF"
+        institution=bank,
+        name="Other Helpers Account",
+        account_type="checking",
+        currency="CHF",
     )
     acc.members.add(other_user)
     return acc

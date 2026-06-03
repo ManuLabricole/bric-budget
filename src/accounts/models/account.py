@@ -3,7 +3,7 @@
 from django.conf import settings
 from django.db import models
 
-from .bank import Bank
+from .institution import Institution
 
 # =============================================================================
 # AccountQuerySet — Queryset manager avec filtre de sécurité par user
@@ -91,9 +91,9 @@ class Account(models.Model):
         # Matching par numéro de compte courtier (ex: "SQ-XXXXXXXX").
         BROKERAGE = "brokerage", "Brokerage / Compte titres"
 
-    bank = models.ForeignKey(
-        Bank,
-        on_delete=models.PROTECT,  # PROTECT: prevents deleting a bank that has accounts
+    institution = models.ForeignKey(
+        Institution,
+        on_delete=models.PROTECT,  # PROTECT: prevents deleting an institution that has accounts
         related_name="accounts",
     )
 
@@ -120,7 +120,7 @@ class Account(models.Model):
     # IBAN universel au niveau Account — identifiant de résolution pour tous les types de comptes.
     # Pourquoi ici et pas dans CheckingAccount seulement ?
     #   UBS exporte des relevés d'épargne (SavingsAccount) qui contiennent un IBAN en ligne 2.
-    #   En stockant l'IBAN ici, le resolver peut faire Account.objects.get(iban=..., bank__slug="ubs")
+    #   En stockant l'IBAN ici, le resolver peut faire Account.objects.get(iban=..., institution__slug="ubs")
     #   sans connaître le sous-type — propre pour les futures cartes, assurances, etc.
     # CheckingAccount.iban reste pour la rétrocompatibilité et l'affichage de iban_display.
     # NULL != NULL en SQL → unique=True avec null=True autorise plusieurs comptes sans IBAN.
@@ -157,10 +157,10 @@ class Account(models.Model):
     class Meta:
         verbose_name = "account"
         verbose_name_plural = "accounts"
-        ordering = ["bank__name", "name"]
+        ordering = ["institution__name", "name"]
 
     def __str__(self):
-        return f"{self.name} ({self.currency}) — {self.bank.name}"
+        return f"{self.name} ({self.currency}) — {self.institution.name}"
 
     @property
     def iban_display(self):

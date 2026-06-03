@@ -39,9 +39,9 @@ def user_b(db):
 
 @pytest.fixture
 def bank(db):
-    from accounts.models import Bank
+    from accounts.models import Institution
 
-    return Bank.objects.create(
+    return Institution.objects.create(
         name="Accounts Test Bank",
         slug="accounts-test-bank",
         country="CH",
@@ -52,7 +52,7 @@ def bank(db):
 @pytest.fixture
 def account_a(db, bank, user_a):
     acc = Account.objects.create(
-        bank=bank, name="Compte A", account_type="checking", currency="CHF"
+        institution=bank, name="Compte A", account_type="checking", currency="CHF"
     )
     acc.members.add(user_a)
     return acc
@@ -61,7 +61,7 @@ def account_a(db, bank, user_a):
 @pytest.fixture
 def account_b(db, bank, user_b):
     acc = Account.objects.create(
-        bank=bank, name="Compte B", account_type="checking", currency="CHF"
+        institution=bank, name="Compte B", account_type="checking", currency="CHF"
     )
     acc.members.add(user_b)
     return acc
@@ -70,7 +70,7 @@ def account_b(db, bank, user_b):
 @pytest.fixture
 def account_joint(db, bank, user_a, user_b):
     acc = Account.objects.create(
-        bank=bank, name="Compte joint", account_type="checking", currency="CHF"
+        institution=bank, name="Compte joint", account_type="checking", currency="CHF"
     )
     acc.members.add(user_a, user_b)
     return acc
@@ -183,7 +183,7 @@ def test_account_for_user_none_returns_all_accounts(account_a, account_b):
 
 @pytest.mark.django_db
 def test_account_for_user_is_chainable(user_a, account_a, account_b, bank):
-    qs = Account.objects.for_user(user_a).filter(bank=bank, is_active=True)
+    qs = Account.objects.for_user(user_a).filter(institution=bank, is_active=True)
     assert account_a in qs
     assert account_b not in qs
 

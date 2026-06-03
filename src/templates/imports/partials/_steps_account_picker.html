@@ -55,8 +55,8 @@
                 <button type="submit"
                         class="w-full flex items-center gap-3 bg-surface-hover hover:bg-surface-3 border border-transparent hover:border-border rounded-xl px-4 py-3 transition-colors text-left">
                     {# Logo banque #}
-                    {% bank_icon_url account.bank as bicon %}
-                    {% include "components/banks/bank_logo.html" with icon_url=bicon bank=account.bank size="w-9 h-9" padding="p-1.5" %}
+                    {% bank_icon_url account.institution as bicon %}
+                    {% include "components/banks/bank_logo.html" with icon_url=bicon bank=account.institution size="w-9 h-9" padding="p-1.5" %}
                     {# Nom + type + devise #}
                     <div class="flex-1 min-w-0">
                         <p class="text-sm font-semibold text-text-base truncate">{{ account.name }}</p>

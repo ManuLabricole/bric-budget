@@ -46,16 +46,16 @@ def cat_alim(db):
 
 @pytest.fixture
 def account(db):
-    from accounts.models import Account, Bank
+    from accounts.models import Account, Institution
 
-    bank = Bank.objects.create(
+    bank = Institution.objects.create(
         name="Test Bank",
         slug="test-bank-intl",
         country="CH",
         default_currency="CHF",
     )
     return Account.objects.create(
-        bank=bank, name="Test Account", account_type="checking", currency="CHF"
+        institution=bank, name="Test Account", account_type="checking", currency="CHF"
     )
 
 

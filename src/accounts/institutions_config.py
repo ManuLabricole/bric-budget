@@ -9,7 +9,7 @@ et la DB reste toujours en phase avec la config.
 
 Ajouter une nouvelle banque
 ---------------------------
-1. Ajouter une entrée dans KNOWN_BANKS (slug = clé du dict)
+1. Ajouter une entrée dans KNOWN_INSTITUTIONS (slug = clé du dict)
 2. Déposer l'icône dans static/icons/banks/miniature/<slug>.png
 3. Lancer : python manage.py seed_banks
 4. Ajouter le connecteur dans connectors/resolver.py si un export existe
@@ -24,7 +24,7 @@ Note : pas de BIC ici — le BIC est propre à chaque compte (CheckingAccount.bi
 pas à la banque. Il est saisi manuellement via seed_accounts ou l'admin Django.
 """
 
-KNOWN_BANKS = {
+KNOWN_INSTITUTIONS = {
     "yuh": {
         "name": "Yuh",
         "currency": "CHF",

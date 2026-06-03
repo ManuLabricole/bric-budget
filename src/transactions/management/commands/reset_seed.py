@@ -36,7 +36,7 @@ Usage:
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 
-from accounts.models import Account, Bank, Card, CheckingAccount, SavingsAccount
+from accounts.models import Account, Card, CheckingAccount, Institution, SavingsAccount
 from transactions.management._dev_guard import (
     add_force_prod_argument,
     assert_dev_environment,
@@ -106,7 +106,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(f"  Accounts deleted:        {count}"))
 
         # ── Banks ─────────────────────────────────────────────────────────
-        count = Bank.objects.all().delete()[0]
+        count = Institution.objects.all().delete()[0]
         self.stdout.write(self.style.SUCCESS(f"  Banks deleted:           {count}"))
 
         # ── SubCategories (FK to Category) ────────────────────────────────

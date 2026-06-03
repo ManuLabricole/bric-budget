@@ -172,8 +172,8 @@ def budget_panel_transactions(request):
     accounts = (
         Account.objects.for_user(request.user)
         .filter(is_active=True)
-        .select_related("bank")
-        .order_by("bank__name", "name")
+        .select_related("institution")
+        .order_by("institution__name", "name")
     )
     all_categories = Category.objects.filter(is_active=True).order_by("order", "name")
 
@@ -193,7 +193,7 @@ def budget_panel_transactions(request):
             date__lte=period_end,
             is_internal_transfer=False,
         )
-        .select_related("category", "subcategory", "account", "account__bank")
+        .select_related("category", "subcategory", "account", "account__institution")
         .order_by("-date", "-id")
     )
     if filter_account_ids:
@@ -231,7 +231,11 @@ def budget_panel_transactions(request):
     # Annoter chaque transaction avec l'URL résolue de l'icône banque.
     # tx.bank_icon_url est ensuite accessible directement dans le template.
     for tx in tx_list:
-        slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
+        slug = (
+            tx.account.institution.icon_slug
+            if tx.account and tx.account.institution
+            else ""
+        )
         tx.bank_icon_url = bank_icon_map.get(slug, "")
 
     # ── Page > 1 = réponse "append-only" pour le scroll infini ─────────────────
@@ -387,7 +391,7 @@ def budget_toggle_ignore(request, tx_id):
     """
     tx = get_object_or_404(
         Transaction.objects.for_user(request.user).select_related(
-            "category", "subcategory", "account", "account__bank"
+            "category", "subcategory", "account", "account__institution"
         ),
         pk=tx_id,
     )
@@ -403,7 +407,11 @@ def budget_toggle_ignore(request, tx_id):
     )
 
     bank_icon_map = _resolve_bank_icon_map()
-    slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
+    slug = (
+        tx.account.institution.icon_slug
+        if tx.account and tx.account.institution
+        else ""
+    )
     bank_icon_url = bank_icon_map.get(slug, "")
 
     # source=detail → appelé depuis les toggles du panneau détail.
@@ -612,12 +620,12 @@ def budget_categorize_transaction(request):
     # overlay (close_on_back=True = bouton ← ferme, pas revenir à la liste).
     if source == "category":
         tx_full = Transaction.objects.select_related(
-            "category", "subcategory", "account", "account__bank"
+            "category", "subcategory", "account", "account__institution"
         ).get(pk=tx.pk)
         bank_icon_map = _resolve_bank_icon_map()
         slug = (
-            tx_full.account.bank.icon_slug
-            if tx_full.account and tx_full.account.bank
+            tx_full.account.institution.icon_slug
+            if tx_full.account and tx_full.account.institution
             else ""
         )
         response = render(
@@ -657,7 +665,7 @@ def budget_panel_tx_detail(request):
     Déclenché par clic sur une ligne de transaction dans _panel_tx_row.html.
     Remplace l'ancien comportement qui ouvrait directement le picker catégorie.
 
-    Pourquoi select_related avec "account__bank" ?
+    Pourquoi select_related avec "account__institution" ?
         On affiche le nom du compte et l'icône banque dans le panneau.
         Sans select_related, Django ferait 2 requêtes supplémentaires
         (tx → account, account → bank) au lieu d'un seul JOIN.
@@ -665,14 +673,18 @@ def budget_panel_tx_detail(request):
     tx_id = request.GET.get("tx_id")
     tx = get_object_or_404(
         Transaction.objects.for_user(request.user).select_related(
-            "category", "subcategory", "account", "account__bank"
+            "category", "subcategory", "account", "account__institution"
         ),
         pk=tx_id,
     )
 
     # Résolution icône banque — même helper que les autres vues panel
     bank_icon_map = _resolve_bank_icon_map()
-    slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
+    slug = (
+        tx.account.institution.icon_slug
+        if tx.account and tx.account.institution
+        else ""
+    )
     bank_icon_url = bank_icon_map.get(slug, "")
 
     # source="category" → ouvert depuis category_detail.html.
@@ -716,7 +728,7 @@ def budget_toggle_reconcile(request, tx_id):
     """
     tx = get_object_or_404(
         Transaction.objects.for_user(request.user).select_related(
-            "category", "subcategory", "account", "account__bank"
+            "category", "subcategory", "account", "account__institution"
         ),
         pk=tx_id,
     )
@@ -732,7 +744,11 @@ def budget_toggle_reconcile(request, tx_id):
     )
 
     bank_icon_map = _resolve_bank_icon_map()
-    slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
+    slug = (
+        tx.account.institution.icon_slug
+        if tx.account and tx.account.institution
+        else ""
+    )
     bank_icon_url = bank_icon_map.get(slug, "")
 
     # source=list → appelé depuis la ligne liste → retourner juste la ligne

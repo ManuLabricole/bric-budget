@@ -107,16 +107,16 @@ def test_cic_parser_info_via_logger(caplog):
 def test_signals_logs_orphaned_snapshots_deleted(db, caplog):
     from datetime import date
 
-    from accounts.models import Account, BalanceSnapshot, Bank
+    from accounts.models import Account, BalanceSnapshot, Institution
     from transactions.models import ImportLog, Transaction
     from users.models import CustomUser
 
     user = CustomUser.objects.create_user(email="sig@test.com", password="x")
-    bank = Bank.objects.create(
+    bank = Institution.objects.create(
         name="Test Bank", slug="test-bank-sig", country="CH", default_currency="CHF"
     )
     account = Account.objects.create(
-        name="Signal Test", bank=bank, account_type="checking", currency="CHF"
+        name="Signal Test", institution=bank, account_type="checking", currency="CHF"
     )
     account.members.add(user)
 

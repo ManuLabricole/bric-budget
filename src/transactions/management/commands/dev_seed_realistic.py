@@ -246,7 +246,7 @@ class Command(BaseCommand):
         # ── 2. Trouver le compte principal (Yuh C/C CHF) ──────────────────────
         # On préfère le compte Yuh, sinon le premier compte CHF actif disponible.
         account = (
-            Account.objects.filter(bank__slug="yuh", is_active=True).first()
+            Account.objects.filter(institution__slug="yuh", is_active=True).first()
             or Account.objects.filter(currency="CHF", is_active=True).first()
         )
         if not account:

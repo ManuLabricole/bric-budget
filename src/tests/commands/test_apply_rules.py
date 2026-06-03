@@ -56,16 +56,16 @@ def cat_transport(db):
 @pytest.fixture
 def account(db):
     """Compte minimal pour attacher les transactions."""
-    from accounts.models import Account, Bank
+    from accounts.models import Account, Institution
 
-    bank = Bank.objects.create(
+    bank = Institution.objects.create(
         name="Test Bank",
         slug="test-bank-apply",
         country="CH",
         default_currency="CHF",
     )
     return Account.objects.create(
-        bank=bank,
+        institution=bank,
         name="Test Account",
         account_type="checking",
         currency="CHF",

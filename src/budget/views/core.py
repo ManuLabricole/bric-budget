@@ -131,8 +131,8 @@ def budget_index(request):
     accounts = (
         Account.objects.for_user(request.user)
         .filter(is_active=True)
-        .select_related("bank")
-        .order_by("bank__name", "name")
+        .select_related("institution")
+        .order_by("institution__name", "name")
     )
     all_categories = Category.objects.filter(is_active=True).order_by("order", "name")
 

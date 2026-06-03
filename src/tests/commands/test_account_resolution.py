@@ -25,7 +25,7 @@ from unittest.mock import patch
 
 import pytest
 
-from accounts.models import Account, Bank
+from accounts.models import Account, Institution
 from connectors.resolver import (
     AccountAmbiguous,
     AccountMatch,
@@ -50,7 +50,7 @@ YUH_DUMMY = Path("/dev/null")
 @pytest.fixture
 def yuh_bank(db):
     """Banque Yuh — le slug 'yuh' est la clé utilisée par resolve_accounts()."""
-    return Bank.objects.create(
+    return Institution.objects.create(
         name="Yuh", slug="yuh", country="CH", default_currency="CHF"
     )
 
@@ -58,7 +58,7 @@ def yuh_bank(db):
 @pytest.fixture
 def ubs_bank(db):
     """Banque UBS — le contract_number (IBAN normalisé) est la clé."""
-    return Bank.objects.create(
+    return Institution.objects.create(
         name="UBS", slug="ubs", country="CH", default_currency="CHF"
     )
 
@@ -66,7 +66,7 @@ def ubs_bank(db):
 def make_yuh_account(bank, name="Yuh CHF", is_active=True) -> Account:
     """Crée un compte Yuh checking, actif par défaut."""
     return Account.objects.create(
-        bank=bank,
+        institution=bank,
         name=name,
         account_type=Account.AccountType.CHECKING,
         currency="CHF",
@@ -182,7 +182,7 @@ def test_ubs_returns_account_matching_iban(ubs_bank):
     Le resolver cherche dans Account.iban (champ universel sur Account, pas CheckingAccount.iban).
     """
     account = Account.objects.create(
-        bank=ubs_bank,
+        institution=ubs_bank,
         name="UBS CHF",
         account_type=Account.AccountType.CHECKING,
         currency="CHF",

@@ -1,15 +1,21 @@
-"""accounts/models/bank.py — Bank : une institution financière."""
+"""accounts/models/institution.py — Institution financière.
+
+Une Institution couvre tout établissement qui héberge un compte/enveloppe :
+banque (Yuh, UBS, CIC), fondation de prévoyance (Finpension), exchange crypto
+(Binance), assureur (Spirica)... — pas seulement des banques. D'où le nom
+générique `Institution` plutôt que `Bank`.
+"""
 
 from django.db import models
 
 # =============================================================================
-# Bank — A financial institution
+# Institution — A financial institution (bank, pension foundation, exchange...)
 # =============================================================================
 
 
-class Bank(models.Model):
+class Institution(models.Model):
     """
-    A financial institution: Yuh, CIC, UBS, Monzo...
+    A financial institution: Yuh, CIC, UBS, Finpension, Binance, Spirica...
 
     slug: URL-friendly identifier derived from the name.
     Example: "Yuh" → "yuh", "CIC France" → "cic-france".
@@ -43,8 +49,8 @@ class Bank(models.Model):
     is_active = models.BooleanField(default=True)
 
     class Meta:
-        verbose_name = "bank"
-        verbose_name_plural = "banks"
+        verbose_name = "institution"
+        verbose_name_plural = "institutions"
         ordering = ["name"]
 
     def __str__(self):

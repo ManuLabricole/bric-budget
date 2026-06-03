@@ -42,9 +42,9 @@ def client_b(user_b):
 
 @pytest.fixture
 def bank(db):
-    from accounts.models import Bank
+    from accounts.models import Institution
 
-    return Bank.objects.create(
+    return Institution.objects.create(
         name="Budget Test Bank",
         slug="budget-test-bank",
         country="CH",
@@ -57,7 +57,7 @@ def account_a(db, bank, user_a):
     from accounts.models import Account
 
     acc = Account.objects.create(
-        bank=bank,
+        institution=bank,
         name="COMPTE EXCLUSIF USER A",
         account_type="checking",
         currency="CHF",
@@ -71,7 +71,7 @@ def account_b(db, bank, user_b):
     from accounts.models import Account
 
     acc = Account.objects.create(
-        bank=bank,
+        institution=bank,
         name="COMPTE EXCLUSIF USER B",
         account_type="checking",
         currency="CHF",

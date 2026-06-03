@@ -175,7 +175,7 @@ class TransactionAdmin(admin.ModelAdmin):
     allow_tags est remplacé par mark_safe/format_html depuis Django 2.0.
 
     Filtres :
-        account__bank  → "Par banque" (proxy pour "par propriétaire" — Yuh=Emmanuel,
+        account__institution  → "Par banque" (proxy pour "par propriétaire" — Yuh=Emmanuel,
                           CIC=Emmanuel FR, etc. Quand Carys aura un compte, son compte
                           apparaîtra ici. Pas de champ owner sur Account pour l'instant.)
         account        → "Par compte" (granularité fine : Courant, Livret A, LDDS…)
@@ -185,7 +185,7 @@ class TransactionAdmin(admin.ModelAdmin):
 
     select_related :
         Déclaré dans get_queryset() pour éviter N+1 — chaque ligne de la liste charge
-        account, account__bank et category en un seul JOIN au lieu d'une requête par objet.
+        account, account__institution et category en un seul JOIN au lieu d'une requête par objet.
     """
 
     list_display = (
@@ -202,7 +202,7 @@ class TransactionAdmin(admin.ModelAdmin):
     )
     list_filter = (
         # "Par banque" — proxy propriétaire : Yuh → Emmanuel CH, CIC → Emmanuel FR
-        "account__bank",
+        "account__institution",
         # "Par compte" — granularité fine (courant / livret / LDDS…)
         "account",
         # "Par catégorie"
@@ -223,14 +223,16 @@ class TransactionAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         """
-        Précharge account, account__bank et category en un seul JOIN.
+        Précharge account, account__institution et category en un seul JOIN.
         Sans select_related, chaque ligne de la liste ferait 3 requêtes
         supplémentaires → explosion des requêtes sur une liste de 200 tx.
         """
         return (
             super()
             .get_queryset(request)
-            .select_related("account", "account__bank", "category", "subcategory")
+            .select_related(
+                "account", "account__institution", "category", "subcategory"
+            )
         )
 
     @admin.display(description="Compte", ordering="account__name")
@@ -246,7 +248,7 @@ class TransactionAdmin(admin.ModelAdmin):
         return format_html(
             '<a href="{}">{} · {}</a>',
             url,
-            obj.account.bank.name if obj.account.bank else "?",
+            obj.account.institution.name if obj.account.institution else "?",
             obj.account.name,
         )
 

@@ -47,9 +47,9 @@ def user(db):
 @pytest.fixture
 def chf_bank(db):
     """Banque CHF fictive pour les comptes de test."""
-    from accounts.models import Bank
+    from accounts.models import Institution
 
-    return Bank.objects.create(
+    return Institution.objects.create(
         name="Test Bank CHF",
         slug="test-bank-chf",
         country="CH",
@@ -60,9 +60,9 @@ def chf_bank(db):
 @pytest.fixture
 def eur_bank(db):
     """Banque EUR fictive pour les comptes de test."""
-    from accounts.models import Bank
+    from accounts.models import Institution
 
-    return Bank.objects.create(
+    return Institution.objects.create(
         name="Test Bank EUR",
         slug="test-bank-eur",
         country="FR",
@@ -81,7 +81,7 @@ def chf_account(db, chf_bank):
     from accounts.models import Account
 
     return Account.objects.create(
-        bank=chf_bank,
+        institution=chf_bank,
         name="Test CHF Account",
         account_type="checking",
         currency="CHF",
@@ -98,7 +98,7 @@ def eur_account(db, eur_bank):
     from accounts.models import Account
 
     return Account.objects.create(
-        bank=eur_bank,
+        institution=eur_bank,
         name="Test EUR Account",
         account_type="checking",
         currency="EUR",

@@ -29,7 +29,7 @@ from unittest.mock import patch
 
 import pytest
 
-from accounts.models import Account, BalanceSnapshot, Bank
+from accounts.models import Account, BalanceSnapshot, Institution
 from connectors.cic.parser import CICConnector
 from connectors.ubs.parser import UBSConnector
 from connectors.yuh.parser import YuhConnector
@@ -49,14 +49,14 @@ UBS_CSV = FIXTURES_DIR / "ubs_sample.csv"
 @pytest.fixture
 def yuh_account(db):
     """Compte Yuh CHF — correspond au format de yuh_sample.csv."""
-    bank = Bank.objects.create(
+    bank = Institution.objects.create(
         name="Yuh Integration",
         slug="yuh-integration",
         country="CH",
         default_currency="CHF",
     )
     return Account.objects.create(
-        bank=bank,
+        institution=bank,
         name="Yuh CHF",
         account_type="checking",
         currency="CHF",
@@ -69,14 +69,14 @@ def ubs_account(db):
     Compte UBS CHF — contract_number = IBAN normalisé de ubs_sample.csv.
     L'IBAN du fixture est "CH00 0000 0000 0000 0000 0" → normalisé = "CH0000000000000000000".
     """
-    bank = Bank.objects.create(
+    bank = Institution.objects.create(
         name="UBS Integration",
         slug="ubs-integration",
         country="CH",
         default_currency="CHF",
     )
     return Account.objects.create(
-        bank=bank,
+        institution=bank,
         name="UBS CHF",
         account_type="checking",
         currency="CHF",
@@ -87,14 +87,14 @@ def ubs_account(db):
 @pytest.fixture
 def cic_account_cc(db):
     """Compte CIC C/C EUR — pour la feuille 'Cpt CC'."""
-    bank = Bank.objects.create(
+    bank = Institution.objects.create(
         name="CIC Integration",
         slug="cic-integration",
         country="FR",
         default_currency="EUR",
     )
     return Account.objects.create(
-        bank=bank,
+        institution=bank,
         name="CIC C/C EUR",
         account_type="checking",
         currency="EUR",

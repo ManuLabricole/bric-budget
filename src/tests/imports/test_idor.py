@@ -54,9 +54,9 @@ def client_b(user_b):
 
 @pytest.fixture
 def bank(db):
-    from accounts.models import Bank
+    from accounts.models import Institution
 
-    return Bank.objects.create(
+    return Institution.objects.create(
         name="Import IDOR Bank",
         slug="import-idor-bank",
         country="CH",
@@ -69,7 +69,10 @@ def account_a(db, bank, user_a):
     from accounts.models import Account
 
     acc = Account.objects.create(
-        bank=bank, name="Account A Import", account_type="checking", currency="CHF"
+        institution=bank,
+        name="Account A Import",
+        account_type="checking",
+        currency="CHF",
     )
     acc.members.add(user_a)
     return acc
@@ -80,7 +83,10 @@ def account_b(db, bank, user_b):
     from accounts.models import Account
 
     acc = Account.objects.create(
-        bank=bank, name="Account B Import", account_type="checking", currency="CHF"
+        institution=bank,
+        name="Account B Import",
+        account_type="checking",
+        currency="CHF",
     )
     acc.members.add(user_b)
     return acc

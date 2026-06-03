@@ -32,7 +32,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from accounts.models import Account, Bank, CheckingAccount, SavingsAccount
+from accounts.models import Account, CheckingAccount, Institution, SavingsAccount
 from connectors.cic.parser import CICConnector
 from connectors.resolver import (
     AccountAmbiguous,
@@ -142,8 +142,8 @@ def import_upload(request):
     active_accounts = (
         Account.objects.for_user(request.user)
         .filter(is_active=True)
-        .select_related("bank")
-        .order_by("bank__name", "name")
+        .select_related("institution")
+        .order_by("institution__name", "name")
     )
     # Construire un dict bank → liste de comptes
     banks_map = defaultdict(list)
@@ -162,7 +162,7 @@ def import_upload(request):
         else:
             days = None
             badge = "never"
-        banks_map[account.bank].append(
+        banks_map[account.institution].append(
             {"account": account, "last_log": last_log, "days": days, "badge": badge}
         )
     bank_groups = [
@@ -186,8 +186,8 @@ def import_upload(request):
         tx_qs = tx_qs.exclude(account_id__in=filter_account_ids)
 
     tx_by_day = list(
-        tx_qs.select_related("account__bank")
-        .values("date", "account__bank__name")
+        tx_qs.select_related("account__institution")
+        .values("date", "account__institution__name")
         .annotate(count=Count("id"))
         .order_by("date")
     )
@@ -195,7 +195,7 @@ def import_upload(request):
     # Banques présentes dans la fenêtre (ordre d'apparition chronologique)
     seen_bank_names = []
     for row in tx_by_day:
-        name = row["account__bank__name"]
+        name = row["account__institution__name"]
         if name not in seen_bank_names:
             seen_bank_names.append(name)
 
@@ -204,7 +204,7 @@ def import_upload(request):
     # On les regroupe pour afficher une seule ligne par upload avec sous-lignes.
     all_logs = list(
         ImportLog.objects.filter(account__members=request.user)
-        .select_related("account__bank", "account__checking_account")
+        .select_related("account__institution", "account__checking_account")
         .order_by("-imported_at")
     )
     seen_hashes: dict[Any, dict[str, Any]] = {}
@@ -234,7 +234,7 @@ def import_upload(request):
         # total_transactions = tout ce que le fichier contenait (new + doublons)
         group["total_transactions"] = n_created + n_skipped
         group["multi"] = len(entries) > 1
-        group["bank"] = entries[0].account.bank
+        group["bank"] = entries[0].account.institution
         # Méthode de matching par compte — détermine le badge de confiance affiché
         # iban     : matching par IBAN extrait du fichier      → fiabilité maximale
         # rib      : matching par RIB/contrat extrait du fichier → fiabilité haute
@@ -260,7 +260,7 @@ def import_upload(request):
         "logs": [
             {
                 "date": row["date"].strftime("%Y-%m-%d"),
-                "bank": row["account__bank__name"],
+                "bank": row["account__institution__name"],
                 "created": row["count"],
                 "total": row["count"],
             }
@@ -283,8 +283,8 @@ def import_upload(request):
     # Comptes de l'utilisateur — pour le filtre dropdown du graphique
     user_accounts = (
         Account.objects.filter(is_active=True, members=request.user)
-        .select_related("bank")
-        .order_by("bank__name", "name")
+        .select_related("institution")
+        .order_by("institution__name", "name")
     )
 
     return render(
@@ -365,7 +365,7 @@ def _handle_dry_run(request):
                 file_hash=file_hash,
                 account__members=request.user,
             )
-            .select_related("account__bank")
+            .select_related("account__institution")
             .first()
         )
         if existing_log is not None:
@@ -387,13 +387,13 @@ def _handle_dry_run(request):
                 "filename": uploaded.name,
                 "file_hash": file_hash,
             }
-            from accounts.banks_config import KNOWN_BANKS
-            from accounts.models import Bank
+            from accounts.institutions_config import KNOWN_INSTITUTIONS
+            from accounts.models import Institution
 
-            bank_config = KNOWN_BANKS.get(e.bank_slug, {})
+            bank_config = KNOWN_INSTITUTIONS.get(e.bank_slug, {})
             try:
-                bank = Bank.objects.get(slug=e.bank_slug)
-            except Bank.DoesNotExist:
+                bank = Institution.objects.get(slug=e.bank_slug)
+            except Institution.DoesNotExist:
                 bank = None
             # Meilleure suggestion de nom : sheet_name pour CIC, account_name_hint pour UBS
             account_name_hint = e.sheet_name or e.account_name_hint or ""
@@ -668,7 +668,7 @@ def _persist_import_file(
             date_min=Min("date"), date_max=Max("date"), n=Count("id")
         )
 
-        bank_slug = matches[0].account.bank.slug
+        bank_slug = matches[0].account.institution.slug
 
         # Noms de comptes normalisés : espaces → underscores, minuscules
         account_names = [
@@ -728,7 +728,7 @@ def import_log_detail(request, pk):
     Fragment HTMX — chargé dans #panel-content quand on clique sur une ligne.
     """
     log = get_object_or_404(
-        ImportLog.objects.select_related("account__bank", "imported_by").filter(
+        ImportLog.objects.select_related("account__institution", "imported_by").filter(
             account__members=request.user
         ),
         pk=pk,
@@ -805,8 +805,8 @@ def import_create_account(request):
 
     # La banque doit exister en DB (créée via seed_banks)
     try:
-        bank = Bank.objects.get(slug=bank_slug)
-    except Bank.DoesNotExist:
+        bank = Institution.objects.get(slug=bank_slug)
+    except Institution.DoesNotExist:
         return _error(
             request,
             f"Banque « {bank_slug} » introuvable.",
@@ -817,7 +817,7 @@ def import_create_account(request):
     try:
         with db_transaction.atomic():
             account = Account.objects.create(
-                bank=bank,
+                institution=bank,
                 name=account_name,
                 account_type=account_type,
                 currency=currency,
@@ -920,12 +920,12 @@ def import_create_account(request):
         )
     except AccountNotFound as e:
         # Un autre compte est encore manquant (CIC multi-feuilles)
-        from accounts.banks_config import KNOWN_BANKS
+        from accounts.institutions_config import KNOWN_INSTITUTIONS
 
-        bank_config = KNOWN_BANKS.get(e.bank_slug, {})
+        bank_config = KNOWN_INSTITUTIONS.get(e.bank_slug, {})
         try:
-            bank_obj = Bank.objects.get(slug=e.bank_slug)
-        except Bank.DoesNotExist:
+            bank_obj = Institution.objects.get(slug=e.bank_slug)
+        except Institution.DoesNotExist:
             bank_obj = None
         return render(
             request,
@@ -982,14 +982,14 @@ def import_select_account(request):
 
     # Vérification : le compte doit appartenir à la banque attendue ET à l'user.
     # members=request.user empêche un user de forger un POST avec l'account_id
-    # d'un autre user (IDOR). bank__slug en session empêche de changer de banque.
+    # d'un autre user (IDOR). institution__slug en session empêche de changer de banque.
     try:
         account = (
             Account.objects.for_user(request.user)
-            .select_related("bank")
+            .select_related("institution")
             .get(
                 pk=account_id,
-                bank__slug=bank_slug,
+                institution__slug=bank_slug,
                 is_active=True,
             )
         )
@@ -1152,22 +1152,22 @@ def _render_activity_section(request, period_mode, period_offset, filter_open=Fa
         tx_qs = tx_qs.exclude(account_id__in=filter_account_ids)
 
     tx_by_day = list(
-        tx_qs.select_related("account__bank")
-        .values("date", "account__bank__name")
+        tx_qs.select_related("account__institution")
+        .values("date", "account__institution__name")
         .annotate(count=Count("id"))
         .order_by("date")
     )
 
     seen_bank_names = []
     for row in tx_by_day:
-        name = row["account__bank__name"]
+        name = row["account__institution__name"]
         if name not in seen_bank_names:
             seen_bank_names.append(name)
 
     user_accounts = (
         Account.objects.filter(is_active=True, members=request.user)
-        .select_related("bank")
-        .order_by("bank__name", "name")
+        .select_related("institution")
+        .order_by("institution__name", "name")
     )
 
     # Marqueurs d'import dans la fenêtre — mêmes règles IDOR que le chemin full-page.
@@ -1177,7 +1177,7 @@ def _render_activity_section(request, period_mode, period_offset, filter_open=Fa
             imported_at__date__gt=start_date,
             imported_at__date__lte=end_date,
         )
-        .select_related("account__bank")
+        .select_related("account__institution")
         .order_by("imported_at")
     )
     # Dédupliquer par file_hash (un fichier CIC = N ImportLogs, 1 seul marqueur)
@@ -1192,7 +1192,7 @@ def _render_activity_section(request, period_mode, period_offset, filter_open=Fa
                     "date": timezone.localtime(log.imported_at).strftime("%Y-%m-%d"),
                     "filename": log.filename or "?",
                     "total": log.count_created,
-                    "bank": log.account.bank.name,
+                    "bank": log.account.institution.name,
                 }
             )
 
@@ -1201,7 +1201,7 @@ def _render_activity_section(request, period_mode, period_offset, filter_open=Fa
         "logs": [
             {
                 "date": row["date"].strftime("%Y-%m-%d"),
-                "bank": row["account__bank__name"],
+                "bank": row["account__institution__name"],
                 "created": row["count"],
                 "total": row["count"],
             }
