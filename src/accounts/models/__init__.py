@@ -14,6 +14,7 @@ split en package ne les touche pas.
 """
 
 from .account import Account, AccountQuerySet
+from .details import LifeInsuranceDetails, PensionDetails
 from .fx import ExchangeRate
 from .institution import Institution
 from .snapshot import BalanceSnapshot
@@ -27,5 +28,7 @@ __all__ = [
     "CheckingAccount",
     "ExchangeRate",
     "Institution",
+    "LifeInsuranceDetails",
+    "PensionDetails",
     "SavingsAccount",
 ]

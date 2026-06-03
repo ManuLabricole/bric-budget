@@ -69,27 +69,20 @@ class Account(models.Model):
         USD = "USD", "USD — Dollar américain"
 
     class AccountType(models.TextChoices):
-        # Phase 0A — implemented now
         CHECKING = "checking", "Checking account"
-        # Phase 2G — already exists as SavingsAccount specialisation
         SAVINGS = "savings", "Savings account"
-        # Phase 4 — pension accounts (Finpension 3a + LP)
         PENSION_3A = "pension_3a", "3rd pillar (3a)"
         PENSION_LP = "pension_lp", "Vested benefits (LP)"
-        # Phase 5 — investment & trading (titres, ETF...)
         INVESTMENT = "investment", "Investment account / Titres"
-        # Phase 6 — payment cards (debit + credit)
-        # Import: matched by Card.last_four extracted from statement
         CARD = "card", "Credit / Debit card"
-        # Phase 7 — insurance & assurance vie
-        # Import: PDF relevé de valeur ou CSV de rachat. Identifier = policy number.
-        # Pas de transactions au sens bancaire — on enregistre des snapshots de valeur.
-        # Le connecteur lira le numéro de police depuis le relevé pour le matching.
         INSURANCE = "insurance", "Life insurance / Assurance vie"
-        # Phase 7 — standalone brokerage (Swissquote, Degiro, IBKR...)
-        # Import: CSV relevé mensuel. Transactions = achats/ventes de titres.
-        # Matching par numéro de compte courtier (ex: "SQ-XXXXXXXX").
         BROKERAGE = "brokerage", "Brokerage / Compte titres"
+        # Phase 3A — exchange crypto (Binance, Kraken…).
+        # provider = account.institution, wallet = external_ref (Phase 3A-bis).
+        CRYPTO = "crypto", "Crypto exchange"
+
+    # Types dont la devise est contrainte (SR imposé par réglementation).
+    _CHF_ONLY_TYPES = {"pension_3a", "pension_lp"}
 
     institution = models.ForeignKey(
         Institution,
@@ -146,9 +139,17 @@ class Account(models.Model):
         verbose_name="Membres ayant accès",
     )
 
-    created_at = models.DateTimeField(
-        auto_now_add=True
-    )  # set automatically on creation
+    # Phase 3A — date d'ouverture / clôture.
+    # opened_at sert au calcul d'antériorité fiscale (AV 8 ans, PEA 5 ans...).
+    opened_at = models.DateField(null=True, blank=True)
+    closed_at = models.DateField(null=True, blank=True)
+
+    # Juridiction fiscale de l'enveloppe — CH / FR (défaut = institution.country).
+    # Distinct de institution.country : un résident FR peut avoir un compte CH
+    # soumis au droit français (compte joint transfrontalier, etc.).
+    fiscal_country = models.CharField(max_length=2, blank=True, default="")
+
+    created_at = models.DateTimeField(auto_now_add=True)
 
     # Manager custom — expose Account.objects.for_user(user).
     # Même pattern que Transaction.objects.for_user(user).
@@ -161,6 +162,23 @@ class Account(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.currency}) — {self.institution.name}"
+
+    def save(self, *args, **kwargs):
+        # Hériter le pays de l'institution si non renseigné.
+        if not self.fiscal_country and self.institution_id:
+            self.fiscal_country = self.institution.country
+        super().save(*args, **kwargs)
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if self.account_type in self._CHF_ONLY_TYPES and self.currency != "CHF":
+            raise ValidationError(
+                {
+                    "currency": f"Les comptes de type « {self.get_account_type_display()} » "
+                    "sont obligatoirement en CHF (réglementation suisse)."
+                }
+            )
 
     @property
     def iban_display(self):
