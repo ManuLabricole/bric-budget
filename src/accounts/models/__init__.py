@@ -1,24 +1,27 @@
 """
 accounts/models/ — Banking infrastructure for BricBudget
 
-Model dependency order (follow this when reading or extending):
-    Institution → Account → CheckingAccount → Card (→ User)
-                          → BalanceSnapshot
-    ExchangeRate (standalone)
-
-Éclaté en package (Phase 3A) : un fichier par contexte. Tous les modèles sont
-ré-exportés ici → `from accounts.models import X` continue de fonctionner
-partout (vues, resolver, migrations, admin, tests). Les migrations 0001-0014
-référencent les modèles par (app_label, model_name) via apps.get_model — le
-split en package ne les touche pas.
+Fichiers :
+    institution.py  — Institution (banque, fondation, exchange…)
+    account.py      — Account (enveloppe générique) + AccountQuerySet
+    details.py      — CheckingAccount, SavingsAccount, LifeInsuranceDetails,
+                      PensionDetails  (tous les OneToOne → Account)
+    card.py         — Card (FK → CheckingAccount, pas Account)
+    snapshot.py     — BalanceSnapshot
+    fx.py           — ExchangeRate
 """
 
 from .account import Account, AccountQuerySet
-from .details import LifeInsuranceDetails, PensionDetails
+from .card import Card
+from .details import (
+    CheckingAccount,
+    LifeInsuranceDetails,
+    PensionDetails,
+    SavingsAccount,
+)
 from .fx import ExchangeRate
 from .institution import Institution
 from .snapshot import BalanceSnapshot
-from .specialisations import Card, CheckingAccount, SavingsAccount
 
 __all__ = [
     "Account",
