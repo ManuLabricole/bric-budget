@@ -14,7 +14,7 @@ Pas d'HTMX — lecture seule.
         {{ tx.date|date:"d/m" }}
     </span>
     {# COL 2 — Logo banque ── cercle blanc w-7, même règle que bank_logo.html #}
-    {% include "components/banks/bank_logo.html" with icon_url=tx.bank_icon_url bank=tx.account.bank size="w-7 h-7" padding="p-1" %}
+    {% include "components/banks/bank_logo.html" with icon_url=tx.bank_icon_url bank=tx.account.institution size="w-7 h-7" padding="p-1" %}
     {# COL 3 — Icône catégorie ── cercle coloré w-7 #}
     <div class="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center"
          style="background-color: {{ tx.category.colour_hex|default:'#2d3033' }}">

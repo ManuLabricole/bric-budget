@@ -41,9 +41,9 @@ def user_b(db):
 
 @pytest.fixture
 def bank(db):
-    from accounts.models import Bank
+    from accounts.models import Institution
 
-    return Bank.objects.create(
+    return Institution.objects.create(
         name="TestBank",
         slug="testbank",
         country="CH",
@@ -57,7 +57,7 @@ def account_a(db, bank, user_a):
     from accounts.models import Account
 
     acc = Account.objects.create(
-        bank=bank,
+        institution=bank,
         name="Compte A",
         account_type=Account.AccountType.CHECKING,
         currency="CHF",
@@ -72,7 +72,7 @@ def account_b(db, bank, user_b):
     from accounts.models import Account
 
     acc = Account.objects.create(
-        bank=bank,
+        institution=bank,
         name="Compte B",
         account_type=Account.AccountType.CHECKING,
         currency="CHF",

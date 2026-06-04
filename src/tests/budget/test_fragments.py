@@ -18,7 +18,7 @@ import pytest
 from django.test import Client
 from django.urls import reverse
 
-from accounts.models import Account, Bank
+from accounts.models import Account, Institution
 from transactions.models import Category, Transaction
 
 # =============================================================================
@@ -53,7 +53,7 @@ def cat(db):
 
 @pytest.fixture
 def bank(db):
-    return Bank.objects.create(
+    return Institution.objects.create(
         name="Frag Bank",
         slug="frag-bank",
         country="CH",
@@ -64,7 +64,7 @@ def bank(db):
 @pytest.fixture
 def account(db, bank, user):
     acc = Account.objects.create(
-        bank=bank, name="Frag Account", account_type="checking", currency="CHF"
+        institution=bank, name="Frag Account", account_type="checking", currency="CHF"
     )
     acc.members.add(user)
     return acc

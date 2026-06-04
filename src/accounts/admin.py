@@ -20,20 +20,20 @@ from django.contrib import admin
 from .models import (
     Account,
     BalanceSnapshot,
-    Bank,
     Card,
     CheckingAccount,
     ExchangeRate,
+    Institution,
     SavingsAccount,
 )
 
 # =============================================================================
-# Bank
+# Institution
 # =============================================================================
 
 
-@admin.register(Bank)
-class BankAdmin(admin.ModelAdmin):
+@admin.register(Institution)
+class InstitutionAdmin(admin.ModelAdmin):
     list_display = ("name", "country", "default_currency", "icon_slug", "is_active")
     list_filter = ("country", "is_active")
     search_fields = ("name", "slug")
@@ -58,13 +58,13 @@ class AccountAdmin(admin.ModelAdmin):
 
     list_display = (
         "name",
-        "bank",
+        "institution",
         "account_type",
         "currency",
         "member_list",
         "is_active",
     )
-    list_filter = ("bank", "account_type", "currency", "is_active")
+    list_filter = ("institution", "account_type", "currency", "is_active")
     search_fields = ("name", "iban", "contract_number")
     filter_horizontal = ("members",)
 

@@ -70,11 +70,11 @@
         <div>
             <p class="text-[10px] font-semibold uppercase tracking-wide text-text-muted mb-2">Compte</p>
             <div class="flex items-center gap-3">
-                {% bank_icon_url log.account.bank as bicon %}
-                {% include "components/banks/bank_logo.html" with icon_url=bicon bank=log.account.bank size="w-10 h-10" padding="p-1.5" %}
+                {% bank_icon_url log.account.institution as bicon %}
+                {% include "components/banks/bank_logo.html" with icon_url=bicon bank=log.account.institution size="w-10 h-10" padding="p-1.5" %}
                 <div class="min-w-0">
                     <p class="text-sm font-medium text-text-base">{{ log.account.name }}</p>
-                    <p class="text-xs text-text-muted">{{ log.account.bank.name }} · {{ log.account.currency }}</p>
+                    <p class="text-xs text-text-muted">{{ log.account.institution.name }} · {{ log.account.currency }}</p>
                     {# Identifiant : IBAN masqué si dispo (checking + savings + futures cartes),  #}
                     {# sinon numéro de contrat (RIB CIC, n° Finpension, n° police assurance). #}
                     {% if log.account.iban %}

@@ -13,17 +13,17 @@ from django.urls import reverse
 def some_import_log(db):
     from django.contrib.auth import get_user_model
 
-    from accounts.models import Account, Bank
+    from accounts.models import Account, Institution
     from transactions.models import ImportLog
 
     user = get_user_model().objects.create_user(
         email="importlog@auth.ch", password="pass"
     )
-    bank = Bank.objects.create(
+    bank = Institution.objects.create(
         name="Auth Bank", slug="auth-bank-imports", country="CH", default_currency="CHF"
     )
     acc = Account.objects.create(
-        bank=bank, name="Auth Account", account_type="checking", currency="CHF"
+        institution=bank, name="Auth Account", account_type="checking", currency="CHF"
     )
     acc.members.add(user)
     return ImportLog.objects.create(

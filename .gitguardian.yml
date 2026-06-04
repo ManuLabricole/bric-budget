@@ -1,0 +1,8 @@
+version: 2
+
+# Les workflows CI contiennent uniquement des valeurs factices (dummy values)
+# pour démarrer Django pendant mypy / deploy-check.
+# Aucune vraie clé ne transite par ce fichier — les secrets réels sont dans
+# GitHub Secrets (${{ secrets.* }}) ou générés à runtime via secrets.token_urlsafe().
+paths-ignore:
+  - ".github/workflows/ci.yml"

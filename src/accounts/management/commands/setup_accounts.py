@@ -29,7 +29,7 @@ from pathlib import Path
 from decouple import config
 from django.core.management.base import BaseCommand, CommandError
 
-from accounts.models import Account, Bank, CheckingAccount, SavingsAccount
+from accounts.models import Account, CheckingAccount, Institution, SavingsAccount
 from connectors.cic.parser import CICConnector
 from connectors.resolver import detect_connector
 from connectors.ubs.parser import UBSConnector
@@ -108,7 +108,7 @@ class Command(BaseCommand):
             # ── Créer (ou récupérer) la Bank ──────────────────────────────────
             bank_slug = self._bank_slug(connector)
             defaults = BANK_DEFAULTS[bank_slug]
-            bank, bank_created = Bank.objects.get_or_create(
+            bank, bank_created = Institution.objects.get_or_create(
                 slug=bank_slug,
                 defaults={
                     "name": defaults["name"],
@@ -227,11 +227,11 @@ class Command(BaseCommand):
         """
         if contract_number:
             existing = Account.objects.filter(
-                bank=bank, contract_number=contract_number
+                institution=bank, contract_number=contract_number
             ).first()
         else:
             existing = Account.objects.filter(
-                bank=bank, account_type=account_type
+                institution=bank, account_type=account_type
             ).first()
 
         if existing:
@@ -240,7 +240,7 @@ class Command(BaseCommand):
 
         # Créer l'Account de base
         account = Account.objects.create(
-            bank=bank,
+            institution=bank,
             name=name,
             account_type=account_type,
             currency=currency,

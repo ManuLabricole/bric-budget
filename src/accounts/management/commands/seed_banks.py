@@ -13,8 +13,8 @@ Si une banque existe déjà (même slug), ses champs sont mis à jour depuis la 
 
 from django.core.management.base import BaseCommand
 
-from accounts.banks_config import KNOWN_BANKS
-from accounts.models import Bank
+from accounts.institutions_config import KNOWN_INSTITUTIONS
+from accounts.models import Institution
 
 
 class Command(BaseCommand):
@@ -38,7 +38,7 @@ class Command(BaseCommand):
         created_count = 0
         updated_count = 0
 
-        for slug, config in KNOWN_BANKS.items():
+        for slug, config in KNOWN_INSTITUTIONS.items():
             defaults = {
                 "name": config["name"],
                 "icon_slug": slug,  # icon_slug == slug par convention
@@ -47,12 +47,12 @@ class Command(BaseCommand):
             }
 
             if dry_run:
-                exists = Bank.objects.filter(slug=slug).exists()
+                exists = Institution.objects.filter(slug=slug).exists()
                 action = "·  déjà en DB" if exists else "✓  à créer"
                 self.stdout.write(f"  {action}  {config['name']} ({slug})")
                 continue
 
-            bank, created = Bank.objects.update_or_create(
+            bank, created = Institution.objects.update_or_create(
                 slug=slug,
                 defaults=defaults,
             )

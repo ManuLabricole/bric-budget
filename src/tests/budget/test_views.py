@@ -54,9 +54,9 @@ def other_client(other_user):
 
 @pytest.fixture
 def bank(db):
-    from accounts.models import Bank
+    from accounts.models import Institution
 
-    return Bank.objects.create(
+    return Institution.objects.create(
         name="Views Budget Bank",
         slug="views-budget-bank",
         country="CH",
@@ -69,7 +69,7 @@ def account(db, bank, user):
     from accounts.models import Account
 
     acc = Account.objects.create(
-        bank=bank,
+        institution=bank,
         name="Views Budget Account",
         account_type="checking",
         currency="CHF",

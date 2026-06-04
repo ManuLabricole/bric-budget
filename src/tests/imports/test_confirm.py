@@ -14,7 +14,7 @@ import pytest
 from django.test import Client
 from django.urls import reverse
 
-from accounts.models import Account, Bank, CheckingAccount
+from accounts.models import Account, CheckingAccount, Institution
 
 
 @pytest.fixture
@@ -33,7 +33,7 @@ def auth_client(user):
 
 @pytest.fixture
 def bank(db):
-    return Bank.objects.create(
+    return Institution.objects.create(
         name="Confirm Bank",
         slug="confirm-bank",
         country="CH",
@@ -123,7 +123,7 @@ def test_import_create_account_missing_name_returns_error(auth_client, bank):
     )
     assert r.status_code == 200
     assert "obligatoire" in r.content.decode().lower()
-    assert not Account.objects.filter(bank=bank).exists()
+    assert not Account.objects.filter(institution=bank).exists()
 
 
 @pytest.mark.django_db
@@ -203,7 +203,7 @@ def test_import_create_account_success_creates_checking_account(auth_client, ban
     )
     # L'Account doit être créé même si la session pending_import manque
     # (la fonction crée l'Account dans une transaction atomique, puis re-vérifie la session)
-    acc = Account.objects.filter(name="Mon nouveau compte CH", bank=bank).first()
+    acc = Account.objects.filter(name="Mon nouveau compte CH", institution=bank).first()
     assert acc is not None
     assert acc.account_type == "checking"
     assert CheckingAccount.objects.filter(account=acc).exists()

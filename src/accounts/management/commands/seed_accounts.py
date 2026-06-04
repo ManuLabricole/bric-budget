@@ -20,7 +20,7 @@ import getpass
 from decouple import config
 from django.core.management.base import BaseCommand, CommandError
 
-from accounts.models import Account, Bank, CheckingAccount, SavingsAccount
+from accounts.models import Account, CheckingAccount, Institution, SavingsAccount
 
 
 class Command(BaseCommand):
@@ -29,7 +29,7 @@ class Command(BaseCommand):
     )
 
     def handle(self, *args, **options):
-        if not Bank.objects.filter(slug__in=["yuh", "ubs", "cic"]).exists():
+        if not Institution.objects.filter(slug__in=["yuh", "ubs", "cic"]).exists():
             raise CommandError(
                 "Banques introuvables. Lancez d'abord : python manage.py seed_banks"
             )
@@ -193,15 +193,15 @@ class Command(BaseCommand):
         )
 
     def _save_checking(self, bank_slug, name, currency, contract_number, iban, bic):
-        bank = Bank.objects.get(slug=bank_slug)
+        bank = Institution.objects.get(slug=bank_slug)
 
         if contract_number:
             existing = Account.objects.filter(
-                bank=bank, contract_number=contract_number
+                institution=bank, contract_number=contract_number
             ).first()
         else:
             existing = Account.objects.filter(
-                bank=bank, account_type=Account.AccountType.CHECKING
+                institution=bank, account_type=Account.AccountType.CHECKING
             ).first()
 
         status = "" if (iban and bic) else "  ⚠ incomplet"
@@ -217,7 +217,7 @@ class Command(BaseCommand):
             return 0, 1
         else:
             account = Account.objects.create(
-                bank=bank,
+                institution=bank,
                 name=name,
                 account_type=Account.AccountType.CHECKING,
                 currency=currency,
@@ -229,9 +229,9 @@ class Command(BaseCommand):
             return 1, 0
 
     def _save_savings(self, bank_slug, name, currency, contract_number):
-        bank = Bank.objects.get(slug=bank_slug)
+        bank = Institution.objects.get(slug=bank_slug)
         existing = Account.objects.filter(
-            bank=bank, contract_number=contract_number
+            institution=bank, contract_number=contract_number
         ).first()
 
         if existing:
@@ -241,7 +241,7 @@ class Command(BaseCommand):
             return 0, 1
         else:
             account = Account.objects.create(
-                bank=bank,
+                institution=bank,
                 name=name,
                 account_type=Account.AccountType.SAVINGS,
                 currency=currency,
@@ -256,7 +256,7 @@ class Command(BaseCommand):
 
     def _warn_incomplete(self):
         incomplete = []
-        for ca in CheckingAccount.objects.select_related("account__bank"):
+        for ca in CheckingAccount.objects.select_related("account__institution"):
             if not ca.is_complete:
                 missing = []
                 if not ca.iban:
@@ -264,7 +264,7 @@ class Command(BaseCommand):
                 if not ca.bic:
                     missing.append("BIC")
                 incomplete.append((ca.account, missing))
-        for sa in SavingsAccount.objects.select_related("account__bank"):
+        for sa in SavingsAccount.objects.select_related("account__institution"):
             if not sa.is_complete:
                 incomplete.append((sa.account, ["taux d'intérêt"]))
 
@@ -276,7 +276,7 @@ class Command(BaseCommand):
             for account, missing in incomplete:
                 self.stdout.write(
                     self.style.WARNING(
-                        f"   • {account.bank.name} — {account.name} : {', '.join(missing)}"
+                        f"   • {account.institution.name} — {account.name} : {', '.join(missing)}"
                     )
                 )
             self.stdout.write(

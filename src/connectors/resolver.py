@@ -218,7 +218,7 @@ def resolve_accounts(
             try:
                 account = base_qs.get(
                     pk=forced_account_id,
-                    bank__slug="yuh",
+                    institution__slug="yuh",
                 )
                 return [AccountMatch(account=account)]
             except Account.DoesNotExist:
@@ -230,7 +230,9 @@ def resolve_accounts(
 
         # Sans forced_account_id : chercher les comptes Yuh actifs (scopés à l'user).
         accounts = list(
-            base_qs.filter(bank__slug="yuh").select_related("bank").order_by("name")
+            base_qs.filter(institution__slug="yuh")
+            .select_related("institution")
+            .order_by("name")
         )
         if not accounts:
             raise AccountNotFound(
@@ -256,9 +258,9 @@ def resolve_accounts(
                 "Le fichier est peut-être corrompu."
             )
         try:
-            account = base_qs.select_related("bank").get(
+            account = base_qs.select_related("institution").get(
                 iban=identifier,
-                bank__slug="ubs",
+                institution__slug="ubs",
             )
         except Account.DoesNotExist:
             raise AccountNotFound(
@@ -278,7 +280,7 @@ def resolve_accounts(
             rib = sheet["rib"]  # RIB normalisé sans espaces
             try:
                 account = base_qs.get(
-                    bank__slug="cic",
+                    institution__slug="cic",
                     contract_number=rib,
                 )
             except Account.DoesNotExist:

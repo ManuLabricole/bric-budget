@@ -15,7 +15,7 @@ Paramètres :
                     <span class="text-[10px] font-medium text-text-muted">{{ tx.date|date:"j F Y" }}</span>
                 </div>
             {% endifchanged %}
-            {% bank_icon_url tx.account.bank as bicon %}
+            {% bank_icon_url tx.account.institution as bicon %}
             {% include "budget/_panel_tx_row.html" with bank_icon_url=bicon panel_source="category" panel_target="#cat-tx-detail" %}
         {% endfor %}
     {% else %}

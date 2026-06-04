@@ -270,9 +270,9 @@ def budget_category_tx_fragment(request, slug):
     )
     if q:
         qs = qs.filter(display_name__icontains=q)
-    qs = qs.select_related("account", "account__bank", "subcategory").order_by("-date")[
-        :50
-    ]
+    qs = qs.select_related("account", "account__institution", "subcategory").order_by(
+        "-date"
+    )[:50]
     return render(
         request,
         "budget/partials/_category_tx_fragment.html",
@@ -322,18 +322,22 @@ def budget_category_detail(request, slug):
     accounts = (
         Account.objects.for_user(request.user)
         .filter(is_active=True)
-        .select_related("bank")
-        .order_by("bank__name", "name")
+        .select_related("institution")
+        .order_by("institution__name", "name")
     )
 
     txs = (
         cc["base_qs"]
-        .select_related("subcategory", "account", "account__bank")
+        .select_related("subcategory", "account", "account__institution")
         .order_by("-date", "-id")
     )
     bank_icon_map = _resolve_bank_icon_map()
     for tx in txs:
-        icon_slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
+        icon_slug = (
+            tx.account.institution.icon_slug
+            if tx.account and tx.account.institution
+            else ""
+        )
         tx.bank_icon_url = bank_icon_map.get(icon_slug, "")
 
     avg_amount = (cc["total_amount"] / cc["tx_count"]) if cc["tx_count"] > 0 else None

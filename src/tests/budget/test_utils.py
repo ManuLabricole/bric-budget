@@ -172,16 +172,16 @@ def test_keyword_q_word_boundary_no_partial_match(django_user_model):
     """ESSO ne doit PAS matcher ESSOF108 (word boundary \\y PostgreSQL)."""
     from django.contrib.auth import get_user_model
 
-    from accounts.models import Account, Bank
+    from accounts.models import Account, Institution
     from transactions.models import Transaction
 
     User = get_user_model()
     user = User.objects.create_user(email="kwboundary@test.ch", password="pass")
-    bank = Bank.objects.create(
+    bank = Institution.objects.create(
         name="Test Bank", slug="test-bank-kw", country="CH", default_currency="CHF"
     )
     acc = Account.objects.create(
-        bank=bank, name="KW Test", account_type="checking", currency="CHF"
+        institution=bank, name="KW Test", account_type="checking", currency="CHF"
     )
     acc.members.add(user)
 
@@ -203,16 +203,16 @@ def test_keyword_q_exact_word_matches(django_user_model):
     """ESSO DOIT matcher 'ESSO STATION' (mot entier)."""
     from django.contrib.auth import get_user_model
 
-    from accounts.models import Account, Bank
+    from accounts.models import Account, Institution
     from transactions.models import Transaction
 
     User = get_user_model()
     user = User.objects.create_user(email="kwexact@test.ch", password="pass")
-    bank = Bank.objects.create(
+    bank = Institution.objects.create(
         name="Test Bank2", slug="test-bank-kw2", country="CH", default_currency="CHF"
     )
     acc = Account.objects.create(
-        bank=bank, name="KW Test2", account_type="checking", currency="CHF"
+        institution=bank, name="KW Test2", account_type="checking", currency="CHF"
     )
     acc.members.add(user)
 

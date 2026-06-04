@@ -41,7 +41,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 
-from accounts.models import Account, Bank, Card, CheckingAccount, SavingsAccount
+from accounts.models import Account, Card, CheckingAccount, Institution, SavingsAccount
 from transactions.models import Category, SubCategory
 
 
@@ -191,7 +191,7 @@ class Command(BaseCommand):
         banks = {}
 
         for name, slug, country, currency, icon_slug, domain in banks_data:
-            bank, created = Bank.objects.update_or_create(
+            bank, created = Institution.objects.update_or_create(
                 slug=slug,
                 defaults={
                     "name": name,
@@ -356,7 +356,7 @@ class Command(BaseCommand):
             bank = banks[data["bank_slug"]]
 
             account, created = Account.objects.update_or_create(
-                bank=bank,
+                institution=bank,
                 name=data["name"],
                 defaults={
                     "account_type": data["account_type"],

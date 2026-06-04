@@ -242,7 +242,9 @@ def budget_rule_standalone_preview(request):
         qs = (
             Transaction.objects.for_user(request.user)
             .filter(_keyword_q(combined_keyword))
-            .select_related("account", "account__bank", "category", "subcategory")
+            .select_related(
+                "account", "account__institution", "category", "subcategory"
+            )
             .order_by("-date")
         )
         total_count = qs.count()
@@ -250,7 +252,11 @@ def budget_rule_standalone_preview(request):
         txs = list(qs)
         bank_icon_map = _resolve_bank_icon_map()
         for tx in txs:
-            slug = tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
+            slug = (
+                tx.account.institution.icon_slug
+                if tx.account and tx.account.institution
+                else ""
+            )
             tx.bank_icon_url = bank_icon_map.get(slug, "")
 
     return render(
@@ -328,13 +334,15 @@ def budget_rule_create_standalone_submit(request):
         if overwrite_qs.exists():
             txs = list(
                 overwrite_qs.select_related(
-                    "account", "account__bank", "category", "subcategory"
+                    "account", "account__institution", "category", "subcategory"
                 ).order_by("-date")
             )
             bank_icon_map = _resolve_bank_icon_map()
             for tx in txs:
                 slug = (
-                    tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
+                    tx.account.institution.icon_slug
+                    if tx.account and tx.account.institution
+                    else ""
                 )
                 tx.bank_icon_url = bank_icon_map.get(slug, "")
 
@@ -567,13 +575,15 @@ def budget_rule_create_submit(request):
         if overwrite_qs.exists():
             txs = list(
                 overwrite_qs.select_related(
-                    "account", "account__bank", "category", "subcategory"
+                    "account", "account__institution", "category", "subcategory"
                 ).order_by("-date")
             )
             bank_icon_map = _resolve_bank_icon_map()
             for tx in txs:
                 slug = (
-                    tx.account.bank.icon_slug if tx.account and tx.account.bank else ""
+                    tx.account.institution.icon_slug
+                    if tx.account and tx.account.institution
+                    else ""
                 )
                 tx.bank_icon_url = bank_icon_map.get(slug, "")
 
