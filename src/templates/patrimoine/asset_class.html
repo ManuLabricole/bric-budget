@@ -1,0 +1,37 @@
+{% extends "base_app.html" %}
+{% comment %}
+patrimoine/asset_class.html — page d'une classe d'actifs FONCTIONNELLE (PR A).
+
+Listing nu des comptes de l'utilisateur pour cette classe, groupés par institution.
+Pas encore de soldes, ni graphe, ni panneau droit, ni page détail → PR B / PR C.
+Le listing est scopé utilisateur côté vue (Account.objects.for_user — SR-001).
+{% endcomment %}
+{% block panel_left %}
+    <section class="bg-surface-3/70 border border-edge/60 rounded-xl p-6">
+        <header class="mb-6">
+            <h1 class="text-xl font-semibold text-text-base">{{ asset_class.label }}</h1>
+            <p class="text-sm text-text-muted mt-1">{{ accounts|length }} compte{{ accounts|length|pluralize }}</p>
+        </header>
+        {% regroup accounts by institution as institution_groups %}
+        {% if institution_groups %}
+            <div class="space-y-6">
+                {% for group in institution_groups %}
+                    <div>
+                        <h2 class="text-xs font-semibold uppercase tracking-widest text-text-muted mb-2">{{ group.grouper.name }}</h2>
+                        <ul class="space-y-1">
+                            {% for account in group.list %}
+                                <li class="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-hover/20 hover:bg-surface-hover/40 transition-colors">
+                                    <span class="text-sm font-medium text-text-base truncate">{{ account.name }}</span>
+                                    <span class="text-xs text-text-muted">{{ account.get_account_type_display }}</span>
+                                    <span class="ml-auto text-xs font-medium text-text-muted tabular-nums">{{ account.currency }}</span>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="text-sm text-text-muted py-8 text-center">Aucun compte dans cette classe pour l'instant.</p>
+        {% endif %}
+    </section>
+{% endblock %}

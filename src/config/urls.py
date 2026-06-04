@@ -58,4 +58,6 @@ urlpatterns = [
     path("budget/", include("budget.urls")),
     # URLs de l'app imports — upload et traitement de fichiers bancaires
     path("import/", include("imports.urls")),
+    # URLs de l'app patrimoine — navigation par classe d'actifs (Phase 3A)
+    path("patrimoine/", include("patrimoine.urls")),
 ]

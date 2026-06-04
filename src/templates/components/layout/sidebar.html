@@ -42,19 +42,51 @@
         </svg>
         Importer
     </a>
-    {# Comptes — Phase 3A #}
-    <a href="#"
-       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-text-disabled cursor-not-allowed">
-        <svg class="w-5 h-5 flex-shrink-0"
-             fill="none"
-             viewBox="0 0 24 24"
-             stroke-width="1.5"
-             stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.332A48.36 48.36 0 0 0 12 9.75c-2.551 0-5.056.2-7.5.582V21M3 21h18M12 6.75h.008v.008H12V6.75Z" />
-        </svg>
-        <span>Comptes</span>
-        {% include "components/badges/soon.html" with extra_class="ml-auto" %}
-    </a>
+    {% comment %}
+    Patrimoine ▼ — Phase 3A. Disclosure <details> natif, JS-free.
+    L'état déplié/replié persiste en session : l'attribut `open` reflète
+    `patrimoine_sidebar_open` (context processor), et chaque toggle POST sur
+    patrimoine:sidebar_toggle inverse le booléen côté serveur (PRG, hx-swap=none).
+    {% endcomment %}
+    <details class="mb-1 group"
+             {% if patrimoine_sidebar_open %}open{% endif %}
+             hx-post="{% url 'patrimoine:sidebar_toggle' %}"
+             hx-trigger="toggle"
+             hx-swap="none">
+        <summary class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium cursor-pointer list-none transition-colors {% if request.resolver_match.app_name == 'patrimoine' %} text-gold bg-surface-hover/30 {% else %} text-text-muted hover:text-gold hover:bg-surface-hover/30 {% endif %}">
+            <svg class="w-5 h-5 flex-shrink-0"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="1.5"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.332A48.36 48.36 0 0 0 12 9.75c-2.551 0-5.056.2-7.5.582V21M3 21h18M12 6.75h.008v.008H12V6.75Z" />
+            </svg>
+            <span>Patrimoine</span>
+            {# Chevron : pivote quand <details> est ouvert (group-open). #}
+            <svg class="w-4 h-4 ml-auto flex-shrink-0 transition-transform group-open:rotate-180"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="1.5"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+            </svg>
+        </summary>
+        {% comment %}
+        Sous-items — alignés sous le TEXTE « Patrimoine » (pl-11 = px-3 + icône w-5 + gap-3),
+        sans bordure ni tab décoratif (cf. sidebar Finary). Espacement vertical généreux.
+        {% endcomment %}
+        <div class="mt-1">
+            {% for ac in asset_classes %}
+                <a href="{% url 'patrimoine:asset_class' ac.slug %}"
+                   class="flex items-center gap-2 pl-11 pr-3 py-2 rounded-lg text-sm transition-colors {% if active_asset_class_slug == ac.slug %} text-gold bg-surface-hover/30 {% else %} text-text-muted hover:text-gold hover:bg-surface-hover/30 {% endif %}">
+                    <span>{{ ac.label }}</span>
+                    {% if not ac.functional %}
+                        {% include "components/badges/soon.html" with extra_class="ml-auto" %}
+                    {% endif %}
+                </a>
+            {% endfor %}
+        </div>
+    </details>
 </nav>
 <!-- PARAMÈTRES — ancré en bas, juste au-dessus du profil -->
 <div class="px-2 pb-2">
