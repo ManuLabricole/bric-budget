@@ -38,6 +38,23 @@ window.BricCharts = window.BricCharts || {};
 
     var chart = echarts.init(el, null, { renderer: "svg" });
 
+    // Dégradé vertical : couleur de la courbe en haut → transparent vers le bas,
+    // fade rapide (transparent dès ~55% de la hauteur).
+    function fade(hex) {
+      return {
+        type: "linear",
+        x: 0,
+        y: 0,
+        x2: 0,
+        y2: 1,
+        colorStops: [
+          { offset: 0, color: BC.hexToRgba(hex, 0.45) },
+          { offset: 0.55, color: BC.hexToRgba(hex, 0.04) },
+          { offset: 1, color: BC.hexToRgba(hex, 0) },
+        ],
+      };
+    }
+
     var series;
     if (stacked) {
       series = data.series.map(function (s) {
@@ -46,8 +63,8 @@ window.BricCharts = window.BricCharts || {};
           type: "line",
           stack: "networth",
           showSymbol: false,
-          lineStyle: { width: 1, color: s.color },
-          areaStyle: { color: s.color, opacity: 0.28 },
+          lineStyle: { width: 1.2, color: s.color },
+          areaStyle: { color: fade(s.color) },
           itemStyle: { color: s.color },
           emphasis: { focus: "series" },
           data: s.values,
@@ -59,7 +76,7 @@ window.BricCharts = window.BricCharts || {};
           type: "line",
           showSymbol: false,
           lineStyle: { width: 1.5, color: T["gold"] },
-          areaStyle: { color: T["gold"], opacity: 0.12 },
+          areaStyle: { color: fade(T["gold"]) },
           itemStyle: { color: T["gold"] },
           data: data.total,
         },
@@ -68,6 +85,9 @@ window.BricCharts = window.BricCharts || {};
 
     chart.setOption({
       backgroundColor: "transparent",
+      // Durée d'animation alignée sur le reste de l'app (250ms) — plus de fade interminable.
+      animationDuration: 250,
+      animationDurationUpdate: 250,
       grid: { left: 4, right: 12, top: 14, bottom: 4, containLabel: true },
       tooltip: {
         trigger: "axis",

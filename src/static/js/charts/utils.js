@@ -19,4 +19,13 @@ window.BricCharts = window.BricCharts || {};
     const b = parseInt(hex.slice(5, 7), 16);
     return `rgba(${Math.round(r * factor)},${Math.round(g * factor)},${Math.round(b * factor)},1)`;
   };
+
+  // hexToRgba — "#rrggbb" + alpha (0..1) → "rgba(r,g,b,a)". Pour les dégradés d'aire.
+  BC.hexToRgba = function (hex, alpha) {
+    if (!hex || hex.length < 7) return `rgba(80,80,80,${alpha})`;
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  };
 })(window.BricCharts);

@@ -41,6 +41,8 @@ class BilanNode:
     url: str | None = None  # cible du lien (None = ligne non cliquable)
     soon: bool = False  # classe pas encore fonctionnelle
     currency_native: str | None = None
+    # Institution du holding (nœud compte) → logo dans la ligne. None pour un nœud de classe.
+    institution: object | None = None
     children: list["BilanNode"] = field(default_factory=list)
 
 
@@ -75,6 +77,7 @@ def overview_bilan(accounts, on: datetime.date | None = None) -> list[BilanNode]
                 color=ac.color,
                 value=current_value(acc, on),
                 currency_native=acc.currency,
+                institution=acc.institution,  # → logo dans la ligne
                 # url enfant (zoom compte) → PR C : None pour l'instant.
             )
             for acc in by_class.get(ac.slug, [])

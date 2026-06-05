@@ -2,6 +2,6 @@
 patrimoine/partials/_distribution.html — panneau répartition (donut ; treemap en étape 5).
 Requiert : dist_json (segments + total). Container data-chart → auto-init.js.
 {% endcomment %}
-<h2 class="text-sm font-medium text-text-muted mb-3">Répartition</h2>
+<h2 class="text-sm font-semibold text-text-base mb-3">Répartition</h2>
 <div data-chart="donut" data-chart-data="dist-data" class="h-56 w-full"></div>
 {{ dist_json|json_script:"dist-data" }}
