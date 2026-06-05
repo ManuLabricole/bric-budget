@@ -56,8 +56,17 @@ ASSET_CLASSES: tuple[AssetClass, ...] = (
 
 # Index slug → AssetClass pour des lookups O(1) (les slugs sont uniques, cf. tests).
 _BY_SLUG: dict[str, AssetClass] = {ac.slug: ac for ac in ASSET_CLASSES}
+# Index account_type → AssetClass (chaque account_type appartient à une seule classe).
+_BY_ACCOUNT_TYPE: dict[str, AssetClass] = {
+    at: ac for ac in ASSET_CLASSES for at in ac.account_types
+}
 
 
 def get_asset_class(slug: str) -> AssetClass | None:
     """Retourne la classe d'actifs pour un slug, ou None si inconnu (→ 404 en vue)."""
     return _BY_SLUG.get(slug)
+
+
+def asset_class_for_account_type(account_type: str) -> AssetClass | None:
+    """Classe d'actifs d'un account_type (ex. 'checking' → comptes-courants), ou None."""
+    return _BY_ACCOUNT_TYPE.get(account_type)
