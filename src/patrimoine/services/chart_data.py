@@ -19,18 +19,25 @@ from .bilan import BilanNode
 from .valuation import net_worth_series
 
 
-def chart_series(accounts, start: datetime.date, end: datetime.date) -> dict:
+def chart_series(
+    accounts,
+    start: datetime.date,
+    end: datetime.date,
+    selected_slugs: set[str] | None = None,
+) -> dict:
     """
     Données de la courbe net worth : total + une série par classe d'actifs fonctionnelle.
 
     Seuls les comptes des classes fonctionnelles sont tracés (les classes invest ne sont
     pas encore valorisables). `complete=False` signale une conversion CHF manquante.
+    `selected_slugs` : si fourni, ne trace que ces classes (filtre).
     """
     functional_accounts = [
         a
         for a in accounts
         if (ac := asset_class_for_account_type(a.account_type)) is not None
         and ac.functional
+        and (selected_slugs is None or ac.slug in selected_slugs)
     ]
     by_class: dict[str, list] = defaultdict(list)
     for a in functional_accounts:

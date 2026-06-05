@@ -46,12 +46,17 @@ class BilanNode:
     children: list["BilanNode"] = field(default_factory=list)
 
 
-def overview_bilan(accounts, on: datetime.date | None = None) -> list[BilanNode]:
+def overview_bilan(
+    accounts,
+    on: datetime.date | None = None,
+    selected_slugs: set[str] | None = None,
+) -> list[BilanNode]:
     """
     Arbre bilan de l'overview : un nœud par classe d'actifs (registre), enfants = comptes.
 
     `accounts` : liste plate de comptes DÉJÀ scopés for_user. Les classes fonctionnelles
     sont valorisées (via `current_value`) ; les autres sont rendues en SOON.
+    `selected_slugs` : si fourni, ne garde que ces classes (filtre). None = toutes.
     """
     by_class: dict[str, list] = defaultdict(list)
     for acc in accounts:
@@ -61,6 +66,8 @@ def overview_bilan(accounts, on: datetime.date | None = None) -> list[BilanNode]
 
     nodes: list[BilanNode] = []
     for ac in ASSET_CLASSES:
+        if selected_slugs is not None and ac.slug not in selected_slugs:
+            continue
         url = reverse("patrimoine:asset_class", args=[ac.slug])
         if not ac.functional:
             # Classe pas encore prête : SOON, même si des comptes existent (non valorisables).

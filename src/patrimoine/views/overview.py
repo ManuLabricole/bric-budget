@@ -18,9 +18,11 @@ from django.views.decorators.http import require_POST
 
 from accounts.models import Account, BalanceSnapshot
 from patrimoine.context_processors import SIDEBAR_SESSION_KEY
+from patrimoine.services.asset_classes import ASSET_CLASSES
 from patrimoine.services.balance_history import PERIODS, period_bounds
 from patrimoine.services.bilan import overview_bilan
 from patrimoine.services.chart_data import chart_series, distribution
+from patrimoine.views.filters import selected_class_slugs
 from transactions.models import Transaction
 
 # Clé de session de la période sélectionnée + libellés d'affichage des pills.
@@ -74,16 +76,29 @@ def overview(request):
         period, today=today, earliest=_earliest_date(accounts) or today
     )
 
-    nodes = overview_bilan(accounts, on=today)
+    selected = set(selected_class_slugs(request.session))
+    nodes = overview_bilan(accounts, on=today, selected_slugs=selected)
     total = sum((n.value for n in nodes if n.value is not None), Decimal("0"))
 
     ctx = {
         "nodes": nodes,
         "total_value": total,
-        "chart_json": chart_series(accounts, start, end),
+        "chart_json": chart_series(accounts, start, end, selected_slugs=selected),
         "dist_json": distribution(nodes),
         "period": period,
         "period_choices": [(k, PERIOD_LABELS[k]) for k in PERIODS],
+        # Items du filtre par classe d'actifs (composant réutilisable).
+        "class_filter_items": [
+            {
+                "key": ac.slug,
+                "label": ac.label,
+                "color": ac.color,
+                "selected": ac.slug in selected,
+            }
+            for ac in ASSET_CLASSES
+        ],
+        "class_filter_n_selected": len(selected),
+        "class_filter_n_total": len(ASSET_CLASSES),
         "today": today,
     }
     return render(request, "patrimoine/overview.html", ctx)

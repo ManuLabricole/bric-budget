@@ -20,6 +20,9 @@ urlpatterns = [
     # /patrimoine/period/<period>/ → change la période du bilan (POST → session, PRG)
     # 2 segments → ne clashe pas avec <slug> (1 segment).
     path("period/<str:period>/", views.set_period, name="set_period"),
+    # /patrimoine/filter/class/<slug>/ → coche/décoche une classe (POST → session, PRG).
+    # slug="all" → tout cocher.
+    path("filter/class/<slug:slug>/", views.toggle_class, name="toggle_class"),
     # /patrimoine/<slug>/ → page d'une classe d'actifs (listing ou SOON)
     path("<slug:slug>/", views.asset_class_page, name="asset_class"),
 ]

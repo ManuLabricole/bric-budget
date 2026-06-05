@@ -9,7 +9,10 @@ Requiert : total_value, today, period, period_choices, chart_json. |chf via budg
         <p class="text-2xl font-semibold text-text-base tabular-nums mt-1">{{ total_value|chf }}</p>
         <p class="text-xs text-text-muted mt-0.5">{{ today|date:"j F Y" }}</p>
     </div>
-    {% include "patrimoine/partials/_period_selector.html" %}
+    <div class="flex items-center gap-2 flex-shrink-0">
+        {% include "components/filters/filter_multiselect.html" with filter_items=class_filter_items toggle_url_name="patrimoine:toggle_class" filter_label="Toutes les classes" n_selected=class_filter_n_selected n_total=class_filter_n_total %}
+        {% include "patrimoine/partials/_period_selector.html" %}
+    </div>
 </header>
 {% if not chart_json.complete %}
     <p class="text-[11px] text-warning mb-2">⚠ Valorisation CHF partielle — conversion en attente sur un compte.</p>
