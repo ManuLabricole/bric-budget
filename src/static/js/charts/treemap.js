@@ -26,9 +26,10 @@ window.BricCharts = window.BricCharts || {};
         value: s.value,
         itemStyle: {
           color: color,
-          borderColor: "transparent",
-          borderWidth: 0,
-          gapWidth: 2,
+          borderColor: T["surface-2"],
+          borderWidth: 3,
+          gapWidth: 0,
+          borderRadius: 6,
         },
       };
     });
@@ -54,7 +55,7 @@ window.BricCharts = window.BricCharts || {};
           breadcrumb: { show: false },
           width: "100%",
           height: "100%",
-          itemStyle: { gapWidth: 2, borderWidth: 0 },
+          itemStyle: { gapWidth: 0, borderWidth: 1, borderColor: T["surface-2"], borderRadius: 3 },
           label: {
             color: "#ffffff",
             fontFamily: FONT,
