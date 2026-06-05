@@ -28,7 +28,7 @@ module.exports = {
         "surface-1":      "#0e0e27",
         "surface-2":      "#131314",
         "surface-3":      "#131314",
-        "surface-hover":  "#1c1c1e",
+        "surface-hover":  "#1d1d1f",
         "edge":           "#2a2a2e",
         "edge-subtle":    "#3a3a3f",
         "text-base":      "#edf0f5",
