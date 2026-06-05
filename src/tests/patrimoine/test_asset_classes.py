@@ -35,6 +35,16 @@ def test_every_asset_class_is_complete():
         assert ac.account_types  # tuple non vide
 
 
+def test_every_asset_class_has_a_hex_color():
+    """Couleur = source de vérité (donut/courbe/pastille) — token hex valide, unique par classe."""
+    import re
+
+    colors = [ac.color for ac in ASSET_CLASSES]
+    for c in colors:
+        assert re.fullmatch(r"#[0-9a-fA-F]{6}", c), f"couleur invalide : {c}"
+    assert len(colors) == len(set(colors)), "couleurs non uniques"
+
+
 def test_functional_classes_are_liquidity_only():
     """En Phase 3A, seules les liquidités (checking/savings) sont fonctionnelles."""
     functional = {ac.slug for ac in ASSET_CLASSES if ac.functional}

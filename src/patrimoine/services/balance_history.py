@@ -27,6 +27,7 @@ from bisect import bisect_right
 from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import cast
 
 from django.utils import timezone
 
@@ -41,6 +42,10 @@ class BalanceSeries:
     dates: list[datetime.date]
     values: list[Decimal]
     anchored: bool
+    # False = au moins une ancre nécessaire est manquante (ex. balance_chf NULL :
+    # conversion CHF pas encore calculée). On remplace alors la valeur par 0 pour le
+    # tracé MAIS on signale l'incomplétude — jamais de 0 silencieux pris pour une vérité.
+    complete: bool = True
 
 
 def period_bounds(
@@ -99,19 +104,25 @@ def account_balance_series(
     sorted_tx_dates, cumsums = _build_tx_cumsums(account, in_chf)
 
     dates: list[datetime.date] = []
-    values: list[Decimal] = []
+    raw: list[Decimal | None] = []
     current = start
     one_day = datetime.timedelta(days=1)
     while current <= end:
         dates.append(current)
-        values.append(
+        raw.append(
             _day_balance(
                 current, snap_dates, snapshots, sorted_tx_dates, cumsums, in_chf
             )
         )
         current += one_day
 
-    return BalanceSeries(dates=dates, values=values, anchored=bool(snapshots))
+    # None = ancre indisponible → on signale complete=False et on trace 0 (jamais
+    # un 0 silencieux pris pour une vérité). complete reste True si aucun None.
+    complete = all(v is not None for v in raw)
+    values = [v if v is not None else Decimal("0") for v in raw]
+    return BalanceSeries(
+        dates=dates, values=values, anchored=bool(snapshots), complete=complete
+    )
 
 
 def consolidated_balance_series(
@@ -141,7 +152,12 @@ def consolidated_balance_series(
         sum((s.values[i] for s in series), Decimal("0")) for i in range(len(dates))
     ]
     return BalanceSeries(
-        dates=dates, values=values, anchored=any(s.anchored for s in series)
+        dates=dates,
+        values=values,
+        anchored=any(s.anchored for s in series),
+        # Incomplet dès qu'un compte a une ancre manquante (ex. EUR sans taux CHF) :
+        # sa valeur a été tracée à 0, on ne masque pas le trou.
+        complete=all(s.complete for s in series),
     )
 
 
@@ -159,10 +175,10 @@ def _subtract_months(d: datetime.date, months: int) -> datetime.date:
     return datetime.date(year, month, day)
 
 
-def _snap_val(snap, in_chf: bool) -> Decimal:
-    """Best available anchor value from a snapshot."""
+def _snap_val(snap, in_chf: bool) -> Decimal | None:
+    """Valeur d'ancre d'un snapshot. None = indisponible (ex. balance_chf pas encore converti)."""
     val = snap.balance_chf if in_chf else snap.authoritative_balance
-    return val if val is not None else Decimal("0")
+    return cast("Decimal | None", val)
 
 
 def _build_tx_cumsums(
@@ -215,8 +231,12 @@ def _day_balance(
     sorted_tx_dates: list[datetime.date],
     cumsums: list[Decimal],
     in_chf: bool,
-) -> Decimal:
-    """End-of-day balance for `day` using hybrid anchoring."""
+) -> Decimal | None:
+    """
+    Solde de fin de journée pour `day` (ancrage hybride).
+    Retourne None si l'ancre nécessaire est indisponible (ex. balance_chf NULL) —
+    l'appelant signale alors `complete=False` plutôt que d'inventer un 0.
+    """
     lo = bisect_right(snap_dates, day)
     left = snapshots[lo - 1] if lo > 0 else None
     right = snapshots[lo] if lo < len(snapshots) else None
@@ -226,6 +246,8 @@ def _day_balance(
 
     if left is not None:
         anchor_val = _snap_val(left, in_chf)
+        if anchor_val is None:
+            return None  # ancre indisponible → jour non valorisable
         if left.date == day:
             return anchor_val
         # Forward walk: sum tx strictly after left.date up to day
@@ -235,7 +257,8 @@ def _day_balance(
     # Narrowing explicite (pas d'assert : strippé sous python -O).
     if right is None:  # pragma: no cover — inatteignable, garde défensive
         return Decimal("0")
+    anchor_val = _snap_val(right, in_chf)
+    if anchor_val is None:
+        return None
     # Backward walk from right: undo tx strictly after day up to right.date
-    return _snap_val(right, in_chf) - _tx_range_sum(
-        sorted_tx_dates, cumsums, day, right.date
-    )
+    return anchor_val - _tx_range_sum(sorted_tx_dates, cumsums, day, right.date)

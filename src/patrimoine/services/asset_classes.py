@@ -33,15 +33,25 @@ class AssetClass:
     label: str  # libellé affiché dans la sidebar
     account_types: tuple[str, ...]  # Account.account_type rattachés (cf. note module)
     functional: bool  # False → page rendue en état SOON, jamais de listing/404
+    color: (
+        str  # token hex — source de vérité couleur (donut, courbe, pastille de ligne)
+    )
 
 
 # Ordre = ordre d'affichage dans la sidebar (liquidités d'abord, puis investissement).
+# Couleurs : alignées sur la logique de la palette catégories (budget/constants.py).
 ASSET_CLASSES: tuple[AssetClass, ...] = (
-    AssetClass("comptes-courants", "Comptes courants", ("checking",), True),
-    AssetClass("livrets", "Livrets", ("savings",), True),
-    AssetClass("actions-fonds", "Actions & Fonds", ("brokerage", "investment"), False),
-    AssetClass("fonds-euros", "Fonds euros", ("insurance",), False),
-    AssetClass("crypto", "Crypto", ("crypto",), False),
+    AssetClass("comptes-courants", "Comptes courants", ("checking",), True, "#5abdc5"),
+    AssetClass("livrets", "Livrets", ("savings",), True, "#7ec8e3"),
+    AssetClass(
+        "actions-fonds",
+        "Actions & Fonds",
+        ("brokerage", "investment"),
+        False,
+        "#b09be8",
+    ),
+    AssetClass("fonds-euros", "Fonds euros", ("insurance",), False, "#e77f79"),
+    AssetClass("crypto", "Crypto", ("crypto",), False, "#deab5e"),
 )
 
 # Index slug → AssetClass pour des lookups O(1) (les slugs sont uniques, cf. tests).
