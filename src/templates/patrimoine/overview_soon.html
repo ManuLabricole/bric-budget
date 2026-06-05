@@ -1,0 +1,35 @@
+{% extends "base_app.html" %}
+{% comment %}
+patrimoine/overview_soon.html — page bilan « Patrimoine brut » (placeholder Phase 3A).
+
+Le bilan complet (net worth consolidé, performance, table actifs, donut) dépend de la
+valorisation des investissements → milestones v0.5.0 (modèles) → v0.8.0 (synthèse).
+Ce skeleton annonce la structure sans données réelles (état SOON), jamais de 404.
+{% endcomment %}
+{% block panel_left %}
+    <section class="bg-surface-3/70 border border-edge/60 rounded-xl p-6">
+        <header class="flex items-center gap-2 mb-1">
+            <h1 class="text-xl font-semibold text-text-base">Patrimoine brut</h1>
+            {% include "components/badges/soon.html" %}
+        </header>
+        <p class="text-sm text-text-muted mb-6 max-w-xl">
+            La vue bilan consolidée (valeur nette, évolution, répartition par classe d'actifs)
+            arrive avec la valorisation des investissements. En attendant, navigue par classe
+            d'actifs dans la barre latérale.
+        </p>
+        {# Skeleton non-interactif : annonce les blocs à venir. #}
+        <div class="space-y-4">
+            <div class="h-44 rounded-xl border border-edge/40 bg-surface-hover/10 flex items-center justify-center">
+                <span class="text-xs uppercase tracking-widest text-text-disabled">Courbe net worth · 1J → TOUT</span>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div class="h-28 rounded-xl border border-edge/40 bg-surface-hover/10 flex items-center justify-center">
+                    <span class="text-xs uppercase tracking-widest text-text-disabled">Table actifs</span>
+                </div>
+                <div class="h-28 rounded-xl border border-edge/40 bg-surface-hover/10 flex items-center justify-center">
+                    <span class="text-xs uppercase tracking-widest text-text-disabled">Répartition · donut</span>
+                </div>
+            </div>
+        </div>
+    </section>
+{% endblock %}

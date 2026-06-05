@@ -1,0 +1,19 @@
+{% extends "base_app.html" %}
+{% comment %}
+patrimoine/asset_class_soon.html — classe d'actifs pas encore fonctionnelle (PR A).
+
+État SOON, jamais de 404 (cf. .claude/rules/ui-layout). La classe existe dans la
+sidebar mais son contenu (positions, valorisation) arrive en Phase 5+ / v0.7.0.
+{% endcomment %}
+{% block panel_left %}
+    <section class="bg-surface-3/70 border border-edge/60 rounded-xl p-10 flex flex-col items-center text-center">
+        <div class="flex items-center gap-2 mb-4">
+            <h1 class="text-xl font-semibold text-text-base">{{ asset_class.label }}</h1>
+            {% include "components/badges/soon.html" %}
+        </div>
+        <p class="text-sm text-text-muted max-w-sm">
+            Cette classe d'actifs sera bientôt disponible. La valorisation et le détail
+            des positions arrivent dans une prochaine phase.
+        </p>
+    </section>
+{% endblock %}

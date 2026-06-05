@@ -88,9 +88,11 @@
           hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
         {# hx-headers : CSRF global pour tous les hx-post enfants. Pattern standard Django+HTMX. #}
         {% block body %}{% endblock %}
-        {# HTMX 2.0.4 via CDN — pinned version + SRI hash (supply chain protection).
-           Si le CDN sert un fichier modifié, le navigateur refuse de l'exécuter.
-           Rotation : recalculer le hash avec `curl ... | openssl dgst -sha384 -binary | openssl base64 -A`. #}
+        {% comment %}
+        HTMX 2.0.4 via CDN — pinned version + SRI hash (supply chain protection).
+        Si le CDN sert un fichier modifié, le navigateur refuse de l'exécuter.
+        Rotation : recalculer le hash avec `curl ... | openssl dgst -sha384 -binary | openssl base64 -A`.
+        {% endcomment %}
         <script src="https://unpkg.com/htmx.org@2.0.4"
                 integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
                 crossorigin="anonymous"></script>

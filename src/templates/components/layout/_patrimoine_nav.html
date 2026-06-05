@@ -1,0 +1,74 @@
+{% comment %}
+components/layout/_patrimoine_nav.html — bloc nav « Patrimoine » de la sidebar.
+
+Comportement (cf. Finary) :
+  - Le LABEL « Patrimoine » est un LIEN vers la page bilan (/patrimoine/).
+  - Le CHEVRON déplie/replie les sous-items. Toggle en CSS PUR (checkbox masquée +
+    group-has-[:checked]) → les éléments PERSISTENT, donc le chevron ET l'accordéon
+    s'animent réellement (une transition CSS ne se déclenche pas sur un élément
+    fraîchement inséré par un swap HTMX — d'où l'abandon du re-render serveur).
+  - L'état déplié persiste en session : la checkbox émet un POST fire-and-forget
+    (hx-swap="none") vers sidebar_toggle. Pas de JS custom.
+  - Surbrillance : SOIT le label (on est sur le bilan), SOIT un sous-item, jamais les deux.
+
+Durée des transitions (chevron + accordéon) = durée globale de l'app
+(transitionDuration.DEFAULT dans tailwind.config.js), pas de duration-N explicite ici.
+
+Variables : asset_classes, patrimoine_sidebar_open, active_asset_class_slug, patrimoine_on_overview.
+{% endcomment %}
+<div id="patrimoine-nav" class="group mb-1">
+    {% comment %}
+    Checkbox masquée = source de vérité de l'état déplié (pilote le CSS via group-has).
+    hx-trigger=change → persiste en session (fire-and-forget, aucun re-render).
+    {% endcomment %}
+    <input type="checkbox"
+           id="patrimoine-disclosure"
+           name="open"
+           class="sr-only"
+           {% if patrimoine_sidebar_open %}checked{% endif %}
+           hx-post="{% url 'patrimoine:sidebar_toggle' %}"
+           hx-trigger="change"
+           hx-swap="none"
+           aria-label="Déplier ou replier Patrimoine">
+    <div class="flex items-center rounded-lg transition-colors {% if patrimoine_on_overview %}bg-surface-hover/30{% endif %}">
+        {# Label = lien vers le bilan #}
+        <a href="{% url 'patrimoine:overview' %}"
+           class="flex items-center gap-3 pl-3 py-2 flex-1 min-w-0 text-sm font-medium transition-colors {% if patrimoine_on_overview %} text-gold {% else %} text-text-muted hover:text-gold {% endif %}">
+            <svg class="w-5 h-5 flex-shrink-0"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="1.5"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.332A48.36 48.36 0 0 0 12 9.75c-2.551 0-5.056.2-7.5.582V21M3 21h18M12 6.75h.008v.008H12V6.75Z" />
+            </svg>
+            <span>Patrimoine</span>
+        </a>
+        {# Label HTML = toggle de la checkbox (clic = déplier/replier). #}
+        <label for="patrimoine-disclosure"
+               class="px-3 py-2 flex-shrink-0 cursor-pointer text-text-muted hover:text-gold transition-colors">
+            <svg class="w-4 h-4 transition-transform group-has-[:checked]:rotate-180"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="1.5"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+            </svg>
+        </label>
+    </div>
+    {# Sous-items : toujours dans le DOM, accordéon CSS (grid-rows 0fr→1fr). #}
+    <div class="grid grid-rows-[0fr] group-has-[:checked]:grid-rows-[1fr] transition-[grid-template-rows]">
+        <div class="overflow-hidden">
+            <div class="mt-1 space-y-0.5">
+                {% for ac in asset_classes %}
+                    <a href="{% url 'patrimoine:asset_class' ac.slug %}"
+                       class="flex items-center gap-2 pl-11 pr-3 py-2 rounded-lg text-sm transition-colors {% if active_asset_class_slug == ac.slug %} text-gold bg-surface-hover/30 {% else %} text-text-muted hover:text-gold hover:bg-surface-hover/30 {% endif %}">
+                        <span>{{ ac.label }}</span>
+                        {% if not ac.functional %}
+                            {% include "components/badges/soon.html" with extra_class="ml-auto" %}
+                        {% endif %}
+                    </a>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>

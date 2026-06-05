@@ -18,6 +18,12 @@ module.exports = {
       fontFamily: {
         sans: ["Inter", "ui-sans-serif", "system-ui"],
       },
+      // Durée d'animation globale de l'app : défaut de toutes les utilities
+      // `transition-*` sans `duration-N` explicite (Tailwind par défaut : 150ms).
+      // Léger ralentissement → transitions plus douces (chevron nav, accordéon, hovers, panels).
+      transitionDuration: {
+        DEFAULT: "250ms",
+      },
       colors: {
         "surface-1":      "#0e0e27",
         "surface-2":      "#131314",

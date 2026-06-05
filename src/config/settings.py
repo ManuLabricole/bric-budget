@@ -102,6 +102,8 @@ INSTALLED_APPS = [
     "budget",
     # imports/ n'a pas de FK vers d'autres apps → déclaré en dernier
     "imports",
+    # patrimoine/ lit accounts + transactions au runtime (pas de modèle propre en 3A)
+    "patrimoine",
     "axes",  # brute-force protection — doit être après contrib.auth
 ]
 
@@ -205,6 +207,9 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "budget.context_processors.design_tokens",
+                # Sidebar Patrimoine ▼ (registre classes d'actifs + état déplié en session).
+                # Présent sur toutes les pages car la sidebar vit dans base_app.html.
+                "patrimoine.context_processors.sidebar",
             ],
         },
     },
