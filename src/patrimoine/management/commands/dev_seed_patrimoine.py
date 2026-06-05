@@ -201,9 +201,8 @@ class Command(BaseCommand):
                         currency=acc.currency,
                         amount_chf=_to_chf(amount, acc.currency),
                         description_raw=self._label(amount, is_savings),
-                        import_hash=hashlib.sha1(
+                        import_hash=hashlib.sha256(
                             f"demo:{acc.id}:{tx_date}:{counter}".encode(),
-                            usedforsecurity=False,
                         ).hexdigest(),
                     )
                     n_tx += 1
