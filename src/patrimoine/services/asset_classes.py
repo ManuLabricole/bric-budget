@@ -39,19 +39,19 @@ class AssetClass:
 
 
 # Ordre = ordre d'affichage dans la sidebar (liquidités d'abord, puis investissement).
-# Couleurs : alignées sur la logique de la palette catégories (budget/constants.py).
+# Couleurs extraites des pastilles Finary (au plus proche du visuel).
 ASSET_CLASSES: tuple[AssetClass, ...] = (
-    AssetClass("comptes-courants", "Comptes courants", ("checking",), True, "#5abdc5"),
-    AssetClass("livrets", "Livrets", ("savings",), True, "#7ec8e3"),
+    AssetClass("comptes-courants", "Comptes courants", ("checking",), True, "#5fae9f"),
+    AssetClass("livrets", "Livrets", ("savings",), True, "#5d6bf0"),
     AssetClass(
         "actions-fonds",
         "Actions & Fonds",
         ("brokerage", "investment"),
         False,
-        "#b09be8",
+        "#b06bb0",
     ),
-    AssetClass("fonds-euros", "Fonds euros", ("insurance",), False, "#e77f79"),
-    AssetClass("crypto", "Crypto", ("crypto",), False, "#deab5e"),
+    AssetClass("fonds-euros", "Fonds euros", ("insurance",), False, "#e58d88"),
+    AssetClass("crypto", "Crypto", ("crypto",), False, "#9b7ae8"),
 )
 
 # Index slug → AssetClass pour des lookups O(1) (les slugs sont uniques, cf. tests).

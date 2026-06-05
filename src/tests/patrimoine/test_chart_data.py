@@ -65,6 +65,6 @@ def test_distribution_from_nodes(chf_account, savings_account, make_snapshot):
     assert dist["total"] == 1500.0
     segs = {s["name"]: s for s in dist["segments"]}
     assert segs["Comptes courants"]["value"] == 1000.0
-    assert "color" in segs["Comptes courants"]
+    assert segs["Comptes courants"]["itemStyle"]["color"]  # shape ECharts
     # Les classes à valeur nulle / SOON n'apparaissent pas dans le donut.
     assert "Crypto" not in segs

@@ -1,0 +1,16 @@
+{% comment %}
+patrimoine/partials/_period_selector.html — pills de période (1J…TOUT).
+Réutilisable sur toutes les pages bilan. POST → session (PRG, set_period). Pill active dorée.
+Requiert : period (clé active), period_choices [(clé, label)].
+{% endcomment %}
+<div class="flex items-center gap-0.5 flex-shrink-0">
+    {% for key, label in period_choices %}
+        <form method="post" action="{% url 'patrimoine:set_period' key %}">
+            {% csrf_token %}
+            <button type="submit"
+                    class="px-2.5 py-1 rounded-md text-xs font-medium transition-colors {% if period == key %} bg-surface-hover text-gold {% else %} text-text-muted hover:text-gold {% endif %}">
+                {{ label }}
+            </button>
+        </form>
+    {% endfor %}
+</div>

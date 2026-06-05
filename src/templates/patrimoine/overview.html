@@ -1,0 +1,59 @@
+{% extends "base_app.html" %}
+{% load static %}
+{% comment %}
+patrimoine/overview.html — page bilan « Patrimoine brut ».
+
+Grille 2×2 (dans panel_left pleine largeur) :
+  haut  : courbe net worth (2/3) + Performance (1/3, placeholder SOON)
+  bas   : table actifs dépliable (2/3) + donut répartition (1/3)
+Tout en lecture seule ; interactivité (filtre classe, empilé/standard, treemap/donut) → étape 5.
+{% endcomment %}
+{% block panel_left %}
+    <div class="space-y-4">
+        {# ── Haut : courbe + performance ─────────────────────────────────── #}
+        <div class="grid grid-cols-3 gap-4 items-stretch">
+            <section class="col-span-2 bg-surface-3/70 border border-edge/60 rounded-xl p-5">
+                {% include "patrimoine/partials/_net_worth_chart.html" %}
+            </section>
+            <aside class="col-span-1 bg-surface-3/70 border border-edge/60 rounded-xl p-5 flex flex-col">
+                <div class="flex items-center gap-2">
+                    <h2 class="text-sm font-medium text-text-muted">Performance</h2>
+                    {% include "components/badges/soon.html" %}
+                </div>
+                <p class="text-xs text-text-muted mt-3 leading-relaxed">
+                    La plus-value latente arrivera avec la valorisation des investissements.
+                    Le cash ne s'apprécie pas — pas de performance sur les liquidités.
+                </p>
+            </aside>
+        </div>
+        {# ── Bas : table actifs + donut ──────────────────────────────────── #}
+        <div class="grid grid-cols-3 gap-4 items-start">
+            <section class="col-span-2 bg-surface-3/70 border border-edge/60 rounded-xl p-5">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-sm font-medium text-text-base">Actifs</h2>
+                </div>
+                {# en-têtes colonnes #}
+                <div class="flex items-center gap-3 px-3 pb-2 text-[10px] uppercase tracking-widest text-text-disabled">
+                    <span class="w-3.5 flex-shrink-0"></span>
+                    <span class="w-2 flex-shrink-0"></span>
+                    <span class="flex-1 min-w-0">Nom</span>
+                    <span class="w-16 text-right flex-shrink-0">Répart.</span>
+                    <span class="w-28 text-right flex-shrink-0">Valeur</span>
+                    <span class="w-20 text-right flex-shrink-0">+/- value</span>
+                </div>
+                <div class="space-y-0.5">{% include "patrimoine/partials/_bilan_table.html" with nodes=nodes %}</div>
+            </section>
+            <aside class="col-span-1 bg-surface-3/70 border border-edge/60 rounded-xl p-5">
+                {% include "patrimoine/partials/_distribution.html" %}
+            </aside>
+        </div>
+    </div>
+{% endblock %}
+{% block extra_js %}
+    <script src="{% static 'js/vendor/echarts.min.js' %}"></script>
+    <script src="{% static 'js/charts/utils.js' %}"></script>
+    <script src="{% static 'js/charts/donut.js' %}"></script>
+    <script src="{% static 'js/charts/treemap.js' %}"></script>
+    <script src="{% static 'js/charts/balance.js' %}"></script>
+    <script src="{% static 'js/charts/auto-init.js' %}"></script>
+{% endblock %}

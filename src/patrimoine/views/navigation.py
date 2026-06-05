@@ -22,19 +22,6 @@ from patrimoine.services.asset_classes import get_asset_class
 
 
 @login_required
-def overview(request):
-    """
-    Page bilan patrimoine (« Patrimoine brut ») — cible du clic sur le label « Patrimoine ».
-
-    Placeholder en Phase 3A : le bilan complet (net worth consolidé, performance,
-    table actifs, donut) dépend de la valorisation des investissements (v0.5→v0.8).
-    Atterrir ici déplie la section dans la sidebar.
-    """
-    request.session[SIDEBAR_SESSION_KEY] = True
-    return render(request, "patrimoine/overview_soon.html")
-
-
-@login_required
 def asset_class_page(request, slug: str):
     """Page d'une classe d'actifs. 404 si slug inconnu ; état SOON si non fonctionnelle."""
     asset_class = get_asset_class(slug)

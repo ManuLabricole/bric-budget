@@ -1,0 +1,98 @@
+"""
+patrimoine/views/overview.py — page bilan « Patrimoine brut » (overview).
+
+Vue FINE : scope les comptes (for_user / SR-001), lit la période en session, appelle les
+services (bilan + chart_data) et rend. Aucun calcul ici — tout est dans services/.
+"""
+
+from __future__ import annotations
+
+import datetime
+from decimal import Decimal
+
+from django.contrib.auth.decorators import login_required
+from django.db.models import Min
+from django.shortcuts import redirect, render
+from django.utils import timezone
+from django.views.decorators.http import require_POST
+
+from accounts.models import Account, BalanceSnapshot
+from patrimoine.context_processors import SIDEBAR_SESSION_KEY
+from patrimoine.services.balance_history import PERIODS, period_bounds
+from patrimoine.services.bilan import overview_bilan
+from patrimoine.services.chart_data import chart_series, distribution
+from transactions.models import Transaction
+
+# Clé de session de la période sélectionnée + libellés d'affichage des pills.
+PERIOD_SESSION_KEY = "patrimoine_period"
+DEFAULT_PERIOD = "1m"
+PERIOD_LABELS = {
+    "1j": "1J",
+    "7j": "7J",
+    "1m": "1M",
+    "3m": "3M",
+    "ytd": "YTD",
+    "1a": "1A",
+    "tout": "TOUT",
+}
+
+
+def _user_accounts(user) -> list:
+    """Comptes actifs de l'utilisateur (SR-001 : scoping for_user)."""
+    return list(
+        Account.objects.for_user(user)
+        .filter(is_active=True)
+        .select_related("institution")
+    )
+
+
+def _earliest_date(accounts) -> datetime.date | None:
+    """Date la plus ancienne connue (snapshot ou transaction) pour borner 'tout'."""
+    if not accounts:
+        return None
+    ids = [a.id for a in accounts]
+    snap = BalanceSnapshot.objects.filter(account_id__in=ids).aggregate(m=Min("date"))[
+        "m"
+    ]
+    tx = Transaction.objects.filter(account_id__in=ids).aggregate(m=Min("date"))["m"]
+    candidates = [d for d in (snap, tx) if d is not None]
+    return min(candidates) if candidates else None
+
+
+@login_required
+def overview(request):
+    """Bilan consolidé : courbe net worth + table actifs + donut. Performance = placeholder SOON."""
+    request.session[SIDEBAR_SESSION_KEY] = True
+
+    accounts = _user_accounts(request.user)
+    period = request.session.get(PERIOD_SESSION_KEY, DEFAULT_PERIOD)
+    if period not in PERIODS:
+        period = DEFAULT_PERIOD
+
+    today = timezone.localdate()
+    start, end = period_bounds(
+        period, today=today, earliest=_earliest_date(accounts) or today
+    )
+
+    nodes = overview_bilan(accounts, on=today)
+    total = sum((n.value for n in nodes if n.value is not None), Decimal("0"))
+
+    ctx = {
+        "nodes": nodes,
+        "total_value": total,
+        "chart_json": chart_series(accounts, start, end),
+        "dist_json": distribution(nodes),
+        "period": period,
+        "period_choices": [(k, PERIOD_LABELS[k]) for k in PERIODS],
+        "today": today,
+    }
+    return render(request, "patrimoine/overview.html", ctx)
+
+
+@require_POST
+@login_required
+def set_period(request, period: str):
+    """Change la période en session (PRG → redirect overview). Période inconnue → ignorée."""
+    if period in PERIODS:
+        request.session[PERIOD_SESSION_KEY] = period
+    return redirect("patrimoine:overview")

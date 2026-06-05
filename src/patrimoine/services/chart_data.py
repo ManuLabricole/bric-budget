@@ -65,11 +65,17 @@ def chart_series(accounts, start: datetime.date, end: datetime.date) -> dict:
 def distribution(nodes: list[BilanNode]) -> dict:
     """
     Données de répartition (donut ET treemap) à partir des nœuds de bilan de niveau 1.
-    Exclut les nœuds sans valeur connue ou à 0 (SOON, vides).
+    Shape ECharts (`itemStyle.color`, comme le donut budget). Exclut les nœuds sans
+    valeur connue ou à 0 (SOON, vides). `label`/`sign` = texte central du donut.
     """
     segments = [
-        {"name": n.label, "value": float(n.value), "color": n.color}
+        {"name": n.label, "value": float(n.value), "itemStyle": {"color": n.color}}
         for n in nodes
         if n.value is not None and n.value > Decimal("0")
     ]
-    return {"segments": segments, "total": sum(s["value"] for s in segments)}
+    return {
+        "segments": segments,
+        "total": sum(s["value"] for s in segments),
+        "label": "Patrimoine",
+        "sign": "",
+    }

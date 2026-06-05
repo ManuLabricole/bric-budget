@@ -1,0 +1,35 @@
+{% comment %}
+patrimoine/partials/_bilan_table.html — table bilan RÉCURSIVE (la grammaire réutilisée partout).
+
+Par ligne : chevron (expand enfants, <details> natif, indépendant par ligne) + pastille couleur
++ label = lien (node.url → page zoom) + KPIs (répartition %, valeur CHF, +/- value ou —).
+delta=None → « — » (SOON liquidités). Classe non fonctionnelle (node.soon) → badge SOON.
+Récursion : on s'inclut avec nodes=node.children. Calque budget catégorie → zoom.
+
+Requiert : nodes (list[BilanNode]). Charge budget_filters pour |chf.
+{% endcomment %}
+{% load budget_filters %}
+{% for node in nodes %}
+    {% if node.children %}
+        <details class="group/exp">
+            <summary class="flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer list-none hover:bg-surface-hover/20 transition-colors">
+                <svg class="w-3.5 h-3.5 flex-shrink-0 text-text-muted transition-transform group-open/exp:rotate-90"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="2"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                </svg>
+                {% include "patrimoine/partials/_bilan_row_body.html" with node=node %}
+            </summary>
+            <div class="ml-6 border-l border-edge/40 pl-1">
+                {% include "patrimoine/partials/_bilan_table.html" with nodes=node.children %}
+            </div>
+        </details>
+    {% else %}
+        <div class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-surface-hover/20 transition-colors">
+            <span class="w-3.5 flex-shrink-0"></span>
+            {% include "patrimoine/partials/_bilan_row_body.html" with node=node %}
+        </div>
+    {% endif %}
+{% endfor %}
