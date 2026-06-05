@@ -28,6 +28,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
 
+from django.utils import timezone
+
 # Clés de période (alignées sur les boutons UI 1J/7J/1M/3M/YTD/1A/TOUT et la session).
 PERIODS = ("1j", "7j", "1m", "3m", "ytd", "1a", "tout")
 
@@ -47,9 +49,14 @@ def period_bounds(
     *,
     earliest: datetime.date | None = None,
 ) -> tuple[datetime.date, datetime.date]:
-    """Retourne (start, end) pour une clé de période. `earliest` borne 'tout'."""
+    """
+    Retourne (start, end) pour une clé de période. `earliest` borne 'tout'.
+
+    'tout' sans `earliest` → start = today (série d'un seul jour) : sans plus ancienne
+    transaction connue, on ne peut pas remonter plus loin.
+    """
     if today is None:
-        today = datetime.date.today()
+        today = timezone.localdate()  # date locale (USE_TZ) — pas date.today() naïf
     end = today
     if period == "1j":
         start = today - datetime.timedelta(days=1)
@@ -77,7 +84,14 @@ def account_balance_series(
     *,
     in_chf: bool = False,
 ) -> BalanceSeries:
-    """Série journalière du solde d'un compte entre start et end (inclus)."""
+    """
+    Série journalière du solde d'un compte entre start et end (inclus).
+
+    ⚠️ Sécurité (SR-001) : `account` DOIT déjà être scopé utilisateur par l'appelant
+    (`Account.objects.for_user(request.user)`). Ce service ne vérifie pas l'appartenance
+    et lit BalanceSnapshot/Transaction par `account=account` — passer un compte non scopé
+    = IDOR. Au branchement d'une vue (PR B/C) : récupérer le compte via for_user + test IDOR.
+    """
     from accounts.models import BalanceSnapshot
 
     snapshots = list(BalanceSnapshot.objects.filter(account=account).order_by("date"))
@@ -105,7 +119,12 @@ def consolidated_balance_series(
     start: datetime.date,
     end: datetime.date,
 ) -> BalanceSeries:
-    """Somme en CHF des séries de plusieurs comptes (net worth d'une catégorie)."""
+    """
+    Somme en CHF des séries de plusieurs comptes (net worth d'une catégorie).
+
+    ⚠️ Sécurité (SR-001) : `accounts` DOIT déjà être un queryset scopé `for_user` — cf.
+    `account_balance_series`. Aucune vérification d'appartenance ici.
+    """
     accounts = list(accounts)
     if not accounts:
         n = (end - start).days + 1
@@ -212,8 +231,10 @@ def _day_balance(
         # Forward walk: sum tx strictly after left.date up to day
         return anchor_val + _tx_range_sum(sorted_tx_dates, cumsums, left.date, day)
 
-    # Ici left est None mais pas (left et right) : right est forcément une ancre.
-    assert right is not None
+    # Ici left est None sans que (left ET right) le soient : right est forcément une ancre.
+    # Narrowing explicite (pas d'assert : strippé sous python -O).
+    if right is None:  # pragma: no cover — inatteignable, garde défensive
+        return Decimal("0")
     # Backward walk from right: undo tx strictly after day up to right.date
     return _snap_val(right, in_chf) - _tx_range_sum(
         sorted_tx_dates, cumsums, day, right.date

@@ -140,14 +140,46 @@ def test_sidebar_toggle_flips_session(client, user):
     client.force_login(user)
     url = reverse("patrimoine:sidebar_toggle")
 
-    # Premier POST : False → True.
+    # Premier POST : False → True. Renvoie le partial nav re-rendu.
     resp = client.post(url)
-    assert resp.status_code == 204
+    assert resp.status_code == 200
     assert client.session.get(SIDEBAR_SESSION_KEY) is True
+    body = resp.content.decode()
+    assert 'id="patrimoine-nav"' in body
+    # Déplié → les sous-items sont présents.
+    assert "Comptes courants" in body
 
-    # Second POST : True → False.
-    client.post(url)
+    # Second POST : True → False. Sous-items masqués.
+    resp2 = client.post(url)
     assert client.session.get(SIDEBAR_SESSION_KEY) is False
+    assert "Comptes courants" not in resp2.content.decode()
+
+
+@pytest.mark.django_db
+def test_sidebar_toggle_preserves_active_highlight(client, user):
+    """Le toggle ne change pas la page : la surbrillance (hx-vals) est préservée."""
+    client.force_login(user)
+    resp = client.post(
+        reverse("patrimoine:sidebar_toggle"),
+        {"active_slug": "livrets", "on_overview": "0"},
+    )
+    body = resp.content.decode()
+    # La ligne Livrets porte la classe active (text-gold) une fois re-rendue.
+    assert "text-gold" in body
+
+
+@pytest.mark.django_db
+def test_sidebar_toggle_ignores_unknown_active_slug(client, user):
+    """Un active_slug inconnu (injection potentielle) est ignoré, pas réinjecté tel quel."""
+    client.force_login(user)
+    resp = client.post(
+        reverse("patrimoine:sidebar_toggle"),
+        {"active_slug": 'evil"slug', "on_overview": "0"},
+    )
+    body = resp.content.decode()
+    # La valeur fautive ne se retrouve pas dans hx-vals (bornée aux slugs connus).
+    assert 'evil"slug' not in body
+    assert "evil" not in body
 
 
 @pytest.mark.django_db
@@ -156,6 +188,37 @@ def test_sidebar_toggle_rejects_get(client, user):
     url = reverse("patrimoine:sidebar_toggle")
     resp = client.get(url)
     assert resp.status_code == 405  # require_POST
+
+
+# --- page bilan (overview) ---------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_overview_requires_auth(client):
+    resp = client.get(reverse("patrimoine:overview"))
+    assert resp.status_code == 302
+
+
+@pytest.mark.django_db
+def test_overview_renders_and_expands_section(client, user):
+    """La page bilan rend en 200 (SOON) et déplie la section dans la sidebar."""
+    client.force_login(user)
+    resp = client.get(reverse("patrimoine:overview"))
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert "Patrimoine brut" in body
+    # Atterrir sur le bilan force le dépliement (sous-items visibles).
+    assert client.session.get(SIDEBAR_SESSION_KEY) is True
+    assert "Comptes courants" in body
+
+
+@pytest.mark.django_db
+def test_overview_highlights_label_not_subitem(client, user):
+    """Sur le bilan, le label Patrimoine est actif ; aucun sous-item ne l'est."""
+    client.force_login(user)
+    resp = client.get(reverse("patrimoine:overview"))
+    assert resp.context["patrimoine_on_overview"] is True
+    assert resp.context["active_asset_class_slug"] is None
 
 
 # --- context processor -------------------------------------------------------

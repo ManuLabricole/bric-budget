@@ -231,3 +231,18 @@ def test_period_bounds_tout_uses_earliest():
     )
     assert start == _d("2022-10-18")
     assert end == _d("2026-06-04")
+
+
+def test_period_bounds_tout_without_earliest_is_single_day():
+    """'tout' sans plus ancienne transaction connue → série d'un seul jour (start=end=today)."""
+    start, end = period_bounds("tout", today=_d("2026-06-04"))
+    assert start == _d("2026-06-04")
+    assert end == _d("2026-06-04")
+
+
+def test_period_bounds_month_clamp_on_31st():
+    """1m/3m depuis un 31 → jour clampé au dernier jour valide du mois cible (pas de crash)."""
+    # 31 mars - 1 mois → 28 février (2026 non bissextile), pas 31 février.
+    assert period_bounds("1m", today=_d("2026-03-31"))[0] == _d("2026-02-28")
+    # 31 mai - 3 mois → 28 février également.
+    assert period_bounds("3m", today=_d("2026-05-31"))[0] == _d("2026-02-28")

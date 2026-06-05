@@ -12,7 +12,9 @@ from . import views
 app_name = "patrimoine"  # namespace → {% url 'patrimoine:asset_class' slug %}
 
 urlpatterns = [
-    # /patrimoine/sidebar-toggle/ → persiste l'état du disclosure (POST HTMX, 204)
+    # /patrimoine/ → page bilan « Patrimoine brut » (cible du clic sur le label)
+    path("", views.overview, name="overview"),
+    # /patrimoine/sidebar-toggle/ → toggle déplier/replier (POST HTMX → partial nav)
     # Déclaré AVANT <slug> pour ne pas être capturé comme une classe d'actifs.
     path("sidebar-toggle/", views.sidebar_toggle, name="sidebar_toggle"),
     # /patrimoine/<slug>/ → page d'une classe d'actifs (listing ou SOON)
