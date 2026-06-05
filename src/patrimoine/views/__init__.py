@@ -1,8 +1,7 @@
 """patrimoine/views/ — package de vues (cf. feedback_python_packages : pas de views.py à plat)."""
 
-from .filters import toggle_class
 from .navigation import asset_class_page, sidebar_toggle
-from .overview import overview, set_period
+from .overview import overview, set_period, toggle_class
 
 __all__ = [
     "asset_class_page",

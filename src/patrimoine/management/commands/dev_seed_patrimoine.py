@@ -53,12 +53,15 @@ INSTITUTIONS = [
 ]
 
 # Comptes démo : (institution_slug, name, account_type, currency, valeur de départ).
+# Variété volontaire (plusieurs institutions × checking/savings) pour un donut parlant.
 ACCOUNTS = [
     ("demo-yuh", "Yuh Courant", "checking", "CHF", Decimal("5400")),
-    ("demo-cic", "CIC Compte Courant", "checking", "EUR", Decimal("530")),
-    ("demo-boursobank", "BoursoBank", "checking", "EUR", Decimal("45")),
-    ("demo-cic", "Livret A", "savings", "EUR", Decimal("17000")),
-    ("demo-cic", "LDDS", "savings", "EUR", Decimal("1200")),
+    ("demo-yuh", "Yuh Save CHF", "savings", "CHF", Decimal("8200")),
+    ("demo-cic", "CIC Compte Courant", "checking", "EUR", Decimal("2300")),
+    ("demo-cic", "CIC Livret A", "savings", "EUR", Decimal("17000")),
+    ("demo-cic", "CIC LDDS", "savings", "EUR", Decimal("1200")),
+    ("demo-boursobank", "BoursoBank Courant", "checking", "EUR", Decimal("1450")),
+    ("demo-boursobank", "Bourso Épargne", "savings", "EUR", Decimal("4300")),
 ]
 
 

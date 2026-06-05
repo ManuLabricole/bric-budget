@@ -5,7 +5,9 @@ Requiert : period (clé active), period_choices [(clé, label)].
 {% endcomment %}
 <div class="flex items-center gap-0.5 flex-shrink-0">
     {% for key, label in period_choices %}
-        <form method="post" action="{% url 'patrimoine:set_period' key %}">
+        <form method="post"
+              action="{% url 'patrimoine:set_period' key %}"
+              {% if htmx_target %}hx-post="{% url 'patrimoine:set_period' key %}" hx-target="{{ htmx_target }}" hx-swap="outerHTML"{% endif %}>
             {% csrf_token %}
             <button type="submit"
                     class="px-2.5 py-1 rounded-md text-xs font-medium transition-colors {% if period == key %} bg-surface-hover text-gold {% else %} text-text-muted hover:text-gold {% endif %}">

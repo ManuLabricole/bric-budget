@@ -38,6 +38,33 @@ def test_toggle_requires_post(client, user):
 
 
 @pytest.mark.django_db
+def test_toggle_htmx_returns_partial_no_reload(client, user):
+    """Requête HTMX → re-rend le bloc bilan (#overview-body), pas de redirect."""
+    client.force_login(user)
+    resp = client.post(
+        reverse("patrimoine:toggle_class", args=["crypto"]),
+        HTTP_HX_REQUEST="true",
+    )
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert 'id="overview-body"' in body
+    # Le dropdown du filtre reste ouvert après le toggle.
+    assert "<details" in body and "open" in body
+
+
+@pytest.mark.django_db
+def test_set_period_htmx_returns_partial(client, user):
+    client.force_login(user)
+    resp = client.post(
+        reverse("patrimoine:set_period", args=["3m"]),
+        HTTP_HX_REQUEST="true",
+    )
+    assert resp.status_code == 200
+    assert 'id="overview-body"' in resp.content.decode()
+    assert client.session["patrimoine_period"] == "3m"
+
+
+@pytest.mark.django_db
 def test_overview_hides_unselected_class(client, user, chf_account):
     """Une classe décochée disparaît des nœuds de la table (le filtre la liste encore)."""
     client.force_login(user)

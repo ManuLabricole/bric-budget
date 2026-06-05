@@ -10,8 +10,8 @@ Requiert : total_value, today, period, period_choices, chart_json. |chf via budg
         <p class="text-xs text-text-muted mt-0.5">{{ today|date:"j F Y" }}</p>
     </div>
     <div class="flex items-center gap-2 flex-shrink-0">
-        {% include "components/filters/filter_multiselect.html" with filter_items=class_filter_items toggle_url_name="patrimoine:toggle_class" filter_label="Toutes les classes" n_selected=class_filter_n_selected n_total=class_filter_n_total %}
-        {% include "patrimoine/partials/_period_selector.html" %}
+        {% include "components/filters/filter_multiselect.html" with filter_items=class_filter_items toggle_url_name="patrimoine:toggle_class" filter_label="Toutes les classes" n_selected=class_filter_n_selected n_total=class_filter_n_total htmx_target=htmx_target filter_open=class_filter_open %}
+        {% include "patrimoine/partials/_period_selector.html" with htmx_target=htmx_target %}
     </div>
 </header>
 {% if not chart_json.complete %}

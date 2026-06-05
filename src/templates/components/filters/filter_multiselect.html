@@ -13,7 +13,8 @@ Paramètres requis :
 
 Logique cercles : gold rempli = sélectionné, vide = décoché.
 {% endcomment %}
-<details class="relative group/filter flex-shrink-0">
+<details class="relative group/filter flex-shrink-0"
+         {% if filter_open %}open{% endif %}>
     <summary class="list-none flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full cursor-pointer select-none transition-colors {% if n_selected < n_total %}text-gold bg-gold/10 border border-gold/30 hover:bg-gold/15{% else %}text-text-base bg-surface-hover hover:bg-edge{% endif %}">
         {% if n_selected < n_total %}
             {{ n_selected }}/{{ n_total }} sélectionnée{{ n_selected|pluralize }}
@@ -43,7 +44,9 @@ Logique cercles : gold rempli = sélectionné, vide = décoché.
                 </svg>
             </button>
         </div>
-        <form method="post" action="{% url toggle_url_name 'all' %}">
+        <form method="post"
+              action="{% url toggle_url_name 'all' %}"
+              {% if htmx_target %}hx-post="{% url toggle_url_name 'all' %}" hx-target="{{ htmx_target }}" hx-swap="outerHTML"{% endif %}>
             {% csrf_token %}
             <button type="submit"
                     class="flex items-center gap-2 w-full px-4 py-2 text-xs {% if n_selected == n_total %}text-gold{% else %}text-text-muted{% endif %} hover:bg-surface-hover transition-colors cursor-pointer">
@@ -59,7 +62,9 @@ Logique cercles : gold rempli = sélectionné, vide = décoché.
         </form>
         <div class="border-t border-edge/50 mx-3 my-1"></div>
         {% for item in filter_items %}
-            <form method="post" action="{% url toggle_url_name item.key %}">
+            <form method="post"
+                  action="{% url toggle_url_name item.key %}"
+                  {% if htmx_target %}hx-post="{% url toggle_url_name item.key %}" hx-target="{{ htmx_target }}" hx-swap="outerHTML"{% endif %}>
                 {% csrf_token %}
                 <button type="submit"
                         class="flex items-center gap-3 w-full px-4 py-2 hover:bg-surface-hover transition-colors cursor-pointer">
