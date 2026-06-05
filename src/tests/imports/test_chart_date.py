@@ -169,7 +169,7 @@ def test_chart_data_import_markers_present(db, user_a, account_a, category):
     assert markers[0]["filename"] == "yuh.csv"
     assert markers[0]["total"] == 42
     assert markers[0]["bank"] == "TestBank"
-    assert markers[0]["date"] == import_date.strftime("%Y-%m-%d")
+    assert markers[0]["date"] == timezone.localtime(import_date).strftime("%Y-%m-%d")
 
 
 def test_chart_data_idor_isolation(db, user_a, account_a, user_b, account_b, category):
