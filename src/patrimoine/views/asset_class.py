@@ -1,9 +1,12 @@
 """
 patrimoine/views/asset_class.py — page d'une classe d'actifs fonctionnelle.
 
-Vue principale + endpoints HTMX :
-  - set_asset_class_period  : change la période de la courbe (POST, session)
-  - set_asset_class_stacked : bascule mode standard/empilé (POST, session)
+Vues :
+  - asset_class_page          : page principale (graphe + tabs comptes/transactions)
+  - set_asset_class_period    : change la période de la courbe (POST, session)
+  - set_asset_class_stacked   : bascule mode standard/empilé (POST, session)
+  - set_asset_class_tab       : bascule onglet Comptes/Transactions (GET, session)
+  - asset_class_transactions  : scroll infini page 2+ (GET, HTMX)
 
 Sécurité (SR-001) : listing scopé via Account.objects.for_user — jamais .all() nu.
 """
@@ -11,15 +14,19 @@ Sécurité (SR-001) : listing scopé via Account.objects.for_user — jamais .al
 from __future__ import annotations
 
 import datetime
+from decimal import Decimal
 
 from django.contrib.auth.decorators import login_required
+from django.core.paginator import EmptyPage, InvalidPage, Paginator
 from django.db.models import Min
 from django.http import Http404
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from accounts.models import Account, BalanceSnapshot
+from budget.utils import _resolve_bank_icon_map
 from patrimoine.context_processors import SIDEBAR_SESSION_KEY
 from patrimoine.services.asset_classes import get_asset_class
 from patrimoine.services.balance_history import PERIODS, period_bounds
@@ -31,7 +38,10 @@ from transactions.models import Transaction
 
 _PERIOD_KEY_PREFIX = "patrimoine_ac_period_"
 _STACKED_KEY_PREFIX = "patrimoine_ac_stacked_"
+_TAB_KEY_PREFIX = "patrimoine_ac_tab_"
+_VALID_TABS = ("comptes", "transactions")
 DEFAULT_PERIOD = "1m"
+TX_PAGE_SIZE = 50
 
 # Cible HTMX du swap (graphe + liste re-rendu sans recharger la page).
 _BODY_TARGET = "#asset-class-body"
@@ -43,6 +53,10 @@ def _period_key(slug: str) -> str:
 
 def _stacked_key(slug: str) -> str:
     return f"{_STACKED_KEY_PREFIX}{slug}"
+
+
+def _tab_key(slug: str) -> str:
+    return f"{_TAB_KEY_PREFIX}{slug}"
 
 
 def _get_accounts(user, asset_class) -> list:
@@ -67,15 +81,55 @@ def _earliest_date(accounts) -> datetime.date | None:
     return min(candidates) if candidates else None
 
 
-def _group_by_institution(accounts) -> list[dict]:
-    """[{institution, accounts: [...]}] pour le listing avec chevron par institution."""
+def _build_institution_groups(accounts, today: datetime.date) -> list[dict]:
+    """
+    Groupe les comptes par institution avec valeurs courantes en CHF.
+
+    Retourne [{institution, accounts: [{account, value}], total}].
+    `value` = Decimal | None (None si aucun snapshot).
+    `total` = somme des valeurs non-None (0 si aucune).
+    """
     groups: dict[int, dict] = {}
     for acc in accounts:
         inst = acc.institution
         if inst.id not in groups:
-            groups[inst.id] = {"institution": inst, "accounts": []}
-        groups[inst.id]["accounts"].append(acc)
+            groups[inst.id] = {
+                "institution": inst,
+                "accounts": [],
+                "total": Decimal("0"),
+            }
+        val = current_value(acc, today)
+        groups[inst.id]["accounts"].append({"account": acc, "value": val})
+        if val is not None:
+            groups[inst.id]["total"] += val
     return list(groups.values())
+
+
+def _get_tx_page(accounts, page_number: int):
+    """Queryset paginé des transactions pour les comptes de la classe."""
+    account_ids = [a.id for a in accounts]
+    qs = (
+        Transaction.objects.filter(account_id__in=account_ids)
+        .select_related("account", "account__institution", "category", "subcategory")
+        .order_by("-date", "-id")
+    )
+    paginator = Paginator(qs, TX_PAGE_SIZE)
+    try:
+        page_obj = paginator.page(page_number)
+    except (EmptyPage, InvalidPage):
+        page_obj = paginator.page(1)
+
+    bank_icon_map = _resolve_bank_icon_map()
+    tx_list = list(page_obj.object_list)
+    for tx in tx_list:
+        slug = (
+            tx.account.institution.icon_slug
+            if tx.account and tx.account.institution
+            else ""
+        )
+        tx.bank_icon_url = bank_icon_map.get(slug, "")
+
+    return tx_list, page_obj
 
 
 def _asset_class_context(request, asset_class) -> dict:
@@ -84,6 +138,9 @@ def _asset_class_context(request, asset_class) -> dict:
     if period not in PERIODS:
         period = DEFAULT_PERIOD
     stacked = request.session.get(_stacked_key(asset_class.slug), True)
+    tab = request.session.get(_tab_key(asset_class.slug), "comptes")
+    if tab not in _VALID_TABS:
+        tab = "comptes"
 
     today = timezone.localdate()
     start, end = period_bounds(
@@ -92,7 +149,7 @@ def _asset_class_context(request, asset_class) -> dict:
 
     chart_json = account_class_series(accounts, start, end)
 
-    # Distribution par compte : valeur courante CHF, couleur de la classe.
+    # Distribution treemap par compte.
     dist_nodes = [
         BilanNode(
             label=acc.name,
@@ -104,16 +161,28 @@ def _asset_class_context(request, asset_class) -> dict:
     ]
     dist_json = distribution([n for n in dist_nodes if n.value is not None])
 
-    return {
+    ctx: dict = {
         "asset_class": asset_class,
-        "institution_groups": _group_by_institution(accounts),
+        "institution_groups": _build_institution_groups(accounts, today),
         "chart_json": chart_json,
         "dist_json": dist_json,
         "stacked": stacked,
         "period": period,
         "period_choices": [(k, PERIOD_LABELS[k]) for k in PERIODS],
         "htmx_target": _BODY_TARGET,
+        "tab": tab,
     }
+
+    # Transactions chargées uniquement quand l'onglet est actif (perf).
+    if tab == "transactions":
+        txs, page_obj = _get_tx_page(accounts, 1)
+        ctx["txs"] = txs
+        ctx["page_obj"] = page_obj
+        ctx["asset_class_tx_url"] = reverse(
+            "patrimoine:asset_class_transactions", args=[asset_class.slug]
+        )
+
+    return ctx
 
 
 def _body_or_redirect(request, asset_class):
@@ -172,3 +241,48 @@ def set_asset_class_stacked(request, slug: str):
         raise Http404(f"Classe d'actifs inconnue : {slug}")
     request.session[_stacked_key(slug)] = request.POST.get("stacked") == "1"
     return _body_or_redirect(request, asset_class)
+
+
+@login_required
+def set_asset_class_tab(request, slug: str, tab: str):
+    """Bascule l'onglet Comptes/Transactions (GET → session → redirect)."""
+    asset_class = get_asset_class(slug)
+    if asset_class is None:
+        raise Http404(f"Classe d'actifs inconnue : {slug}")
+    if tab in _VALID_TABS:
+        request.session[_tab_key(slug)] = tab
+    return redirect("patrimoine:asset_class", slug=slug)
+
+
+@login_required
+def asset_class_transactions(request, slug: str):
+    """
+    Scroll infini page 2+ — retourne uniquement les nouvelles lignes + sentinel.
+
+    Page 1 est rendue directement par asset_class_page (dans le contexte initial).
+    Ce endpoint est appelé par le sentinel HTMX quand l'utilisateur scrolle.
+    """
+    asset_class = get_asset_class(slug)
+    if asset_class is None:
+        raise Http404(f"Classe d'actifs inconnue : {slug}")
+
+    accounts = _get_accounts(request.user, asset_class)
+    try:
+        page_number = int(request.GET.get("page", 1))
+    except (ValueError, TypeError):
+        page_number = 1
+
+    txs, page_obj = _get_tx_page(accounts, page_number)
+
+    return render(
+        request,
+        "patrimoine/partials/_asset_class_tx_rows.html",
+        {
+            "asset_class": asset_class,
+            "txs": txs,
+            "page_obj": page_obj,
+            "asset_class_tx_url": reverse(
+                "patrimoine:asset_class_transactions", args=[slug]
+            ),
+        },
+    )

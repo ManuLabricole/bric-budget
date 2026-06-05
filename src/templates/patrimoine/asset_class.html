@@ -3,24 +3,28 @@
 {% comment %}
 patrimoine/asset_class.html — page d'une classe d'actifs fonctionnelle.
 
-Panel gauche : graphe évolution + toggle standard/empilé + pills période + liste comptes.
-Panel droit  : donut répartition par compte.
+Panel gauche : graphe évolution + toggle standard/empilé + pills période + onglets comptes/transactions.
+Panel droit  : treemap de répartition par compte.
 Panel gauche est swappable via #asset-class-body (période + stacked changent sans reload).
 {% endcomment %}
 {% block panel_left %}
     {% include "patrimoine/partials/_asset_class_body.html" %}
 {% endblock %}
 {% block panel_right %}
-    <div class="bg-surface-3/70 border border-edge/60 rounded-xl p-5">
-        <h2 class="text-sm font-semibold text-text-base mb-3">Distribution</h2>
-        <div data-chart="donut" data-chart-data="ac-dist-data" class="h-56 w-full"></div>
-        {{ dist_json|json_script:"ac-dist-data" }}
-    </div>
+    <aside class="flex-[1] min-w-0">
+        <div class="bg-surface-3/70 border border-edge/60 rounded-xl p-5">
+            <h2 class="text-sm font-semibold text-text-base mb-4">Distribution</h2>
+            <div data-chart="treemap"
+                 data-chart-data="ac-dist-data"
+                 class="h-72 w-full"></div>
+            {{ dist_json|json_script:"ac-dist-data" }}
+        </div>
+    </aside>
 {% endblock %}
 {% block extra_js %}
     <script src="{% static 'js/vendor/echarts.min.js' %}"></script>
     <script src="{% static 'js/charts/utils.js' %}"></script>
-    <script src="{% static 'js/charts/donut.js' %}"></script>
+    <script src="{% static 'js/charts/treemap.js' %}"></script>
     <script src="{% static 'js/charts/balance.js' %}"></script>
     <script src="{% static 'js/charts/auto-init.js' %}"></script>
 {% endblock %}

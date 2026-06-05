@@ -1,0 +1,32 @@
+{% load budget_filters %}
+{% comment %}
+patrimoine/partials/_asset_class_tx_rows.html — lignes scroll infini (page 2+).
+
+Retourné par asset_class_transactions() quand ?page > 1.
+Le sentinel (hx-swap="outerHTML") est remplacé par ces lignes + un nouveau sentinel.
+
+Requiert : txs, page_obj, asset_class, asset_class_tx_url.
+{% endcomment %}
+{% for tx in txs %}
+    {% ifchanged tx.date %}
+        <div class="px-5 py-1.5 sticky top-0 z-10 bg-surface-3/95 backdrop-blur-sm border-b border-edge/20">
+            <span class="text-[10px] font-medium text-text-muted">{{ tx.date|date:"j F Y" }}</span>
+        </div>
+    {% endifchanged %}
+    <div class="flex items-center gap-3 px-5 py-2.5 hover:bg-surface-hover transition-colors">
+        <span class="text-sm text-text-base truncate flex-1">{{ tx.display_name|default:tx.description_raw }}</span>
+        <span class="text-xs text-text-muted flex-shrink-0">{{ tx.account.name }}</span>
+        <span class="text-sm font-medium tabular-nums flex-shrink-0 {% if tx.amount >= 0 %}text-income{% else %}text-expense{% endif %}">
+            {% if tx.amount >= 0 %}+{% endif %}
+            {{ tx.amount_chf|default:tx.amount|chf_dec }} CHF
+        </span>
+    </div>
+{% endfor %}
+{% if page_obj.has_next %}
+    <div hx-get="{{ asset_class_tx_url }}?page={{ page_obj.next_page_number }}"
+         hx-trigger="intersect root:#ac-tx-scroll once"
+         hx-swap="outerHTML"
+         class="py-4 flex justify-center">
+        <span class="text-[10px] text-text-disabled">Chargement…</span>
+    </div>
+{% endif %}

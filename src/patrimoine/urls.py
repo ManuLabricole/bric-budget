@@ -35,6 +35,18 @@ urlpatterns = [
         views.set_asset_class_stacked,
         name="set_asset_class_stacked",
     ),
+    # /patrimoine/<slug>/tab/<tab>/ → bascule onglet comptes/transactions (GET)
+    path(
+        "<slug:slug>/tab/<str:tab>/",
+        views.set_asset_class_tab,
+        name="set_asset_class_tab",
+    ),
+    # /patrimoine/<slug>/transactions/ → scroll infini page 2+ (GET, HTMX)
+    path(
+        "<slug:slug>/transactions/",
+        views.asset_class_transactions,
+        name="asset_class_transactions",
+    ),
     # /patrimoine/<slug>/ → page d'une classe d'actifs (listing ou SOON)
     path("<slug:slug>/", views.asset_class_page, name="asset_class"),
 ]
