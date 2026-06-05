@@ -20,9 +20,9 @@ module.exports = {
       },
       // Durée d'animation globale de l'app : défaut de toutes les utilities
       // `transition-*` sans `duration-N` explicite (Tailwind par défaut : 150ms).
-      // Léger ralentissement → transitions plus douces (chevron nav, hovers, panels).
+      // Léger ralentissement → transitions plus douces (chevron nav, accordéon, hovers, panels).
       transitionDuration: {
-        DEFAULT: "200ms",
+        DEFAULT: "250ms",
       },
       colors: {
         "surface-1":      "#0e0e27",

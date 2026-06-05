@@ -136,50 +136,24 @@ def test_unknown_slug_returns_404(client, user):
 
 
 @pytest.mark.django_db
-def test_sidebar_toggle_flips_session(client, user):
+def test_sidebar_toggle_persists_checkbox_state(client, user):
+    """
+    Fire-and-forget : 204 sans contenu. L'état session reflète l'état RÉEL de la
+    checkbox (champ `open` présent = cochée), pas une simple inversion.
+    """
     client.force_login(user)
     url = reverse("patrimoine:sidebar_toggle")
 
-    # Premier POST : False → True. Renvoie le partial nav re-rendu.
-    resp = client.post(url)
-    assert resp.status_code == 200
+    # Checkbox cochée → `open` envoyé → session True.
+    resp = client.post(url, {"open": "on"})
+    assert resp.status_code == 204
+    assert resp.content == b""
     assert client.session.get(SIDEBAR_SESSION_KEY) is True
-    body = resp.content.decode()
-    assert 'id="patrimoine-nav"' in body
-    # Déplié → les sous-items sont présents.
-    assert "Comptes courants" in body
 
-    # Second POST : True → False. Sous-items masqués.
-    resp2 = client.post(url)
+    # Checkbox décochée → `open` absent → session False.
+    resp2 = client.post(url, {})
+    assert resp2.status_code == 204
     assert client.session.get(SIDEBAR_SESSION_KEY) is False
-    assert "Comptes courants" not in resp2.content.decode()
-
-
-@pytest.mark.django_db
-def test_sidebar_toggle_preserves_active_highlight(client, user):
-    """Le toggle ne change pas la page : la surbrillance (hx-vals) est préservée."""
-    client.force_login(user)
-    resp = client.post(
-        reverse("patrimoine:sidebar_toggle"),
-        {"active_slug": "livrets", "on_overview": "0"},
-    )
-    body = resp.content.decode()
-    # La ligne Livrets porte la classe active (text-gold) une fois re-rendue.
-    assert "text-gold" in body
-
-
-@pytest.mark.django_db
-def test_sidebar_toggle_ignores_unknown_active_slug(client, user):
-    """Un active_slug inconnu (injection potentielle) est ignoré, pas réinjecté tel quel."""
-    client.force_login(user)
-    resp = client.post(
-        reverse("patrimoine:sidebar_toggle"),
-        {"active_slug": 'evil"slug', "on_overview": "0"},
-    )
-    body = resp.content.decode()
-    # La valeur fautive ne se retrouve pas dans hx-vals (bornée aux slugs connus).
-    assert 'evil"slug' not in body
-    assert "evil" not in body
 
 
 @pytest.mark.django_db

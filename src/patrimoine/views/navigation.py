@@ -12,7 +12,7 @@ Sécurité : listing scopé utilisateur via Account.objects.for_user (SR-001 / I
 from __future__ import annotations
 
 from django.contrib.auth.decorators import login_required
-from django.http import Http404
+from django.http import Http404, HttpResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_POST
 
@@ -75,25 +75,13 @@ def asset_class_page(request, slug: str):
 @login_required
 def sidebar_toggle(request):
     """
-    Bascule l'état déplié/replié de la section « Patrimoine » en session, puis re-rend
-    le bloc nav (HTMX `outerHTML` swap de #patrimoine-nav).
+    Persiste l'état déplié/replié de la section « Patrimoine » en session.
 
-    Le toggle ne change PAS la page courante : on préserve donc la surbrillance via les
-    champs envoyés en hx-vals (active_slug du sous-item, on_overview du label). Sans ça,
-    le re-render perdrait l'état actif (la requête de toggle n'a ni slug ni url 'overview').
+    Le visuel (chevron + accordéon) est piloté en CSS pur côté template (checkbox +
+    group-has-[:checked]) → ce POST est un simple fire-and-forget (hx-swap="none") qui
+    ne renvoie rien à afficher. On lit l'état RÉEL de la checkbox (`open` présent =
+    cochée) plutôt que d'inverser, pour rester synchrone avec le client sans risque de
+    désync. Réponse 204 : aucun contenu à échanger.
     """
-    request.session[SIDEBAR_SESSION_KEY] = not request.session.get(
-        SIDEBAR_SESSION_KEY, False
-    )
-    # Override explicite des clés du context processor (la requête de toggle ne porte
-    # pas l'URL de la page réelle) — le contexte de vue a priorité sur le processor.
-    # On borne active_slug aux slugs connus : valeur réinjectée dans hx-vals du partial,
-    # donc on ne lui fait pas confiance même si l'auto-escape Django neutralise l'injection.
-    raw_slug = request.POST.get("active_slug")
-    ctx = {
-        "active_asset_class_slug": raw_slug
-        if raw_slug and get_asset_class(raw_slug)
-        else None,
-        "patrimoine_on_overview": request.POST.get("on_overview") == "1",
-    }
-    return render(request, "components/layout/_patrimoine_nav.html", ctx)
+    request.session[SIDEBAR_SESSION_KEY] = "open" in request.POST
+    return HttpResponse(status=204)
