@@ -23,6 +23,18 @@ urlpatterns = [
     # /patrimoine/filter/class/<slug>/ → coche/décoche une classe (POST → session, PRG).
     # slug="all" → tout cocher.
     path("filter/class/<slug:slug>/", views.toggle_class, name="toggle_class"),
+    # /patrimoine/<slug>/period/<period>/ → change la période de la courbe (POST)
+    path(
+        "<slug:slug>/period/<str:period>/",
+        views.set_asset_class_period,
+        name="set_asset_class_period",
+    ),
+    # /patrimoine/<slug>/stacked/ → bascule mode standard/empilé (POST)
+    path(
+        "<slug:slug>/stacked/",
+        views.set_asset_class_stacked,
+        name="set_asset_class_stacked",
+    ),
     # /patrimoine/<slug>/ → page d'une classe d'actifs (listing ou SOON)
     path("<slug:slug>/", views.asset_class_page, name="asset_class"),
 ]

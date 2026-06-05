@@ -1,0 +1,114 @@
+{% comment %}
+patrimoine/partials/_asset_class_body.html — corps swappable HTMX (période + stacked).
+
+Cible swap : #asset-class-body.
+Inclus par asset_class.html + renvoyé par set_asset_class_period / set_asset_class_stacked.
+auto-init.js ré-instancie les charts sur htmx:afterSwap.
+
+Requiert : asset_class, institution_groups, chart_json, stacked, period, period_choices, htmx_target.
+{% endcomment %}
+{% load budget_filters bank_icons %}
+<div id="asset-class-body" class="space-y-4">
+    {# ── Graphe évolution ────────────────────────────────────────────── #}
+    <section class="bg-surface-3/70 border border-edge/60 rounded-xl p-5">
+        <header class="flex items-center justify-between gap-4 mb-3">
+            <h1 class="text-sm font-semibold text-text-base">{{ asset_class.label }}</h1>
+            <div class="flex items-center gap-3 flex-shrink-0">
+                {# Toggle Standard / Empilé #}
+                <div class="flex items-center gap-0.5">
+                    <form method="post"
+                          action="{% url 'patrimoine:set_asset_class_stacked' asset_class.slug %}"
+                          hx-post="{% url 'patrimoine:set_asset_class_stacked' asset_class.slug %}"
+                          hx-target="{{ htmx_target }}"
+                          hx-swap="outerHTML">
+                        {% csrf_token %}
+                        <input type="hidden" name="stacked" value="0">
+                        <button type="submit"
+                                class="px-2.5 py-1 rounded-md text-xs font-medium transition-colors {% if not stacked %}bg-surface-hover text-gold{% else %}text-text-muted hover:text-gold{% endif %}">
+                            Standard
+                        </button>
+                    </form>
+                    <form method="post"
+                          action="{% url 'patrimoine:set_asset_class_stacked' asset_class.slug %}"
+                          hx-post="{% url 'patrimoine:set_asset_class_stacked' asset_class.slug %}"
+                          hx-target="{{ htmx_target }}"
+                          hx-swap="outerHTML">
+                        {% csrf_token %}
+                        <input type="hidden" name="stacked" value="1">
+                        <button type="submit"
+                                class="px-2.5 py-1 rounded-md text-xs font-medium transition-colors {% if stacked %}bg-surface-hover text-gold{% else %}text-text-muted hover:text-gold{% endif %}">
+                            Empilé
+                        </button>
+                    </form>
+                </div>
+                {# Sélecteur période #}
+                <div class="flex items-center gap-0.5">
+                    {% for key, label in period_choices %}
+                        <form method="post"
+                              action="{% url 'patrimoine:set_asset_class_period' asset_class.slug key %}"
+                              hx-post="{% url 'patrimoine:set_asset_class_period' asset_class.slug key %}"
+                              hx-target="{{ htmx_target }}"
+                              hx-swap="outerHTML">
+                            {% csrf_token %}
+                            <button type="submit"
+                                    class="px-2.5 py-1 rounded-md text-xs font-medium transition-colors {% if period == key %}bg-surface-hover text-gold{% else %}text-text-muted hover:text-gold{% endif %}">
+                                {{ label }}
+                            </button>
+                        </form>
+                    {% endfor %}
+                </div>
+            </div>
+        </header>
+        {% if not chart_json.complete %}
+            <p class="text-[11px] text-warning mb-2">⚠ Valorisation CHF partielle — conversion en attente sur un compte.</p>
+        {% endif %}
+        <div data-chart="balance"
+             data-chart-data="ac-chart-data"
+             data-stacked="{% if stacked %}1{% else %}0{% endif %}"
+             class="h-56 w-full"></div>
+        {{ chart_json|json_script:"ac-chart-data" }}
+    </section>
+    {# ── Liste comptes par institution ───────────────────────────────── #}
+    <section class="bg-surface-3/70 border border-edge/60 rounded-xl overflow-hidden">
+        <div class="px-5 py-3 border-b border-edge/40 flex items-center gap-2">
+            <p class="text-xs font-semibold uppercase tracking-widest text-text-muted">Comptes</p>
+            <span class="text-xs text-text-disabled">·</span>
+            <p class="text-xs text-text-disabled">
+                Cliquez sur un compte pour voir le détail
+                {% include "components/badges/soon.html" %}
+            </p>
+        </div>
+        {% for group in institution_groups %}
+            <details class="group border-b border-edge/30 last:border-b-0"
+                     {% if institution_groups|length == 1 %}open{% endif %}>
+                <summary class="flex items-center gap-3 px-5 py-3 cursor-pointer select-none hover:bg-surface-hover/20 transition-colors list-none">
+                    {% bank_icon_url group.institution as bicon %}
+                    {% include "components/banks/bank_logo.html" with icon_url=bicon bank=group.institution size="w-7 h-7" padding="p-1" %}
+                    <span class="flex-1 text-sm font-medium text-text-base">{{ group.institution.name }}</span>
+                    <span class="text-xs text-text-muted tabular-nums">
+                        {{ group.accounts|length }} compte{{ group.accounts|length|pluralize }}
+                    </span>
+                    <svg class="w-4 h-4 text-text-disabled transition-transform duration-200 group-open:rotate-180 flex-shrink-0"
+                         fill="none"
+                         viewBox="0 0 24 24"
+                         stroke="currentColor"
+                         stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                </summary>
+                <ul class="border-t border-edge/30 divide-y divide-edge/20">
+                    {% for account in group.accounts %}
+                        <li class="flex items-center gap-3 px-5 py-2.5 hover:bg-surface-hover/20 transition-colors">
+                            <span class="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                                  style="background-color: {{ asset_class.color }}"></span>
+                            <span class="text-sm text-text-base truncate flex-1">{{ account.name }}</span>
+                            <span class="text-xs text-text-muted uppercase tabular-nums">{{ account.currency }}</span>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </details>
+        {% empty %}
+            <p class="px-5 py-8 text-sm text-text-muted text-center">Aucun compte dans cette classe pour l'instant.</p>
+        {% endfor %}
+    </section>
+</div>

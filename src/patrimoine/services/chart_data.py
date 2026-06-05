@@ -6,6 +6,11 @@ Consomme `valuation` (net worth) et `bilan` (BilanNode), et produit des dicts pr
 `float()` uniquement à la frontière JSON (SR-002).
 
 ⚠️ Sécurité (SR-001) : `accounts` déjà scopés for_user (cf. valuation/bilan).
+
+Fonctions :
+  chart_series           — courbe net worth multi-classes (vue overview)
+  account_class_series   — courbe par compte dans une classe (vue asset_class)
+  distribution           — segments donut/treemap (overview + asset_class)
 """
 
 from __future__ import annotations
@@ -66,6 +71,72 @@ def chart_series(
         "series": series,
         "anchored": total.anchored,
         "complete": total.complete,
+    }
+
+
+# Palette pour différencier les comptes dans le mode empilé.
+# (8 couleurs, ordre fixe pour que le même compte garde la même couleur.)
+_STACK_PALETTE = (
+    "#5fae9f",
+    "#5d6bf0",
+    "#9b7ae8",
+    "#e58d88",
+    "#b06bb0",
+    "#3d8b7a",
+    "#7a8df0",
+    "#c88fe8",
+)
+
+
+def account_class_series(
+    accounts,
+    start: datetime.date,
+    end: datetime.date,
+) -> dict:
+    """
+    Données courbe pour une classe d'actifs : total CHF + une série CHF par compte.
+
+    Utilisé par la page asset_class (comptes courants, livrets). Les comptes doivent
+    être pré-scopés for_user (SR-001) par l'appelant — ce service ne vérifie pas.
+    """
+    from .balance_history import account_balance_series
+
+    accounts = list(accounts)
+    n_days = (end - start).days + 1
+
+    if not accounts:
+        dates = [start + datetime.timedelta(days=i) for i in range(n_days)]
+        return {
+            "dates": [d.isoformat() for d in dates],
+            "total": [0.0] * n_days,
+            "series": [],
+            "anchored": False,
+            "complete": True,
+        }
+
+    # Séries individuelles en CHF (cohérence multi-devises pour le stacking).
+    per_account = [
+        account_balance_series(acc, start, end, in_chf=True) for acc in accounts
+    ]
+    dates = per_account[0].dates
+    n = len(dates)
+
+    total = [float(sum(s.values[i] for s in per_account)) for i in range(n)]
+    series = [
+        {
+            "name": acc.name,
+            "color": _STACK_PALETTE[i % len(_STACK_PALETTE)],
+            "values": [float(v) for v in per_account[i].values],
+        }
+        for i, acc in enumerate(accounts)
+    ]
+
+    return {
+        "dates": [d.isoformat() for d in dates],
+        "total": total,
+        "series": series,
+        "anchored": any(s.anchored for s in per_account),
+        "complete": all(s.complete for s in per_account),
     }
 
 
