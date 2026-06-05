@@ -7,18 +7,23 @@ Requiert : node (BilanNode). |chf via budget_filters.
 {% if node.institution %}
     {# Nœud compte : logo de l'institution (composant réutilisable) #}
     {% bank_icon_url node.institution as bicon %}
-    {% include "components/banks/bank_logo.html" with icon_url=bicon bank=node.institution size="w-5 h-5" padding="p-0.5" %}
+    {% include "components/banks/bank_logo.html" with icon_url=bicon bank=node.institution size="w-6 h-6" padding="p-1" %}
 {% else %}
     {# Nœud de classe d'actifs : pastille couleur #}
     <span class="w-2 h-2 rounded-full flex-shrink-0"
           style="background-color: {{ node.color }}"></span>
 {% endif %}
+{% comment %}
+Le LIEN ne couvre QUE le texte → cliquer le nom redirige (page zoom). Le reste de la
+ligne (spacer + KPIs) appartient au <summary> → cliquer la ligne étend (cf. Finary).
+{% endcomment %}
 {% if node.url %}
     <a href="{{ node.url }}"
-       class="text-sm text-text-base hover:text-gold transition-colors flex-1 min-w-0 truncate">{{ node.label }}</a>
+       class="text-sm text-text-base hover:text-gold transition-colors min-w-0 truncate">{{ node.label }}</a>
 {% else %}
-    <span class="text-sm text-text-base flex-1 min-w-0 truncate">{{ node.label }}</span>
+    <span class="text-sm text-text-base min-w-0 truncate">{{ node.label }}</span>
 {% endif %}
+<span class="flex-1"></span>
 {% if node.soon %}
     {% include "components/badges/soon.html" %}
 {% else %}
