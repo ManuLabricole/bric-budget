@@ -5,14 +5,14 @@
 //     data : {
 //       dates  : ["2026-03-10", ...]            une date ISO par jour
 //       total  : [1500.0, ...]                  somme net worth (mode standard)
-//       series : [{ name, color, values:[...] }]  une série par classe (mode empilé)
+//       series : [{ name, color, values:[...] }]  une série par compte/classe (mode empilé)
 //       anchored, complete : bool
 //     }
 //     options : { stacked: bool }  — sinon lu depuis el.dataset.stacked ("1")
 //
-// Mode empilé (stacked) : une aire par classe d'actifs (couleur = data.series[].color).
-// Mode standard         : une seule aire (total), couleur gold.
-// ⛔ Couleurs : data.series[].color (venu de Python/AssetClass) + BC.T pour l'UI. Jamais de hex en dur.
+// Mode empilé (stacked) : aires empilées, une par compte/classe (couleur = data.series[].color).
+// Mode standard         : ligne gold unique = somme de tous les comptes (data.total).
+// ⛔ Couleurs : data.series[].color (venu de Python) + BC.T pour l'UI. Jamais de hex en dur.
 
 window.BricCharts = window.BricCharts || {};
 
@@ -57,6 +57,7 @@ window.BricCharts = window.BricCharts || {};
 
     var series;
     if (stacked) {
+      // Aires empilées — une par compte/classe.
       series = data.series.map(function (s) {
         return {
           name: s.name,
@@ -71,6 +72,7 @@ window.BricCharts = window.BricCharts || {};
         };
       });
     } else {
+      // Standard : ligne gold unique = somme de tous les comptes.
       series = [
         {
           type: "line",
@@ -85,15 +87,15 @@ window.BricCharts = window.BricCharts || {};
 
     chart.setOption({
       backgroundColor: "transparent",
-      // Durée d'animation alignée sur le reste de l'app (250ms) — plus de fade interminable.
       animationDuration: 250,
       animationDurationUpdate: 250,
       grid: { left: 4, right: 12, top: 14, bottom: 4, containLabel: true },
       tooltip: {
         trigger: "axis",
+        confine: true,
         backgroundColor: T["surface-hover"],
         borderColor: T["edge"],
-        textStyle: { color: T["text-base"], fontSize: 12, fontFamily: FONT },
+        textStyle: { color: T["text-base"], fontSize: 11, fontFamily: FONT },
         valueFormatter: function (v) {
           return Math.round(v).toLocaleString("fr-CH") + " CHF";
         },

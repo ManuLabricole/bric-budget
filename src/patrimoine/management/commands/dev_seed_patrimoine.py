@@ -36,33 +36,50 @@ DEMO_PASSWORD = "demo1234"  # noqa: S105 — compte démo DEV uniquement, jamais
 
 EUR_TO_CHF = Decimal("0.95")  # taux démo fixe
 
-# Institutions DÉMO : (name, slug DÉMO isolé, icon_slug RÉEL, country, currency, domain).
-# slug `demo-*` → n'entre jamais en collision avec les vraies institutions.
-# icon_slug réel (yuh/cic/boursobank) → les logos existants se résolvent.
+# Institutions de référence : (name, slug fallback, icon_slug, country, currency, domain).
+# _seed_institutions cherche d'abord une institution RÉELLE avec le même icon_slug
+# pour éviter les doublons ("Yuh" et "Yuh (démo)"). Si aucune n'existe, elle crée
+# avec le slug fallback.
 INSTITUTIONS = [
-    ("Yuh (démo)", "demo-yuh", "yuh", "CH", "CHF", "yuh.ch"),
-    ("CIC (démo)", "demo-cic", "cic", "FR", "EUR", "cic.fr"),
+    ("Yuh", "demo-yuh", "yuh", "CH", "CHF", "yuh.ch"),
+    ("CIC", "demo-cic", "cic", "FR", "EUR", "cic.fr"),
+    ("BoursoBank", "demo-boursobank", "boursorama", "FR", "EUR", "boursobank.com"),
+]
+
+# Comptes démo : (institution_slug, name, account_type, currency, valeur_départ, drift_mensuel).
+# drift = variation structurelle mensuelle hors bruit aléatoire.
+# Conçu pour avoir des croisements de courbes sur 12 mois :
+#   Yuh Courant (CHF, -4%/mois) croise CIC Courant (EUR, +5%/mois) vers le mois 4-5.
+#   CIC a 2 comptes courants → le groupement par institution est visible dans la liste.
+ACCOUNTS = [
+    ("demo-yuh", "Yuh Courant", "checking", "CHF", Decimal("5400"), Decimal("-0.04")),
+    ("demo-yuh", "Yuh Save CHF", "savings", "CHF", Decimal("8200"), Decimal("0.006")),
+    ("demo-cic", "CIC Courant", "checking", "EUR", Decimal("2300"), Decimal("0.05")),
+    ("demo-cic", "CIC Pro", "checking", "EUR", Decimal("890"), Decimal("0.015")),
+    ("demo-cic", "CIC Livret A", "savings", "EUR", Decimal("17000"), Decimal("0.003")),
+    ("demo-cic", "CIC LDDS", "savings", "EUR", Decimal("1200"), Decimal("0.002")),
     (
-        "BoursoBank (démo)",
         "demo-boursobank",
-        "boursorama",  # fichier logo = boursorama.png
-        "FR",
+        "BoursoBank Courant",
+        "checking",
         "EUR",
-        "boursobank.com",
+        Decimal("1450"),
+        Decimal("-0.008"),
+    ),
+    (
+        "demo-boursobank",
+        "Bourso Épargne",
+        "savings",
+        "EUR",
+        Decimal("4300"),
+        Decimal("0.004"),
     ),
 ]
 
-# Comptes démo : (institution_slug, name, account_type, currency, valeur de départ).
-# Variété volontaire (plusieurs institutions × checking/savings) pour un donut parlant.
-ACCOUNTS = [
-    ("demo-yuh", "Yuh Courant", "checking", "CHF", Decimal("5400")),
-    ("demo-yuh", "Yuh Save CHF", "savings", "CHF", Decimal("8200")),
-    ("demo-cic", "CIC Compte Courant", "checking", "EUR", Decimal("2300")),
-    ("demo-cic", "CIC Livret A", "savings", "EUR", Decimal("17000")),
-    ("demo-cic", "CIC LDDS", "savings", "EUR", Decimal("1200")),
-    ("demo-boursobank", "BoursoBank Courant", "checking", "EUR", Decimal("1450")),
-    ("demo-boursobank", "Bourso Épargne", "savings", "EUR", Decimal("4300")),
-]
+
+# Noms exacts des comptes créés par ce seed — utilisés par _wipe_demo_accounts
+# pour identifier les comptes démo sans dépendre du slug d'institution.
+_DEMO_ACCOUNT_NAMES = frozenset(name for _, name, *_ in ACCOUNTS)
 
 
 def _to_chf(amount: Decimal, currency: str) -> Decimal:
@@ -102,7 +119,7 @@ class Command(BaseCommand):
         self._wipe_demo_accounts(user)
 
         n_acc, n_snap, n_tx = 0, 0, 0
-        for inst_slug, name, atype, currency, base in ACCOUNTS:
+        for inst_slug, name, atype, currency, base, drift in ACCOUNTS:
             acc = Account.objects.create(
                 institution=institutions[inst_slug],
                 name=name,
@@ -111,7 +128,7 @@ class Command(BaseCommand):
             )
             acc.members.add(user)
             n_acc += 1
-            s, t = self._seed_history(acc, base, today)
+            s, t = self._seed_history(acc, base, drift, today)
             n_snap += s
             n_tx += t
 
@@ -146,36 +163,55 @@ class Command(BaseCommand):
         return user, True
 
     def _seed_institutions(self) -> dict[str, Institution]:
+        """Réutilise les institutions réelles (même icon_slug) ; crée si absentes.
+
+        Évite les doublons visuels ("Yuh" + "Yuh (démo)") en cherchant d'abord
+        une institution existante avec le même icon_slug.
+        """
         result = {}
         for name, slug, icon_slug, country, currency, domain in INSTITUTIONS:
-            inst, _ = Institution.objects.update_or_create(
-                slug=slug,
-                defaults={
-                    "name": name,
-                    "country": country,
-                    "default_currency": currency,
-                    "icon_slug": icon_slug,
-                    "domain": domain,
-                },
+            inst = (
+                Institution.objects.filter(icon_slug=icon_slug).order_by("id").first()
             )
+            if inst is None:
+                inst, _ = Institution.objects.get_or_create(
+                    slug=slug,
+                    defaults={
+                        "name": name,
+                        "country": country,
+                        "default_currency": currency,
+                        "icon_slug": icon_slug,
+                        "domain": domain,
+                    },
+                )
             result[slug] = inst
         return result
 
     def _wipe_demo_accounts(self, user) -> None:
-        """Efface UNIQUEMENT les comptes démo (institutions `demo-*`) de l'utilisateur."""
-        accs = Account.objects.filter(
-            institution__slug__startswith="demo-", members=user
-        )
+        """Efface les comptes démo identifiés par leur nom exact (_DEMO_ACCOUNT_NAMES).
+
+        On ne filtre plus par institution__slug (les comptes démo sont désormais
+        attachés aux institutions réelles pour éviter les doublons visuels).
+        """
+        accs = Account.objects.filter(name__in=_DEMO_ACCOUNT_NAMES, members=user)
         Transaction.objects.filter(account__in=accs).delete()
         BalanceSnapshot.objects.filter(account__in=accs).delete()
         accs.delete()
 
-    def _seed_history(self, acc: Account, base: Decimal, today: datetime.date):
-        """Snapshots mensuels (12 mois) + transactions entre les ancres."""
+    def _seed_history(
+        self, acc: Account, base: Decimal, drift: Decimal, today: datetime.date
+    ):
+        """Snapshots mensuels (12 mois) + transactions entre les ancres.
+
+        drift = variation structurelle mensuelle (ex. -0.04 → −4%/mois).
+        Le bruit aléatoire est volontairement faible pour que les drifts différenciés
+        produisent des croisements de courbes visibles sur le graphe.
+        """
         n_snap, n_tx = 0, 0
         value = base
         counter = 0
         is_savings = acc.account_type == "savings"
+        growth = Decimal("1") + drift
 
         for months_ago in range(12, -1, -1):
             snap_date = _first_of_month_ago(today, months_ago)
@@ -206,8 +242,8 @@ class Command(BaseCommand):
                         ).hexdigest(),
                     )
                     n_tx += 1
-                growth = Decimal("1.004") if is_savings else Decimal("1.0")
-                noise = Decimal(str(round(random.uniform(-0.04, 0.06), 4)))
+                # Bruit réduit (±1.5%) pour que le drift structurel soit lisible.
+                noise = Decimal(str(round(random.uniform(-0.015, 0.015), 4)))
                 value = (value * growth * (1 + noise)).quantize(Decimal("0.01"))
                 value = max(value, Decimal("1"))
 

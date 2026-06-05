@@ -31,7 +31,11 @@ from patrimoine.context_processors import SIDEBAR_SESSION_KEY
 from patrimoine.services.asset_classes import get_asset_class
 from patrimoine.services.balance_history import PERIODS, period_bounds
 from patrimoine.services.bilan import BilanNode
-from patrimoine.services.chart_data import account_class_series, distribution
+from patrimoine.services.chart_data import (
+    _STACK_PALETTE,
+    account_class_series,
+    distribution,
+)
 from patrimoine.services.valuation import current_value
 from patrimoine.views.overview import PERIOD_LABELS
 from transactions.models import Transaction
@@ -89,19 +93,20 @@ def _build_institution_groups(accounts, today: datetime.date) -> list[dict]:
     `value` = Decimal | None (None si aucun snapshot).
     `total` = somme des valeurs non-None (0 si aucune).
     """
-    groups: dict[int, dict] = {}
+    groups: dict[int | None, dict] = {}
     for acc in accounts:
         inst = acc.institution
-        if inst.id not in groups:
-            groups[inst.id] = {
+        key = inst.id if inst is not None else None
+        if key not in groups:
+            groups[key] = {
                 "institution": inst,
                 "accounts": [],
                 "total": Decimal("0"),
             }
         val = current_value(acc, today)
-        groups[inst.id]["accounts"].append({"account": acc, "value": val})
+        groups[key]["accounts"].append({"account": acc, "value": val})
         if val is not None:
-            groups[inst.id]["total"] += val
+            groups[key]["total"] += val
     return list(groups.values())
 
 
@@ -149,15 +154,15 @@ def _asset_class_context(request, asset_class) -> dict:
 
     chart_json = account_class_series(accounts, start, end)
 
-    # Distribution treemap par compte.
+    # Distribution treemap : couleurs alignées avec les séries du graphe (_STACK_PALETTE).
     dist_nodes = [
         BilanNode(
             label=acc.name,
             value=current_value(acc, today),
-            color=asset_class.color,
+            color=_STACK_PALETTE[i % len(_STACK_PALETTE)],
             url=None,
         )
-        for acc in accounts
+        for i, acc in enumerate(accounts)
     ]
     dist_json = distribution([n for n in dist_nodes if n.value is not None])
 

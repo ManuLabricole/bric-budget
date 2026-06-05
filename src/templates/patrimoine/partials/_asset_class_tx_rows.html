@@ -1,4 +1,3 @@
-{% load budget_filters %}
 {% comment %}
 patrimoine/partials/_asset_class_tx_rows.html — lignes scroll infini (page 2+).
 
@@ -9,18 +8,11 @@ Requiert : txs, page_obj, asset_class, asset_class_tx_url.
 {% endcomment %}
 {% for tx in txs %}
     {% ifchanged tx.date %}
-        <div class="px-5 py-1.5 sticky top-0 z-10 bg-surface-3/95 backdrop-blur-sm border-b border-edge/20">
+        <div class="px-4 py-1.5 sticky top-0 z-10 bg-surface-2/90 backdrop-blur-sm border-b border-edge/20">
             <span class="text-[10px] font-medium text-text-muted">{{ tx.date|date:"j F Y" }}</span>
         </div>
     {% endifchanged %}
-    <div class="flex items-center gap-3 px-5 py-2.5 hover:bg-surface-hover transition-colors">
-        <span class="text-sm text-text-base truncate flex-1">{{ tx.display_name|default:tx.description_raw }}</span>
-        <span class="text-xs text-text-muted flex-shrink-0">{{ tx.account.name }}</span>
-        <span class="text-sm font-medium tabular-nums flex-shrink-0 {% if tx.amount >= 0 %}text-income{% else %}text-expense{% endif %}">
-            {% if tx.amount >= 0 %}+{% endif %}
-            {{ tx.amount_chf|default:tx.amount|chf_dec }} CHF
-        </span>
-    </div>
+    {% include "budget/_panel_tx_row.html" with bank_icon_url=tx.bank_icon_url panel_source="patrimoine" %}
 {% endfor %}
 {% if page_obj.has_next %}
     <div hx-get="{{ asset_class_tx_url }}?page={{ page_obj.next_page_number }}"

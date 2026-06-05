@@ -24,16 +24,22 @@ window.BricCharts = window.BricCharts || {};
       return {
         name: s.name,
         value: s.value,
-        itemStyle: { color: color, borderColor: T["surface-2"], borderWidth: 2, gapWidth: 2 },
+        itemStyle: {
+          color: color,
+          borderColor: "transparent",
+          borderWidth: 0,
+          gapWidth: 2,
+        },
       };
     });
 
     chart.setOption({
       backgroundColor: "transparent",
       tooltip: {
+        confine: true,
         backgroundColor: T["surface-hover"],
         borderColor: T["edge"],
-        textStyle: { color: T["text-base"], fontSize: 12, fontFamily: FONT },
+        textStyle: { color: T["text-base"], fontSize: 11, fontFamily: FONT },
         formatter: function (p) {
           var pct = total ? ((p.value / total) * 100).toFixed(1) : "0";
           var val = Math.round(p.value).toLocaleString("fr-CH");
@@ -48,15 +54,15 @@ window.BricCharts = window.BricCharts || {};
           breadcrumb: { show: false },
           width: "100%",
           height: "100%",
-          itemStyle: { gapWidth: 2 },
+          itemStyle: { gapWidth: 2, borderWidth: 0 },
           label: {
             color: "#ffffff",
             fontFamily: FONT,
-            fontSize: 11,
+            fontSize: 9,
             fontWeight: 600,
             formatter: function (p) {
               var pct = total ? Math.round((p.value / total) * 100) : 0;
-              return pct >= 6 ? p.name + "\n" + pct + "%" : "";
+              return pct >= 8 ? p.name + "\n" + pct + "%" : "";
             },
           },
           data: nodes,
