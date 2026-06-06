@@ -1,0 +1,44 @@
+{% comment %}
+patrimoine/partials/_overview_body.html — bloc bilan (grille 2×2), swappable HTMX.
+
+Inclus par overview.html ET renvoyé par set_period / toggle_class (swap #overview-body,
+pas de reload). auto-init.js ré-instancie les charts sur htmx:afterSwap.
+{% endcomment %}
+<div id="overview-body" class="space-y-4">
+    {# ── Haut : courbe + performance ─────────────────────────────────── #}
+    <div class="grid grid-cols-3 gap-4 items-stretch">
+        <section class="col-span-2 bg-surface-3/70 border border-edge/60 rounded-xl p-5">
+            {% include "patrimoine/partials/_net_worth_chart.html" %}
+        </section>
+        <aside class="col-span-1 bg-surface-3/70 border border-edge/60 rounded-xl p-5 flex flex-col">
+            <div class="flex items-center gap-2">
+                <h2 class="text-sm font-semibold text-text-base">Performance</h2>
+                {% include "components/badges/soon.html" %}
+            </div>
+            <p class="text-xs text-text-muted mt-3 leading-relaxed">
+                La plus-value latente arrivera avec la valorisation des investissements.
+                Le cash ne s'apprécie pas — pas de performance sur les liquidités.
+            </p>
+        </aside>
+    </div>
+    {# ── Bas : table actifs + donut ──────────────────────────────────── #}
+    <div class="grid grid-cols-3 gap-4 items-start">
+        <section class="col-span-2 bg-surface-3/70 border border-edge/60 rounded-xl p-5">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-sm font-semibold text-text-base">Actifs</h2>
+            </div>
+            <div class="flex items-center gap-3 px-3 pb-2 text-[10px] uppercase tracking-widest text-text-disabled">
+                <span class="w-3.5 flex-shrink-0"></span>
+                <span class="w-2 flex-shrink-0"></span>
+                <span class="flex-1 min-w-0">Nom</span>
+                <span class="w-16 text-right flex-shrink-0">Répart.</span>
+                <span class="w-28 text-right flex-shrink-0">Valeur</span>
+                <span class="w-20 text-right flex-shrink-0">+/- value</span>
+            </div>
+            <div class="space-y-2">{% include "patrimoine/partials/_bilan_table.html" with nodes=nodes %}</div>
+        </section>
+        <aside class="col-span-1 bg-surface-3/70 border border-edge/60 rounded-xl p-5">
+            {% include "patrimoine/partials/_distribution.html" %}
+        </aside>
+    </div>
+</div>

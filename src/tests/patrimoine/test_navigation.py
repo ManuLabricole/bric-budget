@@ -10,6 +10,7 @@ Couvre :
   - slug inconnu → 404
   - toggle sidebar → flippe le booléen de session (PRG, 204)
   - context processor → injecte asset_classes + slug actif
+  - asset_class enrichie : chart_json + dist_json + période + stacked (toggle)
 """
 
 import pytest
@@ -210,3 +211,188 @@ def test_context_processor_injects_asset_classes(client, user, chf_account):
     assert "Livrets" in body
     # La classe active est dans le contexte.
     assert resp.context["active_asset_class_slug"] == "comptes-courants"
+
+
+# --- asset_class enrichie : graphe + période + stacked -----------------------
+
+# Clés de session (miroir de views/asset_class.py — changement ici = changer là-bas).
+_PERIOD_KEY = "patrimoine_ac_period_comptes-courants"
+_STACKED_KEY = "patrimoine_ac_stacked_comptes-courants"
+_AC_URL = "patrimoine:asset_class"
+_PERIOD_URL = "patrimoine:set_asset_class_period"
+_STACKED_URL = "patrimoine:set_asset_class_stacked"
+
+
+@pytest.mark.django_db
+def test_asset_class_context_has_chart_and_dist_json(client, user, chf_account):
+    """La page enrichie expose chart_json (courbe) et dist_json (distribution)."""
+    client.force_login(user)
+    resp = client.get(reverse(_AC_URL, args=["comptes-courants"]))
+    assert resp.status_code == 200
+    assert "chart_json" in resp.context
+    assert "dist_json" in resp.context
+
+
+@pytest.mark.django_db
+def test_asset_class_default_period_is_1m(client, user, chf_account):
+    client.force_login(user)
+    resp = client.get(reverse(_AC_URL, args=["comptes-courants"]))
+    assert resp.context["period"] == "1m"
+
+
+@pytest.mark.django_db
+def test_asset_class_stacked_default_true(client, user, chf_account):
+    client.force_login(user)
+    resp = client.get(reverse(_AC_URL, args=["comptes-courants"]))
+    assert resp.context["stacked"] is True
+
+
+# --- set_asset_class_period --------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_set_asset_class_period_requires_post(client, user):
+    client.force_login(user)
+    resp = client.get(reverse(_PERIOD_URL, args=["comptes-courants", "3m"]))
+    assert resp.status_code == 405
+
+
+@pytest.mark.django_db
+def test_set_asset_class_period_persists_in_session(client, user, chf_account):
+    client.force_login(user)
+    client.post(reverse(_PERIOD_URL, args=["comptes-courants", "3m"]))
+    assert client.session.get(_PERIOD_KEY) == "3m"
+
+
+@pytest.mark.django_db
+def test_set_asset_class_period_invalid_ignored(client, user, chf_account):
+    """Une période inconnue ne doit pas écraser la valeur déjà en session."""
+    client.force_login(user)
+    session = client.session
+    session[_PERIOD_KEY] = "1m"
+    session.save()
+    client.post(reverse(_PERIOD_URL, args=["comptes-courants", "bidon"]))
+    assert client.session.get(_PERIOD_KEY) == "1m"
+
+
+@pytest.mark.django_db
+def test_set_asset_class_period_htmx_returns_partial(client, user, chf_account):
+    """Avec HX-Request, la vue retourne le partial (pas la page complète)."""
+    client.force_login(user)
+    resp = client.post(
+        reverse(_PERIOD_URL, args=["comptes-courants", "1m"]),
+        HTTP_HX_REQUEST="true",
+    )
+    assert resp.status_code == 200
+    assert b"<!DOCTYPE html>" not in resp.content
+
+
+@pytest.mark.django_db
+def test_set_asset_class_period_non_htmx_redirects(client, user, chf_account):
+    """Sans HX-Request (PRG fallback), la vue redirige vers la page classe."""
+    client.force_login(user)
+    resp = client.post(reverse(_PERIOD_URL, args=["comptes-courants", "1m"]))
+    assert resp.status_code == 302
+
+
+# --- set_asset_class_stacked -------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_set_asset_class_stacked_requires_post(client, user):
+    client.force_login(user)
+    resp = client.get(reverse(_STACKED_URL, args=["comptes-courants"]))
+    assert resp.status_code == 405
+
+
+@pytest.mark.django_db
+def test_set_asset_class_stacked_persists_false(client, user, chf_account):
+    """Envoyer stacked=0 → False en session (mode standard)."""
+    client.force_login(user)
+    client.post(reverse(_STACKED_URL, args=["comptes-courants"]), {"stacked": "0"})
+    assert client.session.get(_STACKED_KEY) is False
+
+
+@pytest.mark.django_db
+def test_set_asset_class_stacked_persists_true(client, user, chf_account):
+    client.force_login(user)
+    client.post(reverse(_STACKED_URL, args=["comptes-courants"]), {"stacked": "1"})
+    assert client.session.get(_STACKED_KEY) is True
+
+
+@pytest.mark.django_db
+def test_set_asset_class_stacked_htmx_returns_partial(client, user, chf_account):
+    client.force_login(user)
+    resp = client.post(
+        reverse(_STACKED_URL, args=["comptes-courants"]),
+        {"stacked": "1"},
+        HTTP_HX_REQUEST="true",
+    )
+    assert resp.status_code == 200
+    assert b"<!DOCTYPE html>" not in resp.content
+
+
+@pytest.mark.django_db
+def test_set_asset_class_stacked_non_htmx_redirects(client, user, chf_account):
+    client.force_login(user)
+    resp = client.post(
+        reverse(_STACKED_URL, args=["comptes-courants"]), {"stacked": "1"}
+    )
+    assert resp.status_code == 302
+
+
+# --- set_asset_class_tab -----------------------------------------------------
+
+_TAB_URL = "patrimoine:set_asset_class_tab"
+_TAB_KEY = "patrimoine_ac_tab_comptes-courants"
+
+
+@pytest.mark.django_db
+def test_set_asset_class_tab_requires_auth(client):
+    url = reverse(_TAB_URL, args=["comptes-courants", "transactions"])
+    resp = client.get(url)
+    assert resp.status_code == 302
+    assert "/login" in resp["Location"] or "/accounts/login" in resp["Location"]
+
+
+@pytest.mark.django_db
+def test_set_asset_class_tab_persists_in_session(client, user):
+    client.force_login(user)
+    client.get(reverse(_TAB_URL, args=["comptes-courants", "transactions"]))
+    assert client.session.get(_TAB_KEY) == "transactions"
+
+
+@pytest.mark.django_db
+def test_set_asset_class_tab_invalid_ignored(client, user):
+    """Un onglet inconnu ne doit pas écraser la valeur déjà en session."""
+    client.force_login(user)
+    session = client.session
+    session[_TAB_KEY] = "comptes"
+    session.save()
+    client.get(reverse(_TAB_URL, args=["comptes-courants", "bidon"]))
+    assert client.session.get(_TAB_KEY) == "comptes"
+
+
+@pytest.mark.django_db
+def test_set_asset_class_tab_redirects_to_asset_class(client, user):
+    """Après changement d'onglet, redirect vers la page de la classe."""
+    client.force_login(user)
+    resp = client.get(reverse(_TAB_URL, args=["comptes-courants", "comptes"]))
+    assert resp.status_code == 302
+    assert "comptes-courants" in resp["Location"]
+
+
+# --- asset_class_transactions (infinite scroll) ------------------------------
+
+
+@pytest.mark.django_db
+def test_asset_class_transactions_out_of_range_page_stops_scroll(
+    client, user, chf_account
+):
+    """Une page hors-borne retourne has_next=False — le sentinel disparaît, pas de boucle infinie."""
+    client.force_login(user)
+    url = reverse("patrimoine:asset_class_transactions", args=["comptes-courants"])
+    resp = client.get(url, {"page": "9999"}, HTTP_HX_REQUEST="true")
+    assert resp.status_code == 200
+    # Le sentinel ne doit pas apparaître dans la réponse.
+    assert b"hx-trigger" not in resp.content

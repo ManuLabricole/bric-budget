@@ -1,0 +1,205 @@
+{% comment %}
+patrimoine/partials/_asset_class_body.html — corps swappable HTMX (période + stacked).
+
+Cible swap : #asset-class-body.
+Inclus par asset_class.html ET renvoyé par set_asset_class_period / set_asset_class_stacked.
+auto-init.js ré-instancie les charts sur htmx:afterSwap.
+
+Requiert : asset_class, institution_groups, chart_json, dist_json, stacked, period,
+           period_choices, htmx_target, tab.
+Requiert si tab="transactions" : txs, page_obj, asset_class_tx_url.
+{% endcomment %}
+{% load budget_filters bank_icons %}
+<div id="asset-class-body" class="space-y-4">
+    {# ── Graphe évolution ────────────────────────────────────────────── #}
+    <section class="pb-2">
+        <header class="flex items-center justify-between gap-4 mb-3">
+            <div class="flex items-center gap-2">
+                <a href="{% url 'patrimoine:overview' %}"
+                   class="text-text-muted hover:text-text-base transition-colors">
+                    <svg class="w-5 h-5"
+                         fill="none"
+                         viewBox="0 0 24 24"
+                         stroke="currentColor"
+                         stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                    </svg>
+                </a>
+                <h1 class="text-xl font-semibold text-text-base">{{ asset_class.label }}</h1>
+            </div>
+            <div class="flex items-center gap-2 flex-shrink-0">
+                {# Dropdown Standard / Empilé — style budget "Paramètres" #}
+                <div class="relative" id="stacked-dropdown-container">
+                    <button type="button"
+                            onclick="document.getElementById('stacked-menu').classList.toggle('hidden')"
+                            class="flex items-center gap-1 px-3 py-1.5 text-xs rounded-full transition-colors text-text-base bg-surface-hover hover:bg-edge hover:text-gold">
+                        {% if stacked %}
+                            Empilé
+                        {% else %}
+                            Standard
+                        {% endif %}
+                        <svg class="w-3 h-3"
+                             fill="none"
+                             viewBox="0 0 24 24"
+                             stroke-width="2"
+                             stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                        </svg>
+                    </button>
+                    <form method="post"
+                          action="{% url 'patrimoine:set_asset_class_stacked' asset_class.slug %}"
+                          hx-post="{% url 'patrimoine:set_asset_class_stacked' asset_class.slug %}"
+                          hx-target="{{ htmx_target }}"
+                          hx-swap="outerHTML"
+                          id="stacked-menu"
+                          class="hidden absolute right-0 top-full mt-2 w-36 bg-surface-3 border border-edge/70 rounded-2xl shadow-2xl z-20 py-1.5 overflow-hidden">
+                        {% csrf_token %}
+                        <button type="submit"
+                                name="stacked"
+                                value="0"
+                                onclick="document.getElementById('stacked-menu').classList.add('hidden')"
+                                class="w-full flex items-center px-4 py-2.5 text-sm transition-colors {% if not stacked %}text-gold{% else %}text-text-base hover:bg-surface-hover{% endif %}">
+                            Standard
+                            {% if not stacked %}
+                                <svg class="w-3.5 h-3.5 ml-auto"
+                                     fill="none"
+                                     viewBox="0 0 24 24"
+                                     stroke-width="2.5"
+                                     stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                                </svg>
+                            {% endif %}
+                        </button>
+                        <button type="submit"
+                                name="stacked"
+                                value="1"
+                                onclick="document.getElementById('stacked-menu').classList.add('hidden')"
+                                class="w-full flex items-center px-4 py-2.5 text-sm transition-colors {% if stacked %}text-gold{% else %}text-text-base hover:bg-surface-hover{% endif %}">
+                            Empilé
+                            {% if stacked %}
+                                <svg class="w-3.5 h-3.5 ml-auto"
+                                     fill="none"
+                                     viewBox="0 0 24 24"
+                                     stroke-width="2.5"
+                                     stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                                </svg>
+                            {% endif %}
+                        </button>
+                    </form>
+                </div>
+                {# Sélecteur période — style harmonisé budget : rounded-full + bg-gold/15 actif #}
+                <div class="flex items-center gap-0.5">
+                    {% for key, label in period_choices %}
+                        <form method="post"
+                              action="{% url 'patrimoine:set_asset_class_period' asset_class.slug key %}"
+                              hx-post="{% url 'patrimoine:set_asset_class_period' asset_class.slug key %}"
+                              hx-target="{{ htmx_target }}"
+                              hx-swap="outerHTML">
+                            {% csrf_token %}
+                            <button type="submit"
+                                    class="px-2.5 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-colors {% if period == key %}text-gold bg-gold/15{% else %}text-text-muted hover:text-gold hover:bg-gold/15{% endif %}">
+                                {{ label }}
+                            </button>
+                        </form>
+                    {% endfor %}
+                </div>
+            </div>
+        </header>
+        {% if not chart_json.complete %}
+            <p class="text-[11px] text-warning mb-2">⚠ Valorisation CHF partielle — conversion en attente sur un compte.</p>
+        {% endif %}
+        <div data-chart="balance"
+             data-chart-data="ac-chart-data"
+             data-stacked="{% if stacked %}1{% else %}0{% endif %}"
+             class="h-72 w-full"></div>
+        {{ chart_json|json_script:"ac-chart-data" }}
+    </section>
+    {# ── Onglets Comptes / Transactions — style Budget ───────────────── #}
+    <section>
+        {# Barre d'onglets #}
+        <div class="flex items-end gap-0 border-b border-edge/60 pt-4">
+            <a href="{% url 'patrimoine:set_asset_class_tab' asset_class.slug 'comptes' %}"
+               class="pb-3 pr-8 cursor-pointer transition-colors text-sm font-medium {% if tab == 'comptes' %}text-gold border-b border-gold -mb-px{% else %}text-text-muted hover:text-gold{% endif %}">
+                Comptes
+            </a>
+            <a href="{% url 'patrimoine:set_asset_class_tab' asset_class.slug 'transactions' %}"
+               class="pb-3 pr-8 cursor-pointer transition-colors text-sm font-medium {% if tab == 'transactions' %}text-gold border-b border-gold -mb-px{% else %}text-text-muted hover:text-gold{% endif %}">
+                Transactions
+            </a>
+        </div>
+        {# ── Contenu onglet Comptes ──────────────────────────────────── #}
+        {% if tab == 'comptes' %}
+            <div class="space-y-2 pt-3">
+                {% for group in institution_groups %}
+                    <details class="group bg-surface-3/70 border border-edge/30 rounded-xl overflow-hidden">
+                        <summary class="flex items-center gap-3 px-5 py-3 cursor-pointer select-none hover:bg-surface-hover transition-colors list-none">
+                            {% bank_icon_url group.institution as bicon %}
+                            {% include "components/banks/bank_logo.html" with icon_url=bicon bank=group.institution size="w-7 h-7" padding="p-1" %}
+                            <span class="flex-1 text-sm font-medium text-text-base">{{ group.institution.name }}</span>
+                            <span class="text-sm font-medium tabular-nums text-text-base mr-4">
+                                {% if group.total %}
+                                    {{ group.total|chf }} CHF
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </span>
+                            <svg class="w-4 h-4 text-text-disabled transition-transform duration-200 group-open:rotate-180 flex-shrink-0"
+                                 fill="none"
+                                 viewBox="0 0 24 24"
+                                 stroke="currentColor"
+                                 stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </summary>
+                        <ul class="border-t border-edge/30">
+                            {% for item in group.accounts %}
+                                <li class="flex items-center gap-3 pl-16 pr-5 py-2.5 hover:bg-surface-hover transition-colors">
+                                    <span class="flex-1 text-sm text-text-base truncate">{{ item.account.name }}</span>
+                                    <span class="text-sm tabular-nums flex-shrink-0 {% if item.value %}text-text-base{% else %}text-text-disabled{% endif %}">
+                                        {% if item.value %}
+                                            {{ item.value|chf }} CHF
+                                        {% else %}
+                                            —
+                                        {% endif %}
+                                    </span>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    </details>
+                {% empty %}
+                    <p class="py-8 text-sm text-text-muted text-center">Aucun compte dans cette classe pour l'instant.</p>
+                {% endfor %}
+            </div>
+            {# ── Contenu onglet Transactions ─────────────────────────────── #}
+        {% elif tab == 'transactions' %}
+            {% if txs %}
+                <div id="ac-tx-scroll"
+                     class="overflow-y-auto max-h-[520px]"
+                     style="-ms-overflow-style:none;
+                            scrollbar-width:none">
+                    {% for tx in txs %}
+                        {% ifchanged tx.date %}
+                            <div class="px-4 py-1.5 sticky top-0 z-10 bg-surface-2/90 backdrop-blur-sm border-b border-edge/20">
+                                <span class="text-[10px] font-medium text-text-muted">{{ tx.date|date:"j F Y" }}</span>
+                            </div>
+                        {% endifchanged %}
+                        {% include "budget/_panel_tx_row.html" with bank_icon_url=tx.bank_icon_url panel_source="patrimoine" %}
+                    {% endfor %}
+                    {% if page_obj.has_next %}
+                        <div hx-get="{{ asset_class_tx_url }}?page={{ page_obj.next_page_number }}"
+                             hx-trigger="intersect root:#ac-tx-scroll once"
+                             hx-swap="outerHTML"
+                             class="py-4 flex justify-center">
+                            <span class="text-[10px] text-text-disabled">Chargement…</span>
+                        </div>
+                    {% endif %}
+                </div>
+            {% else %}
+                <div class="flex flex-col items-center justify-center py-12 text-text-disabled">
+                    <p class="text-xs">Aucune transaction pour cette classe</p>
+                </div>
+            {% endif %}
+        {% endif %}
+    </section>
+</div>

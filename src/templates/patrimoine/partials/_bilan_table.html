@@ -1,0 +1,43 @@
+{% comment %}
+patrimoine/partials/_bilan_table.html — table bilan RÉCURSIVE (la grammaire réutilisée partout).
+
+Par ligne : chevron (expand enfants, <details> natif) + pastille/logo + label = lien
+(node.url → page zoom) + KPIs. Cliquer la LIGNE étend ; cliquer le TEXTE redirige (cf. Finary).
+
+Niveaux (flag `child`) :
+  - niveau 0 (classes d'actifs) → carte grisée, plus de hauteur (style Finary).
+  - niveau 1+ (comptes) → lignes à l'intérieur de la carte, plus légères.
+
+Récursion : on s'inclut avec nodes=node.children child=True.
+Requiert : nodes (list[BilanNode]). Charge budget_filters pour |chf.
+{% endcomment %}
+{% load budget_filters %}
+{% for node in nodes %}
+    {% if node.children %}
+        <details class="group/exp {% if not child %}bg-surface-3 rounded-xl overflow-hidden{% endif %}">
+            {% comment %}
+            Border de séparation au dépliage : couleur grise CONSTANTE (border-edge/50),
+            seule la LARGEUR bascule 0→1px (group-open). Pas de transition de border-color
+            → pas de flash clair (transition-colors animerait sinon depuis le défaut clair).
+            {% endcomment %}
+            <summary class="flex items-center gap-3 px-3 {% if child %}py-3 rounded-lg{% else %}py-4{% endif %} cursor-pointer list-none hover:bg-surface-hover transition-colors border-edge/50 border-b-0 group-open/exp:border-b">
+                <svg class="w-3.5 h-3.5 flex-shrink-0 text-text-muted transition-transform group-open/exp:rotate-90"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="2"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                </svg>
+                {% include "patrimoine/partials/_bilan_row_body.html" with node=node %}
+            </summary>
+            <div class="px-1.5 pb-1.5 pt-1 space-y-0.5">
+                {% include "patrimoine/partials/_bilan_table.html" with nodes=node.children child=True %}
+            </div>
+        </details>
+    {% else %}
+        <div class="flex items-center gap-3 px-3 {% if child %}py-3{% else %}py-4 bg-surface-3 rounded-xl{% endif %} rounded-lg hover:bg-surface-hover transition-colors">
+            <span class="w-3.5 flex-shrink-0"></span>
+            {% include "patrimoine/partials/_bilan_row_body.html" with node=node %}
+        </div>
+    {% endif %}
+{% endfor %}

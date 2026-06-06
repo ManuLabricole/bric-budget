@@ -48,6 +48,8 @@
         donut: window.BricCharts && BricCharts.initDonut,
         bar: window.BricCharts && BricCharts.initBar,
         activity: window.BricCharts && BricCharts.initActivity,
+        balance: window.BricCharts && BricCharts.initBalance,
+        treemap: window.BricCharts && BricCharts.initTreemap,
       };
       var fn = fnByKind[kind];
       if (typeof fn === "function") {

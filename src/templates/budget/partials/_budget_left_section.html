@@ -202,9 +202,9 @@ Paramètres
 {{ active_categories|length }} catégorie{{ active_categories|length|pluralize }} {{ tab_label_suffix }}
 </p>
 {% if active_categories %}
-<div class="flex flex-col gap-0.5">
+<div class="flex flex-col gap-1.5">
 {% for cat in active_categories %}
-<a href="{% url 'budget:category_detail' cat.category__slug %}" class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-surface-hover/50 cursor-pointer group transition-colors">
+<a href="{% url 'budget:category_detail' cat.category__slug %}" class="flex items-center gap-3 px-3 py-3 rounded-xl bg-surface-3 hover:bg-surface-hover cursor-pointer group transition-colors">
 {% with icon_path="icons/categories/"|add:cat.category__icon|add:".svg" %}
 <div class="relative w-10 h-10 flex-shrink-0 flex items-center justify-center">
 {% if cat.target_pct is not None %}

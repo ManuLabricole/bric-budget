@@ -1,0 +1,91 @@
+{% comment %}
+components/filters/filter_multiselect.html — Filtre dropdown multi-select RÉUTILISABLE (PRG).
+
+Générique : ce filtre revient souvent même s'il filtre des choses différentes (comptes,
+classes d'actifs…). Chaque item est un <form> POST (PRG) vers toggle_url_name.
+
+Paramètres requis :
+  filter_items     — list de dict {key, label, color?(hex), selected(bool)}
+  toggle_url_name  — nom URL Django, appelé avec item.key et "all" (tout cocher)
+  filter_label     — texte par défaut quand tout est sélectionné (ex. "Toutes les catégories")
+  n_selected       — int — nombre d'items cochés (pour le résumé)
+  n_total          — int — nombre total d'items
+
+Logique cercles : gold rempli = sélectionné, vide = décoché.
+{% endcomment %}
+<details class="relative group/filter flex-shrink-0"
+         {% if filter_open %}open{% endif %}>
+    <summary class="list-none flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full cursor-pointer select-none transition-colors {% if n_selected < n_total %}text-gold bg-gold/10 border border-gold/30 hover:bg-gold/15{% else %}text-text-base bg-surface-hover hover:bg-edge{% endif %}">
+        {% if n_selected < n_total %}
+            {{ n_selected }}/{{ n_total }} sélectionnée{{ n_selected|pluralize }}
+        {% else %}
+            {{ filter_label }}
+        {% endif %}
+        <svg class="w-3 h-3 transition-transform group-open/filter:rotate-180"
+             fill="none"
+             viewBox="0 0 24 24"
+             stroke-width="2"
+             stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+        </svg>
+    </summary>
+    <div class="absolute right-0 top-full mt-2 min-w-[220px] bg-surface-3 border border-edge/70 rounded-2xl shadow-2xl z-20 py-1.5 overflow-hidden">
+        <div class="flex justify-end px-3 pt-1 pb-0.5">
+            <button type="button"
+                    onclick="this.closest('details').removeAttribute('open')"
+                    class="w-5 h-5 flex items-center justify-center rounded-full hover:bg-surface-hover transition-colors cursor-pointer text-text-disabled hover:text-text-muted"
+                    title="Fermer">
+                <svg class="w-3 h-3"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="2.5"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+        <form method="post"
+              action="{% url toggle_url_name 'all' %}"
+              {% if htmx_target %}hx-post="{% url toggle_url_name 'all' %}" hx-target="{{ htmx_target }}" hx-swap="outerHTML"{% endif %}>
+            {% csrf_token %}
+            <button type="submit"
+                    class="flex items-center gap-2 w-full px-4 py-2 text-xs {% if n_selected == n_total %}text-gold{% else %}text-text-muted{% endif %} hover:bg-surface-hover transition-colors cursor-pointer">
+                <svg class="w-3 h-3"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="2"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                </svg>
+                Tout sélectionner
+            </button>
+        </form>
+        <div class="border-t border-edge/50 mx-3 my-1"></div>
+        {% for item in filter_items %}
+            <form method="post"
+                  action="{% url toggle_url_name item.key %}"
+                  {% if htmx_target %}hx-post="{% url toggle_url_name item.key %}" hx-target="{{ htmx_target }}" hx-swap="outerHTML"{% endif %}>
+                {% csrf_token %}
+                <button type="submit"
+                        class="flex items-center gap-3 w-full px-4 py-2 hover:bg-surface-hover transition-colors cursor-pointer">
+                    <span class="w-4 h-4 rounded-full border flex-shrink-0 flex items-center justify-center {% if item.selected %}bg-gold border-gold{% else %}border-edge{% endif %}">
+                        {% if item.selected %}
+                            <svg class="w-2.5 h-2.5 text-black"
+                                 fill="none"
+                                 viewBox="0 0 24 24"
+                                 stroke-width="3"
+                                 stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                            </svg>
+                        {% endif %}
+                    </span>
+                    {% if item.color %}
+                        <span class="w-2 h-2 rounded-full flex-shrink-0"
+                              style="background-color: {{ item.color }}"></span>
+                    {% endif %}
+                    <span class="text-xs {% if not item.selected %}text-text-muted{% else %}text-text-base{% endif %} truncate">{{ item.label }}</span>
+                </button>
+            </form>
+        {% endfor %}
+    </div>
+</details>

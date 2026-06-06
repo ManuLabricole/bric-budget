@@ -207,6 +207,43 @@ def test_account_series_in_chf_uses_chf_fields(eur_account, make_snapshot, make_
 
 
 # =============================================================================
+# complete : balance_chf manquant ne doit PAS être ancré à 0 en silence
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_complete_true_when_all_anchors_present(chf_account, make_snapshot):
+    make_snapshot(chf_account, "2026-03-10", balance=1000, balance_chf=1000)
+    s = account_balance_series(
+        chf_account, _d("2026-03-10"), _d("2026-03-10"), in_chf=True
+    )
+    assert s.complete is True
+
+
+@pytest.mark.django_db
+def test_account_in_chf_incomplete_when_balance_chf_null(eur_account, make_snapshot):
+    """Conversion CHF pas encore calculée (balance_chf=None) → complete=False, pas un 0 silencieux."""
+    make_snapshot(eur_account, "2026-03-10", balance=500, balance_chf=None)
+    s = account_balance_series(
+        eur_account, _d("2026-03-10"), _d("2026-03-10"), in_chf=True
+    )
+    assert s.complete is False
+
+
+@pytest.mark.django_db
+def test_consolidated_incomplete_if_any_account_missing_chf(
+    chf_account, eur_account, make_snapshot
+):
+    """Un compte EUR sans taux ne disparaît plus en silence : la conso est signalée incomplète."""
+    make_snapshot(chf_account, "2026-03-10", balance=1000, balance_chf=1000)
+    make_snapshot(eur_account, "2026-03-10", balance=500, balance_chf=None)
+    s = consolidated_balance_series(
+        [chf_account, eur_account], _d("2026-03-10"), _d("2026-03-10")
+    )
+    assert s.complete is False
+
+
+# =============================================================================
 # period_bounds — fenêtres temporelles
 # =============================================================================
 
