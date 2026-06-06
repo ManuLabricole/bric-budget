@@ -380,3 +380,19 @@ def test_set_asset_class_tab_redirects_to_asset_class(client, user):
     resp = client.get(reverse(_TAB_URL, args=["comptes-courants", "comptes"]))
     assert resp.status_code == 302
     assert "comptes-courants" in resp["Location"]
+
+
+# --- asset_class_transactions (infinite scroll) ------------------------------
+
+
+@pytest.mark.django_db
+def test_asset_class_transactions_out_of_range_page_stops_scroll(
+    client, user, chf_account
+):
+    """Une page hors-borne retourne has_next=False — le sentinel disparaît, pas de boucle infinie."""
+    client.force_login(user)
+    url = reverse("patrimoine:asset_class_transactions", args=["comptes-courants"])
+    resp = client.get(url, {"page": "9999"}, HTTP_HX_REQUEST="true")
+    assert resp.status_code == 200
+    # Le sentinel ne doit pas apparaître dans la réponse.
+    assert b"hx-trigger" not in resp.content

@@ -129,7 +129,10 @@ def _get_tx_page(accounts, page_number: int):
     paginator = Paginator(qs, TX_PAGE_SIZE)
     try:
         page_obj = paginator.page(page_number)
-    except (EmptyPage, InvalidPage):
+    except EmptyPage:
+        # Page hors-borne → dernière page (has_next=False, sentinel disparu, scroll terminé).
+        page_obj = paginator.page(paginator.num_pages)
+    except InvalidPage:
         page_obj = paginator.page(1)
 
     bank_icon_map = _resolve_bank_icon_map()
