@@ -63,6 +63,14 @@ def _tab_key(slug: str) -> str:
     return f"{_TAB_KEY_PREFIX}{slug}"
 
 
+def _get_or_404(slug: str):
+    """Résout une AssetClass ou lève Http404."""
+    asset_class = get_asset_class(slug)
+    if asset_class is None:
+        raise Http404(f"Classe d'actifs inconnue : {slug}")
+    return asset_class
+
+
 def _get_accounts(user, asset_class) -> list:
     """Comptes actifs de l'utilisateur pour cette classe (SR-001)."""
     return list(
@@ -85,12 +93,12 @@ def _earliest_date(accounts) -> datetime.date | None:
     return min(candidates) if candidates else None
 
 
-def _build_institution_groups(accounts, today: datetime.date) -> list[dict]:
+def _build_institution_groups(accounts, values: dict) -> list[dict]:
     """
     Groupe les comptes par institution avec valeurs courantes en CHF.
 
     Retourne [{institution, accounts: [{account, value}], total}].
-    `value` = Decimal | None (None si aucun snapshot).
+    `values` = {account.pk: Decimal | None} pré-calculé par l'appelant (évite N+1).
     `total` = somme des valeurs non-None (0 si aucune).
     """
     groups: dict[int | None, dict] = {}
@@ -103,7 +111,7 @@ def _build_institution_groups(accounts, today: datetime.date) -> list[dict]:
                 "accounts": [],
                 "total": Decimal("0"),
             }
-        val = current_value(acc, today)
+        val = values.get(acc.pk)
         groups[key]["accounts"].append({"account": acc, "value": val})
         if val is not None:
             groups[key]["total"] += val
@@ -148,6 +156,9 @@ def _asset_class_context(request, asset_class) -> dict:
         tab = "comptes"
 
     today = timezone.localdate()
+    # Valorisation courante calculée une seule fois — partagée par institution_groups et dist.
+    values_today = {acc.pk: current_value(acc, today) for acc in accounts}
+
     start, end = period_bounds(
         period, today=today, earliest=_earliest_date(accounts) or today
     )
@@ -158,7 +169,7 @@ def _asset_class_context(request, asset_class) -> dict:
     dist_nodes = [
         BilanNode(
             label=acc.name,
-            value=current_value(acc, today),
+            value=values_today.get(acc.pk),
             color=_STACK_PALETTE[i % len(_STACK_PALETTE)],
             url=None,
         )
@@ -168,7 +179,7 @@ def _asset_class_context(request, asset_class) -> dict:
 
     ctx: dict = {
         "asset_class": asset_class,
-        "institution_groups": _build_institution_groups(accounts, today),
+        "institution_groups": _build_institution_groups(accounts, values_today),
         "chart_json": chart_json,
         "dist_json": dist_json,
         "stacked": stacked,
@@ -204,9 +215,7 @@ def _body_or_redirect(request, asset_class):
 @login_required
 def asset_class_page(request, slug: str):
     """Page d'une classe d'actifs. 404 si slug inconnu ; état SOON si non fonctionnelle."""
-    asset_class = get_asset_class(slug)
-    if asset_class is None:
-        raise Http404(f"Classe d'actifs inconnue : {slug}")
+    asset_class = _get_or_404(slug)
 
     # Atterrir sur une page classe d'actifs force le dépliement de la section sidebar.
     request.session[SIDEBAR_SESSION_KEY] = True
@@ -229,9 +238,7 @@ def asset_class_page(request, slug: str):
 @login_required
 def set_asset_class_period(request, slug: str, period: str):
     """Change la période de la courbe (session). HTMX → swap corps ; sinon redirect."""
-    asset_class = get_asset_class(slug)
-    if asset_class is None:
-        raise Http404(f"Classe d'actifs inconnue : {slug}")
+    asset_class = _get_or_404(slug)
     if period in PERIODS:
         request.session[_period_key(slug)] = period
     return _body_or_redirect(request, asset_class)
@@ -241,9 +248,7 @@ def set_asset_class_period(request, slug: str, period: str):
 @login_required
 def set_asset_class_stacked(request, slug: str):
     """Bascule mode standard/empilé (session). HTMX → swap corps ; sinon redirect."""
-    asset_class = get_asset_class(slug)
-    if asset_class is None:
-        raise Http404(f"Classe d'actifs inconnue : {slug}")
+    asset_class = _get_or_404(slug)
     request.session[_stacked_key(slug)] = request.POST.get("stacked") == "1"
     return _body_or_redirect(request, asset_class)
 
@@ -251,9 +256,7 @@ def set_asset_class_stacked(request, slug: str):
 @login_required
 def set_asset_class_tab(request, slug: str, tab: str):
     """Bascule l'onglet Comptes/Transactions (GET → session → redirect)."""
-    asset_class = get_asset_class(slug)
-    if asset_class is None:
-        raise Http404(f"Classe d'actifs inconnue : {slug}")
+    _get_or_404(slug)
     if tab in _VALID_TABS:
         request.session[_tab_key(slug)] = tab
     return redirect("patrimoine:asset_class", slug=slug)
@@ -267,10 +270,7 @@ def asset_class_transactions(request, slug: str):
     Page 1 est rendue directement par asset_class_page (dans le contexte initial).
     Ce endpoint est appelé par le sentinel HTMX quand l'utilisateur scrolle.
     """
-    asset_class = get_asset_class(slug)
-    if asset_class is None:
-        raise Http404(f"Classe d'actifs inconnue : {slug}")
-
+    asset_class = _get_or_404(slug)
     accounts = _get_accounts(request.user, asset_class)
     try:
         page_number = int(request.GET.get("page", 1))

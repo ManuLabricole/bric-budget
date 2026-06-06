@@ -339,3 +339,44 @@ def test_set_asset_class_stacked_non_htmx_redirects(client, user, chf_account):
         reverse(_STACKED_URL, args=["comptes-courants"]), {"stacked": "1"}
     )
     assert resp.status_code == 302
+
+
+# --- set_asset_class_tab -----------------------------------------------------
+
+_TAB_URL = "patrimoine:set_asset_class_tab"
+_TAB_KEY = "patrimoine_ac_tab_comptes-courants"
+
+
+@pytest.mark.django_db
+def test_set_asset_class_tab_requires_auth(client):
+    url = reverse(_TAB_URL, args=["comptes-courants", "transactions"])
+    resp = client.get(url)
+    assert resp.status_code == 302
+    assert "/login" in resp["Location"] or "/accounts/login" in resp["Location"]
+
+
+@pytest.mark.django_db
+def test_set_asset_class_tab_persists_in_session(client, user):
+    client.force_login(user)
+    client.get(reverse(_TAB_URL, args=["comptes-courants", "transactions"]))
+    assert client.session.get(_TAB_KEY) == "transactions"
+
+
+@pytest.mark.django_db
+def test_set_asset_class_tab_invalid_ignored(client, user):
+    """Un onglet inconnu ne doit pas écraser la valeur déjà en session."""
+    client.force_login(user)
+    session = client.session
+    session[_TAB_KEY] = "comptes"
+    session.save()
+    client.get(reverse(_TAB_URL, args=["comptes-courants", "bidon"]))
+    assert client.session.get(_TAB_KEY) == "comptes"
+
+
+@pytest.mark.django_db
+def test_set_asset_class_tab_redirects_to_asset_class(client, user):
+    """Après changement d'onglet, redirect vers la page de la classe."""
+    client.force_login(user)
+    resp = client.get(reverse(_TAB_URL, args=["comptes-courants", "comptes"]))
+    assert resp.status_code == 302
+    assert "comptes-courants" in resp["Location"]

@@ -21,7 +21,6 @@ Précision : tout en `Decimal` (SR-002) — jamais de float.
 
 from __future__ import annotations
 
-import calendar
 import datetime
 from bisect import bisect_right
 from collections import defaultdict
@@ -30,6 +29,8 @@ from decimal import Decimal
 from typing import cast
 
 from django.utils import timezone
+
+from budget.utils import _add_months
 
 # Clés de période (alignées sur les boutons UI 1J/7J/1M/3M/YTD/1A/TOUT et la session).
 PERIODS = ("1j", "7j", "1m", "3m", "ytd", "1a", "tout")
@@ -68,13 +69,13 @@ def period_bounds(
     elif period == "7j":
         start = today - datetime.timedelta(days=7)
     elif period == "1m":
-        start = _subtract_months(today, 1)
+        start = _add_months(today, -1)
     elif period == "3m":
-        start = _subtract_months(today, 3)
+        start = _add_months(today, -3)
     elif period == "ytd":
         start = datetime.date(today.year, 1, 1)
     elif period == "1a":
-        start = _subtract_months(today, 12)
+        start = _add_months(today, -12)
     elif period == "tout":
         start = earliest if earliest is not None else today
     else:
@@ -164,15 +165,6 @@ def consolidated_balance_series(
 # =============================================================================
 # Internals
 # =============================================================================
-
-
-def _subtract_months(d: datetime.date, months: int) -> datetime.date:
-    """Subtract `months` from `d`, clamping day to the last valid day of the target month."""
-    m = d.month - months
-    year = d.year + (m - 1) // 12
-    month = (m - 1) % 12 + 1
-    day = min(d.day, calendar.monthrange(year, month)[1])
-    return datetime.date(year, month, day)
 
 
 def _snap_val(snap, in_chf: bool) -> Decimal | None:

@@ -37,18 +37,21 @@ def chart_series(
     pas encore valorisables). `complete=False` signale une conversion CHF manquante.
     `selected_slugs` : si fourni, ne trace que ces classes (filtre).
     """
-    functional_accounts = [
-        a
-        for a in accounts
-        if (ac := asset_class_for_account_type(a.account_type)) is not None
-        and ac.functional
-        and (selected_slugs is None or ac.slug in selected_slugs)
-    ]
+    # Un seul passage : on mémorise l'asset_class résolue pour éviter le double appel.
+    functional_accounts = []
+    _ac_for: dict = {}
+    for a in accounts:
+        ac = asset_class_for_account_type(a.account_type)
+        if (
+            ac is not None
+            and ac.functional
+            and (selected_slugs is None or ac.slug in selected_slugs)
+        ):
+            functional_accounts.append(a)
+            _ac_for[a.pk] = ac
     by_class: dict[str, list] = defaultdict(list)
     for a in functional_accounts:
-        ac = asset_class_for_account_type(a.account_type)
-        assert ac is not None  # garanti par le filtre ci-dessus
-        by_class[ac.slug].append(a)
+        by_class[_ac_for[a.pk].slug].append(a)
 
     total = net_worth_series(functional_accounts, start, end)
     series = []

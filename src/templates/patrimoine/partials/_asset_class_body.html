@@ -46,55 +46,47 @@ Requiert si tab="transactions" : txs, page_obj, asset_class_tx_url.
                             <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
                         </svg>
                     </button>
-                    <div id="stacked-menu"
-                         class="hidden absolute right-0 top-full mt-2 w-36 bg-surface-3 border border-edge/70 rounded-2xl shadow-2xl z-20 py-1.5 overflow-hidden">
-                        <form method="post"
-                              action="{% url 'patrimoine:set_asset_class_stacked' asset_class.slug %}"
-                              hx-post="{% url 'patrimoine:set_asset_class_stacked' asset_class.slug %}"
-                              hx-target="{{ htmx_target }}"
-                              hx-swap="outerHTML"
-                              class="contents">
-                            {% csrf_token %}
-                            <input type="hidden" name="stacked" value="0">
-                            <button type="submit"
-                                    onclick="document.getElementById('stacked-menu').classList.add('hidden')"
-                                    class="w-full flex items-center px-4 py-2.5 text-sm transition-colors {% if not stacked %}text-gold{% else %}text-text-base hover:bg-surface-hover{% endif %}">
-                                Standard
-                                {% if not stacked %}
-                                    <svg class="w-3.5 h-3.5 ml-auto"
-                                         fill="none"
-                                         viewBox="0 0 24 24"
-                                         stroke-width="2.5"
-                                         stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-                                    </svg>
-                                {% endif %}
-                            </button>
-                        </form>
-                        <form method="post"
-                              action="{% url 'patrimoine:set_asset_class_stacked' asset_class.slug %}"
-                              hx-post="{% url 'patrimoine:set_asset_class_stacked' asset_class.slug %}"
-                              hx-target="{{ htmx_target }}"
-                              hx-swap="outerHTML"
-                              class="contents">
-                            {% csrf_token %}
-                            <input type="hidden" name="stacked" value="1">
-                            <button type="submit"
-                                    onclick="document.getElementById('stacked-menu').classList.add('hidden')"
-                                    class="w-full flex items-center px-4 py-2.5 text-sm transition-colors {% if stacked %}text-gold{% else %}text-text-base hover:bg-surface-hover{% endif %}">
-                                Empilé
-                                {% if stacked %}
-                                    <svg class="w-3.5 h-3.5 ml-auto"
-                                         fill="none"
-                                         viewBox="0 0 24 24"
-                                         stroke-width="2.5"
-                                         stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-                                    </svg>
-                                {% endif %}
-                            </button>
-                        </form>
-                    </div>
+                    <form method="post"
+                          action="{% url 'patrimoine:set_asset_class_stacked' asset_class.slug %}"
+                          hx-post="{% url 'patrimoine:set_asset_class_stacked' asset_class.slug %}"
+                          hx-target="{{ htmx_target }}"
+                          hx-swap="outerHTML"
+                          id="stacked-menu"
+                          class="hidden absolute right-0 top-full mt-2 w-36 bg-surface-3 border border-edge/70 rounded-2xl shadow-2xl z-20 py-1.5 overflow-hidden">
+                        {% csrf_token %}
+                        <button type="submit"
+                                name="stacked"
+                                value="0"
+                                onclick="document.getElementById('stacked-menu').classList.add('hidden')"
+                                class="w-full flex items-center px-4 py-2.5 text-sm transition-colors {% if not stacked %}text-gold{% else %}text-text-base hover:bg-surface-hover{% endif %}">
+                            Standard
+                            {% if not stacked %}
+                                <svg class="w-3.5 h-3.5 ml-auto"
+                                     fill="none"
+                                     viewBox="0 0 24 24"
+                                     stroke-width="2.5"
+                                     stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                                </svg>
+                            {% endif %}
+                        </button>
+                        <button type="submit"
+                                name="stacked"
+                                value="1"
+                                onclick="document.getElementById('stacked-menu').classList.add('hidden')"
+                                class="w-full flex items-center px-4 py-2.5 text-sm transition-colors {% if stacked %}text-gold{% else %}text-text-base hover:bg-surface-hover{% endif %}">
+                            Empilé
+                            {% if stacked %}
+                                <svg class="w-3.5 h-3.5 ml-auto"
+                                     fill="none"
+                                     viewBox="0 0 24 24"
+                                     stroke-width="2.5"
+                                     stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                                </svg>
+                            {% endif %}
+                        </button>
+                    </form>
                 </div>
                 {# Sélecteur période — style harmonisé budget : rounded-full + bg-gold/15 actif #}
                 <div class="flex items-center gap-0.5">
