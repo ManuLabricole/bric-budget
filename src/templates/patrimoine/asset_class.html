@@ -11,7 +11,7 @@ Panel gauche est swappable via #asset-class-body (période + stacked changent sa
     {% include "patrimoine/partials/_asset_class_body.html" %}
 {% endblock %}
 {% block panel_right %}
-    <aside class="flex-[1] min-w-0">
+    <aside class="flex-[1] min-w-0 border-l border-edge/60 pl-4">
         <h2 class="text-sm font-semibold text-text-base mb-3">Distribution</h2>
         <div data-chart="treemap"
              data-chart-data="ac-dist-data"
