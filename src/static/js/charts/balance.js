@@ -95,9 +95,43 @@ window.BricCharts = window.BricCharts || {};
         confine: true,
         backgroundColor: T["surface-hover"],
         borderColor: T["edge"],
-        textStyle: { color: T["text-base"], fontSize: 11, fontFamily: FONT },
-        valueFormatter: function (v) {
-          return Math.round(v).toLocaleString("fr-CH") + " CHF";
+        textStyle: { color: T["text-base"], fontSize: 10, fontFamily: FONT },
+        formatter: function (params) {
+          if (!params || !params.length) return "";
+          var dateLabel = shortDate(params[0].axisValue);
+          var out =
+            '<div style="font-size:9px;color:' +
+            T["text-muted"] +
+            ';margin-bottom:3px">' +
+            dateLabel +
+            "</div>";
+          params.forEach(function (p) {
+            if (p.value == null) return;
+            var col = typeof p.color === "string" ? p.color : T["gold"];
+            var amount =
+              '<span style="color:' +
+              col +
+              ";font-weight:500;font-family:" +
+              FONT +
+              '">' +
+              Math.round(p.value).toLocaleString("fr-CH") +
+              " CHF</span>";
+            out +=
+              '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:10px">';
+            if (params.length > 1) {
+              out +=
+                '<span style="color:' +
+                T["text-muted"] +
+                ';display:flex;align-items:center;gap:4px;font-family:' +
+                FONT +
+                '">' +
+                p.marker +
+                p.seriesName +
+                "</span>";
+            }
+            out += amount + "</div>";
+          });
+          return out;
         },
       },
       xAxis: {
