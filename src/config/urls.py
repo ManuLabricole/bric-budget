@@ -51,6 +51,8 @@ urlpatterns = [
     # l'app répond. Si elle ne répond plus, Railway redémarre le container.
     path("healthz/", healthz, name="healthz"),
     path(f"{ADMIN_URL}/", admin.site.urls),
+    # Landing page à la racine — avant auth.urls pour prendre la priorité sur `/`.
+    path("", include("users.urls")),
     path("", include("django.contrib.auth.urls")),
     path("synthese/", synthese, name="synthese"),
     # URLs de l'app budget — vues + templates de l'interface Budget

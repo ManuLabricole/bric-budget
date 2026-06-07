@@ -168,11 +168,16 @@ AUTH_USER_MODEL = "users.CustomUser"
 LOGIN_URL = "/login/"
 
 # LOGIN_REDIRECT_URL: where to go after a successful login when no ?next= is set.
-# Phase 1B: patrimoine est la page d'accueil principale.
-LOGIN_REDIRECT_URL = "/synthese/"
+LOGIN_REDIRECT_URL = "/budget/"
 
 # LOGOUT_REDIRECT_URL: where to go after logout.
 LOGOUT_REDIRECT_URL = "/login/"
+
+# SESSION_COOKIE_AGE: durée de vie du cookie de session (30 jours).
+# SESSION_EXPIRE_AT_BROWSER_CLOSE=False : la session persiste entre fermetures —
+# comportement attendu pour une app perso sur machine de confiance.
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 30
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 
 
 # =============================================================================

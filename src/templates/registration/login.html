@@ -1,90 +1,48 @@
-<!DOCTYPE html>
-<!--
-  registration/login.html — Minimal login page for Phase 0B.
-  Phase 2C will replace this with the full BricBudget dark theme.
-
-  Django's auth view passes two variables into this template:
-    - form        : the AuthenticationForm (email + password fields)
-    - next        : the URL the user was trying to reach before being redirected here
-                    (Django adds it automatically when LOGIN_URL redirects)
-
-  The {% csrf_token %} tag is mandatory on every POST form in Django.
-  It inserts a hidden input with a secret token that Django checks on submit
-  to prevent Cross-Site Request Forgery attacks.
--->
-<html lang="fr">
-    <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <meta name="description" content="BricBudget login" />
-        <meta name="keywords" content="bricbudget" />
-        <title>BricBudget — Login</title>
-        <style>
-      body {
-        font-family: sans-serif;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        height: 100vh;
-        margin: 0;
-        background: #111318;
-        color: #e5e7eb;
-      }
-      form {
-        background: #1c1f26;
-        padding: 2rem;
-        border-radius: 8px;
-        width: 320px;
-      }
-      h1 {
-        margin: 0 0 1.5rem;
-        font-size: 1.25rem;
-      }
-      label {
-        display: block;
-        font-size: 0.85rem;
-        margin-bottom: 0.25rem;
-        color: #9ca3af;
-      }
-      input {
-        width: 100%;
-        padding: 0.5rem;
-        border: 1px solid #374151;
-        border-radius: 4px;
-        background: #111318;
-        color: #e5e7eb;
-        margin-bottom: 1rem;
-        box-sizing: border-box;
-      }
-      button {
-        width: 100%;
-        padding: 0.6rem;
-        background: #3b82f6;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 0.95rem;
-      }
-      .errors {
-        color: #f87171;
-        font-size: 0.85rem;
-        margin-bottom: 1rem;
-      }
-        </style>
-    </head>
-    <body>
-        <form method="post">
-            {% csrf_token %}
-            <!-- `next` preserves the page the user was trying to reach — Django re-redirects there after login -->
-            {% if next %}<input type="hidden" name="next" value="{{ next }}" />{% endif %}
-            <h1>BricBudget</h1>
-            {% if form.errors %}<div class="errors">Email ou mot de passe incorrect.</div>{% endif %}
-            <label for="id_username">Email</label>
-            {{ form.username }}
-            <label for="id_password">Mot de passe</label>
-            {{ form.password }}
-            <button type="submit">Se connecter</button>
-        </form>
-    </body>
-</html>
+{% extends "base_public.html" %}
+{% block title %}Connexion — BricBudget{% endblock %}
+{% block content %}
+    <div class="min-h-screen flex flex-col items-center justify-center px-4">
+        <div class="w-full max-w-sm space-y-8">
+            {# En-tête #}
+            <div class="text-center space-y-1">
+                <h1 class="text-2xl font-semibold tracking-tight text-text-primary">BricBudget</h1>
+                <p class="text-xs text-text-muted">Connectez-vous à votre espace</p>
+            </div>
+            {# Carte formulaire #}
+            <div class="bg-surface-3 border border-edge/60 rounded-xl p-6 space-y-5">
+                {# Erreur credentials #}
+                {% if form.errors %}
+                    <div class="text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2.5">
+                        Email ou mot de passe incorrect.
+                    </div>
+                {% endif %}
+                {# Message lockout axes #}
+                {% if form.non_field_errors %}
+                    <div class="text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2.5">
+                        {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+                    </div>
+                {% endif %}
+                <form method="post" class="space-y-4" novalidate>
+                    {% csrf_token %}
+                    {% comment %}next préserve la page que l'utilisateur voulait atteindre avant le
+                    redirect login. Django re-redirige là-bas après connexion.{% endcomment %}
+                    {% if next %}<input type="hidden" name="next" value="{{ next }}" />{% endif %}
+                    <div class="space-y-1.5">
+                        <label for="id_username" class="block text-xs text-text-muted">Email</label>
+                        {{ form.username }}
+                    </div>
+                    <div class="space-y-1.5">
+                        <label for="id_password" class="block text-xs text-text-muted">Mot de passe</label>
+                        {{ form.password }}
+                    </div>
+                    <button type="submit"
+                            class="w-full py-2.5 bg-gold text-black text-sm font-semibold rounded-lg hover:bg-gold/90 transition-colors mt-1">
+                        Se connecter
+                    </button>
+                </form>
+            </div>
+            {# Note reset #}
+            <p class="text-center text-xs text-text-muted">Mot de passe oublié ? Contacter l'administrateur.</p>
+        </div>
+    </div>
+{% endblock %}
