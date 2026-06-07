@@ -107,3 +107,18 @@ Critères auto-approve : tests 100% verts + 0 ruff errors + 0 IDOR sans for_user
 Après `gh pr create` → lire Qodo findings (voir `commands/github.md`).
 
 `unset GITHUB_TOKEN` avant toute commande `gh`.
+
+### ⛔ Règles PR obligatoires
+
+```bash
+# Toujours cibler development — jamais main directement
+gh pr create --base development ...
+```
+
+**Corps PR — pattern issues :**
+- PRs feature (→ `development`) : `Part of #N` — **jamais `Closes`** (GitHub ferme uniquement sur merge vers `main`)
+- PRs release (`development` → `main`) : `Closes #N1, Closes #N2` — pour **toutes** les issues du milestone
+
+**Fermeture manuelle des issues :** quand le travail est complet et mergé sur `development`, fermer l'issue manuellement avec un commentaire référençant les PRs.
+
+**Issue partielle (multi-PR) :** ajouter un commentaire d'avancement sur l'issue GitHub (`PR A ✅ PR B ✅ PR C ❌`) — ne pas clore tant que toutes les PR ne sont pas mergées.
