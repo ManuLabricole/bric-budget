@@ -40,6 +40,154 @@ from transactions.services import sync_internal_transfer
 logger = logging.getLogger(__name__)
 
 
+# =============================================================================
+# Carte détail transaction INLINE — composant réutilisable (budget + patrimoine)
+# =============================================================================
+#
+# Une page affiche le détail d'une transaction dans une div fixe du panel droit
+# (≠ overlay glissant). Pattern partagé via budget/_panel_tx_detail_inline.html.
+#
+# Ajouter une 3ᵉ page = 1 entrée dans _INLINE_TX + le conteneur <div id="<detail_id>">
+# dans la page + l'include de la ligne avec panel_source="<clé>" panel_target="#<detail_id>".
+# Aucune vue à modifier.
+#
+# Deux sources distinctes par contexte (évite la collision avec le bouton œil de la
+# ligne, qui poste source=panel_source et cible #tx-id) :
+#   - "<clé>"         (liste/ligne) → re-rend juste la ligne en gardant son contexte.
+#   - "<clé>_detail"  (toggles de la carte) → carte + ligne centrale OOB.
+_INLINE_TX = {
+    "patrimoine": {
+        "detail_id": "ac-tx-detail",
+        # Chevron → picker INLINE dans la carte (#ac-tx-detail). Recatégoriser ne
+        # sort pas la tx de la liste (liste par compte) → on renvoie la carte mise à
+        # jour + la ligne centrale en OOB (pas de reload).
+        "picker_source": "patrimoine",
+        "picker_target": "#ac-tx-detail",
+        "picker_overlay": False,
+        "reload_on_recategorize": False,
+        # Pas de Sankey/donut à rafraîchir sur la page asset_class.
+        "cashflow": False,
+    },
+    "category": {
+        "detail_id": "cat-tx-detail",
+        # Chevron → picker INLINE dans la carte (#cat-tx-detail). Recatégoriser peut
+        # faire SORTIR la tx de la catégorie → reload complet (liste + Sankey + donut).
+        "picker_source": "category",
+        "picker_target": "#cat-tx-detail",
+        "picker_overlay": False,
+        "reload_on_recategorize": True,
+        # Toggle_ignore change les totaux → signal de refresh du cashflow card.
+        "cashflow": True,
+    },
+}
+
+
+def _inline_cashflow_url(tx):
+    """URL fragment cashflow de la catégorie de la transaction (None si non catégorisée)."""
+    slug = tx.category.slug if tx.category else None
+    return reverse("budget:category_cashflow_fragment", args=[slug]) if slug else None
+
+
+def _inline_card_ctx(tx, bank_icon_url, key, *, cashflow_refresh_url=None):
+    cfg = _INLINE_TX[key]
+    return {
+        "tx": tx,
+        "bank_icon_url": bank_icon_url,
+        "detail_id": cfg["detail_id"],
+        "toggle_source": f"{key}_detail",
+        "picker_source": cfg["picker_source"],
+        "picker_target": cfg["picker_target"],
+        "picker_overlay": cfg["picker_overlay"],
+        "cashflow_refresh_url": cashflow_refresh_url,
+    }
+
+
+def _inline_card(request, tx, bank_icon_url, key, *, cashflow_refresh_url=None):
+    """GET détail (clic ligne) → la carte inline seule (cible #<detail_id>)."""
+    return render(
+        request,
+        "budget/_panel_tx_detail_inline.html",
+        _inline_card_ctx(
+            tx, bank_icon_url, key, cashflow_refresh_url=cashflow_refresh_url
+        ),
+    )
+
+
+def _inline_card_response(
+    request, tx, bank_icon_url, key, *, cashflow_refresh_url=None
+):
+    """
+    Toggle depuis la carte (source="<clé>_detail") → carte (#<detail_id>) re-rendue
+    + ligne centrale #tx-id en OOB, pour refléter is_ignored/is_reconciled dans la liste.
+
+    `tx` doit être chargé en select_related (category/subcategory/account/institution).
+    """
+    cfg = _INLINE_TX[key]
+    card_html = render_to_string(
+        "budget/_panel_tx_detail_inline.html",
+        _inline_card_ctx(
+            tx, bank_icon_url, key, cashflow_refresh_url=cashflow_refresh_url
+        ),
+        request=request,
+    )
+    row_html = render_to_string(
+        "budget/_panel_tx_row.html",
+        {
+            "tx": tx,
+            "bank_icon_url": bank_icon_url,
+            "panel_source": key,
+            "panel_target": f"#{cfg['detail_id']}",
+            "oob": True,
+        },
+        request=request,
+    )
+    return HttpResponse(card_html + row_html)
+
+
+def _inline_row(request, tx, bank_icon_url, key):
+    """
+    Bouton œil/pointer de la ligne (source="<clé>") → la ligne seule (#tx-id, outerHTML),
+    en préservant panel_source/panel_target → les clics suivants rouvrent bien la carte.
+    """
+    return render(
+        request,
+        "budget/_panel_tx_row.html",
+        {
+            "tx": tx,
+            "bank_icon_url": bank_icon_url,
+            "panel_source": key,
+            "panel_target": f"#{_INLINE_TX[key]['detail_id']}",
+        },
+    )
+
+
+def _inline_dispatch(request, tx, bank_icon_url, *, with_cashflow=True):
+    """
+    Route un POST toggle vers la bonne réponse inline selon `source`, ou None si
+    le contexte n'est pas inline (l'appelant poursuit avec sa logique overlay/liste).
+
+    - source="<clé>_detail" → carte + ligne OOB (+ cashflow si configuré ET with_cashflow).
+    - source="<clé>"        → la ligne seule, contexte préservé.
+
+    with_cashflow=False pour toggle_reconcile : pointer ne change pas les totaux,
+    inutile de recharger le Sankey/donut.
+    """
+    src = request.POST.get("source", "")
+    base = src[: -len("_detail")] if src.endswith("_detail") else ""
+    if base in _INLINE_TX:
+        cashflow_url = (
+            _inline_cashflow_url(tx)
+            if with_cashflow and _INLINE_TX[base]["cashflow"]
+            else None
+        )
+        return _inline_card_response(
+            request, tx, bank_icon_url, base, cashflow_refresh_url=cashflow_url
+        )
+    if src in _INLINE_TX:
+        return _inline_row(request, tx, bank_icon_url, src)
+    return None
+
+
 @login_required
 def budget_modal_target_create(request):
     """
@@ -414,6 +562,11 @@ def budget_toggle_ignore(request, tx_id):
     )
     bank_icon_url = bank_icon_map.get(slug, "")
 
+    # Contextes carte détail inline (patrimoine, category) — cf. _INLINE_TX.
+    inline = _inline_dispatch(request, tx, bank_icon_url)
+    if inline is not None:
+        return inline
+
     # source=detail → appelé depuis les toggles du panneau détail.
     # close_on_back est passé comme champ hidden dans le formulaire pour préserver
     # le contexte (True si ouvert depuis category_detail, False sinon).
@@ -465,15 +618,6 @@ def budget_toggle_ignore(request, tx_id):
         )
         return HttpResponse(panel_html)
 
-    # source=category → appelé depuis category_detail.html.
-    # On ne peut pas mettre à jour KPIs + Sankey + donut en partiel —
-    # on recharge la page complète via HX-Redirect vers la même URL.
-    # HTMX suit la redirection → category_detail recalcule tout avec les données fraîches.
-    if request.POST.get("source") == "category":
-        response = HttpResponse()
-        response["HX-Redirect"] = safe_referer(request, "/budget/")
-        return response
-
     # source=list (défaut) → appelé depuis la liste panel → retourner juste la ligne
     return render(
         request,
@@ -519,8 +663,13 @@ def budget_panel_category_picker(request):
         "order"
     )
 
+    # Contexte inline (patrimoine, category) → le picker vit dans la carte #<detail_id>
+    # et son × / retour reviennent à cette carte. Sinon (overlay budget) → #panel-content.
     source = request.GET.get("source", "")
-    detail_target = "#cat-tx-detail" if source == "category" else "#panel-content"
+    is_inline = source in _INLINE_TX
+    detail_target = (
+        f"#{_INLINE_TX[source]['detail_id']}" if is_inline else "#panel-content"
+    )
 
     return render(
         request,
@@ -531,6 +680,7 @@ def budget_panel_category_picker(request):
             "custom_cats": custom_cats,
             "source": source,
             "detail_target": detail_target,
+            "is_inline": is_inline,
         },
     )
 
@@ -615,29 +765,28 @@ def budget_categorize_transaction(request):
         }
     )
 
-    # source="category" → le picker était ouvert dans l'overlay #panel-content
-    # depuis category_detail.html. On retourne le détail mis à jour dans ce même
-    # overlay (close_on_back=True = bouton ← ferme, pas revenir à la liste).
-    if source == "category":
+    # Contexte carte détail inline (patrimoine, category) : le picker était ouvert
+    # dans la carte #<detail_id>.
+    if source in _INLINE_TX:
+        # category : recatégoriser peut faire SORTIR la tx de la catégorie → reload
+        # complet (liste + Sankey + donut + KPIs) via HX-Redirect.
+        if _INLINE_TX[source]["reload_on_recategorize"]:
+            response = HttpResponse()
+            response["HX-Redirect"] = safe_referer(request, "/budget/")
+            return response
+        # patrimoine : la tx reste dans la liste (par compte) → on renvoie la carte
+        # mise à jour (#<detail_id>) + la ligne centrale en OOB (catégorie à jour).
         tx_full = Transaction.objects.select_related(
             "category", "subcategory", "account", "account__institution"
         ).get(pk=tx.pk)
         bank_icon_map = _resolve_bank_icon_map()
-        slug = (
+        islug = (
             tx_full.account.institution.icon_slug
             if tx_full.account and tx_full.account.institution
             else ""
         )
-        response = render(
-            request,
-            "budget/_panel_tx_detail.html",
-            {
-                "tx": tx_full,
-                "bank_icon_url": bank_icon_map.get(slug, ""),
-                "close_on_back": True,
-                "source": "category",
-                "detail_target": "#panel-content",
-            },
+        response = _inline_card_response(
+            request, tx_full, bank_icon_map.get(islug, ""), source
         )
         response["HX-Trigger"] = hx_trigger
         return response
@@ -687,20 +836,21 @@ def budget_panel_tx_detail(request):
     )
     bank_icon_url = bank_icon_map.get(slug, "")
 
-    # source="category" → ouvert depuis category_detail.html.
-    # close_on_back=True : bouton retour = fermer l'overlay (pas revenir à la liste,
-    # qui est déjà visible dans la page principale).
-    # detail_target est toujours #panel-content : l'overlay droit est utilisé partout,
-    # y compris depuis category_detail. Le div #cat-tx-detail est supprimé.
     source = request.GET.get("source", "")
 
+    # Contexte carte détail INLINE (patrimoine → #ac-tx-detail, category → #cat-tx-detail)
+    # : la carte vit dans une div fixe du panel droit, pas l'overlay glissant.
+    if source in _INLINE_TX:
+        return _inline_card(request, tx, bank_icon_url, source)
+
+    # Sinon (source="" / "list") → détail dans l'overlay glissant #panel-content.
     return render(
         request,
         "budget/_panel_tx_detail.html",
         {
             "tx": tx,
             "bank_icon_url": bank_icon_url,
-            "close_on_back": source == "category",
+            "close_on_back": False,
             "source": source,
             "detail_target": "#panel-content",
         },
@@ -750,6 +900,12 @@ def budget_toggle_reconcile(request, tx_id):
         else ""
     )
     bank_icon_url = bank_icon_map.get(slug, "")
+
+    # Contextes carte détail inline — voir _INLINE_TX. with_cashflow=False : pointer
+    # ne change pas les totaux. Doit précéder le défaut `!= "detail"`.
+    inline = _inline_dispatch(request, tx, bank_icon_url, with_cashflow=False)
+    if inline is not None:
+        return inline
 
     # source=list → appelé depuis la ligne liste → retourner juste la ligne
     if request.POST.get("source") != "detail":

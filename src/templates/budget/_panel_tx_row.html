@@ -151,6 +151,7 @@ Rendu d'une transaction ignorée (is_ignored=True) :
         pour que le nouvel état (badge vert / carré vide) soit bien rendu.
         {% endcomment %}
         <button hx-post="{% url 'budget:toggle_reconcile' tx.id %}"
+                hx-vals='{"source": "{{ panel_source|default:"" }}"}'
                 hx-target="#tx-{{ tx.id }}"
                 hx-swap="outerHTML"
                 title="{% if tx.is_reconciled %}Dépointée{% else %}Pointer la transaction{% endif %}"

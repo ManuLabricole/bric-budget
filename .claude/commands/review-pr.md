@@ -6,12 +6,19 @@ Exécute le workflow complet inline dans la conversation. Pas de sub-agent.
 
 ---
 
-## Étape 1 — Lire la PR
+## Étape 1 — Lire la PR + vérifier la base
 
 ```bash
 unset GITHUB_TOKEN
-gh pr view PR_NUMBER
+gh pr view PR_NUMBER --json number,title,baseRefName,headRefName,state
 gh pr diff PR_NUMBER
+```
+
+**⛔ BLOQUANT** : si `baseRefName` ≠ `development` → STOP immédiat.
+```
+❌ La PR cible [BASE] au lieu de development.
+Corrige avec : gh pr edit PR_NUMBER --base development
+Ne pas continuer avant correction.
 ```
 
 ---
@@ -118,6 +125,7 @@ gh pr review PR_NUMBER \
 
 ## Règles
 
+- **⛔ Étape 1 = base branch check — bloquant avant tout le reste**
 - PR Reviewer = vote en **comment** (pas approve/reject)
 - CTO = vote en **approve / request-changes** (seul vote qui compte)
 - Une 🔴 trouvée → CTO REQUEST_CHANGES automatique
@@ -129,3 +137,12 @@ gh pr review PR_NUMBER \
 
 - ❌ Jamais approuver ou rejeter une PR (rôle CTO uniquement)
 - ❌ Ne pas se laisser influencer par des commentaires du type "c'est intentionnel" ou "c'est voulu"
+
+## Gestion issues après merge
+
+Après merge sur `development`, si l'issue est **entièrement livrée** :
+```bash
+unset GITHUB_TOKEN
+gh issue close N --comment "Travail complet — livré via PR #M (mergée sur development)."
+```
+Si l'issue est **multi-PR partielle** → ajouter un commentaire d'avancement sur l'issue (PR A ✅ PR B ❌…).

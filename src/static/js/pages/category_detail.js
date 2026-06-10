@@ -31,8 +31,10 @@
     var target = evt.detail && evt.detail.target;
     if (!target) return;
 
-    // Étape 1 : panel-content swappé → chercher le signal cashflow-refresh
-    if (target.id === "panel-content") {
+    // Étape 1 : un fragment portant [data-cashflow-refresh] vient d'être swappé
+    // (overlay #panel-content OU carte inline #cat-tx-detail après toggle_ignore)
+    // → recharger le Sankey/KPIs du cashflow card.
+    if (target.id === "panel-content" || target.id === "cat-tx-detail") {
       var refreshEl = target.querySelector("[data-cashflow-refresh]");
       if (refreshEl) {
         htmx.ajax("GET", refreshEl.getAttribute("data-cashflow-refresh"), {
