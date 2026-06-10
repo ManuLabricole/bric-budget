@@ -54,9 +54,18 @@ def fetch_logo(domain: str, dest: Path, *, size: int = DEFAULT_SIZE) -> Path | N
 
     Échecs silencieux par contrat (loggés en warning) : domaine invalide, erreur
     réseau, fichier vide (réponse cassée). Aucune exception ne remonte.
+
+    Logs : format clé=valeur STABLE (`logo_fetch <statut> slug=… domain=…`) — base
+    d'un futur dashboard de monitoring (quel logo institution/marchand échoue).
+    Ne pas reformuler ces messages sans mettre à jour le parsing en face.
     """
+    # slug = nom du fichier cible (ex. zkb) — identifiant lisible dans les logs.
+    slug = dest.stem
+
     if not is_valid_domain(domain):
-        logger.warning("fetch_logo: domaine invalide refusé : %r", domain)
+        logger.warning(
+            "logo_fetch refused slug=%s domain=%r reason=invalid_domain", slug, domain
+        )
         return None
 
     # L'index favicon de Google ne connaît parfois QUE le www (cas réels :
@@ -68,19 +77,45 @@ def fetch_logo(domain: str, dest: Path, *, size: int = DEFAULT_SIZE) -> Path | N
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)
             _download(url, dest)
-        except Exception:
-            logger.warning("fetch_logo: échec téléchargement %s → %s", candidate, dest)
+        except Exception as exc:
+            logger.warning(
+                "logo_fetch failed slug=%s domain=%s candidate=%s reason=download_error error=%r",
+                slug,
+                domain,
+                candidate,
+                exc,
+            )
             continue
 
         # Fichier vide = réponse cassée → on nettoie pour ne pas masquer le manque
         # (has_logo le considérerait présent et le backfill ne réessaierait jamais).
         if not dest.is_file() or dest.stat().st_size == 0:
             dest.unlink(missing_ok=True)
-            logger.warning("fetch_logo: fichier vide pour %s — supprimé", candidate)
+            logger.warning(
+                "logo_fetch failed slug=%s domain=%s candidate=%s reason=empty_response",
+                slug,
+                domain,
+                candidate,
+            )
             continue
 
+        logger.info(
+            "logo_fetch ok slug=%s domain=%s candidate=%s size=%d bytes=%d dest=%s",
+            slug,
+            domain,
+            candidate,
+            size,
+            dest.stat().st_size,
+            dest,
+        )
         return dest
 
+    logger.warning(
+        "logo_fetch giveup slug=%s domain=%s candidates=%d",
+        slug,
+        domain,
+        len(candidates),
+    )
     return None
 
 
