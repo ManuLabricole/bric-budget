@@ -93,12 +93,27 @@ def _earliest_date(accounts) -> datetime.date | None:
     return min(candidates) if candidates else None
 
 
-def _build_institution_groups(accounts, values: dict) -> list[dict]:
+def _account_colors(accounts) -> dict[int, str]:
+    """
+    Couleur de chaque compte = sa couleur dans la courbe ET le treemap.
+
+    Indexé par position dans la liste `accounts` (ordre institution__name, name) —
+    identique à `account_class_series` (chart_data.py) et aux nœuds de distribution.
+    L'onglet Comptes affiche une pastille de cette couleur devant chaque compte.
+    """
+    return {
+        acc.pk: _STACK_PALETTE[i % len(_STACK_PALETTE)]
+        for i, acc in enumerate(accounts)
+    }
+
+
+def _build_institution_groups(accounts, values: dict, colors: dict) -> list[dict]:
     """
     Groupe les comptes par institution avec valeurs courantes en CHF.
 
-    Retourne [{institution, accounts: [{account, value}], total}].
+    Retourne [{institution, accounts: [{account, value, color}], total}].
     `values` = {account.pk: Decimal | None} pré-calculé par l'appelant (évite N+1).
+    `colors` = {account.pk: str hex} couleur de série (cf. _account_colors).
     `total` = somme des valeurs non-None (0 si aucune).
     """
     groups: dict[int | None, dict] = {}
@@ -112,7 +127,9 @@ def _build_institution_groups(accounts, values: dict) -> list[dict]:
                 "total": Decimal("0"),
             }
         val = values.get(acc.pk)
-        groups[key]["accounts"].append({"account": acc, "value": val})
+        groups[key]["accounts"].append(
+            {"account": acc, "value": val, "color": colors.get(acc.pk)}
+        )
         if val is not None:
             groups[key]["total"] += val
     return list(groups.values())
@@ -168,21 +185,25 @@ def _asset_class_context(request, asset_class) -> dict:
 
     chart_json = account_class_series(accounts, start, end)
 
+    # Source unique des couleurs : pastilles onglet Comptes, séries de la courbe
+    # et nœuds du treemap partagent _account_colors (même index pour les 3).
+    colors = _account_colors(accounts)
+
     # Distribution treemap : couleurs alignées avec les séries du graphe (_STACK_PALETTE).
     dist_nodes = [
         BilanNode(
             label=acc.name,
             value=values_today.get(acc.pk),
-            color=_STACK_PALETTE[i % len(_STACK_PALETTE)],
+            color=colors[acc.pk],
             url=None,
         )
-        for i, acc in enumerate(accounts)
+        for acc in accounts
     ]
     dist_json = distribution([n for n in dist_nodes if n.value is not None])
 
     ctx: dict = {
         "asset_class": asset_class,
-        "institution_groups": _build_institution_groups(accounts, values_today),
+        "institution_groups": _build_institution_groups(accounts, values_today, colors),
         "chart_json": chart_json,
         "dist_json": dist_json,
         "stacked": stacked,

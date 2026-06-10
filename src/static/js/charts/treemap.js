@@ -29,7 +29,7 @@ window.BricCharts = window.BricCharts || {};
           borderColor: T["surface-2"],
           borderWidth: 3,
           gapWidth: 0,
-          borderRadius: 6,
+          borderRadius: 2,
         },
       };
     });
