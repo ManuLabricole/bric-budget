@@ -42,7 +42,7 @@ class Institution(models.Model):
 
     # Domain used to fetch the logo via Google Favicons API.
     # Example: "yuh.ch", "ubs.com", "cic.fr"
-    # Used by the update_bank_logos management command.
+    # Used by the backfill_logos management command (services/logos.py).
     # blank=True: optional — logo won't be fetched if empty.
     domain = models.CharField(max_length=100, blank=True, default="")
 

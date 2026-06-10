@@ -23,6 +23,23 @@ from pathlib import Path
 import openpyxl
 import pytest
 
+from services import logos as _logos_service
+
+
+@pytest.fixture(autouse=True)
+def _no_network_logo_fetch(monkeypatch):
+    """
+    Garde réseau global : aucun test ne doit télécharger un logo pour de vrai
+    (le post_save Institution déclenche fetch_logo dès qu'un domain est posé).
+    fetch_logo attrape l'exception par contrat → comportement « échec réseau »,
+    silencieux et sans effet. Les tests du service re-patchent _download eux-mêmes.
+    """
+
+    def _blocked(url: str, dest: Path) -> None:
+        raise OSError("réseau désactivé dans les tests (garde conftest)")
+
+    monkeypatch.setattr(_logos_service, "_download", _blocked)
+
 
 @pytest.fixture
 def cic_file(tmp_path) -> Path:
