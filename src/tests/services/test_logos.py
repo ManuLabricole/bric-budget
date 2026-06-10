@@ -127,6 +127,40 @@ def test_fetch_logo_creates_parent_dirs(tmp_path, monkeypatch):
     assert logos.fetch_logo("yuh.ch", dest) == dest
 
 
+def test_fetch_logo_falls_back_to_www_when_bare_domain_fails(tmp_path, monkeypatch):
+    """L'index favicon Google ne connaît parfois QUE www.<domaine> (cas réel :
+    zkb.ch → 404, www.zkb.ch → 200). Le service retente en www. avant d'abandonner."""
+    seen_urls: list[str] = []
+
+    def fake_download(url: str, dest: Path) -> None:
+        seen_urls.append(url)
+        if "domain=www." not in url:
+            raise OSError("404 — domaine nu inconnu de l'index")
+        dest.write_bytes(b"x")
+
+    monkeypatch.setattr(logos, "_download", fake_download)
+    dest = tmp_path / "zkb.png"
+
+    assert logos.fetch_logo("zkb.ch", dest) == dest
+    assert len(seen_urls) == 2
+    assert "domain=zkb.ch" in seen_urls[0]
+    assert "domain=www.zkb.ch" in seen_urls[1]
+
+
+def test_fetch_logo_no_double_www(tmp_path, monkeypatch):
+    """Domaine déjà en www. → un seul essai (pas de www.www.)."""
+    seen_urls: list[str] = []
+
+    def fake_download(url: str, dest: Path) -> None:
+        seen_urls.append(url)
+        raise OSError("404")
+
+    monkeypatch.setattr(logos, "_download", fake_download)
+
+    assert logos.fetch_logo("www.zkb.ch", tmp_path / "x.png") is None
+    assert len(seen_urls) == 1
+
+
 # ── has_logo ──────────────────────────────────────────────────────────────────
 
 

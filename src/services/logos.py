@@ -59,22 +59,29 @@ def fetch_logo(domain: str, dest: Path, *, size: int = DEFAULT_SIZE) -> Path | N
         logger.warning("fetch_logo: domaine invalide refusé : %r", domain)
         return None
 
-    url = f"https://www.google.com/s2/favicons?domain={domain}&sz={size}"
-    try:
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        _download(url, dest)
-    except Exception:
-        logger.warning("fetch_logo: échec téléchargement %s → %s", domain, dest)
-        return None
+    # L'index favicon de Google ne connaît parfois QUE le www (cas réels :
+    # zkb.ch, spirica.fr, societegenerale.fr → 404 nu, 200 en www.) → 2e essai.
+    candidates = [domain] if domain.startswith("www.") else [domain, f"www.{domain}"]
 
-    # Fichier vide = réponse cassée → on nettoie pour ne pas masquer le manque
-    # (has_logo le considérerait présent et le backfill ne réessaierait jamais).
-    if not dest.is_file() or dest.stat().st_size == 0:
-        dest.unlink(missing_ok=True)
-        logger.warning("fetch_logo: fichier vide pour %s — supprimé", domain)
-        return None
+    for candidate in candidates:
+        url = f"https://www.google.com/s2/favicons?domain={candidate}&sz={size}"
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            _download(url, dest)
+        except Exception:
+            logger.warning("fetch_logo: échec téléchargement %s → %s", candidate, dest)
+            continue
 
-    return dest
+        # Fichier vide = réponse cassée → on nettoie pour ne pas masquer le manque
+        # (has_logo le considérerait présent et le backfill ne réessaierait jamais).
+        if not dest.is_file() or dest.stat().st_size == 0:
+            dest.unlink(missing_ok=True)
+            logger.warning("fetch_logo: fichier vide pour %s — supprimé", candidate)
+            continue
+
+        return dest
+
+    return None
 
 
 def has_logo(slug: str, base_dir: Path) -> bool:
