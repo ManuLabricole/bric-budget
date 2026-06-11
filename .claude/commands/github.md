@@ -10,6 +10,15 @@ Project: 7 (BricBudget board) | PVT_kwHOBlw45M4BTJ3g
 
 ---
 
+## Cycle de travail — 1 issue = 1 branche = 1 PR
+
+- Brancher depuis `development` à jour : `feature/<issue#>-<slug>`.
+- ⛔ **Jamais** empiler une branche sur une autre **non mergée** (stacking = enfer de rebase, incident #125 découpée en 2 branches).
+- Trop gros pour une PR ? → **2 issues distinctes**, pas 2 PRs stackées sur 1 issue.
+- PR `--base development`, corps `Part of #N`. Après `gh pr create` → agent `bricbudget-reviewer` (voir plus bas).
+
+---
+
 ## Créer une issue → l'ajouter immédiatement au board
 
 ```bash
@@ -40,18 +49,18 @@ Vérifier issues liées fermées + milestones à jour.
 
 ---
 
-## ⛔ Règle Qodo — obligatoire après chaque `gh pr create`
+## ⛔ Revue obligatoire après chaque `gh pr create`
 
-```bash
-unset GITHUB_TOKEN
-gh pr view <NUMBER> --comments
-```
+**Déclencher l'agent `bricbudget-reviewer`** sur le diff de la PR
+(`git diff origin/development...HEAD`) : correctness, conventions Django/HTMX,
+perf (N+1), tests, ET les règles SR-XX (IDOR, Decimal, atomicité, secrets, print()).
+Code sensible (views / models / imports / services) → aussi `security-auditor`.
 
-- `🐞 Bug` + `⛨ Security` = **bloquer le merge**, corriger d'abord
-- `📎 Requirement gap` = tracker dans issue #42 ou issue dédiée
-- Ne pas merger si Qodo a posté des "Action required" non traités
+- Finding **bloquant / sécurité** → corriger **AVANT** le merge.
+- Finding mineur / nit → corriger ou tracker selon le ROI.
 
-Qodo trouve des IDOR complémentaires à `/audit_cto` (querysets non scopés, file_hash cross-user, resolver.py).
+> **Qodo est en PAUSE** sur ce compte (siège non payé) → il ne poste plus de revue.
+> S'il redevient actif : lire aussi `gh pr view <N> --comments` (🐞 Bug / ⛨ Security = bloquant).
 
 ---
 

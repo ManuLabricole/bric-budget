@@ -2,6 +2,10 @@
 
 Exécute le workflow complet inline dans la conversation. Pas de sub-agent.
 
+> ℹ️ La revue **par défaut** après `gh pr create` = l'agent **`bricbudget-reviewer`**
+> (déclenché systématiquement, cf. `commands/github.md`). `/review-pr` est le **gate
+> CTO inline** : décision finale APPROVE/merge, ou complément manuel.
+
 **Usage :** `/review-pr PR_NUMBER`
 
 ---

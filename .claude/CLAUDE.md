@@ -67,9 +67,15 @@ logger.debug/info/exception(...)
 
 ## Git workflow
 
+**1 issue = 1 branche = 1 PR.** ⛔ Ne **jamais** empiler une branche sur une autre
+non mergée (stacking = enfer de rebase, incident réel #125 découpée en 2 branches).
+Trop gros pour une PR ? → en faire **2 issues distinctes**, chacune sa branche,
+**mergée avant** de brancher la suivante. Toujours partir de `development` à jour.
+
 ```bash
-git branch --show-current   # ⛔ si main → STOP
-git checkout -b feature/phase-Xg-<slug>
+git branch --show-current   # ⛔ si main / development → STOP
+git checkout development && git pull --ff-only
+git checkout -b feature/<issue#>-<slug>   # ex. feature/125-institutions
 ```
 
 Format commit (Conventional Commits) :
@@ -98,13 +104,16 @@ Si hook bloque → corriger + recommiter. **Jamais `--no-verify`.**
 
 ```
 feature branch → make check + make test
-→ /review-pr PR_NUMBER → /cto gate
-→ Approve + merge → development
-→ development → main : Emmanuel uniquement
+→ gh pr create --base development
+→ ⚙️ agent `bricbudget-reviewer` (revue code) → corriger les bloquants
+→ Emmanuel merge → development   (development → main : Emmanuel uniquement)
 ```
 
-Critères auto-approve : tests 100% verts + 0 ruff errors + 0 IDOR sans for_user + 0 print() + < 300 lignes changées.
-Après `gh pr create` → lire Qodo findings (voir `commands/github.md`).
+Après `gh pr create` → **déclencher l'agent `bricbudget-reviewer`** sur le diff
+(`git diff origin/development...HEAD`). **Qodo est en PAUSE** sur le compte → c'est
+l'agent qui assure la revue (+ `security-auditor` sur le code sensible). Findings
+bloquants/sécurité → corriger **avant** merge. Voir `commands/github.md`.
+Auto-approve si : tests 100% verts + 0 ruff + 0 IDOR sans for_user + 0 print().
 
 `unset GITHUB_TOKEN` avant toute commande `gh`.
 
@@ -121,4 +130,7 @@ gh pr create --base development ...
 
 **Fermeture manuelle des issues :** quand le travail est complet et mergé sur `development`, fermer l'issue manuellement avec un commentaire référençant les PRs.
 
-**Issue partielle (multi-PR) :** ajouter un commentaire d'avancement sur l'issue GitHub (`PR A ✅ PR B ✅ PR C ❌`) — ne pas clore tant que toutes les PR ne sont pas mergées.
+**Multi-PR sur une issue — à ÉVITER** (cause de stacking, incident #125). Préférer
+**découper en issues distinctes** (1 issue = 1 branche). Si vraiment inévitable :
+merger chaque PR **avant** d'ouvrir la suivante — **jamais 2 branches empilées**.
+Commentaire d'avancement sur l'issue (`PR A ✅ PR B ❌`), ne pas clore avant que tout soit mergé.
