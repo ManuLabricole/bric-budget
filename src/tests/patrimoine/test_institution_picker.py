@@ -11,6 +11,10 @@ from django.urls import reverse
 
 from accounts.models import Institution
 
+# La vue est un endpoint HTMX (panel droit) : sans ce header elle redirige (pas de
+# partial nu servi en navigation directe). Les tests de contenu doivent le fournir.
+_HX = {"HTTP_HX_REQUEST": "true"}
+
 
 @pytest.fixture
 def client_logged(client, user):
@@ -53,8 +57,18 @@ def test_picker_requires_login(client):
 
 
 @pytest.mark.django_db
+def test_picker_direct_nav_redirects(client_logged, catalogue):
+    """Navigation directe (sans HX-Request) → redirige vers le bilan, pas de partial nu."""
+    resp = client_logged.get(reverse("patrimoine:institution_picker"))
+    assert resp.status_code == 302
+    assert resp.url == reverse("patrimoine:overview")
+
+
+@pytest.mark.django_db
 def test_picker_lists_active_institutions(client_logged, catalogue):
-    html = client_logged.get(reverse("patrimoine:institution_picker")).content.decode()
+    resp = client_logged.get(reverse("patrimoine:institution_picker"), **_HX)
+    assert resp.status_code == 200
+    html = resp.content.decode()
     assert 'id="institution-list"' in html
     assert "Yuh" in html
     assert "UBS" in html
@@ -64,16 +78,19 @@ def test_picker_lists_active_institutions(client_logged, catalogue):
 
 @pytest.mark.django_db
 def test_picker_search_filters(client_logged, catalogue):
-    html = client_logged.get(
-        reverse("patrimoine:institution_picker"), {"q": "yuh"}
-    ).content.decode()
+    resp = client_logged.get(
+        reverse("patrimoine:institution_picker"), {"q": "yuh"}, **_HX
+    )
+    assert resp.status_code == 200
+    html = resp.content.decode()
     assert "Yuh" in html
     assert "UBS" not in html
 
 
 @pytest.mark.django_db
 def test_picker_search_empty_shows_message(client_logged, catalogue):
-    html = client_logged.get(
-        reverse("patrimoine:institution_picker"), {"q": "zzzznope"}
-    ).content.decode()
-    assert "Aucune institution" in html
+    resp = client_logged.get(
+        reverse("patrimoine:institution_picker"), {"q": "zzzznope"}, **_HX
+    )
+    assert resp.status_code == 200
+    assert "Aucune institution" in resp.content.decode()

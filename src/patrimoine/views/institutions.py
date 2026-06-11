@@ -12,7 +12,7 @@ Catalogue global (pas de scoping user : une Institution n'appartient à personne
 from __future__ import annotations
 
 from django.contrib.auth.decorators import login_required
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 
 from accounts.models import Institution
 from budget.utils import _resolve_bank_icon_map
@@ -21,6 +21,12 @@ from budget.utils import _resolve_bank_icon_map
 @login_required
 def institution_picker(request):
     """Liste les institutions actives (logo + nom), filtrée par ?q= (recherche live)."""
+    # Endpoint HTMX (injecté dans #panel-content) : une navigation directe ne doit pas
+    # renvoyer un partial nu sans <html>/<head>. Même garde que les autres vues
+    # patrimoine (overview.py / asset_class.py) → on redirige vers le bilan.
+    if not request.headers.get("HX-Request"):
+        return redirect("patrimoine:overview")
+
     query = request.GET.get("q", "").strip()
     qs = Institution.objects.filter(is_active=True)
     if query:

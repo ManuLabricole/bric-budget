@@ -11,9 +11,9 @@ Idempotent : peut être relancé autant de fois que nécessaire.
 Si une banque existe déjà (même slug), ses champs sont mis à jour depuis la config.
 """
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
-from accounts.institutions_config import KNOWN_INSTITUTIONS
+from accounts.institutions_config import CATEGORIES, KNOWN_INSTITUTIONS
 from accounts.models import Institution
 
 
@@ -29,6 +29,16 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         dry_run = options["dry_run"]
+
+        # Garde-fou : une category hors du set autorisé (typo dans la config) serait
+        # sinon écrite en silence (PostgreSQL n'applique pas `choices`). On échoue net.
+        invalid = {
+            slug: cfg.get("category")
+            for slug, cfg in KNOWN_INSTITUTIONS.items()
+            if cfg.get("category") not in CATEGORIES
+        }
+        if invalid:
+            raise CommandError(f"Catégories invalides dans la config : {invalid}")
 
         if dry_run:
             self.stdout.write(

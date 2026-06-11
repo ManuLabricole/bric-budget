@@ -200,6 +200,8 @@ KNOWN_INSTITUTIONS = {
         "name": "Zak (Bank Cler)",
         "currency": "CHF",
         "country": "CH",
+        # Néobanque de Bank Cler → partage le domaine cler.ch (même logo que bank-cler).
+        # Pour distinguer visuellement Zak : déposer un SVG manuel dans svg/zak.svg.
         "domain": "cler.ch",
         "category": "bank",
     },
@@ -655,7 +657,7 @@ KNOWN_INSTITUTIONS = {
         "currency": "EUR",
         "country": "NL",
         "domain": "bitvavo.com",
-        "category": "investment",
+        "category": "crypto",  # exchange crypto (comme Binance/Kraken), pas un courtier
     },
     "finary": {
         "name": "Finary",
