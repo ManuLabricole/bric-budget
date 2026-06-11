@@ -227,9 +227,9 @@ dev-seed-realistic:
 	@$(MANAGE) dev_seed_realistic $(if $(FLUSH),--flush,) $(if $(MONTHS),--months=$(MONTHS),)
 	@printf "  ✅ $(GREEN)Fait — recharge /budget/ pour voir les données$(RESET)\n"
 
-update-bank-logos:
-	@printf "  🏦 $(YELLOW)Téléchargement des logos banques (Google Favicons)...$(RESET)\n"
-	@$(MANAGE) update_bank_logos $(if $(BANK),--bank=$(BANK),)
+backfill-logos:
+	@printf "  🏦 $(YELLOW)Téléchargement des logos institutions manquants (Google Favicons)...$(RESET)\n"
+	@$(MANAGE) backfill_logos $(if $(BANK),--institution=$(BANK),) $(if $(FORCE),--force,)
 	@printf "  ✅ $(GREEN)Logos mis à jour dans static/icons/banks/miniature/$(RESET)\n"
 
 # =============================================================================

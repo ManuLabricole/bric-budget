@@ -177,7 +177,7 @@ class Command(BaseCommand):
         """
 
         # Each tuple: (name, slug, country, currency, icon_slug, domain)
-        # domain : utilisé par `make update-bank-logos` pour télécharger le logo
+        # domain : utilisé par `make backfill-logos` pour télécharger le logo
         #          via Google Favicons API (https://www.google.com/s2/favicons?domain=...)
         banks_data = [
             ("Yuh", "yuh", "CH", "CHF", "yuh", "yuh.ch"),
