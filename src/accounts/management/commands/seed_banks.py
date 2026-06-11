@@ -44,6 +44,8 @@ class Command(BaseCommand):
                 "icon_slug": slug,  # icon_slug == slug par convention
                 "default_currency": config["currency"],
                 "country": config.get("country", ""),
+                # domain → récupération auto du logo (post_save + backfill_logos).
+                "domain": config.get("domain", ""),
             }
 
             if dry_run:
