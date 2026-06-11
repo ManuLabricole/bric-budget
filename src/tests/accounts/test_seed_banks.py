@@ -50,6 +50,21 @@ def test_seed_sets_domain_icon_slug_and_fields():
 
 
 @pytest.mark.django_db
+def test_seed_sets_category():
+    """Le badge UI : seed_banks pose la category depuis la config (3 valeurs)."""
+    _run()
+
+    assert Institution.objects.get(slug="yuh").category == "bank"
+    assert Institution.objects.get(slug="binance").category == "crypto"
+    # Assurance vie / prévoyance rangées en "investment" (décision 3 catégories).
+    assert Institution.objects.get(slug="spirica").category == "investment"
+    assert Institution.objects.get(slug="finpension").category == "investment"
+    # Aucune catégorie hors du set autorisé.
+    valid = {"bank", "investment", "crypto"}
+    assert set(Institution.objects.values_list("category", flat=True)) <= valid
+
+
+@pytest.mark.django_db
 def test_seed_is_idempotent():
     """2 runs → même nombre de lignes, les champs sont resynchronisés depuis la config."""
     _run()

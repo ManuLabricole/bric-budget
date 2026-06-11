@@ -24,7 +24,15 @@ class Institution(models.Model):
     default_currency: the bank's native currency.
     Yuh → CHF, CIC → EUR, Monzo → GBP.
     Used as the default value when creating new accounts under this bank.
+
+    category: coarse type for the UI badge (banque / investissement / crypto).
+    Source de vérité = institutions_config.py, posé par seed_banks.
     """
+
+    class Category(models.TextChoices):
+        BANK = "bank", "Banque"
+        INVESTMENT = "investment", "Investissement"
+        CRYPTO = "crypto", "Crypto"
 
     name = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(max_length=100, unique=True)
@@ -34,6 +42,15 @@ class Institution(models.Model):
 
     # ISO 4217 currency code: CHF, EUR, GBP...
     default_currency = models.CharField(max_length=3)
+
+    # Badge UI grossier : banque / investissement / crypto (assurance vie et
+    # prévoyance rangées en "investment" — leur spécificité fiscale vit au niveau
+    # du compte, pas de l'institution). Rempli par seed_banks depuis la config.
+    category = models.CharField(
+        max_length=20,
+        choices=Category.choices,
+        default=Category.BANK,
+    )
 
     # Icon identifier mapped to a file in static/icons/banks/miniature/<icon_slug>.png
     # Example: "yuh", "cic", "ubs". Kept separate from slug so icon can differ from URL slug.

@@ -46,6 +46,8 @@ class Command(BaseCommand):
                 "country": config.get("country", ""),
                 # domain → récupération auto du logo (post_save + backfill_logos).
                 "domain": config.get("domain", ""),
+                # category → badge UI (bank / investment / crypto).
+                "category": config.get("category", "bank"),
             }
 
             if dry_run:

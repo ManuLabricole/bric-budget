@@ -24,13 +24,20 @@ Structure de chaque entrée
   country  : code pays ISO 3166-1 alpha-2
   domain   : domaine web nu (minuscules, sans scheme) — récupération du logo
   category : type d'institution (l'une des valeurs de CATEGORIES) — pilote le
-             filtrage/regroupement dans l'UI (onglets banque / invest / crypto…).
+             badge / regroupement dans l'UI.
              Valeurs autorisées :
                "bank"       — banques de détail, néobanques, banques en ligne
-               "investment" — courtiers, bourse, PEA, robo-advisors, plateformes
+               "investment" — courtiers, bourse, robo-advisors, assurance vie,
+                              prévoyance (3a/LPP) — tout ce qui investit
                "crypto"     — exchanges et plateformes crypto
-               "insurance"  — assurance vie, assureurs, distributeurs AV, épargne
-               "pension"    — prévoyance suisse (3e pilier 3a / LPP)
+
+Pourquoi seulement 3 catégories (et pas assurance / prévoyance séparées) ?
+-------------------------------------------------------------------------
+La catégorie tague l'INSTITUTION (un badge grossier « où as-tu un compte »).
+Assurance vie et prévoyance ne sont pas des natures d'institution mais des
+ENVELOPPES FISCALES → leur spécificité (AV 8 ans, 3a déductible, PEA 5 ans) se
+joue au niveau du COMPTE et du moteur fiscal, pas du badge. On les range donc
+en "investment". Décision 2026-06-11.
 
 Notes
 -----
@@ -44,7 +51,7 @@ Notes
 
 # Catégories autorisées pour le champ `category`. Source de vérité — toute valeur
 # hors de cet ensemble doit être rejetée (seed_banks, tests).
-CATEGORIES = {"bank", "investment", "crypto", "insurance", "pension"}
+CATEGORIES = {"bank", "investment", "crypto"}
 
 KNOWN_INSTITUTIONS = {
     # ── Banques de détail — Suisse ────────────────────────────────────────────
@@ -699,56 +706,56 @@ KNOWN_INSTITUTIONS = {
         "currency": "CHF",
         "country": "CH",
         "domain": "finpension.ch",
-        "category": "pension",
+        "category": "investment",
     },
     "viac": {
         "name": "VIAC",
         "currency": "CHF",
         "country": "CH",
         "domain": "viac.ch",
-        "category": "pension",
+        "category": "investment",
     },
     "frankly": {
         "name": "frankly",
         "currency": "CHF",
         "country": "CH",
         "domain": "frankly.ch",
-        "category": "pension",
+        "category": "investment",
     },
     "selma": {
         "name": "Selma",
         "currency": "CHF",
         "country": "CH",
         "domain": "selma.com",
-        "category": "pension",
+        "category": "investment",
     },
     "liberty": {
         "name": "Liberty Vorsorge",
         "currency": "CHF",
         "country": "CH",
         "domain": "liberty.ch",
-        "category": "pension",
+        "category": "investment",
     },
     "vzvermoegenszentrum": {
         "name": "VZ VermögensZentrum",
         "currency": "CHF",
         "country": "CH",
         "domain": "vermoegenszentrum.ch",
-        "category": "pension",
+        "category": "investment",
     },
     "swisscanto": {
         "name": "Swisscanto Vorsorge",
         "currency": "CHF",
         "country": "CH",
         "domain": "swisscanto.com",
-        "category": "pension",
+        "category": "investment",
     },
     "sparbatze": {
         "name": "Sparbatze",
         "currency": "CHF",
         "country": "CH",
         "domain": "sparbatze.ch",
-        "category": "pension",
+        "category": "investment",
     },
     # ── Crypto (exchanges) ────────────────────────────────────────────────────
     "binance": {
@@ -883,98 +890,98 @@ KNOWN_INSTITUTIONS = {
         "currency": "EUR",
         "country": "FR",
         "domain": "spirica.fr",
-        "category": "insurance",
+        "category": "investment",
     },
     "swiss-life": {
         "name": "Swiss Life",
         "currency": "CHF",
         "country": "CH",
         "domain": "swisslife.ch",
-        "category": "insurance",
+        "category": "investment",
     },
     "generali": {
         "name": "Generali",
         "currency": "EUR",
         "country": "FR",
         "domain": "generali.fr",
-        "category": "insurance",
+        "category": "investment",
     },
     "axa": {
         "name": "AXA",
         "currency": "EUR",
         "country": "FR",
         "domain": "axa.fr",
-        "category": "insurance",
+        "category": "investment",
     },
     "suravenir": {
         "name": "Suravenir",
         "currency": "EUR",
         "country": "FR",
         "domain": "suravenir.fr",
-        "category": "insurance",
+        "category": "investment",
     },
     "apicil": {
         "name": "Apicil",
         "currency": "EUR",
         "country": "FR",
         "domain": "apicil.com",
-        "category": "insurance",
+        "category": "investment",
     },
     "abeille-assurances": {
         "name": "Abeille Assurances",
         "currency": "EUR",
         "country": "FR",
         "domain": "abeille-assurances.fr",
-        "category": "insurance",
+        "category": "investment",
     },
     "cardif": {
         "name": "BNP Paribas Cardif",
         "currency": "EUR",
         "country": "FR",
         "domain": "cardif.fr",
-        "category": "insurance",
+        "category": "investment",
     },
     "cnp-assurances": {
         "name": "CNP Assurances",
         "currency": "EUR",
         "country": "FR",
         "domain": "cnp.fr",
-        "category": "insurance",
+        "category": "investment",
     },
     "mif": {
         "name": "MIF",
         "currency": "EUR",
         "country": "FR",
         "domain": "lamif.fr",
-        "category": "insurance",
+        "category": "investment",
     },
     "carac": {
         "name": "Carac",
         "currency": "EUR",
         "country": "FR",
         "domain": "carac.fr",
-        "category": "insurance",
+        "category": "investment",
     },
     "afer": {
         "name": "Afer",
         "currency": "EUR",
         "country": "FR",
         "domain": "afer.fr",
-        "category": "insurance",
+        "category": "investment",
     },
     "gaipare": {
         "name": "Gaipare",
         "currency": "EUR",
         "country": "FR",
         "domain": "gaipare.com",
-        "category": "insurance",
+        "category": "investment",
     },
     "corum": {
         "name": "Corum L'Épargne",
         "currency": "EUR",
         "country": "FR",
         "domain": "corum.fr",
-        "category": "insurance",
+        "category": "investment",
     },
     # ── Assurance vie — distributeurs / courtiers ─────────────────────────────
     "linxea": {
@@ -982,27 +989,27 @@ KNOWN_INSTITUTIONS = {
         "currency": "EUR",
         "country": "FR",
         "domain": "linxea.com",
-        "category": "insurance",
+        "category": "investment",
     },
     "meilleurtaux": {
         "name": "Meilleurtaux Placement",
         "currency": "EUR",
         "country": "FR",
         "domain": "meilleurtaux.com",
-        "category": "insurance",
+        "category": "investment",
     },
     "placement-direct": {
         "name": "Placement-direct",
         "currency": "EUR",
         "country": "FR",
         "domain": "placement-direct.fr",
-        "category": "insurance",
+        "category": "investment",
     },
     "assurancevie-com": {
         "name": "Assurancevie.com",
         "currency": "EUR",
         "country": "FR",
         "domain": "assurancevie.com",
-        "category": "insurance",
+        "category": "investment",
     },
 }
