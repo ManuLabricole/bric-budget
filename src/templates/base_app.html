@@ -18,8 +18,12 @@ Les "cartes" visuelles sont définies par chaque page dans panel_left / panel_ri
             {# ── TOPBAR — transparent, contenu fixe sur toutes les pages ─────── #}
             <div class="relative flex items-center justify-between h-[72px] px-5 flex-shrink-0 bg-transparent">
                 <div class="flex items-center gap-4">{# TODO Phase 2C : jauges circulaires objectifs budget du mois #}</div>
-                <div class="relative flex items-center gap-2 px-3 py-1.5 text-xs font-medium border bg-gold/30 border-gold/30 text-black/50 rounded-full cursor-not-allowed"
-                     title="Bientôt disponible">
+                <button type="button"
+                        hx-get="{% url 'patrimoine:institution_picker' %}"
+                        hx-target="#panel-content"
+                        hx-swap="innerHTML"
+                        hx-on::after-request="openPanel()"
+                        class="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold bg-gold text-surface-3 rounded-full transition-colors hover:bg-gold-hover">
                     <svg class="w-3.5 h-3.5"
                          fill="none"
                          viewBox="0 0 24 24"
@@ -28,8 +32,7 @@ Les "cartes" visuelles sont définies par chaque page dans panel_left / panel_ri
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                     </svg>
                     Compléter mon patrimoine
-                    {% include "components/badges/soon.html" with extra_class="absolute -top-1.5 -right-1" %}
-                </div>
+                </button>
             </div>
             {# ── CONTENU PRINCIPAL ─────────────────────────────────────────────── #}
             {# Padding p-4 autour + gap-4 entre les deux panels.                   #}
