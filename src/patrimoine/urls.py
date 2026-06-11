@@ -47,6 +47,13 @@ urlpatterns = [
         views.asset_class_transactions,
         name="asset_class_transactions",
     ),
+    # /patrimoine/institutions/picker/ → catalogue institutions (panel droit, recherche live).
+    # 2 segments → ne clashe pas avec <slug> (1 segment), mais déclaré AVANT par prudence.
+    path(
+        "institutions/picker/",
+        views.institution_picker,
+        name="institution_picker",
+    ),
     # /patrimoine/<slug>/ → page d'une classe d'actifs (listing ou SOON)
     path("<slug:slug>/", views.asset_class_page, name="asset_class"),
 ]

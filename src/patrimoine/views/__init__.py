@@ -7,12 +7,14 @@ from .asset_class import (
     set_asset_class_stacked,
     set_asset_class_tab,
 )
+from .institutions import institution_picker
 from .navigation import sidebar_toggle
 from .overview import overview, set_period, toggle_class
 
 __all__ = [
     "asset_class_page",
     "asset_class_transactions",
+    "institution_picker",
     "overview",
     "set_asset_class_period",
     "set_asset_class_stacked",
