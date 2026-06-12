@@ -44,7 +44,7 @@
           hx-swap="innerHTML">
         {% csrf_token %}
         {# Champs cachés — passés tels quels au serveur #}
-        <input type="hidden" name="bank_slug" value="{{ bank_slug }}">
+        <input type="hidden" name="institution_slug" value="{{ institution_slug }}">
         <input type="hidden" name="contract_number" value="{{ contract_number }}">
         <input type="hidden" name="currency" value="{{ currency }}">
         <p class="text-xs font-semibold text-text-base">Créer ce compte pour continuer l'import</p>

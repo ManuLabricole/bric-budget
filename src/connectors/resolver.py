@@ -84,8 +84,8 @@ class AccountNotFound(Exception):
     Attributs :
         contract_number     : identifiant extrait du fichier (RIB/IBAN normalisé)
         contract_number_raw : identifiant brut tel qu'il apparaît dans le fichier
-        bank_slug           : slug de la banque détectée (ex: "cic", "ubs")
-        sheet_name          : nom de la feuille CIC, ou None pour les autres banques
+        institution_slug    : slug de l'institution détectée (ex: "cic", "ubs")
+        sheet_name          : nom de la feuille CIC, ou None pour les autres institutions
         account_name_hint   : suggestion de nom pré-remplie dans le formulaire de création
     """
 
@@ -93,18 +93,18 @@ class AccountNotFound(Exception):
         self,
         contract_number,
         contract_number_raw,
-        bank_slug,
+        institution_slug,
         sheet_name=None,
         account_name_hint=None,
     ):
         self.contract_number = contract_number
         self.contract_number_raw = contract_number_raw
-        self.bank_slug = bank_slug
+        self.institution_slug = institution_slug
         self.sheet_name = sheet_name
         self.account_name_hint = account_name_hint
         super().__init__(
             f"Aucun compte trouvé pour le RIB/IBAN '{contract_number_raw}' "
-            f"(banque : {bank_slug}). Configurez ce compte dans l'admin Django."
+            f"(institution : {institution_slug}). Configurez ce compte dans l'admin Django."
         )
 
 
@@ -122,15 +122,15 @@ class AccountAmbiguous(Exception):
         → AccountAmbiguous porte la liste de candidats pour le picker UI.
 
     Attributs :
-        accounts  : liste des Account candidats (déjà filtrés bank + is_active)
-        bank_slug : slug de la banque (ex: "yuh")
+        accounts         : liste des Account candidats (déjà filtrés institution + is_active)
+        institution_slug : slug de l'institution (ex: "yuh")
     """
 
-    def __init__(self, accounts: list[Account], bank_slug: str):
+    def __init__(self, accounts: list[Account], institution_slug: str):
         self.accounts = accounts
-        self.bank_slug = bank_slug
+        self.institution_slug = institution_slug
         super().__init__(
-            f"{len(accounts)} comptes trouvés pour la banque '{bank_slug}'. "
+            f"{len(accounts)} comptes trouvés pour l'institution '{institution_slug}'. "
             "Sélection manuelle requise."
         )
 
@@ -225,7 +225,7 @@ def resolve_accounts(
                 raise AccountNotFound(
                     contract_number="",
                     contract_number_raw="",
-                    bank_slug="yuh",
+                    institution_slug="yuh",
                 )
 
         # Sans forced_account_id : chercher les comptes Yuh actifs (scopés à l'user).
@@ -238,13 +238,13 @@ def resolve_accounts(
             raise AccountNotFound(
                 contract_number="",
                 contract_number_raw="",
-                bank_slug="yuh",
+                institution_slug="yuh",
             )
         if len(accounts) == 1:
             # Convention : un seul compte Yuh actif → résolution automatique
             return [AccountMatch(account=accounts[0])]
         # Plusieurs comptes Yuh → l'utilisateur doit choisir
-        raise AccountAmbiguous(accounts=accounts, bank_slug="yuh")
+        raise AccountAmbiguous(accounts=accounts, institution_slug="yuh")
 
     elif isinstance(connector, UBSConnector):
         # UBS encode l'IBAN en ligne 2 du fichier (checking ET savings).
@@ -266,7 +266,7 @@ def resolve_accounts(
             raise AccountNotFound(
                 contract_number=identifier,
                 contract_number_raw=identifier,
-                bank_slug="ubs",
+                institution_slug="ubs",
                 account_name_hint=connector.extract_account_name(filepath),
             )
         return [AccountMatch(account=account)]
@@ -287,7 +287,7 @@ def resolve_accounts(
                 raise AccountNotFound(
                     contract_number=rib,
                     contract_number_raw=sheet["rib_raw"],
-                    bank_slug="cic",
+                    institution_slug="cic",
                     sheet_name=sheet["sheet_name"],
                 )
             matches.append(

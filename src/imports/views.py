@@ -390,9 +390,9 @@ def _handle_dry_run(request):
             from accounts.institutions_config import KNOWN_INSTITUTIONS
             from accounts.models import Institution
 
-            bank_config = KNOWN_INSTITUTIONS.get(e.bank_slug, {})
+            bank_config = KNOWN_INSTITUTIONS.get(e.institution_slug, {})
             try:
-                bank = Institution.objects.get(slug=e.bank_slug)
+                bank = Institution.objects.get(slug=e.institution_slug)
             except Institution.DoesNotExist:
                 bank = None
             # Meilleure suggestion de nom : sheet_name pour CIC, account_name_hint pour UBS
@@ -402,10 +402,10 @@ def _handle_dry_run(request):
                 "imports/partials/_steps_create_account.html",
                 {
                     "bank": bank,
-                    "bank_slug": e.bank_slug,
-                    "bank_name": bank_config.get("name", e.bank_slug.upper()),
+                    "institution_slug": e.institution_slug,
+                    "bank_name": bank_config.get("name", e.institution_slug.upper()),
                     "bank_bic": bank_config.get("bic", ""),
-                    "iban": e.contract_number if e.bank_slug == "ubs" else "",
+                    "iban": e.contract_number if e.institution_slug == "ubs" else "",
                     "contract_number": e.contract_number,
                     "contract_number_raw": e.contract_number_raw,
                     "sheet_name": e.sheet_name,
@@ -421,14 +421,14 @@ def _handle_dry_run(request):
                 "filepath": str(tmp_path),
                 "filename": uploaded.name,
                 "file_hash": file_hash,
-                "bank_slug": e.bank_slug,
+                "institution_slug": e.institution_slug,
             }
             return render(
                 request,
                 "imports/partials/_steps_account_picker.html",
                 {
                     "accounts": e.accounts,
-                    "bank_slug": e.bank_slug,
+                    "institution_slug": e.institution_slug,
                     "filename": uploaded.name,
                 },
             )
@@ -668,7 +668,7 @@ def _persist_import_file(
             date_min=Min("date"), date_max=Max("date"), n=Count("id")
         )
 
-        bank_slug = matches[0].account.institution.slug
+        institution_slug = matches[0].account.institution.slug
 
         # Noms de comptes normalisés : espaces → underscores, minuscules
         account_names = [
@@ -682,7 +682,7 @@ def _persist_import_file(
         year = agg["date_max"].year if agg["date_max"] else timezone.now().year
 
         stored_filename = build_import_filename(
-            bank_slug=bank_slug,
+            institution_slug=institution_slug,
             account_names=account_names,
             date_min=agg["date_min"],
             date_max=agg["date_max"],
@@ -692,7 +692,7 @@ def _persist_import_file(
         )
 
         stored_rel, is_enc = save_import_file(
-            tmp_path, bank_slug, stored_filename, year
+            tmp_path, institution_slug, stored_filename, year
         )
 
         # Mettre à jour tous les ImportLogs de cet import (CIC → plusieurs logs,
@@ -783,7 +783,7 @@ def import_create_account(request):
     Après création, relance le dry-run automatiquement (le fichier temp est
     toujours en session) et retourne _steps_result.html comme si de rien n'était.
     """
-    bank_slug = request.POST.get("bank_slug", "")
+    institution_slug = request.POST.get("institution_slug", "")
     account_name = request.POST.get("account_name", "").strip()
     account_type = request.POST.get("account_type", "")
     iban = request.POST.get("iban", "").replace(" ", "").upper()
@@ -805,11 +805,11 @@ def import_create_account(request):
 
     # L'institution doit exister en DB (créée via seed_institutions)
     try:
-        bank = Institution.objects.get(slug=bank_slug)
+        bank = Institution.objects.get(slug=institution_slug)
     except Institution.DoesNotExist:
         return _error(
             request,
-            f"Banque « {bank_slug} » introuvable.",
+            f"Institution « {institution_slug} » introuvable.",
             hint="Lancez d'abord : python manage.py seed_institutions",
         )
 
@@ -922,9 +922,9 @@ def import_create_account(request):
         # Un autre compte est encore manquant (CIC multi-feuilles)
         from accounts.institutions_config import KNOWN_INSTITUTIONS
 
-        bank_config = KNOWN_INSTITUTIONS.get(e.bank_slug, {})
+        bank_config = KNOWN_INSTITUTIONS.get(e.institution_slug, {})
         try:
-            bank_obj = Institution.objects.get(slug=e.bank_slug)
+            bank_obj = Institution.objects.get(slug=e.institution_slug)
         except Institution.DoesNotExist:
             bank_obj = None
         return render(
@@ -932,10 +932,10 @@ def import_create_account(request):
             "imports/partials/_steps_create_account.html",
             {
                 "bank": bank_obj,
-                "bank_slug": e.bank_slug,
-                "bank_name": bank_config.get("name", e.bank_slug.upper()),
+                "institution_slug": e.institution_slug,
+                "bank_name": bank_config.get("name", e.institution_slug.upper()),
                 "bank_bic": bank_config.get("bic", ""),
-                "iban": e.contract_number if e.bank_slug == "ubs" else "",
+                "iban": e.contract_number if e.institution_slug == "ubs" else "",
                 "contract_number": e.contract_number,
                 "contract_number_raw": e.contract_number_raw,
                 "sheet_name": e.sheet_name,
@@ -957,9 +957,9 @@ def import_select_account(request):
     Contexte : levée par AccountAmbiguous (Yuh avec plusieurs comptes actifs).
     L'utilisateur a cliqué sur un compte → POST avec account_id.
 
-    Sécurité : on vérifie que l'account_id correspond bien à la banque en session
-    (bank_slug stocké lors du catch AccountAmbiguous dans _handle_dry_run).
-    Cela empêche de "forcer" un compte d'une autre banque via un POST forgé.
+    Sécurité : on vérifie que l'account_id correspond bien à l'institution en session
+    (institution_slug stocké lors du catch AccountAmbiguous dans _handle_dry_run).
+    Cela empêche de "forcer" un compte d'une autre institution via un POST forgé.
 
     Après sélection : relance le dry-run complet avec forced_account_id.
     """
@@ -971,7 +971,7 @@ def import_select_account(request):
     if not account_id:
         return _error(request, "Aucun compte sélectionné.")
 
-    bank_slug = pending.get("bank_slug", "")
+    institution_slug = pending.get("institution_slug", "")
     tmp_path = Path(pending["filepath"])
     filename = pending["filename"]
     file_hash = pending["file_hash"]
@@ -980,16 +980,16 @@ def import_select_account(request):
         del request.session["pending_import"]
         return _error(request, "Fichier temporaire introuvable. Recommencez l'import.")
 
-    # Vérification : le compte doit appartenir à la banque attendue ET à l'user.
+    # Vérification : le compte doit appartenir à l'institution attendue ET à l'user.
     # members=request.user empêche un user de forger un POST avec l'account_id
-    # d'un autre user (IDOR). institution__slug en session empêche de changer de banque.
+    # d'un autre user (IDOR). institution__slug en session empêche de changer d'institution.
     try:
         account = (
             Account.objects.for_user(request.user)
             .select_related("institution")
             .get(
                 pk=account_id,
-                institution__slug=bank_slug,
+                institution__slug=institution_slug,
                 is_active=True,
             )
         )
