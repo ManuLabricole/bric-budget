@@ -335,25 +335,29 @@ MEDIA_ROOT = (
 )  # dev/CI uniquement (gitignoré) ; prod = S3 (cf. infra)
 
 # Backend du storage MEDIA par défaut, choisi par PRÉSENCE du bucket Railway :
-#   - bucket Railway (S3-compatible) si BUCKET est défini (prod, et "répétition générale"
-#     possible en dev en collant les vars dans .env)
+#   - bucket Railway (S3-compatible) si AWS_S3_BUCKET_NAME est défini (prod, et
+#     "répétition générale" possible en dev en collant les vars dans .env)
 #   - filesystem local (mediafiles/) sinon — dev / CI / tests.
 # Aucun flag USE_S3 à maintenir : impossible d'oublier de basculer. Le code applicatif
 # passe toujours par default_storage → identique dev (FS) / prod (bucket). Split settings → #144.
 #
-# ⚠️ Noms de variables = ceux fournis par le service Bucket Railway (BUCKET, ENDPOINT,
-#    ACCESS_KEY_ID, SECRET_ACCESS_KEY, REGION) → à référencer sur le service app via
-#    Variable References (cf. ops.md). Railway Buckets = virtual-hosted-style URLs.
-_bucket = config("BUCKET", default="")
+# ⚠️ Noms de variables = ceux du preset Railway "Connect Service to Bucket → AWS SDK
+#    (Generic)" qui mappe les vars natives du bucket vers les noms AWS standard :
+#      AWS_S3_BUCKET_NAME ← BUCKET · AWS_ENDPOINT_URL ← ENDPOINT · AWS_DEFAULT_REGION ← REGION
+#      AWS_ACCESS_KEY_ID ← ACCESS_KEY_ID · AWS_SECRET_ACCESS_KEY ← SECRET_ACCESS_KEY
+#    → 1 clic "Add Variables" avec ce preset suffit (cf. ops.md). Buckets = virtual-hosted URLs.
+_bucket = config("AWS_S3_BUCKET_NAME", default="")
 if _bucket:
     _media_storage: dict = {
         "BACKEND": "storages.backends.s3.S3Storage",
         "OPTIONS": {
             "bucket_name": _bucket,
-            "endpoint_url": config("ENDPOINT", default="https://storage.railway.app"),
-            "access_key": config("ACCESS_KEY_ID"),
-            "secret_key": config("SECRET_ACCESS_KEY"),
-            "region_name": config("REGION", default="auto"),
+            "endpoint_url": config(
+                "AWS_ENDPOINT_URL", default="https://storage.railway.app"
+            ),
+            "access_key": config("AWS_ACCESS_KEY_ID"),
+            "secret_key": config("AWS_SECRET_ACCESS_KEY"),
+            "region_name": config("AWS_DEFAULT_REGION", default="auto"),
             "addressing_style": "virtual",  # Railway Buckets = bucket en sous-domaine
             "querystring_auth": True,  # bucket privé → URLs présignées, pas d'accès public
         },
