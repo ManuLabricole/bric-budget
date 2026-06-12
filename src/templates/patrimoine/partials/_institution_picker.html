@@ -35,15 +35,7 @@ inst.icon_url est pré-résolu par la vue (map batch), pas via un tag par ligne.
            class="mb-3 w-full rounded-xl border border-edge/60 bg-surface-3 px-3 py-2 text-sm text-text-base placeholder:text-text-disabled focus:border-gold/50 focus:outline-none">
     <div id="institution-list" class="flex-1 space-y-1 overflow-y-auto">
         {% for row in rows %}
-            <button type="button"
-                    hx-get="{% url 'patrimoine:account_form' %}?institution={{ row.institution.slug }}"
-                    hx-target="#panel-content"
-                    hx-swap="innerHTML"
-                    class="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-surface-hover">
-                {% include "components/institutions/institution_logo.html" with icon_url=row.icon_url institution=row.institution size="w-8 h-8" padding="p-1.5" %}
-                <span class="flex-1 truncate text-sm text-text-base">{{ row.institution.name }}</span>
-                <span class="text-[10px] uppercase text-text-disabled">{{ row.institution.country }}</span>
-            </button>
+            {% include "patrimoine/partials/_institution_picker_row.html" with institution=row.institution icon_url=row.icon_url %}
         {% empty %}
             <p class="py-8 text-center text-xs text-text-disabled">Aucune institution pour « {{ q }} »</p>
         {% endfor %}

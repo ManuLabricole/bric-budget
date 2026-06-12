@@ -15,6 +15,7 @@ Contrat du service :
 from pathlib import Path
 
 import pytest
+from django.test import override_settings
 
 from services import logos
 
@@ -203,9 +204,9 @@ def test_has_logo_ignores_other_slugs(tmp_path):
 
 @pytest.fixture
 def clear_icon_cache():
-    logos.get_institution_icon_map.cache_clear()
+    logos.clear_institution_icon_cache()
     yield
-    logos.get_institution_icon_map.cache_clear()
+    logos.clear_institution_icon_cache()
 
 
 def test_get_institution_icon_map_returns_dict(clear_icon_cache, monkeypatch):
@@ -283,3 +284,165 @@ def test_build_institution_icon_map_svg_overrides_miniature(tmp_path, monkeypatc
     monkeypatch.setattr(logos, "institutions_icon_base", lambda: base)
     result = logos._build_institution_icon_map()
     assert result["yuh"].endswith("/svg/yuh.svg")
+
+
+# ── fetch_from_url — réparation manuelle par URL (#128) ─────────────────────────
+#
+# Storage MEDIA en mémoire (InMemoryStorage) → aucun fichier sur disque, aucun réseau
+# (_download_url monkeypatché). override_settings réinitialise le handler de storage
+# entre les tests → isolation.
+
+_INMEM_STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.InMemoryStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
+
+
+@override_settings(STORAGES=_INMEM_STORAGES)
+def test_fetch_from_url_installs_png_and_invalidates_cache(
+    clear_icon_cache, monkeypatch
+):
+    monkeypatch.setattr(
+        logos, "_download_url", lambda url: (b"\x89PNG-fake", "image/png")
+    )
+    name = logos.fetch_from_url("https://bank.example/logo.png", "zkb")
+    assert name == "icons/institutions/zkb.png"
+    # cache_clear interne → le slug apparaît immédiatement dans le map résolu.
+    assert "zkb" in logos.get_institution_icon_map()
+
+
+@override_settings(STORAGES=_INMEM_STORAGES)
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://bank.example/logo.png",  # pas https
+        "https://127.0.0.1/logo.png",  # IP littérale (réseau privé)
+        "https://localhost/logo.png",  # localhost
+        "https://169.254.169.254/meta.png",  # métadonnées cloud (SSRF classique)
+        "https://service.internal/logo.png",  # suffixe interne
+    ],
+)
+def test_fetch_from_url_refuses_unsafe_url_without_network(url, monkeypatch):
+    touched = {"net": False}
+
+    def spy(_u):
+        touched["net"] = True
+        return (b"x", "image/png")
+
+    monkeypatch.setattr(logos, "_download_url", spy)
+    assert logos.fetch_from_url(url, "zkb") is None
+    assert touched["net"] is False  # garde SSRF : le réseau n'est jamais touché
+
+
+@override_settings(STORAGES=_INMEM_STORAGES)
+def test_fetch_from_url_rejects_unknown_content_type(monkeypatch):
+    # Content-type ni raster ni SVG → refusé (extension dérivée du content-type).
+    monkeypatch.setattr(logos, "_download_url", lambda url: (b"<html>", "text/html"))
+    assert logos.fetch_from_url("https://bank.example/logo.png", "zkb") is None
+
+
+@override_settings(STORAGES=_INMEM_STORAGES)
+def test_fetch_from_url_accepts_safe_svg(clear_icon_cache, monkeypatch):
+    monkeypatch.setattr(
+        logos,
+        "_download_url",
+        lambda url: (b'<svg xmlns="..."><path d="M0 0"/></svg>', "image/svg+xml"),
+    )
+    name = logos.fetch_from_url("https://descartes.swiss/logo.svg", "descartes")
+    assert name == "icons/institutions/descartes.svg"
+
+
+@override_settings(STORAGES=_INMEM_STORAGES)
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b'<svg onload="alert(1)"></svg>',  # handler inline (espace)
+        b'<svg/onload="alert(1)"></svg>',  # handler inline SANS espace (F3)
+        b"<svg><script>alert(1)</script></svg>",  # script embarqué
+        b'<svg><a href="javascript:alert(1)">x</a></svg>',  # uri javascript
+        b"<svg><foreignObject></foreignObject></svg>",  # html arbitraire
+    ],
+)
+def test_fetch_from_url_rejects_unsafe_svg(payload, monkeypatch):
+    # ⛔ SVG avec script/handler refusé (garde anti-XSS), même content-type valide.
+    monkeypatch.setattr(logos, "_download_url", lambda url: (payload, "image/svg+xml"))
+    assert logos.fetch_from_url("https://bank.example/logo.svg", "zkb") is None
+
+
+@override_settings(STORAGES=_INMEM_STORAGES)
+def test_fetch_from_url_svg_content_type_spoof_still_guarded(monkeypatch):
+    """F2 anti-spoof : corps SVG malveillant annoncé image/png → quand même refusé."""
+    monkeypatch.setattr(
+        logos,
+        "_download_url",
+        lambda url: (b'<svg onload="alert(1)"></svg>', "image/png"),
+    )
+    assert logos.fetch_from_url("https://bank.example/logo.png", "zkb") is None
+
+
+@override_settings(STORAGES=_INMEM_STORAGES)
+def test_fetch_from_url_svg_body_forces_svg_extension(clear_icon_cache, monkeypatch):
+    """Corps SVG (sain) annoncé image/png → stocké en .svg (extension dérivée du contenu)."""
+    monkeypatch.setattr(
+        logos, "_download_url", lambda url: (b"<svg><path/></svg>", "image/png")
+    )
+    name = logos.fetch_from_url("https://bank.example/logo.png", "zkb")
+    assert name == "icons/institutions/zkb.svg"
+
+
+def test_no_redirect_handler_raises_on_30x():
+    """F1 anti-SSRF : suivre une redirection est refusé (lève HTTPError → fetch logge failed)."""
+    import io
+    import urllib.error
+
+    handler = logos._NoRedirectHandler()
+    req = urllib.request.Request("https://evil.example/logo.png")
+    with pytest.raises(urllib.error.HTTPError):
+        handler.redirect_request(
+            req, io.BytesIO(b""), 302, "Found", {}, "http://169.254.169.254/"
+        )
+
+
+@override_settings(STORAGES=_INMEM_STORAGES)
+def test_fetch_from_url_rejects_too_large(monkeypatch):
+    oversized = b"x" * (512 * 1024 + 1)
+    monkeypatch.setattr(logos, "_download_url", lambda url: (oversized, "image/png"))
+    assert logos.fetch_from_url("https://bank.example/logo.png", "zkb") is None
+
+
+@override_settings(STORAGES=_INMEM_STORAGES)
+def test_fetch_from_url_rejects_empty_response(monkeypatch):
+    monkeypatch.setattr(logos, "_download_url", lambda url: (b"", "image/png"))
+    assert logos.fetch_from_url("https://bank.example/logo.png", "zkb") is None
+
+
+@override_settings(STORAGES=_INMEM_STORAGES)
+def test_fetch_from_url_download_error_returns_none(monkeypatch):
+    def boom(_u):
+        raise OSError("network down")
+
+    monkeypatch.setattr(logos, "_download_url", boom)
+    assert logos.fetch_from_url("https://bank.example/logo.png", "zkb") is None
+
+
+@override_settings(STORAGES=_INMEM_STORAGES)
+def test_repaired_logo_priority_miniature_then_storage_then_svg(
+    clear_icon_cache, tmp_path, monkeypatch
+):
+    """Priorité de résolution : miniature (static) < logo réparé (storage) < svg."""
+    base = _base(tmp_path)
+    (base / "miniature" / "zkb.png").write_bytes(b"x")
+    monkeypatch.setattr(logos, "institutions_icon_base", lambda: base)
+    monkeypatch.setattr(logos, "_download_url", lambda url: (b"fake", "image/png"))
+
+    # 1. miniature seule → c'est elle qui résout.
+    assert "miniature" in logos.get_institution_icon_map()["zkb"]
+
+    # 2. logo réparé installé → bat la miniature.
+    logos.fetch_from_url("https://bank.example/logo.png", "zkb")
+    assert "miniature" not in logos.get_institution_icon_map()["zkb"]
+
+    # 3. SVG curé ajouté → bat le logo réparé.
+    (base / "svg" / "zkb.svg").write_text("<svg/>")
+    logos.clear_institution_icon_cache()
+    assert logos.get_institution_icon_map()["zkb"].endswith("/svg/zkb.svg")

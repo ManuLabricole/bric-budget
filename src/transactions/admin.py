@@ -176,7 +176,8 @@ class CategorizationRuleAdmin(admin.ModelAdmin):
         if db_field.name == "subcategory":
             object_id = request.resolver_match.kwargs.get("object_id")
             if object_id:
-                try:
+                # Règle introuvable = flux normal (form admin en création) → silence justifié.
+                try:  # nosemgrep: silent-except-pass
                     rule = CategorizationRule.objects.select_related("category").get(
                         pk=object_id
                     )

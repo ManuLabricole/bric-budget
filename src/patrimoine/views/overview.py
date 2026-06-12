@@ -8,6 +8,7 @@ services (bilan + chart_data) et rend. Aucun calcul ici — tout est dans servic
 from __future__ import annotations
 
 import datetime
+import logging
 from decimal import Decimal
 
 from django.contrib.auth.decorators import login_required
@@ -29,6 +30,8 @@ from patrimoine.views.filters import (
     selected_class_slugs,
 )
 from transactions.models import Transaction
+
+logger = logging.getLogger(__name__)
 
 # Clé de session de la période sélectionnée + libellés d'affichage des pills.
 PERIOD_SESSION_KEY = "patrimoine_period"
@@ -135,6 +138,12 @@ def set_period(request, period: str):
     """Change la période (session). HTMX → swap du bloc bilan ; sinon redirect."""
     if period in PERIODS:
         request.session[PERIOD_SESSION_KEY] = period
+        logger.debug("patrimoine_set_period user=%s period=%s", request.user.id, period)
+    else:
+        # Période inconnue (URL forgée) → ignorée, mais tracée.
+        logger.debug(
+            "patrimoine_set_period rejected user=%s period=%r", request.user.id, period
+        )
     return _body_or_redirect(request)
 
 
@@ -144,10 +153,17 @@ def toggle_class(request, slug: str):
     """Coche/décoche une classe d'actifs. HTMX → swap (dropdown gardé ouvert) ; sinon redirect."""
     if slug == "all":
         request.session[FILTER_SESSION_KEY] = _all_slugs()
+        logger.debug("patrimoine_toggle_class user=%s slug=all", request.user.id)
         return _body_or_redirect(request, filter_open=True)
     if get_asset_class(slug) is None:
         raise Http404(f"Classe d'actifs inconnue : {slug}")
     selected = set(selected_class_slugs(request.session))
     selected.discard(slug) if slug in selected else selected.add(slug)
     request.session[FILTER_SESSION_KEY] = [s for s in _all_slugs() if s in selected]
+    logger.debug(
+        "patrimoine_toggle_class user=%s slug=%s selected=%s",
+        request.user.id,
+        slug,
+        request.session[FILTER_SESSION_KEY],
+    )
     return _body_or_redirect(request, filter_open=True)

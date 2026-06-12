@@ -761,6 +761,13 @@ def budget_rule_toggle_active(request, rule_id):
     rule = get_object_or_404(CategorizationRule, id=rule_id)
     rule.is_active = not rule.is_active
     rule.save(update_fields=["is_active"])
+    # Mutation DB (le comportement de catégorisation change) → INFO, pas DEBUG.
+    logger.info(
+        "rule_toggle ok id=%s active=%s user=%s",
+        rule.id,
+        rule.is_active,
+        request.user.id,
+    )
     return render(request, "budget/_rule_row.html", {"rule": rule})
 
 
@@ -781,7 +788,7 @@ def budget_rule_delete(request, rule_id):
     """
     rule = get_object_or_404(CategorizationRule, id=rule_id)
     logger.info(
-        "CategorizationRule deleted: id=%s keyword=%r by user=%s",
+        "rule_delete ok id=%s keyword=%r user=%s",
         rule.id,
         rule.keyword,
         request.user.id,
@@ -848,11 +855,33 @@ def budget_rule_edit_submit(request, rule_id):
             cat_id = int(category_id)
             subcat_id = int(subcategory_id) if subcategory_id else None
         except (ValueError, TypeError):
-            # category_id non numérique → ignorer silencieusement, retourner la règle inchangée
+            # category_id non numérique → règle inchangée (rejet volontaire, mais tracé).
+            logger.debug(
+                "rule_update rejected id=%s reason=invalid_ids category_id=%r subcategory_id=%r",
+                rule.id,
+                category_id,
+                subcategory_id,
+            )
             return render(request, "budget/_rule_row.html", {"rule": rule})
         rule.keyword = keyword
         rule.category_id = cat_id
         rule.subcategory_id = subcat_id
         rule.save(update_fields=["keyword", "category_id", "subcategory_id"])
+        logger.info(
+            "rule_update ok id=%s keyword=%r category=%s subcategory=%s user=%s",
+            rule.id,
+            keyword,
+            cat_id,
+            subcat_id,
+            request.user.id,
+        )
+    else:
+        # Champs requis manquants → règle inchangée (rejet volontaire, mais tracé).
+        logger.debug(
+            "rule_update rejected id=%s reason=missing_fields keyword=%r category_id=%r",
+            rule.id,
+            keyword,
+            category_id,
+        )
 
     return render(request, "budget/_rule_row.html", {"rule": rule})

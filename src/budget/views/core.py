@@ -780,6 +780,10 @@ def budget_toggle_filter_account(request, account_ref):
         try:
             account_id = int(account_ref)
         except (ValueError, TypeError):
+            # Référence non numérique (URL forgée) → toggle ignoré, mais tracé.
+            logger.debug(
+                "toggle_filter_account rejected ref=%r reason=not_an_id", account_ref
+            )
             account_id = None
         if account_id is not None:
             if account_id in hidden:
@@ -788,6 +792,12 @@ def budget_toggle_filter_account(request, account_ref):
                 hidden = hidden + [account_id]
 
     request.session["budget_filter_accounts_hidden"] = hidden
+    logger.debug(
+        "toggle_filter_account user=%s ref=%s hidden=%s",
+        request.user.id,
+        account_ref,
+        hidden,
+    )
     if request.headers.get("HX-Request"):
         if request.headers.get("HX-Target") == "budget-left-section":
             request._open_filter = "accounts"
@@ -836,6 +846,12 @@ def budget_toggle_filter_category(request, slug):
         hidden = hidden + [slug]
 
     request.session["budget_filter_categories_hidden"] = hidden
+    logger.debug(
+        "toggle_filter_category user=%s slug=%s hidden=%s",
+        request.user.id,
+        slug,
+        hidden,
+    )
 
     if request.headers.get("HX-Request"):
         # HX-Target indique le contexte d'appel :

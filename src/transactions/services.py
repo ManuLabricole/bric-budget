@@ -142,7 +142,8 @@ def get_exchange_rate(
         return Decimal("1")
 
     # ── 1. DB d'abord ────────────────────────────────────────────────────────
-    try:
+    # Cache miss = flux normal (pas une erreur avalée) → silence justifié.
+    try:  # nosemgrep: silent-except-pass
         existing = ExchangeRate.objects.get(
             date=date, from_currency=from_currency, to_currency=to_currency
         )

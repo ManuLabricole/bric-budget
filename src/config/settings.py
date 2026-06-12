@@ -322,17 +322,62 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 # STATICFILES_DIRS : sources en développement (ignoré après collectstatic).
 STATICFILES_DIRS = [BASE_DIR / "static"]
 
-# En production uniquement : manifest + compression Whitenoise.
-# CompressedManifestStaticFilesStorage exige un staticfiles.json généré par
-# collectstatic. En dev/CI (DEBUG=True), on utilise le storage par défaut de
-# Django qui résout {% static %} directement sans manifest → pas de ValueError.
-if not DEBUG:
-    STORAGES = {
-        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
-        "staticfiles": {
-            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
+# =============================================================================
+# MEDIA — fichiers ÉCRITS À CHAUD par l'app (logos réparés #128, logos marchands #124)
+# =============================================================================
+# ⚠️ static/ ≠ media/. static = assets committés en git, livrés par le build et servis
+# par WhiteNoise (immuables par release). media = contenu créé par l'app en marche, qui
+# DOIT survivre aux redeploys. Sur Railway le FS du container est éphémère (reset à chaque
+# deploy) → le media va dans un bucket S3 persistant. En dev : dossier local mediafiles/.
+MEDIA_URL = "media/"
+MEDIA_ROOT = (
+    BASE_DIR / "mediafiles"
+)  # dev/CI uniquement (gitignoré) ; prod = S3 (cf. infra)
+
+# Backend du storage MEDIA par défaut, choisi par PRÉSENCE du bucket Railway :
+#   - bucket Railway (S3-compatible) si AWS_S3_BUCKET_NAME est défini (prod, et
+#     "répétition générale" possible en dev en collant les vars dans .env)
+#   - filesystem local (mediafiles/) sinon — dev / CI / tests.
+# Aucun flag USE_S3 à maintenir : impossible d'oublier de basculer. Le code applicatif
+# passe toujours par default_storage → identique dev (FS) / prod (bucket). Split settings → #144.
+#
+# ⚠️ Noms de variables = ceux du preset Railway "Connect Service to Bucket → AWS SDK
+#    (Generic)" qui mappe les vars natives du bucket vers les noms AWS standard :
+#      AWS_S3_BUCKET_NAME ← BUCKET · AWS_ENDPOINT_URL ← ENDPOINT · AWS_DEFAULT_REGION ← REGION
+#      AWS_ACCESS_KEY_ID ← ACCESS_KEY_ID · AWS_SECRET_ACCESS_KEY ← SECRET_ACCESS_KEY
+#    → 1 clic "Add Variables" avec ce preset suffit (cf. ops.md). Buckets = virtual-hosted URLs.
+_bucket = config("AWS_S3_BUCKET_NAME", default="")
+if _bucket:
+    _media_storage: dict = {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": {
+            "bucket_name": _bucket,
+            "endpoint_url": config(
+                "AWS_ENDPOINT_URL", default="https://storage.railway.app"
+            ),
+            "access_key": config("AWS_ACCESS_KEY_ID"),
+            "secret_key": config("AWS_SECRET_ACCESS_KEY"),
+            "region_name": config("AWS_DEFAULT_REGION", default="auto"),
+            "addressing_style": "virtual",  # Railway Buckets = bucket en sous-domaine
+            "querystring_auth": True,  # bucket privé → URLs présignées, pas d'accès public
         },
     }
+else:
+    _media_storage = {"BACKEND": "django.core.files.storage.FileSystemStorage"}
+
+# staticfiles : manifest + compression WhiteNoise en prod ; en dev/CI (DEBUG=True) le
+# storage Django par défaut résout {% static %} sans manifest (CompressedManifest exige
+# un staticfiles.json généré par collectstatic → ValueError sinon).
+_staticfiles_storage = (
+    {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}
+    if DEBUG
+    else {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"}
+)
+
+STORAGES = {
+    "default": _media_storage,
+    "staticfiles": _staticfiles_storage,
+}
 
 
 # =============================================================================
@@ -417,6 +462,13 @@ LOGGING = {
         "connectors": {"level": _log_level},
         "imports": {"level": _log_level},
         "transactions": {"level": _log_level},
+        # Clients S3 (django-storages → boto3) : très bavards en DEBUG (chaque requête
+        # bucket = des centaines de lignes). On les fixe à WARNING même en dev — leur
+        # DEBUG noie nos propres logs sans valeur de debug métier.
+        "botocore": {"level": "WARNING"},
+        "boto3": {"level": "WARNING"},
+        "s3transfer": {"level": "WARNING"},
+        "urllib3": {"level": "WARNING"},
     },
 }
 
