@@ -1,0 +1,114 @@
+{% comment %}
+patrimoine/partials/_account_form_fields.html — champs propres au type (#73).
+
+Inclus dans #form-dynamic de _account_form.html ; re-rendu à chaque changement
+du select « Type de compte » (hx-select). Types sans champs spécifiques
+(investment, brokerage) : rien — l'Account seul suffit. crypto = SOON (jamais
+rendu ici, refusé au POST). Montants parsés côté vue en Decimal (SR-002).
+Pattern champs : imports/_steps_create_account.html (label 10px uppercase,
+input bg-surface-3 border-edge, font-mono pour IBAN/BIC).
+{% endcomment %}
+{% if account_type == "checking" %}
+    <div class="flex flex-col gap-1">
+        <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+            IBAN <span class="text-text-disabled">(optionnel)</span>
+        </label>
+        <input type="text"
+               name="iban"
+               value="{{ values.iban|default:'' }}"
+               maxlength="34"
+               placeholder="CH56 0483 5012 3456 7800 9"
+               class="w-full bg-surface-3 border border-edge rounded-lg px-3 py-2 text-xs text-text-base placeholder:text-text-disabled focus:outline-none focus:border-gold/50 transition-colors font-mono">
+    </div>
+    <div class="flex flex-col gap-1">
+        <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+            BIC <span class="text-text-disabled">(optionnel)</span>
+        </label>
+        <input type="text"
+               name="bic"
+               value="{{ values.bic|default:'' }}"
+               maxlength="11"
+               placeholder="ex: YUHHCHZZ"
+               class="w-full bg-surface-3 border border-edge rounded-lg px-3 py-2 text-xs text-text-base placeholder:text-text-disabled focus:outline-none focus:border-gold/50 transition-colors font-mono">
+    </div>
+{% elif account_type == "savings" %}
+    <div class="flex flex-col gap-1">
+        <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+            Taux d'intérêt (% / an) <span class="text-text-disabled">(optionnel)</span>
+        </label>
+        <input type="text"
+               name="interest_rate"
+               value="{{ values.interest_rate|default:'' }}"
+               inputmode="decimal"
+               placeholder="ex: 3.00"
+               class="w-full bg-surface-3 border border-edge rounded-lg px-3 py-2 text-xs text-text-base placeholder:text-text-disabled focus:outline-none focus:border-gold/50 transition-colors font-mono">
+    </div>
+{% elif account_type == "insurance" %}
+    <div class="flex flex-col gap-1">
+        <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+            Solde du fonds euro <span class="text-text-disabled">(optionnel)</span>
+        </label>
+        <input type="text"
+               name="fonds_euro_balance"
+               value="{{ values.fonds_euro_balance|default:'' }}"
+               inputmode="decimal"
+               placeholder="ex: 10 000"
+               class="w-full bg-surface-3 border border-edge rounded-lg px-3 py-2 text-xs text-text-base placeholder:text-text-disabled focus:outline-none focus:border-gold/50 transition-colors font-mono">
+    </div>
+    <div class="flex flex-col gap-1">
+        <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+            Taux du fonds euro (% / an) <span class="text-text-disabled">(optionnel)</span>
+        </label>
+        <input type="text"
+               name="fonds_euro_rate"
+               value="{{ values.fonds_euro_rate|default:'' }}"
+               inputmode="decimal"
+               placeholder="ex: 2.30"
+               class="w-full bg-surface-3 border border-edge rounded-lg px-3 py-2 text-xs text-text-base placeholder:text-text-disabled focus:outline-none focus:border-gold/50 transition-colors font-mono">
+    </div>
+    <div class="flex flex-col gap-1">
+        <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+            Frais de gestion (% / an) <span class="text-text-disabled">(optionnel)</span>
+        </label>
+        <input type="text"
+               name="management_fee_pct"
+               value="{{ values.management_fee_pct|default:'' }}"
+               inputmode="decimal"
+               placeholder="ex: 0.50"
+               class="w-full bg-surface-3 border border-edge rounded-lg px-3 py-2 text-xs text-text-base placeholder:text-text-disabled focus:outline-none focus:border-gold/50 transition-colors font-mono">
+    </div>
+{% elif account_type == "pension_3a" or account_type == "pension_lp" %}
+    <div class="flex flex-col gap-1">
+        <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+            Plafond annuel (CHF) <span class="text-text-disabled">(optionnel)</span>
+        </label>
+        <input type="text"
+               name="annual_limit_chf"
+               value="{{ values.annual_limit_chf|default:'' }}"
+               inputmode="decimal"
+               placeholder="ex: 7056"
+               class="w-full bg-surface-3 border border-edge rounded-lg px-3 py-2 text-xs text-text-base placeholder:text-text-disabled focus:outline-none focus:border-gold/50 transition-colors font-mono">
+    </div>
+    <div class="flex flex-col gap-1">
+        <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+            Versements cette année (CHF) <span class="text-text-disabled">(optionnel)</span>
+        </label>
+        <input type="text"
+               name="contributions_ytd"
+               value="{{ values.contributions_ytd|default:'' }}"
+               inputmode="decimal"
+               placeholder="ex: 0"
+               class="w-full bg-surface-3 border border-edge rounded-lg px-3 py-2 text-xs text-text-base placeholder:text-text-disabled focus:outline-none focus:border-gold/50 transition-colors font-mono">
+    </div>
+    <div class="flex flex-col gap-1">
+        <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+            Frais de gestion (% / an) <span class="text-text-disabled">(optionnel)</span>
+        </label>
+        <input type="text"
+               name="management_fee_pct"
+               value="{{ values.management_fee_pct|default:'' }}"
+               inputmode="decimal"
+               placeholder="ex: 0.40"
+               class="w-full bg-surface-3 border border-edge rounded-lg px-3 py-2 text-xs text-text-base placeholder:text-text-disabled focus:outline-none focus:border-gold/50 transition-colors font-mono">
+    </div>
+{% endif %}
