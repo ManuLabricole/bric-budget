@@ -31,7 +31,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         if not Institution.objects.filter(slug__in=["yuh", "ubs", "cic"]).exists():
             raise CommandError(
-                "Banques introuvables. Lancez d'abord : python manage.py seed_banks"
+                "Institutions introuvables. Lancez d'abord : python manage.py seed_institutions"
             )
 
         self.stdout.write("\n╔══════════════════════════════════════════════════╗")

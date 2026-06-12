@@ -18,7 +18,7 @@ Logique cercles :
   Gold rempli   = compte visible (id NOT in hidden_account_ids) — état par défaut.
   Cercle vide   = compte masqué (id IN hidden_account_ids).
 {% endcomment %}
-{% load budget_filters static bank_icons %}
+{% load budget_filters static institution_icons %}
 {% with hidden_count=hidden_account_ids|length %}
     <details class="relative group/accounts"
              id="accounts-filter-details"
@@ -79,7 +79,7 @@ Logique cercles :
             <div class="border-t border-edge/50 mx-3 my-1"></div>
             <p class="px-4 pt-1.5 pb-1 text-[9px] font-bold text-text-disabled uppercase tracking-widest">Comptes</p>
             {% for account in accounts %}
-                {% bank_icon_url account.institution as bicon %}
+                {% institution_icon_url account.institution as bicon %}
                 <a {% if htmx_target %}hx-get="{% url toggle_url_name account.id %}" hx-target="{{ htmx_target }}" hx-swap="{{ htmx_swap|default:'outerHTML' }}"{% else %}href="{% url toggle_url_name account.id %}"{% endif %}
                    class="flex items-center gap-3 px-4 py-2 hover:bg-surface-hover transition-colors cursor-pointer">
                     {# Cercle : gold rempli = visible (défaut), vide = masqué #}
@@ -95,7 +95,7 @@ Logique cercles :
                         {% endif %}
                     </span>
                     <span class="flex items-center gap-2 flex-1 min-w-0">
-                        {% include "components/banks/bank_logo.html" with icon_url=bicon bank=account.institution size="w-5 h-5" padding="p-0.5" %}
+                        {% include "components/institutions/institution_logo.html" with icon_url=bicon institution=account.institution size="w-5 h-5" padding="p-0.5" %}
                         <span class="text-xs {% if account.id in hidden_account_ids %}text-text-disabled line-through{% else %}text-text-base{% endif %} truncate">{{ account.name }}</span>
                         <span class="text-[10px] text-text-disabled ml-auto flex-shrink-0">{{ account.currency }}</span>
                     </span>

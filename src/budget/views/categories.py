@@ -31,7 +31,7 @@ from budget.utils import (
     _cats_with_subcats,
     _generate_unique_slug,
     _period_from_session,
-    _resolve_bank_icon_map,
+    _resolve_institution_icon_map,
     _seg_factor,
     _vary_color,
 )
@@ -331,14 +331,14 @@ def budget_category_detail(request, slug):
         .select_related("subcategory", "account", "account__institution")
         .order_by("-date", "-id")
     )
-    bank_icon_map = _resolve_bank_icon_map()
+    institution_icon_map = _resolve_institution_icon_map()
     for tx in txs:
         icon_slug = (
             tx.account.institution.icon_slug
             if tx.account and tx.account.institution
             else ""
         )
-        tx.bank_icon_url = bank_icon_map.get(icon_slug, "")
+        tx.institution_icon_url = institution_icon_map.get(icon_slug, "")
 
     avg_amount = (cc["total_amount"] / cc["tx_count"]) if cc["tx_count"] > 0 else None
 

@@ -10,11 +10,11 @@ et la DB reste toujours en phase avec la config.
 Ajouter une nouvelle institution
 --------------------------------
 1. Ajouter une entrée dans KNOWN_INSTITUTIONS (slug = clé du dict)
-2. Lancer : python manage.py seed_banks
+2. Lancer : python manage.py seed_institutions
    → le logo est récupéré automatiquement via `domain` (post_save Institution,
      service services/logos.py). Rattrapage : python manage.py backfill_logos.
    → si le logo Google Favicons est moche/générique : déposer un SVG manuel dans
-     static/icons/banks/svg/<slug>.svg (prioritaire sur le PNG).
+     static/icons/institutions/svg/<slug>.svg (prioritaire sur le PNG).
 3. Ajouter le connecteur dans connectors/resolver.py si un export existe
 
 Structure de chaque entrée
@@ -50,7 +50,7 @@ Notes
 """
 
 # Catégories autorisées pour le champ `category`. Source de vérité — toute valeur
-# hors de cet ensemble doit être rejetée (seed_banks, tests).
+# hors de cet ensemble doit être rejetée (seed_institutions, tests).
 CATEGORIES = {"bank", "investment", "crypto"}
 
 KNOWN_INSTITUTIONS = {

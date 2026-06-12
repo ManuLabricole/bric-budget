@@ -25,7 +25,7 @@ def test_project_has_commands():
     """Le filtre doit attraper nos commandes — un set vide serait un faux vert."""
     commands = _project_commands()
     assert "sync_reference_data" in commands
-    assert "seed_banks" in commands
+    assert "seed_institutions" in commands
 
 
 @pytest.mark.parametrize("name", _project_commands())

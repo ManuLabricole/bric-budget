@@ -1,4 +1,4 @@
-{% load budget_filters bank_icons %}
+{% load budget_filters institution_icons %}
 {% comment %}
 budget/partials/_category_tx_fragment.html — Fragment HTMX : liste transactions par catégorie
 
@@ -15,8 +15,8 @@ Paramètres :
                     <span class="text-[10px] font-medium text-text-muted">{{ tx.date|date:"j F Y" }}</span>
                 </div>
             {% endifchanged %}
-            {% bank_icon_url tx.account.institution as bicon %}
-            {% include "budget/_panel_tx_row.html" with bank_icon_url=bicon panel_source="category" panel_target="#cat-tx-detail" %}
+            {% institution_icon_url tx.account.institution as bicon %}
+            {% include "budget/_panel_tx_row.html" with institution_icon_url=bicon panel_source="category" panel_target="#cat-tx-detail" %}
         {% endfor %}
     {% else %}
         <div class="flex flex-col items-center justify-center py-12 text-text-disabled">

@@ -4,7 +4,7 @@ transactions/management/commands/seed_initial.py
 Bootstrap dev des RÉFÉRENTIELS (`make seed`) — catégories + institutions.
 Délègue à la commande canonique `sync_reference_data` (idempotente, atomique,
 échec bruyant — #126). Aucune logique propre : un seul point de vérité par
-référentiel (seed_categories, seed_banks).
+référentiel (seed_categories, seed_institutions).
 
 ⛔ NE seede PAS les comptes/cartes personnels : ce sont des données de DEV
 personnelles, pas un référentiel. Leur commande dédiée est `setup_accounts`

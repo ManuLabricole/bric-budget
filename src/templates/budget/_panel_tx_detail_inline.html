@@ -11,7 +11,7 @@ Contenu = contenu interne du conteneur (le <div id="…"> est dans la page hôte
 
 Paramètres (fournis par les vues budget/views/transactions.py, config _INLINE_TX) :
     tx                  — Transaction (select_related category/subcategory/account/institution)
-    bank_icon_url       — str URL statique (logo institution)
+    institution_icon_url       — str URL statique (logo institution)
     detail_id           — id du conteneur sans '#' (ex. "ac-tx-detail", "cat-tx-detail") :
                           cible des toggles Inclure/Pointer (swap innerHTML).
     toggle_source       — valeur "source" postée par les toggles (ex. "patrimoine_detail")
@@ -111,8 +111,8 @@ Spécificités vs détail overlay budget :
     <div class="flex items-center justify-between">
         <span class="text-sm text-text-muted">Compte</span>
         <div class="flex items-center gap-1.5">
-            {% if bank_icon_url %}
-                <img src="{{ bank_icon_url }}"
+            {% if institution_icon_url %}
+                <img src="{{ institution_icon_url }}"
                      width="16"
                      height="16"
                      class="w-4 h-4 rounded-full bg-white p-[1px] flex-shrink-0"

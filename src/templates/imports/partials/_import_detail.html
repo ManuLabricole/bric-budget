@@ -1,5 +1,5 @@
 {# Détail d'un ImportLog — chargé dans #panel-content via HTMX #}
-{% load static bank_icons %}
+{% load static institution_icons %}
 <div class="flex flex-col h-full">
     {# ── Header #}
     <div class="flex items-start justify-between px-5 pt-5 pb-4 border-b border-edge flex-shrink-0">
@@ -66,12 +66,12 @@
     </div>
     {# ── Corps #}
     <div class="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-5">
-        {# Banque + compte #}
+        {# Institution + compte #}
         <div>
             <p class="text-[10px] font-semibold uppercase tracking-wide text-text-muted mb-2">Compte</p>
             <div class="flex items-center gap-3">
-                {% bank_icon_url log.account.institution as bicon %}
-                {% include "components/banks/bank_logo.html" with icon_url=bicon bank=log.account.institution size="w-10 h-10" padding="p-1.5" %}
+                {% institution_icon_url log.account.institution as bicon %}
+                {% include "components/institutions/institution_logo.html" with icon_url=bicon institution=log.account.institution size="w-10 h-10" padding="p-1.5" %}
                 <div class="min-w-0">
                     <p class="text-sm font-medium text-text-base">{{ log.account.name }}</p>
                     <p class="text-xs text-text-muted">{{ log.account.institution.name }} · {{ log.account.currency }}</p>

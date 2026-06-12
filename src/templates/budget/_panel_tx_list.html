@@ -1,12 +1,12 @@
-{% load budget_filters bank_icons %}
+{% load budget_filters institution_icons %}
 {% comment %}
 budget/_panel_tx_list.html — Fragment HTMX : liste transactions (right panel)
 
 Layout par ligne (fidèle Finary) :
-  [icône catégorie 40px] | [cat small + description UPPERCASE bold — flex-1] | [icône banque 20px + compte] | [montant right] | [checkbox]
+  [icône catégorie 40px] | [cat small + description UPPERCASE bold — flex-1] | [icône institution 20px + compte] | [montant right] | [checkbox]
 
 Données :
-  transactions  — list() annoté, .bank_icon_url résolu en Python
+  transactions  — list() annoté, .institution_icon_url résolu en Python
   period_start / period_end — date Python
 {% endcomment %}
 {% comment %} Masquer le scrollbar webkit {% endcomment %}
@@ -114,13 +114,13 @@ Données :
                 {% endifchanged %}
                 {% comment %}
                 Délègue le rendu de la ligne à _panel_tx_row.html.
-                tx.bank_icon_url est annoté en Python dans budget_panel_transactions()
-                (via _resolve_bank_icon_map()) — on le passe explicitement au partial.
-                with bank_icon_url=tx.bank_icon_url permet au partial de fonctionner
+                tx.institution_icon_url est annoté en Python dans budget_panel_transactions()
+                (via _resolve_institution_icon_map()) — on le passe explicitement au partial.
+                with institution_icon_url=tx.institution_icon_url permet au partial de fonctionner
                 aussi quand il est retourné seul par budget_toggle_ignore()
-                (dans ce cas, bank_icon_url est passé directement dans le contexte).
+                (dans ce cas, institution_icon_url est passé directement dans le contexte).
                 {% endcomment %}
-                {% include "budget/_panel_tx_row.html" with bank_icon_url=tx.bank_icon_url %}
+                {% include "budget/_panel_tx_row.html" with institution_icon_url=tx.institution_icon_url %}
             {% endfor %}
             {% comment %}
             Sentinel scroll infini — visible uniquement si d'autres pages existent.

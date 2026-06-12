@@ -26,7 +26,7 @@ class Institution(models.Model):
     Used as the default value when creating new accounts under this bank.
 
     category: coarse type for the UI badge (banque / investissement / crypto).
-    Source de vérité = institutions_config.py, posé par seed_banks.
+    Source de vérité = institutions_config.py, posé par seed_institutions.
     """
 
     class Category(models.TextChoices):
@@ -45,14 +45,14 @@ class Institution(models.Model):
 
     # Badge UI grossier : banque / investissement / crypto (assurance vie et
     # prévoyance rangées en "investment" — leur spécificité fiscale vit au niveau
-    # du compte, pas de l'institution). Rempli par seed_banks depuis la config.
+    # du compte, pas de l'institution). Rempli par seed_institutions depuis la config.
     category = models.CharField(
         max_length=20,
         choices=Category.choices,
         default=Category.BANK,
     )
 
-    # Icon identifier mapped to a file in static/icons/banks/miniature/<icon_slug>.png
+    # Icon identifier mapped to a file in static/icons/institutions/miniature/<icon_slug>.png
     # Example: "yuh", "cic", "ubs". Kept separate from slug so icon can differ from URL slug.
     # blank=True: optional — falls back to initiale in templates.
     icon_slug = models.CharField(max_length=50, blank=True, default="")

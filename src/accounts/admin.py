@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 
 @admin.action(
-    description="⟳ Resynchroniser les référentiels (seed_banks + seed_categories)"
+    description="⟳ Resynchroniser les référentiels (seed_institutions + seed_categories)"
 )
 def sync_reference(modeladmin, request, queryset):
     """La commande du release deploy, accessible sans console (#126).

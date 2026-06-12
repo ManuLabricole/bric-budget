@@ -1,6 +1,6 @@
-{% load static bank_icons %}
+{% load static institution_icons %}
 {# Fragment affiché quand AccountAmbiguous est levé : plusieurs comptes actifs         #}
-{# pour une banque qui n'expose pas d'identifiant dans ses exports (ex: Yuh).          #}
+{# pour une institution qui n'expose pas d'identifiant dans ses exports (ex: Yuh).          #}
 {# L'utilisateur clique sur le bon compte → POST select-account/ → dry-run repart.    #}
 {# Variables contexte : accounts (list[Account]), bank_slug, filename                  #}
 <style>
@@ -54,9 +54,9 @@
                 <input type="hidden" name="account_id" value="{{ account.pk }}">
                 <button type="submit"
                         class="w-full flex items-center gap-3 bg-surface-hover hover:bg-surface-3 border border-transparent hover:border-border rounded-xl px-4 py-3 transition-colors text-left">
-                    {# Logo banque #}
-                    {% bank_icon_url account.institution as bicon %}
-                    {% include "components/banks/bank_logo.html" with icon_url=bicon bank=account.institution size="w-9 h-9" padding="p-1.5" %}
+                    {# Logo institution #}
+                    {% institution_icon_url account.institution as bicon %}
+                    {% include "components/institutions/institution_logo.html" with icon_url=bicon institution=account.institution size="w-9 h-9" padding="p-1.5" %}
                     {# Nom + type + devise #}
                     <div class="flex-1 min-w-0">
                         <p class="text-sm font-semibold text-text-base truncate">{{ account.name }}</p>

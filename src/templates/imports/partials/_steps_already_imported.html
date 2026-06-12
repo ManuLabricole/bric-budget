@@ -1,7 +1,7 @@
 {# Affiché quand le fichier uploadé a déjà été importé (file_hash identique).   #}
 {# Fond warning (pas error) : ce n'est pas une erreur, juste un doublon.         #}
 {# Variables contexte : filename, existing_log (ImportLog avec account__bank)    #}
-{% load bank_icons %}
+{% load institution_icons %}
 <style>
   @keyframes slide-up {
     from { opacity: 0; transform: translateY(10px); }
@@ -32,10 +32,10 @@
     {% if existing_log %}
         <div class="step-card flex items-center gap-3 bg-surface-hover rounded-xl px-4 py-3"
              style="animation-delay: 100ms">
-            {# Logo banque #}
-            {% bank_icon_url existing_log.account.institution as bicon %}
+            {# Logo institution #}
+            {% institution_icon_url existing_log.account.institution as bicon %}
             <div class="w-7 h-7 rounded-full bg-surface-3 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                {% include "components/banks/bank_logo.html" with icon_url=bicon bank=existing_log.account.institution size="w-5 h-5" padding="p-0.5" %}
+                {% include "components/institutions/institution_logo.html" with icon_url=bicon institution=existing_log.account.institution size="w-5 h-5" padding="p-0.5" %}
             </div>
             <div class="flex-1 min-w-0">
                 <p class="text-xs text-text-muted">Import existant</p>

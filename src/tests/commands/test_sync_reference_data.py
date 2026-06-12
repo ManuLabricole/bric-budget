@@ -30,7 +30,7 @@ def _expected_category_counts() -> tuple[int, int]:
 
 @pytest.fixture(autouse=True)
 def _no_logo_fetch(monkeypatch):
-    """seed_banks déclenche le post_save logo par institution — pas de réseau ici."""
+    """seed_institutions déclenche le post_save logo par institution — pas de réseau ici."""
     monkeypatch.setattr(logos, "fetch_logo", lambda *a, **k: None)
 
 
@@ -49,7 +49,7 @@ def test_full_run_seeds_every_referential():
     assert Category.objects.count() == expected_cats
     assert SubCategory.objects.count() == expected_subs
     # Sortie lisible dans les logs Railway : un bandeau par référentiel.
-    assert "seed_banks" in out
+    assert "seed_institutions" in out
     assert "seed_categories" in out
 
 
@@ -84,5 +84,5 @@ def test_failing_seed_raises_command_error(tmp_path, monkeypatch):
     with pytest.raises(CommandError, match="seed_categories"):
         _run()
 
-    # seed_banks (passé avant) a pu écrire — mais l'échec est visible, c'est le contrat.
+    # seed_institutions (passé avant) a pu écrire — mais l'échec est visible, c'est le contrat.
     assert Category.objects.count() == 0
