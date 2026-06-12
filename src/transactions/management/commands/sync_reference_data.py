@@ -7,8 +7,9 @@ moindre échec en CommandError (exit ≠ 0) → le deploy est marqué FAILED, ja
 de prod silencieusement désynchronisée.
 
 Ajouter un référentiel = 1 entrée dans REFERENCE_SEEDS + sa commande seed
-idempotente (update_or_create) + ses données dans src/reference/ — convention
-actée issue #126 (cf. reference/__init__.py).
+idempotente (update_or_create) + ses données committées dans l'app propriétaire
+(`<app>/reference/*.json` ou module Python) — convention actée issue #126,
+documentée dans .claude/rules/django.md (§ Constantes & référentiels).
 
 Usage :
     python manage.py sync_reference_data [--dry-run]

@@ -17,7 +17,7 @@ Registration order follows the model dependency chain:
 
 import logging
 
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.core.management import call_command
 
 from .models import (
@@ -47,7 +47,18 @@ def sync_reference(modeladmin, request, queryset):
     queryset ignoré volontairement : le sync est global par nature (référentiel
     complet), pas par ligne sélectionnée.
     """
-    call_command("sync_reference_data")
+    try:
+        call_command("sync_reference_data")
+    except Exception as exc:
+        # Synchrone dans le worker : un échec (DB lente, seed cassé) ne doit pas
+        # remonter en 500 brut — l'opérateur voit un message d'erreur explicite.
+        logger.exception(
+            "sync_reference_data via admin failed user=%s", request.user.pk
+        )
+        modeladmin.message_user(
+            request, f"Échec de la resynchronisation : {exc}", level=messages.ERROR
+        )
+        return
     logger.info("sync_reference_data via admin user=%s", request.user.pk)
     modeladmin.message_user(
         request, "Référentiels resynchronisés (institutions + catégories)."

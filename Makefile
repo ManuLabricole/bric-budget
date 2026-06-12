@@ -173,7 +173,7 @@ seed:
 
 reset-seed:
 	@printf "  🗑️  $(RED)Suppression des données seedées...$(RESET)\n"
-	@$(MANAGE) reset_seed --yes
+	@$(MANAGE) dev_reset_seed --yes
 	@printf "  $(DIM)→ relance make seed pour repeupler$(RESET)\n"
 
 import-all:
@@ -210,7 +210,7 @@ export-rules:
 
 reset-categories:
 	@printf "  🔄 $(YELLOW)Reset catégories : positif → Revenus, négatif → Inconnu...$(RESET)\n"
-	@$(MANAGE) reset_categories $(if $(DRY),--dry-run,)
+	@$(MANAGE) dev_reset_categories $(if $(DRY),--dry-run,)
 
 # =============================================================================
 # 🧪 Dev tools

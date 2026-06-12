@@ -17,6 +17,9 @@ SRC = Path(settings.BASE_DIR)
 
 # IBAN : 2 lettres + 2 chiffres + 10+ alphanum. Numéros longs : 11+ chiffres
 # consécutifs (un n° de contrat réel ; les plafonds type 7056 passent).
+# Angle mort assumé : un IBAN écrit AVEC séparateurs ("CH56 0480 …") échappe au
+# \b — acceptable, le référentiel n'en contient pas (audit manuel 2026-06-12) et
+# un IBAN dans un référentiel serait de toute façon une faute grossière repérable.
 _SENSITIVE_PATTERNS = [
     re.compile(r"\b[A-Z]{2}\d{2}[A-Z0-9]{10,}\b"),
     re.compile(r"\b\d{11,}\b"),
@@ -24,6 +27,9 @@ _SENSITIVE_PATTERNS = [
 
 
 def _reference_files() -> list[Path]:
+    # Scan : tous les JSON des `<app>/reference/` + le catalogue institutions (.py).
+    # Un futur référentiel dans un autre format (.yml, .py) doit être AJOUTÉ ici à
+    # la main — le glob ne couvre que *.json par dessein (audit ciblé, pas large).
     files = sorted(SRC.glob("*/reference/*.json"))
     files.append(SRC / "accounts" / "institutions_config.py")
     return files

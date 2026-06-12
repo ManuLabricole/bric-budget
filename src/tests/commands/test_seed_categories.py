@@ -24,6 +24,15 @@ def _run(*args) -> str:
     return out.getvalue()
 
 
+def _expected_counts() -> tuple[int, int]:
+    """Counts attendus DÉRIVÉS du référentiel committé (pas de nombre magique) :
+    ajouter une catégorie au JSON ne casse pas ces tests sans raison."""
+    data = json.loads(seed_mod.reference_json_path().read_text(encoding="utf-8"))
+    cats = len(data["categories"])
+    subs = sum(len(c.get("subcategories", [])) for c in data["categories"])
+    return cats, subs
+
+
 @pytest.fixture
 def tiny_reference(tmp_path, monkeypatch):
     """Référentiel minimal contrôlé — pour les scénarios de mutation/erreur."""
@@ -71,9 +80,9 @@ def tiny_reference(tmp_path, monkeypatch):
 def test_seed_real_reference_creates_everything():
     _run()
 
-    # Le référentiel committé : 17 catégories / 122 sous-catégories (audit 2026-06-12).
-    assert Category.objects.count() == 17
-    assert SubCategory.objects.count() == 122
+    expected_cats, expected_subs = _expected_counts()
+    assert Category.objects.count() == expected_cats
+    assert SubCategory.objects.count() == expected_subs
 
 
 @pytest.mark.django_db
@@ -89,8 +98,9 @@ def test_seed_real_reference_is_idempotent_over_many_runs():
     for _ in range(3):
         _run()
 
-    assert Category.objects.count() == 17
-    assert SubCategory.objects.count() == 122
+    expected_cats, expected_subs = _expected_counts()
+    assert Category.objects.count() == expected_cats
+    assert SubCategory.objects.count() == expected_subs
     assert (
         list(
             Category.objects.order_by("slug").values(

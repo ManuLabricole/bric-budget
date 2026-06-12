@@ -12,7 +12,7 @@ Usage during Phase 0B → Phase 1B:
 import logging
 
 from django import forms
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.core.management import call_command
 from django.urls import reverse
 from django.utils.html import format_html
@@ -61,7 +61,17 @@ def sync_reference(modeladmin, request, queryset):
     Dupliquée depuis accounts/admin.py à dessein : pas de couplage admin
     inter-apps pour 8 lignes. queryset ignoré (sync global par nature).
     """
-    call_command("sync_reference_data")
+    try:
+        call_command("sync_reference_data")
+    except Exception as exc:
+        # Synchrone dans le worker : un échec ne doit pas remonter en 500 brut.
+        logger.exception(
+            "sync_reference_data via admin failed user=%s", request.user.pk
+        )
+        modeladmin.message_user(
+            request, f"Échec de la resynchronisation : {exc}", level=messages.ERROR
+        )
+        return
     logger.info("sync_reference_data via admin user=%s", request.user.pk)
     modeladmin.message_user(
         request, "Référentiels resynchronisés (institutions + catégories)."

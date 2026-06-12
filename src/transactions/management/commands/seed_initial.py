@@ -33,16 +33,12 @@ Usage:
     make seed
 """
 
-import json
-from pathlib import Path
-
 from decouple import config
-from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.core.management.base import BaseCommand
 
 from accounts.models import Account, Card, CheckingAccount, Institution, SavingsAccount
-from transactions.models import Category, SubCategory
 
 
 class Command(BaseCommand):
@@ -57,109 +53,15 @@ class Command(BaseCommand):
         """
         self.stdout.write(self.style.SUCCESS("=== BricBudget seed_initial ==="))
 
-        self._seed_categories()
+        # Catégories : déléguées à la commande canonique (référentiel committé,
+        # atomique, échec bruyant — #126). seed_initial ne garde que les données
+        # dev personnelles (banques/comptes/cartes) dont il est le seul appelant.
+        call_command("seed_categories", stdout=self.stdout)
         banks = self._seed_banks()
         accounts = self._seed_accounts(banks)
         self._seed_cards(accounts)
 
         self.stdout.write(self.style.SUCCESS("=== Seed complete ==="))
-
-    # =========================================================================
-    # Step 1 — Categories + SubCategories
-    # =========================================================================
-
-    def _seed_categories(self):
-        """
-        Reads categories.json and creates/updates Category + SubCategory objects.
-
-        Path resolution:
-            settings.BASE_DIR = src/
-            BASE_DIR.parent   = project root (BudgetTracker/)
-            → BudgetTracker/assets/private/references/categories/categories.json
-
-        Lookup key: slug (unique in DB).
-        default_nature="neutral" in JSON → stored as "" (blank) in DB.
-        """
-        json_path = (
-            Path(settings.BASE_DIR).parent
-            / "assets"
-            / "private"
-            / "references"
-            / "categories"
-            / "categories.json"
-        )
-
-        if not json_path.exists():
-            self.stdout.write(
-                self.style.WARNING(
-                    f"categories.json not found at {json_path} — skipping categories"
-                )
-            )
-            return
-
-        with open(json_path, encoding="utf-8") as f:
-            data = json.load(f)
-
-        cat_created = 0
-        cat_updated = 0
-        sub_created = 0
-        sub_updated = 0
-
-        for cat_data in data["categories"]:
-            # update_or_create: lookup by slug, set/update all other fields.
-            # If the category already exists, its fields are updated to match the JSON.
-            # `created` is True on first run, False on subsequent runs (updated).
-            category, created = Category.objects.update_or_create(
-                slug=cat_data["slug"],
-                defaults={
-                    "name": cat_data["name"],
-                    "icon": cat_data.get("icon", ""),
-                    "colour_hex": cat_data.get("colour_hex", ""),
-                    "order": cat_data.get("order", 0),
-                    "is_system": cat_data.get("is_system", False),
-                    "is_active": cat_data.get("is_active", True),
-                },
-            )
-
-            if created:
-                cat_created += 1
-            else:
-                cat_updated += 1
-
-            for sub_data in cat_data.get("subcategories", []):
-                # "neutral" in JSON means no budget nature → maps to "" (blank) in DB
-                nature = sub_data.get("default_nature", "")
-                if nature == "neutral":
-                    nature = ""
-
-                _, sub_c = SubCategory.objects.update_or_create(
-                    slug=sub_data["slug"],
-                    defaults={
-                        "category": category,
-                        "name": sub_data["name"],
-                        "icon": sub_data.get("icon", ""),
-                        "default_nature": nature,
-                        "is_active": sub_data.get("is_active", True),
-                        # is_system: True = Finary native, False = user-created (badge "perso")
-                        "is_system": sub_data.get("is_system", False),
-                    },
-                )
-
-                if sub_c:
-                    sub_created += 1
-                else:
-                    sub_updated += 1
-
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"  Categories:    {cat_created} created, {cat_updated} updated"
-            )
-        )
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"  SubCategories: {sub_created} created, {sub_updated} updated"
-            )
-        )
 
     # =========================================================================
     # Step 2 — Banks

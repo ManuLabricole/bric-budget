@@ -7,6 +7,7 @@ surtout fait remonter le moindre échec en CommandError (exit ≠ 0) pour que
 Railway marque le release FAILED — jamais d'échec avalé.
 """
 
+import json
 from io import StringIO
 
 import pytest
@@ -17,6 +18,14 @@ from accounts.models import Institution
 from services import logos
 from transactions.management.commands import seed_categories as seed_cat_mod
 from transactions.models import Category, SubCategory
+
+
+def _expected_category_counts() -> tuple[int, int]:
+    """Dérivé du référentiel committé — pas de nombre magique couplé à sa photo."""
+    data = json.loads(seed_cat_mod.reference_json_path().read_text(encoding="utf-8"))
+    cats = len(data["categories"])
+    subs = sum(len(c.get("subcategories", [])) for c in data["categories"])
+    return cats, subs
 
 
 @pytest.fixture(autouse=True)
@@ -35,9 +44,10 @@ def _run(*args) -> str:
 def test_full_run_seeds_every_referential():
     out = _run()
 
+    expected_cats, expected_subs = _expected_category_counts()
     assert Institution.objects.count() == len(KNOWN_INSTITUTIONS)
-    assert Category.objects.count() == 17
-    assert SubCategory.objects.count() == 122
+    assert Category.objects.count() == expected_cats
+    assert SubCategory.objects.count() == expected_subs
     # Sortie lisible dans les logs Railway : un bandeau par référentiel.
     assert "seed_banks" in out
     assert "seed_categories" in out
@@ -49,9 +59,10 @@ def test_many_runs_are_idempotent():
     for _ in range(3):
         _run()
 
+    expected_cats, expected_subs = _expected_category_counts()
     assert Institution.objects.count() == len(KNOWN_INSTITUTIONS)
-    assert Category.objects.count() == 17
-    assert SubCategory.objects.count() == 122
+    assert Category.objects.count() == expected_cats
+    assert SubCategory.objects.count() == expected_subs
 
 
 @pytest.mark.django_db
