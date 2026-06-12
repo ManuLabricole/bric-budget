@@ -7,11 +7,15 @@ asset_class_page est dans views/asset_class.py.
 
 from __future__ import annotations
 
+import logging
+
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.views.decorators.http import require_POST
 
 from patrimoine.context_processors import SIDEBAR_SESSION_KEY
+
+logger = logging.getLogger(__name__)
 
 
 @require_POST
@@ -26,5 +30,7 @@ def sidebar_toggle(request):
     cochée) plutôt que d'inverser, pour rester synchrone avec le client sans risque de
     désync. Réponse 204 : aucun contenu à échanger.
     """
-    request.session[SIDEBAR_SESSION_KEY] = "open" in request.POST
+    is_open = "open" in request.POST
+    request.session[SIDEBAR_SESSION_KEY] = is_open
+    logger.debug("patrimoine_sidebar_toggle user=%s open=%s", request.user.id, is_open)
     return HttpResponse(status=204)

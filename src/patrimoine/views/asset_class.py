@@ -14,6 +14,7 @@ Sécurité (SR-001) : listing scopé via Account.objects.for_user — jamais .al
 from __future__ import annotations
 
 import datetime
+import logging
 from decimal import Decimal
 
 from django.contrib.auth.decorators import login_required
@@ -39,6 +40,8 @@ from patrimoine.services.valuation import current_value
 from patrimoine.views.overview import PERIOD_LABELS
 from services.logos import get_institution_icon_map
 from transactions.models import Transaction
+
+logger = logging.getLogger(__name__)
 
 _PERIOD_KEY_PREFIX = "patrimoine_ac_period_"
 _STACKED_KEY_PREFIX = "patrimoine_ac_stacked_"
@@ -265,6 +268,17 @@ def set_asset_class_period(request, slug: str, period: str):
     asset_class = _get_or_404(slug)
     if period in PERIODS:
         request.session[_period_key(slug)] = period
+        logger.debug(
+            "ac_set_period user=%s slug=%s period=%s", request.user.id, slug, period
+        )
+    else:
+        # Période inconnue (URL forgée) → ignorée, mais tracée.
+        logger.debug(
+            "ac_set_period rejected user=%s slug=%s period=%r",
+            request.user.id,
+            slug,
+            period,
+        )
     return _body_or_redirect(request, asset_class)
 
 
@@ -273,7 +287,11 @@ def set_asset_class_period(request, slug: str, period: str):
 def set_asset_class_stacked(request, slug: str):
     """Bascule mode standard/empilé (session). HTMX → swap corps ; sinon redirect."""
     asset_class = _get_or_404(slug)
-    request.session[_stacked_key(slug)] = request.POST.get("stacked") == "1"
+    stacked = request.POST.get("stacked") == "1"
+    request.session[_stacked_key(slug)] = stacked
+    logger.debug(
+        "ac_set_stacked user=%s slug=%s stacked=%s", request.user.id, slug, stacked
+    )
     return _body_or_redirect(request, asset_class)
 
 
@@ -283,6 +301,12 @@ def set_asset_class_tab(request, slug: str, tab: str):
     _get_or_404(slug)
     if tab in _VALID_TABS:
         request.session[_tab_key(slug)] = tab
+        logger.debug("ac_set_tab user=%s slug=%s tab=%s", request.user.id, slug, tab)
+    else:
+        # Onglet inconnu (URL forgée) → ignoré, mais tracé.
+        logger.debug(
+            "ac_set_tab rejected user=%s slug=%s tab=%r", request.user.id, slug, tab
+        )
     return redirect("patrimoine:asset_class", slug=slug)
 
 

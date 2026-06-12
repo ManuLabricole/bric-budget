@@ -11,6 +11,7 @@ Pas de Django Forms (convention projet) → chaque champ est casté/borné ICI.
 
 from __future__ import annotations
 
+import logging
 from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 
@@ -25,6 +26,8 @@ from accounts.models import Account, Institution
 from accounts.services import create_account
 from services.logos import get_institution_icon_map
 from users.models import CustomUser
+
+logger = logging.getLogger(__name__)
 
 # Types proposés par le wizard — CARD exclu : une carte se rattache à un compte
 # courant (logique transactions / compte partagé propre, future issue dédiée).
@@ -234,6 +237,14 @@ def account_create(request: HttpRequest) -> HttpResponse:
             error = _human_validation_error(exc)
 
     if error is not None:
+        # Rejet de validation (422) — le succès est loggé INFO par create_account.
+        logger.debug(
+            "account_create rejected institution=%s type=%s reason=%r user=%s",
+            institution.slug,
+            account_type,
+            error,
+            request.user.id,
+        )
         return render(
             request,
             "patrimoine/partials/_account_form.html",

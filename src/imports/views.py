@@ -590,8 +590,8 @@ def import_confirm(request):
         total_created = sum(r.count_created for r in service_results)
         total_skipped = sum(r.count_skipped for r in service_results)
         logger.info(
-            "import_confirm: filename=%s connector=%s accounts=%d "
-            "created=%d skipped=%d by user=%s",
+            "import_confirm ok filename=%s connector=%s accounts=%d "
+            "created=%d skipped=%d user=%s",
             filename,
             type(connector).__name__,
             len(matches),
@@ -704,7 +704,7 @@ def _persist_import_file(
         )
 
         logger.info(
-            "[import_storage] Saved %s → %s (encrypted=%s)",
+            "import_storage_saved ok file=%s dest=%s encrypted=%s",
             filename,
             stored_rel,
             is_enc,
@@ -759,7 +759,7 @@ def import_log_delete(request, pk):
     log.transactions.all().delete()
     log.delete()
     logger.info(
-        "import_log_delete: log_pk=%s filename=%s tx_deleted=%d by user=%s",
+        "import_log_delete ok log_pk=%s filename=%s tx_deleted=%d user=%s",
         pk,
         log.filename,
         tx_count,
@@ -831,7 +831,7 @@ def import_create_account(request):
                 SavingsAccount.objects.create(account=account, interest_rate=0)
         # Audit log : compte créé pendant l'import (mutation métier critique).
         logger.info(
-            "import_create_account: id=%s bank=%s type=%s by user=%s",
+            "import_create_account ok id=%s institution=%s type=%s user=%s",
             account.id,
             bank.slug,
             account_type,
