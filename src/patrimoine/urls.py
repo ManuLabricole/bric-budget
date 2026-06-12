@@ -54,6 +54,10 @@ urlpatterns = [
         views.institution_picker,
         name="institution_picker",
     ),
+    # /patrimoine/comptes/nouveau/ → wizard #73 step 2 (formulaire, panel droit, GET)
+    path("comptes/nouveau/", views.account_form, name="account_form"),
+    # /patrimoine/comptes/creer/ → wizard #73 création (POST → 204 + HX-Redirect)
+    path("comptes/creer/", views.account_create, name="account_create"),
     # /patrimoine/<slug>/ → page d'une classe d'actifs (listing ou SOON)
     path("<slug:slug>/", views.asset_class_page, name="asset_class"),
 ]

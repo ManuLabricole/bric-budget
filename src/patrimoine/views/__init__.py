@@ -1,5 +1,6 @@
 """patrimoine/views/ — package de vues (cf. feedback_python_packages : pas de views.py à plat)."""
 
+from .account_wizard import account_create, account_form
 from .asset_class import (
     asset_class_page,
     asset_class_transactions,
@@ -12,6 +13,8 @@ from .navigation import sidebar_toggle
 from .overview import overview, set_period, toggle_class
 
 __all__ = [
+    "account_create",
+    "account_form",
     "asset_class_page",
     "asset_class_transactions",
     "institution_picker",
