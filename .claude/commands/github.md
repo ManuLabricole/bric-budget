@@ -19,6 +19,26 @@ Project: 7 (BricBudget board) | PVT_kwHOBlw45M4BTJ3g
 
 ---
 
+## Créer une PR — labels + milestone + board OBLIGATOIRES
+
+La PR hérite des **labels** et du **milestone de son issue**, et rejoint le board
+**à la création** (pas au merge) :
+
+```bash
+unset GITHUB_TOKEN
+gh issue view <N> --json labels,milestone   # récupérer labels + milestone de l'issue
+gh pr create --base development \
+  --title "feat(scope): ..." \
+  --body "... Part of #N ..." \
+  --label <label1> --label <label2> \
+  --milestone "<milestone de l'issue>"
+gh project item-add 7 --owner ManuLabricole --url <PR_URL>
+```
+
+⚠️ Une PR sans labels/milestone/board = PR incomplète (rappel Emmanuel 2026-06-12).
+
+---
+
 ## Créer une issue → l'ajouter immédiatement au board
 
 ```bash
@@ -41,11 +61,8 @@ gh issue create --title "..." --body "..." | xargs gh project item-add 7 --owner
 
 ## À chaque merge de PR
 
-```bash
-gh project item-add 7 --owner ManuLabricole --url <PR_URL>
-```
-
-Vérifier issues liées fermées + milestones à jour.
+La PR est déjà au board (ajoutée à la création). Vérifier : issues liées fermées
+(manuellement, avec commentaire référençant la PR) + milestones à jour.
 
 ---
 
