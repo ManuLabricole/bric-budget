@@ -120,8 +120,10 @@ Auto-approve si : tests 100% verts + 0 ruff + 0 IDOR sans for_user + 0 print().
 ### ⛔ Règles PR obligatoires
 
 ```bash
-# Toujours cibler development — jamais main directement
-gh pr create --base development ...
+# Toujours cibler development — jamais main directement.
+# Labels + milestone HÉRITÉS DE L'ISSUE + ajout au board dans la même foulée.
+gh pr create --base development --label <labels issue> --milestone "<milestone issue>" ...
+gh project item-add 7 --owner ManuLabricole --url <PR_URL>
 ```
 
 **Corps PR — pattern issues :**
