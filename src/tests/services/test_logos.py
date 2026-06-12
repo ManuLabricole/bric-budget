@@ -192,3 +192,94 @@ def test_has_logo_ignores_other_slugs(tmp_path):
     base = _base(tmp_path)
     (base / "miniature" / "ubs.png").write_bytes(b"x")
     assert logos.has_logo("yuh", base) is False
+
+
+# ── get_institution_icon_map / institution_icon_url (#139) ──────────────────────
+#
+# get_institution_icon_map est un lru_cache GLOBAL au process → on vide le cache
+# avant ET après chaque test : avant pour ignorer ce qu'un test précédent a mis,
+# après pour ne pas polluer les tests de vues qui résolvent depuis le vrai disque.
+
+
+@pytest.fixture
+def clear_icon_cache():
+    logos.get_institution_icon_map.cache_clear()
+    yield
+    logos.get_institution_icon_map.cache_clear()
+
+
+def test_get_institution_icon_map_returns_dict(clear_icon_cache, monkeypatch):
+    monkeypatch.setattr(
+        logos, "_build_institution_icon_map", lambda: {"yuh": "/static/yuh.svg"}
+    )
+    result = logos.get_institution_icon_map()
+    assert isinstance(result, dict)
+    assert result["yuh"] == "/static/yuh.svg"
+
+
+def test_get_institution_icon_map_cached(clear_icon_cache, monkeypatch):
+    """lru_cache → 2 appels = même objet (référence identique)."""
+    monkeypatch.setattr(logos, "_build_institution_icon_map", lambda: {})
+    assert logos.get_institution_icon_map() is logos.get_institution_icon_map()
+
+
+def test_icon_url_builds_map_once_for_n_resolutions(clear_icon_cache, monkeypatch):
+    """Contrat #139 : N résolutions unitaires → 1 seul scan disque (anti-N+1)."""
+    calls = {"n": 0}
+
+    def counting():
+        calls["n"] += 1
+        return {"yuh": "/static/yuh.svg"}
+
+    monkeypatch.setattr(logos, "_build_institution_icon_map", counting)
+    for _ in range(50):
+        logos.institution_icon_url("yuh")
+    assert calls["n"] == 1
+
+
+def test_institution_icon_url_resolves_slug_or_empty(clear_icon_cache, monkeypatch):
+    monkeypatch.setattr(
+        logos, "_build_institution_icon_map", lambda: {"yuh": "/static/yuh.svg"}
+    )
+    assert logos.institution_icon_url("yuh") == "/static/yuh.svg"
+    assert logos.institution_icon_url("unknown") == ""
+
+
+def test_institution_icon_url_coerces_object(clear_icon_cache, monkeypatch):
+    """Objet Institution : icon_slug prioritaire sur slug."""
+    monkeypatch.setattr(
+        logos, "_build_institution_icon_map", lambda: {"yuh": "/static/yuh.svg"}
+    )
+
+    class Inst:
+        icon_slug = "yuh"
+        slug = "ignored"
+
+    assert logos.institution_icon_url(Inst()) == "/static/yuh.svg"
+
+
+def test_institution_icon_url_object_without_icon_slug_returns_empty(
+    clear_icon_cache, monkeypatch
+):
+    """icon_slug=None ET slug="" → "" (le composant affiche alors l'initiale)."""
+    monkeypatch.setattr(logos, "_build_institution_icon_map", lambda: {"yuh": "/x.svg"})
+
+    class Inst:
+        icon_slug = None
+        slug = ""
+
+    assert logos.institution_icon_url(Inst()) == ""
+
+
+def test_build_institution_icon_map_svg_overrides_miniature(tmp_path, monkeypatch):
+    """SVG prioritaire sur miniature pour un même slug (scan disque réel).
+
+    Pas de clear_icon_cache : on appelle _build_institution_icon_map() directement,
+    sans passer par le map caché → aucun risque de pollution inter-tests.
+    """
+    base = _base(tmp_path)
+    (base / "miniature" / "yuh.png").write_bytes(b"x")
+    (base / "svg" / "yuh.svg").write_text("<svg/>")
+    monkeypatch.setattr(logos, "institutions_icon_base", lambda: base)
+    result = logos._build_institution_icon_map()
+    assert result["yuh"].endswith("/svg/yuh.svg")

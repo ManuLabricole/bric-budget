@@ -8,14 +8,10 @@ Aucune vue ici — uniquement des fonctions pures ou quasi-pures.
 """
 
 import calendar
-import functools
 import re
 from datetime import date
-from pathlib import Path
 
-from django.conf import settings
 from django.db.models import Q
-from django.templatetags.static import static
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.text import slugify
 
@@ -138,73 +134,6 @@ def _period_end_from_start(start, mode):
     end_month_start = _add_months(start, n - 1)  # premier jour du dernier mois
     last_day = calendar.monthrange(end_month_start.year, end_month_start.month)[1]
     return end_month_start.replace(day=last_day)
-
-
-# =============================================================================
-# _resolve_institution_icon_map — dict { icon_slug → URL statique }
-# =============================================================================
-
-
-@functools.lru_cache(maxsize=None)
-def _resolve_institution_icon_map():
-    """
-    Construit un dict { icon_slug → URL statique de l'icône institution }.
-    lru_cache : les fichiers static ne changent pas entre les requêtes en prod.
-    En dev : redémarrer le server si un logo est ajouté.
-
-    Scanne le dossier static/icons/institutions/svg/ — SVGs sans fond, avec fill="currentColor".
-    Le SVG currentColor permet d'adapter la couleur de l'icône via CSS (dark theme natif).
-
-    Retourne {} si le dossier n'existe pas (ex: tests sans static).
-
-    Pourquoi svg/ et pas miniature/ ?
-        Les PNG dans miniature/ ont un fond blanc intégré dans le fichier → carré blanc
-        moche sur dark theme. Les SVG dans svg/ sont des paths purs sans fond — ils
-        prennent la couleur CSS de leur conteneur via currentColor.
-
-    ⚠️  AJOUTER UN NOUVEAU LOGO INSTITUTION
-        → Déposer le SVG dans static/icons/institutions/svg/<slug>.svg
-        → Le nom du fichier doit correspondre à Bank.icon_slug en base
-        → Le SVG doit utiliser fill="currentColor" (pas de fill="#xxx" hardcodé)
-        → Si le SVG a un fond blanc/coloré intégré : l'enlever dans Inkscape/Figma avant
-    """
-    base = Path(settings.BASE_DIR) / "static" / "icons" / "institutions"
-    svg_dir = base / "svg"
-    miniature_dir = base / "miniature"
-
-    # Collecte tous les slugs disponibles dans miniature/ (PNG/JPG = fallback)
-    result = {}
-    if miniature_dir.exists():
-        EXTENSION_PRIORITY = {"svg": 0, "png": 1, "jpg": 2, "jpeg": 3}
-        _best: dict[str, tuple[int, str]] = {}
-        for f in miniature_dir.iterdir():
-            if not f.is_file() or f.name.startswith("."):
-                continue
-            ext = f.suffix.lstrip(".").lower()
-            priority = EXTENSION_PRIORITY.get(ext, 99)
-            if f.stem not in _best or priority < _best[f.stem][0]:
-                _best[f.stem] = (priority, f.name)
-        result = {
-            slug: static(f"icons/institutions/miniature/{fname}")
-            for slug, (_, fname) in _best.items()
-        }
-
-    # Écrase avec les SVG quand disponibles (priorité absolue — pas de fond, currentColor)
-    # ⚠️  AJOUTER UN NOUVEAU LOGO INSTITUTION :
-    #   → Déposer le SVG dans static/icons/institutions/svg/<slug>.svg
-    #   → Le nom = Bank.icon_slug en base
-    #   → Le SVG doit utiliser fill="currentColor" (pas de fill="#xxx" hardcodé)
-    #   → Pas de rect/fond blanc intégré dans le SVG (à supprimer dans Inkscape si besoin)
-    if svg_dir.exists():
-        for f in svg_dir.iterdir():
-            if (
-                f.is_file()
-                and not f.name.startswith(".")
-                and f.suffix.lower() == ".svg"
-            ):
-                result[f.stem] = static(f"icons/institutions/svg/{f.name}")
-
-    return result
 
 
 def _rgba(hex_color: str, alpha: float) -> str:

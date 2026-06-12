@@ -31,10 +31,10 @@ from budget.utils import (
     _cats_with_subcats,
     _generate_unique_slug,
     _period_from_session,
-    _resolve_institution_icon_map,
     _seg_factor,
     _vary_color,
 )
+from services.logos import get_institution_icon_map
 from transactions.models import (
     BudgetTarget,
     CategorizationRule,
@@ -331,7 +331,7 @@ def budget_category_detail(request, slug):
         .select_related("subcategory", "account", "account__institution")
         .order_by("-date", "-id")
     )
-    institution_icon_map = _resolve_institution_icon_map()
+    institution_icon_map = get_institution_icon_map()
     for tx in txs:
         icon_slug = (
             tx.account.institution.icon_slug
