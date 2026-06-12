@@ -15,7 +15,10 @@ Registration order follows the model dependency chain:
     ExchangeRate (standalone)
 """
 
+import logging
+
 from django.contrib import admin
+from django.core.management import call_command
 
 from .models import (
     Account,
@@ -27,9 +30,28 @@ from .models import (
     SavingsAccount,
 )
 
+logger = logging.getLogger(__name__)
+
+
 # =============================================================================
 # Institution
 # =============================================================================
+
+
+@admin.action(
+    description="⟳ Resynchroniser les référentiels (seed_banks + seed_categories)"
+)
+def sync_reference(modeladmin, request, queryset):
+    """La commande du release deploy, accessible sans console (#126).
+
+    queryset ignoré volontairement : le sync est global par nature (référentiel
+    complet), pas par ligne sélectionnée.
+    """
+    call_command("sync_reference_data")
+    logger.info("sync_reference_data via admin user=%s", request.user.pk)
+    modeladmin.message_user(
+        request, "Référentiels resynchronisés (institutions + catégories)."
+    )
 
 
 @admin.register(Institution)
@@ -37,6 +59,7 @@ class InstitutionAdmin(admin.ModelAdmin):
     list_display = ("name", "country", "default_currency", "icon_slug", "is_active")
     list_filter = ("country", "is_active")
     search_fields = ("name", "slug")
+    actions = [sync_reference]
     # prepopulated_fields: when you type the name, Django auto-fills the slug field.
     # Works via a small JavaScript snippet injected by the admin — no JS to write.
     prepopulated_fields = {"slug": ("name",)}

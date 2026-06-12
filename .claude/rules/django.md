@@ -29,6 +29,16 @@ paths:
 - `.exists()` / `.count()` plutôt que `if qs:` / `len(qs)`.
 - Pattern PRG : POST/HTMX → maj **session** → redirect/re-render en GET (état UI en session, pas d'URL params).
 
+## Constantes & référentiels (acté 2026-06-12, #126 — best practice Two Scoops)
+- Constantes/data d'app → **dans l'app propriétaire** (`<app>/constants.py`, `<app>/reference/*.json`),
+  comme les `fixtures/` natives Django. ⛔ Pas de package data racine, pas de data métier dans
+  `config/` (= settings de déploiement uniquement). Racine réservée à l'infra transverse (`services/`).
+- Référentiel = données **committées** app-locales + seed **idempotent** (`update_or_create`)
+  + enregistré dans `sync_reference_data` (release deploy). Échec de seed = `CommandError` (exit ≠ 0),
+  jamais de return silencieux. Pas de `loaddata`/fixtures ni de data migrations pour les catalogues vivants.
+- SR-008 garanti par test : `tests/test_reference_data.py` scanne tous les `*/reference/` +
+  `institutions_config.py` (aucun IBAN/contrat/donnée perso).
+
 ## Structure & style
 - Un module qui grossit → **package** (`views/` package + `__init__.py`, pas de `views_xxx.py` à plat).
 - Type hints (mypy passe, `make type`), pas de `Any` gratuit.
