@@ -1,0 +1,38 @@
+{% comment %}
+patrimoine/partials/_institution_picker_row.html — une ligne du picker institutions.
+
+Variables : institution (Institution), icon_url (str, "" si aucun logo résolu).
+Extrait de _institution_picker.html pour être re-rendu seul par institution_logo_repair
+(succès de réparation #128 → la ligne réapparaît avec son logo).
+
+Si icon_url est vide → bouton 🔧 (hors du <button> de sélection : HTML valide, pas de
+bouton dans un bouton) pour coller une URL d'image et réparer le logo manquant.
+{% endcomment %}
+<div id="inst-row-{{ institution.slug }}" class="flex items-center gap-1">
+    <button type="button"
+            hx-get="{% url 'patrimoine:account_form' %}?institution={{ institution.slug }}"
+            hx-target="#panel-content"
+            hx-swap="innerHTML"
+            class="flex flex-1 items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-surface-hover">
+        {% include "components/institutions/institution_logo.html" with icon_url=icon_url institution=institution size="w-8 h-8" padding="p-1.5" %}
+        <span class="flex-1 truncate text-sm text-text-base">{{ institution.name }}</span>
+        <span class="text-[10px] uppercase text-text-disabled">{{ institution.country }}</span>
+    </button>
+    {% if not icon_url %}
+        <button type="button"
+                title="Réparer le logo (coller une URL d'image)"
+                aria-label="Réparer le logo de {{ institution.name }}"
+                hx-get="{% url 'patrimoine:institution_logo_form' institution.slug %}"
+                hx-target="#inst-row-{{ institution.slug }}"
+                hx-swap="outerHTML"
+                class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-text-disabled transition-colors hover:bg-surface-hover hover:text-gold">
+            <svg class="h-4 w-4"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="1.8"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 0 0 4.486-6.336l-3.276 3.277a3.004 3.004 0 0 1-2.25-2.25l3.276-3.276a4.5 4.5 0 0 0-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085" />
+            </svg>
+        </button>
+    {% endif %}
+</div>

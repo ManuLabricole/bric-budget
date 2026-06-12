@@ -16,6 +16,8 @@ Including another URLconf
 """
 
 from decouple import config
+from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
@@ -63,3 +65,9 @@ urlpatterns = [
     # URLs de l'app patrimoine — navigation par classe d'actifs (Phase 3A)
     path("patrimoine/", include("patrimoine.urls")),
 ]
+
+# En dev (DEBUG), Django sert les fichiers MEDIA (logos réparés #128) depuis MEDIA_ROOT.
+# En prod, le storage par défaut est le bucket S3 → URLs signées servies par le bucket,
+# jamais par Django (cette route n'est donc pas montée en prod).
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

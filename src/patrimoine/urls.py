@@ -54,6 +54,18 @@ urlpatterns = [
         views.institution_picker,
         name="institution_picker",
     ),
+    # /patrimoine/institutions/<slug>/logo/form/ → formulaire de réparation logo (GET, HTMX #128)
+    path(
+        "institutions/<slug:slug>/logo/form/",
+        views.institution_logo_form,
+        name="institution_logo_form",
+    ),
+    # /patrimoine/institutions/<slug>/logo/ → installe le logo collé à la main (POST, HTMX #128)
+    path(
+        "institutions/<slug:slug>/logo/",
+        views.institution_logo_repair,
+        name="institution_logo_repair",
+    ),
     # /patrimoine/comptes/nouveau/ → wizard #73 step 2 (formulaire, panel droit, GET)
     path("comptes/nouveau/", views.account_form, name="account_form"),
     # /patrimoine/comptes/creer/ → wizard #73 création (POST → 204 + HX-Redirect)
