@@ -1,0 +1,1179 @@
+{
+  "_comment": "Source de vérité pour l'import initial des catégories et sous-catégories. Extrait depuis les screenshots Finary (2026-03-31). Chaque subcategory est UNIQUEMENT liée à sa catégorie parente (ForeignKey en DB). Pas de sous-catégorie partagée entre catégories.",
+  "_schema": {
+    "category.slug": "identifiant unique snake_case — clé de déduplication à l'import",
+    "category.icon": "identifiant SVG → static/icons/categories/<icon>.svg (Tabler Icons)",
+    "category.colour_hex": "couleur d'affichage dans l'UI",
+    "category.order": "ordre d'affichage dans les listes",
+    "category.is_system": "true = protégée, non supprimable par l'user (ex: Inconnu, Virements)",
+    "subcategory.is_system": "true = sous-catégorie Finary native, false = créée par l'utilisateur (badge 'perso' dans l'UI)",
+    "subcategory.default_nature": "nature suggérée pour Transaction.nature à la catégorisation — valeurs: income | fixed_mandatory | fixed_discretionary | variable_mandatory | variable_discretionary | savings | neutral"
+  },
+  "categories": [
+    {
+      "name": "Alimentation et Boissons",
+      "slug": "alimentation_boissons",
+      "icon": "tools-kitchen-2",
+      "colour_hex": "#eed8b4",
+      "order": 1,
+      "is_system": true,
+      "is_active": true,
+      "subcategories": [
+        {
+          "name": "Courses",
+          "slug": "courses",
+          "icon": "shopping-cart",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Restaurants",
+          "slug": "restaurants",
+          "icon": "tools-kitchen",
+          "default_nature": "variable_discretionary",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Fast Food",
+          "slug": "fast_food",
+          "icon": "burger",
+          "default_nature": "variable_discretionary",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Bars",
+          "slug": "bars",
+          "icon": "glass",
+          "default_nature": "variable_discretionary",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Cafés",
+          "slug": "cafes",
+          "icon": "coffee",
+          "default_nature": "variable_discretionary",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Snacks",
+          "slug": "snacks",
+          "icon": "cookie",
+          "default_nature": "variable_discretionary",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Repas maison",
+          "slug": "repas_maison",
+          "icon": "chef-hat",
+          "default_nature": "variable_mandatory",
+          "is_system": false,
+          "is_active": true
+        },
+        {
+          "name": "Uber Eats",
+          "slug": "uber_eats",
+          "icon": "moped",
+          "default_nature": "variable_discretionary",
+          "is_system": false,
+          "is_active": true
+        }
+      ]
+    },
+    {
+      "name": "Auto et Transports",
+      "slug": "auto_transports",
+      "icon": "steering-wheel",
+      "colour_hex": "#deab5e",
+      "order": 2,
+      "is_system": true,
+      "is_active": true,
+      "subcategories": [
+        {
+          "name": "Carburant",
+          "slug": "carburant",
+          "icon": "gas-station",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Réparations",
+          "slug": "reparations",
+          "icon": "tool",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Transports publics",
+          "slug": "transports_publics",
+          "icon": "bus",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Taxis, VTC et Covoiturages",
+          "slug": "taxis_vtc_covoiturages",
+          "icon": "car",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Parking",
+          "slug": "parking",
+          "icon": "parking",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Assurance",
+          "slug": "assurance_auto",
+          "icon": "shield",
+          "default_nature": "fixed_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Location de voiture",
+          "slug": "location_voiture",
+          "icon": "car-garage",
+          "default_nature": "variable_discretionary",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Billets d'avion",
+          "slug": "billets_avion",
+          "icon": "plane",
+          "default_nature": "variable_discretionary",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Billets de train",
+          "slug": "billets_train",
+          "icon": "train",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Péages",
+          "slug": "peages",
+          "icon": "road",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Lavage",
+          "slug": "lavage_auto",
+          "icon": "droplet",
+          "default_nature": "variable_discretionary",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Amendes",
+          "slug": "amendes",
+          "icon": "file-invoice",
+          "default_nature": "variable_discretionary",
+          "is_system": false,
+          "is_active": true
+        }
+      ]
+    },
+    {
+      "name": "Besoins essentiels",
+      "slug": "besoins_essentiels",
+      "icon": "home",
+      "colour_hex": "#cf6bff",
+      "order": 3,
+      "is_system": true,
+      "is_active": true,
+      "subcategories": [
+        {
+          "name": "Tabac",
+          "slug": "tabac",
+          "icon": "smoking",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Loyer",
+          "slug": "loyer",
+          "icon": "key",
+          "default_nature": "fixed_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Fournitures ménagères",
+          "slug": "fournitures_menageres",
+          "icon": "basket",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Soins personnels",
+          "slug": "soins_personnels",
+          "icon": "bath",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Vêtements",
+          "slug": "vetements",
+          "icon": "shirt",
+          "default_nature": "variable_discretionary",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Education",
+          "slug": "education",
+          "icon": "school",
+          "default_nature": "fixed_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Garde d'enfants",
+          "slug": "garde_enfants",
+          "icon": "baby-carriage",
+          "default_nature": "fixed_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Logement étudiant",
+          "slug": "logement_etudiant",
+          "icon": "building",
+          "default_nature": "fixed_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Frais de scolarité",
+          "slug": "frais_scolarite",
+          "icon": "certificate",
+          "default_nature": "fixed_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Cadeaux",
+          "slug": "cadeaux_depenses",
+          "icon": "gift",
+          "default_nature": "variable_discretionary",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Animaux de compagnie",
+          "slug": "animaux_compagnie",
+          "icon": "paw",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Frais loyer",
+          "slug": "frais_loyer",
+          "icon": "receipt",
+          "default_nature": "fixed_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Aménagement / Bricolage",
+          "slug": "amenagement_bricolage",
+          "icon": "hammer",
+          "default_nature": "variable_discretionary",
+          "is_system": false,
+          "is_active": true
+        }
+      ]
+    },
+    {
+      "name": "Dépenses exceptionnelles",
+      "slug": "depenses_exceptionnelles",
+      "icon": "rosette",
+      "colour_hex": "#204cff",
+      "order": 4,
+      "is_system": false,
+      "is_active": true,
+      "subcategories": [
+        {
+          "name": "Mariage",
+          "slug": "mariage",
+          "icon": "heart",
+          "default_nature": "variable_discretionary",
+          "is_system": false,
+          "is_active": true
+        },
+        {
+          "name": "Déménagement",
+          "slug": "demenagement",
+          "icon": "truck",
+          "default_nature": "variable_discretionary",
+          "is_system": false,
+          "is_active": true
+        }
+      ]
+    },
+    {
+      "name": "Dépenses professionnelles",
+      "slug": "depenses_professionnelles",
+      "icon": "briefcase",
+      "colour_hex": "#726146",
+      "order": 5,
+      "is_system": true,
+      "is_active": true,
+      "subcategories": [
+        {
+          "name": "Fournitures de bureau",
+          "slug": "fournitures_bureau",
+          "icon": "clipboard",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Services professionnels",
+          "slug": "services_pro",
+          "icon": "user-check",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Voyages d'affaires",
+          "slug": "voyages_affaires",
+          "icon": "luggage",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Publicité",
+          "slug": "publicite",
+          "icon": "speakerphone",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Freelancing",
+          "slug": "freelancing",
+          "icon": "device-laptop",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Comptabilité",
+          "slug": "comptabilite",
+          "icon": "calculator",
+          "default_nature": "fixed_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Impressions",
+          "slug": "impressions",
+          "icon": "printer",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Frais d'envois",
+          "slug": "frais_envois",
+          "icon": "package",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Salaire",
+          "slug": "salaire_pro",
+          "icon": "cash-banknote",
+          "default_nature": "fixed_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Marketing",
+          "slug": "marketing",
+          "icon": "chart-bar",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Services en ligne",
+          "slug": "services_en_ligne",
+          "icon": "cloud",
+          "default_nature": "fixed_discretionary",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Assistance juridique",
+          "slug": "assistance_juridique",
+          "icon": "scale",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Conseil financier",
+          "slug": "conseil_financier",
+          "icon": "chart-dots",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Apport SAS",
+          "slug": "apport_sas",
+          "icon": "building-skyscraper",
+          "default_nature": "fixed_mandatory",
+          "is_system": false,
+          "is_active": true
+        }
+      ]
+    },
+    {
+      "name": "Espèces et Chèques",
+      "slug": "especes_cheques",
+      "icon": "cash",
+      "colour_hex": "#ede1d5",
+      "order": 6,
+      "is_system": true,
+      "is_active": true,
+      "subcategories": [
+        {
+          "name": "Retraits",
+          "slug": "retraits",
+          "icon": "cash-register",
+          "default_nature": "neutral",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Dépôts de chèques",
+          "slug": "depots_cheques",
+          "icon": "file-check",
+          "default_nature": "neutral",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Dépôts en espèces",
+          "slug": "depots_especes",
+          "icon": "cash",
+          "default_nature": "neutral",
+          "is_system": true,
+          "is_active": true
+        }
+      ]
+    },
+    {
+      "name": "Factures et Services",
+      "slug": "factures_services",
+      "icon": "receipt",
+      "colour_hex": "#c36c55",
+      "order": 7,
+      "is_system": true,
+      "is_active": true,
+      "subcategories": [
+        {
+          "name": "Electricité",
+          "slug": "electricite",
+          "icon": "bolt",
+          "default_nature": "fixed_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Eau",
+          "slug": "eau",
+          "icon": "droplet",
+          "default_nature": "fixed_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Internet",
+          "slug": "internet",
+          "icon": "wifi",
+          "default_nature": "fixed_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Téléphone portable",
+          "slug": "telephone_portable",
+          "icon": "device-mobile",
+          "default_nature": "fixed_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Chauffage",
+          "slug": "chauffage",
+          "icon": "flame",
+          "default_nature": "fixed_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Déchets et Recyclage",
+          "slug": "dechets_recyclage",
+          "icon": "recycle",
+          "default_nature": "fixed_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Autres abonnements",
+          "slug": "autres_abonnements",
+          "icon": "repeat",
+          "default_nature": "fixed_discretionary",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Administration",
+          "slug": "administration",
+          "icon": "file-text",
+          "default_nature": "variable_mandatory",
+          "is_system": false,
+          "is_active": true
+        }
+      ]
+    },
+    {
+      "name": "Frais",
+      "slug": "frais",
+      "icon": "tag",
+      "colour_hex": "#b64053",
+      "order": 8,
+      "is_system": true,
+      "is_active": true,
+      "subcategories": [
+        {
+          "name": "Frais bancaires",
+          "slug": "frais_bancaires",
+          "icon": "wallet",
+          "default_nature": "fixed_discretionary",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Frais de retard",
+          "slug": "frais_retard",
+          "icon": "clock",
+          "default_nature": "variable_discretionary",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Frais de service",
+          "slug": "frais_service",
+          "icon": "tool",
+          "default_nature": "fixed_discretionary",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Frais administratif",
+          "slug": "frais_administratif",
+          "icon": "file-invoice",
+          "default_nature": "variable_mandatory",
+          "is_system": false,
+          "is_active": true
+        }
+      ]
+    },
+    {
+      "name": "Impôts",
+      "slug": "impots",
+      "icon": "building-bank",
+      "colour_hex": "#ffc3c2",
+      "order": 9,
+      "is_system": true,
+      "is_active": true,
+      "subcategories": [
+        {
+          "name": "Impôts",
+          "slug": "impots_generaux",
+          "icon": "building-bank",
+          "default_nature": "fixed_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Impôts sur le revenu",
+          "slug": "impots_revenu",
+          "icon": "building-bank",
+          "default_nature": "fixed_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "TVA",
+          "slug": "tva",
+          "icon": "percentage",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Impôts fonciers",
+          "slug": "impots_fonciers",
+          "icon": "home",
+          "default_nature": "fixed_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Impôts sur les plus-values",
+          "slug": "impots_plus_values",
+          "icon": "chart-line",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Impôts sur les sociétés",
+          "slug": "impots_societes",
+          "icon": "building",
+          "default_nature": "fixed_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Cotisations sociales",
+          "slug": "cotisations_sociales",
+          "icon": "users",
+          "default_nature": "fixed_mandatory",
+          "is_system": true,
+          "is_active": true
+        }
+      ]
+    },
+    {
+      "name": "Inconnu",
+      "slug": "inconnu",
+      "icon": "question-mark",
+      "colour_hex": "#2d3033",
+      "order": 10,
+      "is_system": true,
+      "is_active": true,
+      "_comment": "Catégorie système — non supprimable. Défaut si aucune règle de catégorisation ne match.",
+      "subcategories": [
+        {
+          "name": "Inconnu",
+          "slug": "inconnu_generique",
+          "icon": "question-mark",
+          "default_nature": "neutral",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Arnaque",
+          "slug": "arnaque",
+          "icon": "alert-triangle",
+          "default_nature": "neutral",
+          "is_system": false,
+          "is_active": true
+        }
+      ]
+    },
+    {
+      "name": "Investissements",
+      "slug": "investissements",
+      "icon": "chart-line",
+      "colour_hex": "#63e096",
+      "order": 11,
+      "is_system": true,
+      "is_active": true,
+      "subcategories": [
+        {
+          "name": "Investissements",
+          "slug": "investissements_generaux",
+          "icon": "chart-arrows-vertical",
+          "default_nature": "savings",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Obligations",
+          "slug": "obligations",
+          "icon": "file-dollar",
+          "default_nature": "savings",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Actions",
+          "slug": "actions",
+          "icon": "chart-candle",
+          "default_nature": "savings",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Immobilier",
+          "slug": "immobilier",
+          "icon": "building",
+          "default_nature": "savings",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Retraite",
+          "slug": "retraite",
+          "icon": "pig-money",
+          "default_nature": "savings",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Cryptos",
+          "slug": "cryptos",
+          "icon": "currency-bitcoin",
+          "default_nature": "savings",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Epargne de sécurité",
+          "slug": "epargne_securite",
+          "icon": "lock-square",
+          "default_nature": "savings",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Rachat Crypto",
+          "slug": "rachat_crypto",
+          "icon": "currency-bitcoin",
+          "default_nature": "savings",
+          "is_system": false,
+          "is_active": true
+        },
+        {
+          "name": "Rachat / Désépargne",
+          "slug": "rachat_desepargne",
+          "icon": "arrow-bar-down",
+          "default_nature": "savings",
+          "is_system": false,
+          "is_active": true
+        }
+      ]
+    },
+    {
+      "name": "Loisirs et Divertissements",
+      "slug": "loisirs_divertissements",
+      "icon": "confetti",
+      "colour_hex": "#9f89f2",
+      "order": 12,
+      "is_system": true,
+      "is_active": true,
+      "subcategories": [
+        {
+          "name": "Cinéma et Théâtre",
+          "slug": "cinema_theatre",
+          "icon": "movie",
+          "default_nature": "variable_discretionary",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Sports",
+          "slug": "sports",
+          "icon": "ball-football",
+          "default_nature": "variable_discretionary",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Hobbies",
+          "slug": "hobbies",
+          "icon": "palette",
+          "default_nature": "variable_discretionary",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Abonnements",
+          "slug": "abonnements_loisirs",
+          "icon": "repeat",
+          "default_nature": "fixed_discretionary",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Vacances",
+          "slug": "vacances",
+          "icon": "beach",
+          "default_nature": "variable_discretionary",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Art et Musées",
+          "slug": "art_musees",
+          "icon": "building-arch",
+          "default_nature": "variable_discretionary",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Concert",
+          "slug": "concert",
+          "icon": "music",
+          "default_nature": "variable_discretionary",
+          "is_system": false,
+          "is_active": true
+        },
+        {
+          "name": "Livres",
+          "slug": "livres",
+          "icon": "book",
+          "default_nature": "variable_discretionary",
+          "is_system": false,
+          "is_active": true
+        },
+        {
+          "name": "Évènements / Weekend",
+          "slug": "evenements_weekend",
+          "icon": "calendar-event",
+          "default_nature": "variable_discretionary",
+          "is_system": false,
+          "is_active": true
+        },
+        {
+          "name": "Velo",
+          "slug": "velo",
+          "icon": "bike",
+          "default_nature": "variable_discretionary",
+          "is_system": false,
+          "is_active": true
+        }
+      ]
+    },
+    {
+      "name": "Remboursement emprunt",
+      "slug": "remboursement_emprunt",
+      "icon": "credit-card",
+      "colour_hex": "#f17ed2",
+      "order": 13,
+      "is_system": true,
+      "is_active": true,
+      "subcategories": [
+        {
+          "name": "Prêt Étudiant",
+          "slug": "pret_etudiant",
+          "icon": "school",
+          "default_nature": "fixed_mandatory",
+          "is_system": false,
+          "is_active": true
+        },
+        {
+          "name": "BUT | Lit",
+          "slug": "but_lit",
+          "icon": "bed",
+          "default_nature": "fixed_mandatory",
+          "is_system": false,
+          "is_active": true
+        }
+      ]
+    },
+    {
+      "name": "Remboursements",
+      "slug": "remboursements",
+      "icon": "arrows-exchange",
+      "colour_hex": "#228c83",
+      "order": 14,
+      "is_system": true,
+      "is_active": true,
+      "subcategories": [
+        {
+          "name": "Retours produits",
+          "slug": "retours_produits",
+          "icon": "arrow-back-up",
+          "default_nature": "income",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Remboursements d'impôts",
+          "slug": "remboursements_impots",
+          "icon": "building-bank",
+          "default_nature": "income",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Réclamations et Garanties",
+          "slug": "reclamations_garanties",
+          "icon": "shield-check",
+          "default_nature": "income",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Paiements d'assurances",
+          "slug": "paiements_assurances",
+          "icon": "shield",
+          "default_nature": "income",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Dépenses professionnelles",
+          "slug": "remb_depenses_pro",
+          "icon": "report-money",
+          "default_nature": "income",
+          "is_system": false,
+          "is_active": true
+        },
+        {
+          "name": "Santé",
+          "slug": "remb_sante",
+          "icon": "heartbeat",
+          "default_nature": "income",
+          "is_system": false,
+          "is_active": true
+        },
+        {
+          "name": "Remboursements Amis",
+          "slug": "remboursements_amis",
+          "icon": "users",
+          "default_nature": "income",
+          "is_system": false,
+          "is_active": true
+        }
+      ]
+    },
+    {
+      "name": "Revenus",
+      "slug": "revenus",
+      "icon": "download",
+      "colour_hex": "#76cfac",
+      "order": 15,
+      "is_system": true,
+      "is_active": true,
+      "subcategories": [
+        {
+          "name": "Salaire",
+          "slug": "salaire",
+          "icon": "cash-banknote",
+          "default_nature": "income",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Bonus",
+          "slug": "bonus",
+          "icon": "award",
+          "default_nature": "income",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Investissements",
+          "slug": "revenus_investissements",
+          "icon": "chart-line",
+          "default_nature": "income",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Cadeaux",
+          "slug": "cadeaux_recus",
+          "icon": "gift",
+          "default_nature": "income",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Revenus locatifs",
+          "slug": "revenus_locatifs",
+          "icon": "building",
+          "default_nature": "income",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Désépargne",
+          "slug": "desepargne",
+          "icon": "arrow-bar-down",
+          "default_nature": "income",
+          "is_system": false,
+          "is_active": true
+        },
+        {
+          "name": "Ventes",
+          "slug": "ventes",
+          "icon": "tag",
+          "default_nature": "income",
+          "is_system": false,
+          "is_active": true
+        },
+        {
+          "name": "Chômage",
+          "slug": "chomage",
+          "icon": "user-off",
+          "default_nature": "income",
+          "is_system": false,
+          "is_active": true
+        },
+        {
+          "name": "HM Participation aux Charges",
+          "slug": "hm_participation_charges",
+          "icon": "home",
+          "default_nature": "income",
+          "is_system": false,
+          "is_active": true
+        },
+        {
+          "name": "Cadeaux Mariage",
+          "slug": "cadeaux_mariage",
+          "icon": "heart",
+          "default_nature": "income",
+          "is_system": false,
+          "is_active": true
+        }
+      ]
+    },
+    {
+      "name": "Santé",
+      "slug": "sante",
+      "icon": "heartbeat",
+      "colour_hex": "#e77f79",
+      "order": 16,
+      "is_system": true,
+      "is_active": true,
+      "subcategories": [
+        {
+          "name": "Médecin",
+          "slug": "medecin",
+          "icon": "stethoscope",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Dentiste",
+          "slug": "dentiste",
+          "icon": "dental",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Médicaments",
+          "slug": "medicaments",
+          "icon": "pill",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Assurance maladie",
+          "slug": "assurance_maladie",
+          "icon": "shield-heart",
+          "default_nature": "fixed_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Matériel médical",
+          "slug": "materiel_medical",
+          "icon": "first-aid-kit",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Opticien",
+          "slug": "opticien",
+          "icon": "eyeglass",
+          "default_nature": "variable_mandatory",
+          "is_system": true,
+          "is_active": true
+        }
+      ]
+    },
+    {
+      "name": "Virements",
+      "slug": "virements",
+      "icon": "transfer",
+      "colour_hex": "#5abdc5",
+      "order": 17,
+      "is_system": true,
+      "is_active": true,
+      "_comment": "Catégorie système — non supprimable. Utilisée pour les transferts entre comptes, ne compte pas dans le budget.",
+      "subcategories": [
+        {
+          "name": "Transferts internes",
+          "slug": "transferts_internes",
+          "icon": "arrows-transfer-up-down",
+          "default_nature": "neutral",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Transferts externes",
+          "slug": "transferts_externes",
+          "icon": "send",
+          "default_nature": "neutral",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Dons",
+          "slug": "dons",
+          "icon": "heart",
+          "default_nature": "variable_discretionary",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Paiement des factures",
+          "slug": "paiement_factures",
+          "icon": "receipt",
+          "default_nature": "neutral",
+          "is_system": true,
+          "is_active": true
+        },
+        {
+          "name": "Transferts internationaux",
+          "slug": "transferts_internationaux",
+          "icon": "world",
+          "default_nature": "neutral",
+          "is_system": true,
+          "is_active": true
+        }
+      ]
+    }
+  ]
+}
