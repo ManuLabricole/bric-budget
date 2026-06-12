@@ -102,9 +102,15 @@ Si hook bloque → corriger + recommiter. **Jamais `--no-verify`.**
 
 ## Workflow PR
 
+⛔ **Ne PAS lancer `make check` / `make test` à la main avant commit/PR** — c'est du double
+emploi : pre-commit (ruff + djlint + gitleaks) + pre-push (**pytest**) + CI (**mypy** + semgrep)
+couvrent tout automatiquement. On commit/push directement et on laisse les hooks + la CI tourner.
+Seul `mypy` n'est pas dans les hooks locaux (CI only) → un `make type` ponctuel est ok après une
+grosse modif de types, jamais le `make check` complet. La **vérif live GET/POST** (`manage.py shell` /
+app réelle) reste due — elle n'est PAS couverte par la CI.
+
 ```
-feature branch → make check + make test
-→ gh pr create --base development
+feature branch → commit (hooks: ruff/djlint/pytest) → gh pr create --base development
 → ⚙️ agent `bricbudget-reviewer` (revue code) → corriger les bloquants
 → Emmanuel merge → development   (development → main : Emmanuel uniquement)
 ```
