@@ -19,6 +19,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
+from services.reference_sync import SyncResult, sync_record
 from transactions.models import Category, SubCategory
 
 logger = logging.getLogger(__name__)
@@ -58,14 +59,16 @@ class Command(BaseCommand):
             )
             return
 
-        cat_created = cat_updated = sub_created = sub_updated = 0
+        cats = {r: 0 for r in SyncResult}
+        subs = {r: 0 for r in SyncResult}
 
         # SR-003 : un déploiement interrompu ne doit jamais laisser un référentiel
         # à moitié écrit — tout ou rien.
         with transaction.atomic():
             for cat_data in categories:
-                category, created = Category.objects.update_or_create(
-                    slug=cat_data["slug"],
+                category, result = sync_record(
+                    Category,
+                    lookup={"slug": cat_data["slug"]},
                     defaults={
                         "name": cat_data["name"],
                         "icon": cat_data.get("icon", ""),
@@ -77,18 +80,16 @@ class Command(BaseCommand):
                         "is_active": cat_data.get("is_active", True),
                     },
                 )
-                if created:
-                    cat_created += 1
-                else:
-                    cat_updated += 1
+                cats[result] += 1
 
                 for sub_data in cat_data.get("subcategories", []):
                     default_nature = sub_data.get("default_nature", "")
                     # Compat JSON historique : "neutral" n'est pas un choix du modèle.
                     if default_nature == "neutral":
                         default_nature = ""
-                    _, sub_c = SubCategory.objects.update_or_create(
-                        slug=sub_data["slug"],
+                    _, sub_result = sync_record(
+                        SubCategory,
+                        lookup={"slug": sub_data["slug"]},
                         defaults={
                             "category": category,
                             "name": sub_data["name"],
@@ -98,25 +99,30 @@ class Command(BaseCommand):
                             "is_active": sub_data.get("is_active", True),
                         },
                     )
-                    if sub_c:
-                        sub_created += 1
-                    else:
-                        sub_updated += 1
+                    subs[sub_result] += 1
 
         logger.info(
-            "seed_categories ok cat_created=%s cat_updated=%s sub_created=%s sub_updated=%s",
-            cat_created,
-            cat_updated,
-            sub_created,
-            sub_updated,
+            "seed_categories ok "
+            "cat_created=%s cat_updated=%s cat_unchanged=%s "
+            "sub_created=%s sub_updated=%s sub_unchanged=%s",
+            cats[SyncResult.CREATED],
+            cats[SyncResult.UPDATED],
+            cats[SyncResult.UNCHANGED],
+            subs[SyncResult.CREATED],
+            subs[SyncResult.UPDATED],
+            subs[SyncResult.UNCHANGED],
         )
         self.stdout.write(
             self.style.SUCCESS(
-                f"✓  {cat_created} catégories créées, {cat_updated} mises à jour"
+                f"✓  Catégories     : {cats[SyncResult.CREATED]} créées · "
+                f"{cats[SyncResult.UPDATED]} modifiées · "
+                f"{cats[SyncResult.UNCHANGED]} inchangées"
             )
         )
         self.stdout.write(
             self.style.SUCCESS(
-                f"✓  {sub_created} sous-catégories créées, {sub_updated} mises à jour"
+                f"✓  Sous-catégories : {subs[SyncResult.CREATED]} créées · "
+                f"{subs[SyncResult.UPDATED]} modifiées · "
+                f"{subs[SyncResult.UNCHANGED]} inchangées"
             )
         )

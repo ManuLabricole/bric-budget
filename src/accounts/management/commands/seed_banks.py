@@ -11,10 +11,15 @@ Idempotent : peut être relancé autant de fois que nécessaire.
 Si une banque existe déjà (même slug), ses champs sont mis à jour depuis la config.
 """
 
+import logging
+
 from django.core.management.base import BaseCommand, CommandError
 
 from accounts.institutions_config import CATEGORIES, KNOWN_INSTITUTIONS
 from accounts.models import Institution
+from services.reference_sync import SyncResult, sync_record
+
+logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
@@ -45,8 +50,7 @@ class Command(BaseCommand):
                 self.style.WARNING("Mode dry-run — aucune modification.\n")
             )
 
-        created_count = 0
-        updated_count = 0
+        counts = {r: 0 for r in SyncResult}
 
         for slug, config in KNOWN_INSTITUTIONS.items():
             defaults = {
@@ -66,24 +70,29 @@ class Command(BaseCommand):
                 self.stdout.write(f"  {action}  {config['name']} ({slug})")
                 continue
 
-            bank, created = Institution.objects.update_or_create(
-                slug=slug,
-                defaults=defaults,
+            institution, result = sync_record(
+                Institution, lookup={"slug": slug}, defaults=defaults
             )
-
-            if created:
-                created_count += 1
+            counts[result] += 1
+            if result is SyncResult.CREATED:
                 self.stdout.write(
-                    self.style.SUCCESS(f"  ✓  Bank « {bank.name} » créée")
+                    self.style.SUCCESS(f"  ✓  « {institution.name} » créée")
                 )
-            else:
-                updated_count += 1
-                self.stdout.write(f"  ·  Bank « {bank.name} » mise à jour")
+            elif result is SyncResult.UPDATED:
+                self.stdout.write(f"  ~  « {institution.name} » modifiée")
 
         if not dry_run:
+            logger.info(
+                "seed_banks ok created=%s updated=%s unchanged=%s",
+                counts[SyncResult.CREATED],
+                counts[SyncResult.UPDATED],
+                counts[SyncResult.UNCHANGED],
+            )
             self.stdout.write("")
             self.stdout.write(
                 self.style.SUCCESS(
-                    f"✓  {created_count} créée(s), {updated_count} mise(s) à jour."
+                    f"✓  Institutions : {counts[SyncResult.CREATED]} créées · "
+                    f"{counts[SyncResult.UPDATED]} modifiées · "
+                    f"{counts[SyncResult.UNCHANGED]} inchangées"
                 )
             )

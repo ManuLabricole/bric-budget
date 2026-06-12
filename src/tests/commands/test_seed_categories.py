@@ -112,6 +112,40 @@ def test_seed_real_reference_is_idempotent_over_many_runs():
 
 
 # =============================================================================
+# Feedback honnête : créé / modifié / inchangé (pas « mis à jour » systématique)
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_first_run_reports_created_second_run_reports_unchanged(tiny_reference):
+    """1er run = tout créé ; 2e run sans changement = tout INCHANGÉ (0 modifié)."""
+    first = _run()
+    assert "1 créées" in first  # la catégorie transport
+    assert "0 modifiées" in first
+
+    second = _run()
+    # Rien n'a changé dans le JSON → le seed le dit honnêtement.
+    assert "0 créées" in second
+    assert "0 modifiées" in second
+    assert "1 inchangées" in second  # catégorie
+    assert "2 inchangées" in second  # sous-catégories (carburant + vieux-truc)
+
+
+@pytest.mark.django_db
+def test_changed_field_reports_one_modified_rest_unchanged(tiny_reference):
+    """Modifier UN champ → 1 modifié, le reste inchangé (le delta, pas un blanket update)."""
+    _run()
+
+    data = json.loads(tiny_reference.read_text())
+    data["categories"][0]["colour_hex"] = "#ff0000"
+    tiny_reference.write_text(json.dumps(data), encoding="utf-8")
+
+    out = _run()
+    assert "0 créées · 1 modifiées" in out  # la catégorie transport
+    assert "2 inchangées" in out  # les sous-catégories n'ont pas bougé
+
+
+# =============================================================================
 # Scénarios de vie du référentiel (JSON contrôlé)
 # =============================================================================
 
