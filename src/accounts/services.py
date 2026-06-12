@@ -18,6 +18,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from users.models import CustomUser
@@ -115,6 +116,15 @@ def create_account(
     `type_fields` : champs propres au type (iban, bic, interest_rate…), déjà
     castés par l'appelant (Decimal/str) — aucun parsing ici.
     """
+    # Identité d'import obligatoire (décision 2026-06-12) : sans IBAN ni n° de
+    # contrat, le compte ne pourra JAMAIS être rattaché à un relevé importé.
+    iban = (type_fields.get("iban") or "").strip()
+    if not iban and not contract_number.strip():
+        raise ValidationError(
+            "Renseigne l'IBAN ou le n° de contrat — c'est ce qui rattache "
+            "les imports de relevés à ce compte."
+        )
+
     with transaction.atomic():
         account = Account(
             institution=institution,
