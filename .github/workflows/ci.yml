@@ -160,6 +160,62 @@ jobs:
           ALLOWED_HOSTS: "example.com"
         run: cd src && poetry run python manage.py check --deploy --fail-level WARNING
 
+  # ── Release commands (référentiels) ─────────────────────────────────────────
+  # Rejoue le scénario du release deploy (#126) sur un Postgres réel :
+  # migrate → sync_reference_data à froid → 2e run (idempotence) → dry-run.
+  # C'est la PREUVE à chaque PR que `migrate && sync_reference_data` (la future
+  # Release Command Railway, #135) passera en prod. Un seed cassé = CI rouge.
+  reference-data:
+    name: Release commands (migrate + sync_reference_data)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: bricbudget
+          POSTGRES_USER: bricbudget
+          POSTGRES_PASSWORD: bricbudget
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DEBUG: "True"
+      DATABASE_URL: postgresql://bricbudget:bricbudget@localhost:5432/bricbudget
+      IMPORT_ENCRYPTION_KEY: ""
+      ADMIN_URL: admin
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Install dependencies
+        run: poetry install --no-root
+
+      - name: Generate CI secret key
+        run: python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(50))" >> "$GITHUB_ENV"
+
+      - name: Scénario release — froid, idempotence, dry-run
+        run: |
+          cd src
+          poetry run python manage.py migrate --noinput
+          poetry run python manage.py sync_reference_data
+          poetry run python manage.py sync_reference_data
+          poetry run python manage.py sync_reference_data --dry-run
+
   # ── Security (semgrep SAST) ──────────────────────────────────────────────────
   # Analyse statique de sécurité avec les rulesets registry semgrep (Django / OWASP
   # / secrets), maintenus par la communauté. `--error` fait échouer la CI sur toute
