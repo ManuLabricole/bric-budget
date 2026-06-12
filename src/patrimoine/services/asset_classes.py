@@ -51,6 +51,13 @@ ASSET_CLASSES: tuple[AssetClass, ...] = (
         "#b06bb0",
     ),
     AssetClass("fonds-euros", "Fonds euros", ("insurance",), False, "#e58d88"),
+    AssetClass(
+        "prevoyance",
+        "Prévoyance",
+        ("pension_3a", "pension_lp"),
+        False,
+        "#d9a441",
+    ),
     AssetClass("crypto", "Crypto", ("crypto",), False, "#9b7ae8"),
 )
 
