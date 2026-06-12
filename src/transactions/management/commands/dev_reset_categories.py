@@ -1,5 +1,5 @@
 """
-transactions/management/commands/reset_categories.py
+transactions/management/commands/dev_reset_categories.py
 
 ⛔ DEV ONLY — Refuse de tourner en prod (DEBUG=False). --force-prod pour override.
 
@@ -22,8 +22,8 @@ Ce que la commande fait :
     Elle ne touche PAS aux transactions "ignore" (is_ignored=True).
 
 Usage :
-    python src/manage.py reset_categories          # reset réel
-    python src/manage.py reset_categories --dry-run  # affiche le compte, n'écrit rien
+    python src/manage.py dev_reset_categories          # reset réel
+    python src/manage.py dev_reset_categories --dry-run  # affiche le compte, n'écrit rien
     make reset-categories
 """
 
@@ -52,7 +52,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         if not options.get("force_prod"):
-            assert_dev_environment("reset_categories")
+            assert_dev_environment("dev_reset_categories")
 
         dry_run = options["dry_run"]
 

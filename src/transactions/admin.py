@@ -9,8 +9,11 @@ Usage during Phase 0B → Phase 1B:
 - set budget targets per category per month
 """
 
+import logging
+
 from django import forms
-from django.contrib import admin
+from django.contrib import admin, messages
+from django.core.management import call_command
 from django.urls import reverse
 from django.utils.html import format_html
 
@@ -22,6 +25,8 @@ from .models import (
     SubCategory,
     Transaction,
 )
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # SubCategory — shown as inline inside CategoryAdmin
@@ -47,6 +52,32 @@ class SubCategoryInline(admin.TabularInline):
 # =============================================================================
 
 
+@admin.action(
+    description="⟳ Resynchroniser les référentiels (seed_banks + seed_categories)"
+)
+def sync_reference(modeladmin, request, queryset):
+    """La commande du release deploy, accessible sans console (#126).
+
+    Dupliquée depuis accounts/admin.py à dessein : pas de couplage admin
+    inter-apps pour 8 lignes. queryset ignoré (sync global par nature).
+    """
+    try:
+        call_command("sync_reference_data")
+    except Exception as exc:
+        # Synchrone dans le worker : un échec ne doit pas remonter en 500 brut.
+        logger.exception(
+            "sync_reference_data via admin failed user=%s", request.user.pk
+        )
+        modeladmin.message_user(
+            request, f"Échec de la resynchronisation : {exc}", level=messages.ERROR
+        )
+        return
+    logger.info("sync_reference_data via admin user=%s", request.user.pk)
+    modeladmin.message_user(
+        request, "Référentiels resynchronisés (institutions + catégories)."
+    )
+
+
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
     list_display = ("name", "order", "colour_hex", "is_system", "is_active")
@@ -54,6 +85,7 @@ class CategoryAdmin(admin.ModelAdmin):
     search_fields = ("name", "slug")
     prepopulated_fields = {"slug": ("name",)}
     ordering = ("order",)
+    actions = [sync_reference]
     # inlines: embed the SubCategoryInline table directly on the Category edit page
     inlines = [SubCategoryInline]
 
