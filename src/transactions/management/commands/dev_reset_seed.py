@@ -1,5 +1,5 @@
 """
-transactions/management/commands/reset_seed.py
+transactions/management/commands/dev_reset_seed.py
 
 ⛔ DEV ONLY — Deletes all data created by seed_initial.
 
@@ -29,7 +29,7 @@ Deletion order matters:
     SubCategories → Categories
 
 Usage:
-    python manage.py reset_seed
+    python manage.py dev_reset_seed
     make reset-seed
 """
 
@@ -61,7 +61,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         # Guard : refuse de tourner en prod (DEBUG=False) sauf --force-prod
         if not options.get("force_prod"):
-            assert_dev_environment("reset_seed")
+            assert_dev_environment("dev_reset_seed")
 
         # Safety confirmation — destructive operation
         # --yes flag allows scripting (e.g. make reset-seed in CI)
@@ -76,7 +76,7 @@ class Command(BaseCommand):
                 self.stdout.write("Aborted.")
                 return
 
-        self.stdout.write(self.style.WARNING("=== reset_seed ==="))
+        self.stdout.write(self.style.WARNING("=== dev_reset_seed ==="))
 
         # ── Transactions + ImportLogs (FK to Account — PROTECTED) ────────
         # Transaction.account and ImportLog.account use on_delete=PROTECT,
@@ -127,6 +127,6 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.WARNING(
-                "=== reset_seed complete — run `make seed` to re-populate ==="
+                "=== dev_reset_seed complete — run `make seed` to re-populate ==="
             )
         )
