@@ -356,7 +356,8 @@ def test_fetch_from_url_accepts_safe_svg(clear_icon_cache, monkeypatch):
 @pytest.mark.parametrize(
     "payload",
     [
-        b'<svg onload="alert(1)"></svg>',  # handler inline
+        b'<svg onload="alert(1)"></svg>',  # handler inline (espace)
+        b'<svg/onload="alert(1)"></svg>',  # handler inline SANS espace (F3)
         b"<svg><script>alert(1)</script></svg>",  # script embarqué
         b'<svg><a href="javascript:alert(1)">x</a></svg>',  # uri javascript
         b"<svg><foreignObject></foreignObject></svg>",  # html arbitraire
@@ -366,6 +367,40 @@ def test_fetch_from_url_rejects_unsafe_svg(payload, monkeypatch):
     # ⛔ SVG avec script/handler refusé (garde anti-XSS), même content-type valide.
     monkeypatch.setattr(logos, "_download_url", lambda url: (payload, "image/svg+xml"))
     assert logos.fetch_from_url("https://bank.example/logo.svg", "zkb") is None
+
+
+@override_settings(STORAGES=_INMEM_STORAGES)
+def test_fetch_from_url_svg_content_type_spoof_still_guarded(monkeypatch):
+    """F2 anti-spoof : corps SVG malveillant annoncé image/png → quand même refusé."""
+    monkeypatch.setattr(
+        logos,
+        "_download_url",
+        lambda url: (b'<svg onload="alert(1)"></svg>', "image/png"),
+    )
+    assert logos.fetch_from_url("https://bank.example/logo.png", "zkb") is None
+
+
+@override_settings(STORAGES=_INMEM_STORAGES)
+def test_fetch_from_url_svg_body_forces_svg_extension(clear_icon_cache, monkeypatch):
+    """Corps SVG (sain) annoncé image/png → stocké en .svg (extension dérivée du contenu)."""
+    monkeypatch.setattr(
+        logos, "_download_url", lambda url: (b"<svg><path/></svg>", "image/png")
+    )
+    name = logos.fetch_from_url("https://bank.example/logo.png", "zkb")
+    assert name == "icons/institutions/zkb.svg"
+
+
+def test_no_redirect_handler_raises_on_30x():
+    """F1 anti-SSRF : suivre une redirection est refusé (lève HTTPError → fetch logge failed)."""
+    import io
+    import urllib.error
+
+    handler = logos._NoRedirectHandler()
+    req = urllib.request.Request("https://evil.example/logo.png")
+    with pytest.raises(urllib.error.HTTPError):
+        handler.redirect_request(
+            req, io.BytesIO(b""), 302, "Found", {}, "http://169.254.169.254/"
+        )
 
 
 @override_settings(STORAGES=_INMEM_STORAGES)

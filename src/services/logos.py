@@ -25,6 +25,7 @@ import ipaddress
 import logging
 import re
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -55,9 +56,11 @@ _ALLOWED_IMAGE_TYPES = {
 }
 _MAX_LOGO_BYTES = 512 * 1024
 # Motifs interdits dans un SVG uploadé (script, handlers inline, refs externes).
-# Heuristique, PAS une sanitisation complète (durcissement futur = lib dédiée si besoin).
+# Heuristique de défense en profondeur (la vraie barrière = rendu <img> + origine bucket
+# distincte), PAS une sanitisation XML complète. `[\s/]on\w+` couvre `<svg/onload=` (pas
+# d'espace). Vecteurs encodés (entités HTML, CDATA) non couverts → durcissement = lib dédiée.
 _SVG_UNSAFE_RE = re.compile(
-    rb"<script|javascript:|<foreignObject|\son\w+\s*=", re.IGNORECASE
+    rb"<script|javascript:|<foreignObject|[\s/]on\w+\s*=", re.IGNORECASE
 )
 # Chemin DANS le storage MEDIA par défaut (mediafiles/ en dev, bucket Railway en prod).
 _REPAIRED_LOGO_PREFIX = "icons/institutions"
@@ -292,7 +295,11 @@ def _repaired_logo_urls() -> dict[str, str]:
 
     try:
         _dirs, files = default_storage.listdir(_REPAIRED_LOGO_PREFIX)
-    except (FileNotFoundError, OSError, NotImplementedError):
+    except Exception as exc:
+        # Storage non provisionné (FileNotFoundError) OU erreur réseau/auth S3
+        # (botocore.ClientError, qui n'hérite PAS d'OSError) → ne JAMAIS faire planter
+        # la résolution de TOUS les logos (y compris statiques). Fallback statique préservé.
+        logger.warning("repaired_logo_urls unavailable reason=%r", exc)
         return {}
 
     urls: dict[str, str] = {}
@@ -339,15 +346,35 @@ def _is_safe_svg(data: bytes) -> bool:
     return _SVG_UNSAFE_RE.search(data) is None
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """
+    Refuse de suivre les redirections 30x. Sans ça, `_is_safe_host()` (qui ne valide
+    QUE l'URL initiale) serait contournée : un `https://evil/logo.png` répondant
+    `302 → http://169.254.169.254/…` ferait fetcher une cible interne par le serveur
+    (SSRF, OWASP A10). Toute redirection lève une HTTPError, attrapée par fetch_from_url.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(
+            req.full_url, code, f"redirect refusé (anti-SSRF): {newurl}", headers, fp
+        )
+
+
+# Opener sans suivi de redirect (anti-SSRF) — réutilisé par _download_url.
+_no_redirect_opener = urllib.request.build_opener(_NoRedirectHandler)
+
+
 def _download_url(url: str) -> tuple[bytes, str]:
     """
     Primitif réseau (seam de test). Retourne (contenu, content_type).
 
     Lit au plus _MAX_LOGO_BYTES + 1 octets → le dépassement est détecté par l'appelant
-    sans charger un fichier géant en mémoire. Scheme https validé EN AMONT par fetch_from_url.
+    sans charger un fichier géant en mémoire. Scheme https + host validés EN AMONT par
+    fetch_from_url ; les redirections sont REFUSÉES (anti-SSRF, cf. _NoRedirectHandler).
     """
     req = urllib.request.Request(url, headers={"User-Agent": "BricBudget/1.0"})
-    with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 — https validé amont
+    # nosec B310 — scheme https validé amont + redirects désactivés (pas de file://, pas de hop interne).
+    with _no_redirect_opener.open(req, timeout=10) as resp:
         return resp.read(_MAX_LOGO_BYTES + 1), resp.headers.get_content_type()
 
 
@@ -358,9 +385,11 @@ def fetch_from_url(url: str, slug: str) -> str | None:
     Retourne le nom stocké (relatif au storage) ou None si refus/échec. Contrat
     « ne lève JAMAIS » (comme fetch_logo) — tout chemin de sortie est loggé.
 
-    Gardes : https only + host non-IP/non-interne (SSRF), content-type raster
-    whitelisté (⛔ pas de SVG = vecteur XSS), réponse non vide, taille ≤ 512 Ko.
-    Logs : format STABLE `logo_fetch <statut> slug=… source=manual_url …` (dashboard).
+    Gardes : https only + host non-IP/non-interne + redirects refusés (SSRF),
+    content-type raster OU svg whitelisté, réponse non vide, taille ≤ 512 Ko, et
+    garde anti-XSS sur tout corps qui RESSEMBLE à du SVG (indépendamment du
+    content-type déclaré → anti-spoof). Logs : format STABLE `logo_fetch <statut>
+    slug=… source=manual_url …` (dashboard).
     """
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme != "https" or not _is_safe_host(parsed.hostname):
@@ -401,11 +430,16 @@ def fetch_from_url(url: str, slug: str) -> str | None:
             len(data),
         )
         return None
-    if ext == "svg" and not _is_safe_svg(data):
-        logger.warning(
-            "logo_fetch refused slug=%s source=manual_url reason=unsafe_svg", slug
-        )
-        return None
+    # Détection de contenu SVG INDÉPENDANTE du content-type déclaré (anti-spoof : un
+    # serveur peut annoncer image/png et servir un SVG avec script). Si le corps ressemble
+    # à du SVG/XML, on impose la garde anti-XSS et on force l'extension .svg.
+    if data[:512].lstrip().lower().startswith((b"<?xml", b"<svg")):
+        if not _is_safe_svg(data):
+            logger.warning(
+                "logo_fetch refused slug=%s source=manual_url reason=unsafe_svg", slug
+            )
+            return None
+        ext = "svg"
 
     from django.core.files.base import ContentFile
     from django.core.files.storage import default_storage

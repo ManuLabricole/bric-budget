@@ -65,6 +65,9 @@ def institution_picker(request):
 @login_required
 def institution_logo_form(request, slug: str):
     """Ouvre le formulaire de réparation de logo (GET, HTMX) → remplace la ligne picker."""
+    # Endpoint HTMX (partial nu) : navigation directe → redirige (cf. institution_picker).
+    if not request.headers.get("HX-Request"):
+        return redirect("patrimoine:overview")
     institution = get_object_or_404(
         Institution.objects.filter(is_active=True), slug=slug
     )
@@ -82,13 +85,17 @@ def institution_logo_repair(request, slug: str):
     Installe un logo collé à la main (#128). Succès → re-rend la ligne (logo affiché) ;
     échec → re-rend le formulaire en 422 avec le message. Validation DANS la vue.
     """
+    if not request.headers.get("HX-Request"):
+        return redirect("patrimoine:overview")
     institution = get_object_or_404(
         Institution.objects.filter(is_active=True), slug=slug
     )
     url = request.POST.get("logo_url", "").strip()
 
     if not url.startswith("https://") or len(url) > 500:
-        logger.debug(
+        # Rejet d'une action utilisateur → WARNING (visible en prod, cohérent avec les
+        # rejets logo_fetch du service ; DEBUG disparaîtrait sous LOG_LEVEL=WARNING).
+        logger.warning(
             "logo_repair rejected institution=%s reason=bad_url user=%s",
             institution.slug,
             request.user.id,

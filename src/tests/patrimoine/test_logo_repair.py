@@ -42,6 +42,13 @@ def test_logo_form_renders_inline_form(client_logged, institution):
     assert b"inst-row-zkb" in r.content
 
 
+def test_logo_form_direct_navigation_redirects(client_logged, institution):
+    # Sans header HX-Request → pas de partial nu servi, redirige vers le bilan.
+    url = reverse("patrimoine:institution_logo_form", args=[institution.slug])
+    r = client_logged.get(url)
+    assert r.status_code == 302
+
+
 def test_logo_repair_unknown_institution_404(client_logged):
     url = reverse("patrimoine:institution_logo_repair", args=["pas-une-banque"])
     r = client_logged.post(url, {"logo_url": "https://x.example/a.png"}, **_HX)
