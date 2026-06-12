@@ -7,7 +7,7 @@ micro-service services/logos.py (Google Favicons, domain → png).
 Remplace update_bank_logos. Différences :
     - ne télécharge que les logos ABSENTS (svg/ ou miniature/) — idempotent ;
       --force pour re-télécharger quand même
-    - même fallback de slug que le tag bank_icon_url (icon_slug sinon slug)
+    - même fallback de slug que le tag institution_icon_url (icon_slug sinon slug)
     - un échec ne stoppe pas le backfill des suivantes
 
 Au fil de l'eau, c'est le post_save Institution (accounts/signals.py) qui fait
@@ -58,7 +58,7 @@ class Command(BaseCommand):
                 )
                 return
 
-        base = logos.banks_icon_base()
+        base = logos.institutions_icon_base()
         fetched = skipped = failed = 0
 
         for inst in qs:
@@ -67,7 +67,7 @@ class Command(BaseCommand):
                 self.stdout.write(f"  ⏭  {inst.name} — domain vide, ignoré")
                 continue
 
-            # Même fallback que bank_icon_url : icon_slug, sinon slug.
+            # Même fallback que institution_icon_url : icon_slug, sinon slug.
             slug = inst.icon_slug or inst.slug
 
             if not options["force"] and logos.has_logo(slug, base):

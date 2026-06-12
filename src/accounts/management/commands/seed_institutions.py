@@ -1,14 +1,14 @@
 """
-accounts/management/commands/seed_banks.py
+accounts/management/commands/seed_institutions.py
 
-Crée (ou met à jour) les Banks en DB depuis accounts/banks_config.py.
+Crée (ou met à jour) les Institutions en DB depuis accounts/institutions_config.py.
 
 Usage :
-    python manage.py seed_banks            # crée ou met à jour toutes les banques
-    python manage.py seed_banks --dry-run  # affiche ce qui serait fait sans toucher la DB
+    python manage.py seed_institutions            # crée ou met à jour toutes les institutions
+    python manage.py seed_institutions --dry-run  # affiche ce qui serait fait sans toucher la DB
 
 Idempotent : peut être relancé autant de fois que nécessaire.
-Si une banque existe déjà (même slug), ses champs sont mis à jour depuis la config.
+Si une institution existe déjà (même slug), ses champs sont mis à jour depuis la config.
 """
 
 from django.core.management.base import BaseCommand, CommandError
@@ -18,7 +18,7 @@ from accounts.models import Institution
 
 
 class Command(BaseCommand):
-    help = "Crée ou met à jour les Banks depuis banks_config.py."
+    help = "Crée ou met à jour les Institutions depuis institutions_config.py."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -66,7 +66,7 @@ class Command(BaseCommand):
                 self.stdout.write(f"  {action}  {config['name']} ({slug})")
                 continue
 
-            bank, created = Institution.objects.update_or_create(
+            institution, created = Institution.objects.update_or_create(
                 slug=slug,
                 defaults=defaults,
             )
@@ -74,11 +74,13 @@ class Command(BaseCommand):
             if created:
                 created_count += 1
                 self.stdout.write(
-                    self.style.SUCCESS(f"  ✓  Bank « {bank.name} » créée")
+                    self.style.SUCCESS(f"  ✓  Institution « {institution.name} » créée")
                 )
             else:
                 updated_count += 1
-                self.stdout.write(f"  ·  Bank « {bank.name} » mise à jour")
+                self.stdout.write(
+                    f"  ·  Institution « {institution.name} » mise à jour"
+                )
 
         if not dry_run:
             self.stdout.write("")

@@ -9,7 +9,7 @@ Contrat du service :
     is_valid_domain  — regex anti-injection URL (porté d'update_bank_logos)
     fetch_logo       — domaine → PNG à dest ; None si échec, ne lève JAMAIS
     has_logo         — logo présent = svg/<slug>.svg OU miniature/<slug>.{png,jpg,jpeg}
-                       (même logique de résolution que le tag bank_icon_url)
+                       (même logique de résolution que le tag institution_icon_url)
 """
 
 from pathlib import Path
@@ -122,7 +122,7 @@ def test_fetch_logo_creates_parent_dirs(tmp_path, monkeypatch):
         dest.write_bytes(b"x")
 
     monkeypatch.setattr(logos, "_download", fake_download)
-    dest = tmp_path / "icons" / "banks" / "miniature" / "yuh.png"
+    dest = tmp_path / "icons" / "institutions" / "miniature" / "yuh.png"
 
     assert logos.fetch_logo("yuh.ch", dest) == dest
 
@@ -165,7 +165,7 @@ def test_fetch_logo_no_double_www(tmp_path, monkeypatch):
 
 
 def _base(tmp_path: Path) -> Path:
-    """Arborescence static/icons/banks vide : svg/ + miniature/."""
+    """Arborescence static/icons/institutions vide : svg/ + miniature/."""
     (tmp_path / "svg").mkdir()
     (tmp_path / "miniature").mkdir()
     return tmp_path

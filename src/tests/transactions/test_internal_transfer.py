@@ -348,7 +348,12 @@ def test_panel_tx_detail_shows_badge_when_internal_transfer(cat_virements, accou
     tx.save(update_fields=["is_internal_transfer", "is_ignored"])
     html = render_to_string(
         "budget/_panel_tx_detail.html",
-        {"tx": tx, "bank_icon_url": "", "close_on_back": False, "source": "detail"},
+        {
+            "tx": tx,
+            "institution_icon_url": "",
+            "close_on_back": False,
+            "source": "detail",
+        },
     )
     assert "Classifiée comme mouvement interne" in html
 
@@ -363,7 +368,12 @@ def test_panel_tx_detail_no_badge_when_not_internal_transfer(cat_alim, account):
     tx.save(update_fields=["is_internal_transfer", "is_ignored"])
     html = render_to_string(
         "budget/_panel_tx_detail.html",
-        {"tx": tx, "bank_icon_url": "", "close_on_back": False, "source": "detail"},
+        {
+            "tx": tx,
+            "institution_icon_url": "",
+            "close_on_back": False,
+            "source": "detail",
+        },
     )
     assert "Classifiée comme mouvement interne" not in html
 

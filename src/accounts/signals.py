@@ -22,9 +22,9 @@ def fetch_institution_logo(sender, instance: Institution, **kwargs) -> None:
     if not instance.domain:
         return
 
-    # Même fallback que bank_icon_url : icon_slug, sinon slug.
+    # Même fallback que institution_icon_url : icon_slug, sinon slug.
     slug = instance.icon_slug or instance.slug
-    base = logos.banks_icon_base()
+    base = logos.institutions_icon_base()
     if logos.has_logo(slug, base):
         return
 

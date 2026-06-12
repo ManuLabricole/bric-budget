@@ -1,4 +1,4 @@
-{% load static bank_icons %}
+{% load static institution_icons %}
 {# Fragment affiché quand un compte est introuvable lors du dry-run.             #}
 {# L'utilisateur peut créer le compte directement ici et relancer l'import.     #}
 <style>
@@ -9,12 +9,12 @@
   .step-card { animation: slide-up 0.3s ease-out both; }
 </style>
 <div class="mt-4 flex flex-col gap-3">
-    {# ── Info banque détectée ── #}
+    {# ── Info institution détectée ── #}
     <div class="step-card flex items-center gap-3 bg-surface-hover rounded-xl px-4 py-3"
          style="animation-delay: 0ms">
         {% if bank %}
-            {% bank_icon_url bank as bicon %}
-            {% include "components/banks/bank_logo.html" with icon_url=bicon bank=bank size="w-9 h-9" padding="p-1.5" %}
+            {% institution_icon_url bank as bicon %}
+            {% include "components/institutions/institution_logo.html" with icon_url=bicon institution=bank size="w-9 h-9" padding="p-1.5" %}
         {% else %}
             <div class="w-9 h-9 rounded-full bg-surface-hover flex items-center justify-center flex-shrink-0">
                 <span class="text-xs font-bold text-text-muted">{{ bank_name|slice:":1" }}</span>
@@ -97,7 +97,7 @@
             </div>
             <p class="text-[10px] text-text-muted -mt-1">IBAN ou N° de contrat — au moins l'un est requis.</p>
         {% endif %}
-        {# BIC — optionnel, pré-rempli depuis la config banque #}
+        {# BIC — optionnel, pré-rempli depuis la config institution #}
         <div class="flex flex-col gap-1">
             <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
                 BIC <span class="text-text-disabled">(optionnel)</span>

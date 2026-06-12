@@ -17,7 +17,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from budget.constants import RULE_NOISE_TOKENS
-from budget.utils import _cats_with_subcats, _keyword_q, _resolve_bank_icon_map
+from budget.utils import _cats_with_subcats, _keyword_q, _resolve_institution_icon_map
 from transactions.models import CategorizationRule, Category, SubCategory, Transaction
 
 logger = logging.getLogger(__name__)
@@ -216,7 +216,7 @@ def budget_rule_standalone_preview(request):
     un espace et chacun est matché comme word boundary (\y) dans description_raw.
     Même règle que la catégorisation automatique à l'import — cohérence garantie.
 
-    La vue résout les icônes banque (bank_icon_map) pour la rangée compacte,
+    La vue résout les icônes institution (institution_icon_map) pour la rangée compacte,
     charge les 25 premières transactions pour la preview scrollable.
     """
     kw_list = [kw.strip().upper() for kw in request.GET.getlist("kw") if kw.strip()]
@@ -250,14 +250,14 @@ def budget_rule_standalone_preview(request):
         total_count = qs.count()
         # On charge toutes les tx pour la zone scrollable (limit visuelle = template)
         txs = list(qs)
-        bank_icon_map = _resolve_bank_icon_map()
+        institution_icon_map = _resolve_institution_icon_map()
         for tx in txs:
             slug = (
                 tx.account.institution.icon_slug
                 if tx.account and tx.account.institution
                 else ""
             )
-            tx.bank_icon_url = bank_icon_map.get(slug, "")
+            tx.institution_icon_url = institution_icon_map.get(slug, "")
 
     return render(
         request,
@@ -337,14 +337,14 @@ def budget_rule_create_standalone_submit(request):
                     "account", "account__institution", "category", "subcategory"
                 ).order_by("-date")
             )
-            bank_icon_map = _resolve_bank_icon_map()
+            institution_icon_map = _resolve_institution_icon_map()
             for tx in txs:
                 slug = (
                     tx.account.institution.icon_slug
                     if tx.account and tx.account.institution
                     else ""
                 )
-                tx.bank_icon_url = bank_icon_map.get(slug, "")
+                tx.institution_icon_url = institution_icon_map.get(slug, "")
 
             return render(
                 request,
@@ -578,14 +578,14 @@ def budget_rule_create_submit(request):
                     "account", "account__institution", "category", "subcategory"
                 ).order_by("-date")
             )
-            bank_icon_map = _resolve_bank_icon_map()
+            institution_icon_map = _resolve_institution_icon_map()
             for tx in txs:
                 slug = (
                     tx.account.institution.icon_slug
                     if tx.account and tx.account.institution
                     else ""
                 )
-                tx.bank_icon_url = bank_icon_map.get(slug, "")
+                tx.institution_icon_url = institution_icon_map.get(slug, "")
 
             return render(
                 request,

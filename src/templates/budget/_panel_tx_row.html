@@ -4,7 +4,7 @@ budget/_panel_tx_row.html — Fragment HTMX : une ligne transaction
 
 Contexte attendu (passé par la vue ou par {% include %}) :
     tx              — objet Transaction (avec select_related category/subcategory/account/bank)
-    bank_icon_url   — str URL statique résolue par _resolve_bank_icon_map() en Python
+    institution_icon_url   — str URL statique résolue par _resolve_institution_icon_map() en Python
 
 Utilisé de deux façons :
     1. Dans _panel_tx_list.html via {% include %} — rendu initial de la liste
@@ -80,8 +80,8 @@ Rendu d'une transaction ignorée (is_ignored=True) :
                 {% if tx.display_name|length > 40 %}…{% endif %}
             </p>
         </div>
-        {% comment %} COL 3 — Icône banque + nom compte {% endcomment %}
-        {% include "components/banks/account_badge.html" with bank_icon_url=bank_icon_url account=tx.account %}
+        {% comment %} COL 3 — Icône institution + nom compte {% endcomment %}
+        {% include "components/institutions/account_badge.html" with institution_icon_url=institution_icon_url account=tx.account %}
         {% comment %}
         COL 4 — Montant en CHF, poussé à droite.
         amount_chf est renseigné pour les comptes non-CHF (EUR/GBP → taux historique).

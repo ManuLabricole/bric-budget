@@ -1,7 +1,7 @@
 """
-tests/accounts/test_seed_banks.py — seed du catalogue d'institutions.
+tests/accounts/test_seed_institutions.py — seed du catalogue d'institutions.
 
-Vérifie que seed_banks matérialise KNOWN_INSTITUTIONS en DB : création complète,
+Vérifie que seed_institutions matérialise KNOWN_INSTITUTIONS en DB : création complète,
 domain/icon_slug posés, idempotence (re-run = mise à jour, pas de doublon),
 --dry-run sans écriture. Le fetch de logo (post_save) est neutralisé : ici on
 teste le SEED, le signal a ses propres tests (test_logo_signal.py).
@@ -25,7 +25,7 @@ def _no_logo_fetch(monkeypatch):
 
 def _run(*args) -> str:
     out = StringIO()
-    call_command("seed_banks", *args, stdout=out)
+    call_command("seed_institutions", *args, stdout=out)
     return out.getvalue()
 
 
@@ -51,7 +51,7 @@ def test_seed_sets_domain_icon_slug_and_fields():
 
 @pytest.mark.django_db
 def test_seed_sets_category():
-    """Le badge UI : seed_banks pose la category depuis la config (3 valeurs)."""
+    """Le badge UI : seed_institutions pose la category depuis la config (3 valeurs)."""
     _run()
 
     assert Institution.objects.get(slug="yuh").category == "bank"

@@ -4,7 +4,7 @@ tests/accounts/test_backfill_logos.py — commande backfill_logos (one-shot dev)
 La commande parcourt les Institutions et récupère les logos MANQUANTS via le
 micro-service services/logos.py. Réseau jamais touché ici : fetch_logo est
 monkeypatché ; le répertoire static réel est remplacé par tmp_path via
-banks_icon_base (sinon les slugs du repo — yuh, ubs… — fausseraient has_logo).
+institutions_icon_base (sinon les slugs du repo — yuh, ubs… — fausseraient has_logo).
 """
 
 from io import StringIO
@@ -41,10 +41,10 @@ def _mute_logo_signal():
 
 @pytest.fixture
 def icon_base(tmp_path: Path, monkeypatch) -> Path:
-    """static/icons/banks isolé (svg/ + miniature/) + banks_icon_base patché."""
+    """static/icons/institutions isolé (svg/ + miniature/) + institutions_icon_base patché."""
     (tmp_path / "svg").mkdir()
     (tmp_path / "miniature").mkdir()
-    monkeypatch.setattr(logos, "banks_icon_base", lambda: tmp_path)
+    monkeypatch.setattr(logos, "institutions_icon_base", lambda: tmp_path)
     return tmp_path
 
 
@@ -134,7 +134,7 @@ def test_filters_by_institution_slug(icon_base, fetch_calls):
 
 @pytest.mark.django_db
 def test_falls_back_to_slug_when_icon_slug_empty(icon_base, fetch_calls):
-    """icon_slug vide → le slug sert de nom de fichier (même règle que bank_icon_url)."""
+    """icon_slug vide → le slug sert de nom de fichier (même règle que institution_icon_url)."""
     _make_institution("neon", domain="neon-free.ch", icon_slug="")
 
     _run()

@@ -53,7 +53,7 @@ class SubCategoryInline(admin.TabularInline):
 
 
 @admin.action(
-    description="⟳ Resynchroniser les référentiels (seed_banks + seed_categories)"
+    description="⟳ Resynchroniser les référentiels (seed_institutions + seed_categories)"
 )
 def sync_reference(modeladmin, request, queryset):
     """La commande du release deploy, accessible sans console (#126).
@@ -207,7 +207,7 @@ class TransactionAdmin(admin.ModelAdmin):
     allow_tags est remplacé par mark_safe/format_html depuis Django 2.0.
 
     Filtres :
-        account__institution  → "Par banque" (proxy pour "par propriétaire" — Yuh=Emmanuel,
+        account__institution  → "Par institution" (proxy pour "par propriétaire" — Yuh=Emmanuel,
                           CIC=Emmanuel FR, etc. Quand Carys aura un compte, son compte
                           apparaîtra ici. Pas de champ owner sur Account pour l'instant.)
         account        → "Par compte" (granularité fine : Courant, Livret A, LDDS…)
@@ -233,7 +233,7 @@ class TransactionAdmin(admin.ModelAdmin):
         "is_internal_transfer",
     )
     list_filter = (
-        # "Par banque" — proxy propriétaire : Yuh → Emmanuel CH, CIC → Emmanuel FR
+        # "Par institution" — proxy propriétaire : Yuh → Emmanuel CH, CIC → Emmanuel FR
         "account__institution",
         # "Par compte" — granularité fine (courant / livret / LDDS…)
         "account",

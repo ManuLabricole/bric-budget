@@ -7,7 +7,7 @@ Usage :
     python manage.py setup_accounts --file export.csv --file releve_cic.xlsx
 
 Logique :
-    1. Pour chaque fichier → detect_connector() pour identifier la banque
+    1. Pour chaque fichier → detect_connector() pour identifier l'institution
     2. Crée la Bank en DB si elle n'existe pas (métadonnées hardcodées par connecteur)
     3. Extrait les identifiants de compte depuis le fichier
     4. Crée Account + CheckingAccount / SavingsAccount si ils n'existent pas déjà
@@ -36,8 +36,8 @@ from connectors.ubs.parser import UBSConnector
 from connectors.yuh.parser import YuhConnector
 
 # ── Métadonnées statiques par connecteur ──────────────────────────────────────
-# Ces infos ne changent jamais — elles caractérisent la banque, pas le compte.
-# icon_slug doit correspondre à un fichier dans static/icons/banks/miniature/.
+# Ces infos ne changent jamais — elles caractérisent l'institution, pas le compte.
+# icon_slug doit correspondre à un fichier dans static/icons/institutions/miniature/.
 BANK_DEFAULTS = {
     "yuh": {
         "name": "Yuh",
@@ -92,7 +92,7 @@ class Command(BaseCommand):
                 raise CommandError(f"Fichier introuvable : {filepath}")
 
         self.stdout.write("")
-        created_banks = 0
+        created_institutions = 0
         created_accounts = 0
 
         for filepath in files:
@@ -117,7 +117,7 @@ class Command(BaseCommand):
                 },
             )
             if bank_created:
-                created_banks += 1
+                created_institutions += 1
                 self.stdout.write(
                     self.style.SUCCESS(f"    ✓  Bank « {bank.name} » créée")
                 )
@@ -133,7 +133,7 @@ class Command(BaseCommand):
         self.stdout.write("─" * 50)
         self.stdout.write(
             self.style.SUCCESS(
-                f"✓  {created_banks} banque(s) et {created_accounts} compte(s) créé(s)."
+                f"✓  {created_institutions} institution(s) et {created_accounts} compte(s) créé(s)."
             )
         )
 

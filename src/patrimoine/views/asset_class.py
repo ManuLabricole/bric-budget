@@ -26,7 +26,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from accounts.models import Account, BalanceSnapshot
-from budget.utils import _resolve_bank_icon_map
+from budget.utils import _resolve_institution_icon_map
 from patrimoine.context_processors import SIDEBAR_SESSION_KEY
 from patrimoine.services.asset_classes import get_asset_class
 from patrimoine.services.balance_history import PERIODS, period_bounds
@@ -152,7 +152,7 @@ def _get_tx_page(accounts, page_number: int):
     except InvalidPage:
         page_obj = paginator.page(1)
 
-    bank_icon_map = _resolve_bank_icon_map()
+    institution_icon_map = _resolve_institution_icon_map()
     tx_list = list(page_obj.object_list)
     for tx in tx_list:
         slug = (
@@ -160,7 +160,7 @@ def _get_tx_page(accounts, page_number: int):
             if tx.account and tx.account.institution
             else ""
         )
-        tx.bank_icon_url = bank_icon_map.get(slug, "")
+        tx.institution_icon_url = institution_icon_map.get(slug, "")
 
     return tx_list, page_obj
 

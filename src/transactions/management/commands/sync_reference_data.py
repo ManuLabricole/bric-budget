@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # Ordre de dépendance : les institutions d'abord (les catégories n'en dépendent
 # pas aujourd'hui, mais les futurs référentiels — plafonds, régimes fiscaux —
 # pourront référencer les institutions).
-REFERENCE_SEEDS = ("seed_banks", "seed_categories")
+REFERENCE_SEEDS = ("seed_institutions", "seed_categories")
 
 
 class Command(BaseCommand):

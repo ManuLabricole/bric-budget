@@ -803,14 +803,14 @@ def import_create_account(request):
     if account_type not in dict(Account.AccountType.choices):
         return _error(request, "Type de compte invalide.")
 
-    # La banque doit exister en DB (créée via seed_banks)
+    # L'institution doit exister en DB (créée via seed_institutions)
     try:
         bank = Institution.objects.get(slug=bank_slug)
     except Institution.DoesNotExist:
         return _error(
             request,
             f"Banque « {bank_slug} » introuvable.",
-            hint="Lancez d'abord : python manage.py seed_banks",
+            hint="Lancez d'abord : python manage.py seed_institutions",
         )
 
     # Créer l'Account + spécialisation dans une transaction atomique

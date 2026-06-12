@@ -300,14 +300,14 @@ USE_TZ = True
 # =============================================================================
 
 # STATIC_URL: the URL *prefix* the browser uses to request static files.
-# Example: {% static 'icons/banks/yuh.svg' %} → /static/icons/banks/yuh.svg
+# Example: {% static 'icons/institutions/yuh.svg' %} → /static/icons/institutions/yuh.svg
 # This is the public-facing address — the browser never sees the disk path.
 STATIC_URL = "static/"
 
 # STATICFILES_DIRS: directories on disk where Django looks for static files
 # when a browser requests /static/<path>.
-# Django maps:  /static/icons/banks/yuh.svg
-#           →   src/static/icons/banks/yuh.svg
+# Django maps:  /static/icons/institutions/yuh.svg
+#           →   src/static/icons/institutions/yuh.svg
 #
 # Only used in development (DEBUG=True). In production, run collectstatic instead:
 #   python manage.py collectstatic

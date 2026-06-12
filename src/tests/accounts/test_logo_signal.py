@@ -19,7 +19,7 @@ from services import logos
 def icon_base(tmp_path: Path, monkeypatch) -> Path:
     (tmp_path / "svg").mkdir()
     (tmp_path / "miniature").mkdir()
-    monkeypatch.setattr(logos, "banks_icon_base", lambda: tmp_path)
+    monkeypatch.setattr(logos, "institutions_icon_base", lambda: tmp_path)
     return tmp_path
 
 

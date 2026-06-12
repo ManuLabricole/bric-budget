@@ -5,7 +5,7 @@ Contrat :
     is_valid_domain(domain)           — garde anti-injection URL (porté d'update_bank_logos)
     fetch_logo(domain, dest, *, size) — télécharge le logo ; None si échec, ne lève JAMAIS
     has_logo(slug, base_dir)          — un logo existe-t-il déjà pour ce slug ?
-    banks_icon_base()                 — racine static/icons/banks (seul point Django-aware)
+    institutions_icon_base()                 — racine static/icons/institutions (seul point Django-aware)
 
 Appelants : accounts (commande backfill_logos + post_save Institution),
 transactions.Merchant à venir (#124, qui ajoutera resolve_domain nom → domaine).
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 _DOMAIN_RE = re.compile(r"^[a-z0-9.-]+$")
 
 # Extensions acceptées comme « logo déjà présent » — alignées sur la résolution
-# du tag bank_icon_url (SVG prioritaire, miniature en fallback).
+# du tag institution_icon_url (SVG prioritaire, miniature en fallback).
 _MINIATURE_EXTS = ("png", "jpg", "jpeg")
 
 DEFAULT_SIZE = 128
@@ -121,9 +121,9 @@ def fetch_logo(domain: str, dest: Path, *, size: int = DEFAULT_SIZE) -> Path | N
 
 def has_logo(slug: str, base_dir: Path) -> bool:
     """
-    True si un logo existe pour `slug` sous `base_dir` (= static/icons/banks).
+    True si un logo existe pour `slug` sous `base_dir` (= static/icons/institutions).
 
-    Même règle que le tag bank_icon_url : svg/<slug>.svg OU miniature/<slug>.{png,jpg,jpeg}.
+    Même règle que le tag institution_icon_url : svg/<slug>.svg OU miniature/<slug>.{png,jpg,jpeg}.
     """
     if (base_dir / "svg" / f"{slug}.svg").is_file():
         return True
@@ -132,8 +132,8 @@ def has_logo(slug: str, base_dir: Path) -> bool:
     )
 
 
-def banks_icon_base() -> Path:
-    """Racine static/icons/banks — import Django local : le reste du module est pur."""
+def institutions_icon_base() -> Path:
+    """Racine static/icons/institutions — import Django local : le reste du module est pur."""
     from django.conf import settings
 
-    return Path(settings.BASE_DIR) / "static" / "icons" / "banks"
+    return Path(settings.BASE_DIR) / "static" / "icons" / "institutions"
