@@ -189,6 +189,7 @@ def test_create_pension_forces_chf(client_logged, user, bank):
             "account_type": "pension_3a",
             "name": "3e pilier",
             "currency": "EUR",  # forgé — doit être ignoré
+            "contract_number": "3A-TEST",
             "annual_limit_chf": "7056",
         },
         **_HX,
@@ -208,6 +209,7 @@ def test_create_savings_accepts_comma_decimal(client_logged, user, bank):
             "account_type": "savings",
             "name": "Livret",
             "currency": "EUR",
+            "contract_number": "LIV-TEST",
             "interest_rate": "3,5",
         },
         **_HX,
@@ -232,7 +234,7 @@ def test_create_crypto_type_rejected(client_logged, exchange):
         **_HX,
     )
 
-    assert resp.status_code == 200
+    assert resp.status_code == 422
     assert "invalide" in resp.content.decode()
     assert Account.objects.count() == 0
 
@@ -243,7 +245,7 @@ def test_create_invalid_type_rerenders_with_error(client_logged, bank):
         _create_url(), _checking_payload(account_type="yolo"), **_HX
     )
 
-    assert resp.status_code == 200
+    assert resp.status_code == 422
     assert "Type de compte invalide" in resp.content.decode()
     assert Account.objects.count() == 0
 
@@ -252,7 +254,7 @@ def test_create_invalid_type_rerenders_with_error(client_logged, bank):
 def test_create_missing_name_rerenders_with_error(client_logged, bank):
     resp = client_logged.post(_create_url(), _checking_payload(name="  "), **_HX)
 
-    assert resp.status_code == 200
+    assert resp.status_code == 422
     assert "obligatoire" in resp.content.decode()
     assert Account.objects.count() == 0
 
@@ -271,7 +273,7 @@ def test_create_bad_decimal_rerenders_with_error(client_logged, bank):
         **_HX,
     )
 
-    assert resp.status_code == 200
+    assert resp.status_code == 422
     assert "invalide" in resp.content.decode()
     assert Account.objects.count() == 0
 
@@ -283,7 +285,36 @@ def test_create_duplicate_iban_rerenders_with_error(client_logged, bank):
 
     resp = client_logged.post(_create_url(), _checking_payload(name="Doublon"), **_HX)
 
-    assert resp.status_code == 200
+    assert resp.status_code == 422
     # Le formulaire est re-rendu avec un message (unicité IBAN via full_clean).
     assert "existe déjà" in resp.content.decode()
     assert Account.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_create_missing_identifier_rerenders_with_error(client_logged, bank):
+    """Ni IBAN ni n° de contrat → refus avec message (identité d'import requise)."""
+    resp = client_logged.post(
+        _create_url(),
+        {
+            "institution": "yuh",
+            "account_type": "savings",
+            "name": "Livret orphelin",
+            "currency": "CHF",
+        },
+        **_HX,
+    )
+
+    assert resp.status_code == 422
+    assert "n° de contrat" in resp.content.decode()
+    assert Account.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_create_direct_post_redirects(client_logged, bank):
+    """Symétrie de la garde HX : un POST hors HTMX redirige, ne crée rien."""
+    resp = client_logged.post(_create_url(), _checking_payload())  # sans header HX
+
+    assert resp.status_code == 302
+    assert resp.url == reverse("patrimoine:overview")
+    assert Account.objects.count() == 0

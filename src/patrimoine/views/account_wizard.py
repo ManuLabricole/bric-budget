@@ -16,7 +16,7 @@ from typing import Any, cast
 
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -58,7 +58,7 @@ def _default_type(institution: Institution) -> str:
 def _form_context(
     institution: Institution,
     account_type: str,
-    values: Any = None,
+    values: QueryDict | None = None,
     error: str | None = None,
 ) -> dict[str, Any]:
     """Contexte commun GET/erreur POST. `values` = request.POST au re-render."""
@@ -179,6 +179,8 @@ def account_create(request: HttpRequest) -> HttpResponse:
     )
     account_type = request.POST.get("account_type", "")
     if account_type not in WIZARD_TYPES:
+        # 422 = validation refusée (jamais 200 sur un POST qui n'a rien créé).
+        # base.html configure htmx (responseHandling) pour swapper les 422.
         return render(
             request,
             "patrimoine/partials/_account_form.html",
@@ -188,6 +190,7 @@ def account_create(request: HttpRequest) -> HttpResponse:
                 values=request.POST,
                 error="Type de compte invalide.",
             ),
+            status=422,
         )
 
     name = request.POST.get("name", "").strip()
@@ -235,6 +238,7 @@ def account_create(request: HttpRequest) -> HttpResponse:
             request,
             "patrimoine/partials/_account_form.html",
             _form_context(institution, account_type, values=request.POST, error=error),
+            status=422,
         )
 
     # Succès. Pas encore de page compte (#82) → retour bilan en full reload :
