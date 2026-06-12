@@ -23,7 +23,7 @@ from django.views.decorators.http import require_POST
 
 from accounts.models import Account, Institution
 from accounts.services import create_account
-from budget.utils import _resolve_institution_icon_map
+from services.logos import get_institution_icon_map
 from users.models import CustomUser
 
 # Types proposés par le wizard — CARD exclu : une carte se rattache à un compte
@@ -62,7 +62,7 @@ def _form_context(
     error: str | None = None,
 ) -> dict[str, Any]:
     """Contexte commun GET/erreur POST. `values` = request.POST au re-render."""
-    icon_map = _resolve_institution_icon_map()
+    icon_map = get_institution_icon_map()
     return {
         "institution": institution,
         "icon_url": icon_map.get(institution.icon_slug or institution.slug, ""),

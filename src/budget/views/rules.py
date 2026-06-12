@@ -17,7 +17,8 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from budget.constants import RULE_NOISE_TOKENS
-from budget.utils import _cats_with_subcats, _keyword_q, _resolve_institution_icon_map
+from budget.utils import _cats_with_subcats, _keyword_q
+from services.logos import get_institution_icon_map
 from transactions.models import CategorizationRule, Category, SubCategory, Transaction
 
 logger = logging.getLogger(__name__)
@@ -250,7 +251,7 @@ def budget_rule_standalone_preview(request):
         total_count = qs.count()
         # On charge toutes les tx pour la zone scrollable (limit visuelle = template)
         txs = list(qs)
-        institution_icon_map = _resolve_institution_icon_map()
+        institution_icon_map = get_institution_icon_map()
         for tx in txs:
             slug = (
                 tx.account.institution.icon_slug
@@ -337,7 +338,7 @@ def budget_rule_create_standalone_submit(request):
                     "account", "account__institution", "category", "subcategory"
                 ).order_by("-date")
             )
-            institution_icon_map = _resolve_institution_icon_map()
+            institution_icon_map = get_institution_icon_map()
             for tx in txs:
                 slug = (
                     tx.account.institution.icon_slug
@@ -578,7 +579,7 @@ def budget_rule_create_submit(request):
                     "account", "account__institution", "category", "subcategory"
                 ).order_by("-date")
             )
-            institution_icon_map = _resolve_institution_icon_map()
+            institution_icon_map = get_institution_icon_map()
             for tx in txs:
                 slug = (
                     tx.account.institution.icon_slug

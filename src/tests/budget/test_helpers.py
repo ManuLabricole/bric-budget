@@ -3,8 +3,9 @@ tests/budget/test_helpers.py
 
 V2 — Tests unitaires sur les helpers privés :
   - _compute_category_cashflow_context : cœur du contexte category_detail
-  - _resolve_institution_icon_map             : cache lru_cache sur scan FS
   - _cats_with_subcats                 : structure renvoyée par défaut
+
+(La résolution d'icônes institution a migré vers services.logos — voir tests/services/test_logos.py, #139.)
 """
 
 import hashlib
@@ -13,7 +14,7 @@ from decimal import Decimal
 import pytest
 
 from accounts.models import Account, Institution
-from budget.utils import _cats_with_subcats, _resolve_institution_icon_map
+from budget.utils import _cats_with_subcats
 from budget.views.categories import _compute_category_cashflow_context
 from transactions.models import BudgetTarget, Category, SubCategory, Transaction
 
@@ -204,23 +205,6 @@ def test_compute_category_cashflow_with_budget_target_computes_pct(
     assert ctx["target_amount"] == Decimal("200")
     assert ctx["target_pct"] == 25  # 50/200 = 25%
     assert ctx["on_track"] is True
-
-
-# =============================================================================
-# _resolve_institution_icon_map — cache lru_cache + scan FS
-# =============================================================================
-
-
-def test_resolve_institution_icon_map_returns_dict():
-    result = _resolve_institution_icon_map()
-    assert isinstance(result, dict)
-
-
-def test_resolve_institution_icon_map_cached():
-    """lru_cache → 2 appels = même objet (référence identique)."""
-    a = _resolve_institution_icon_map()
-    b = _resolve_institution_icon_map()
-    assert a is b  # même référence en mémoire
 
 
 # =============================================================================

@@ -20,6 +20,7 @@ monkeypatchent, aucun test ne touche le réseau.
 
 from __future__ import annotations
 
+import functools
 import logging
 import re
 import urllib.request
@@ -123,7 +124,7 @@ def has_logo(slug: str, base_dir: Path) -> bool:
     """
     True si un logo existe pour `slug` sous `base_dir` (= static/icons/institutions).
 
-    Même règle que le tag institution_icon_url : svg/<slug>.svg OU miniature/<slug>.{png,jpg,jpeg}.
+    Même règle que _build_institution_icon_map : svg/<slug>.svg OU miniature/<slug>.{png,jpg,jpeg}.
     """
     if (base_dir / "svg" / f"{slug}.svg").is_file():
         return True
@@ -137,3 +138,91 @@ def institutions_icon_base() -> Path:
     from django.conf import settings
 
     return Path(settings.BASE_DIR) / "static" / "icons" / "institutions"
+
+
+# =============================================================================
+# Résolution slug → URL statique (source UNIQUE, #139)
+#
+# Deux entrées, une seule logique :
+#   - get_institution_icon_map() : batch O(1), 1 scan disque caché → {slug: URL}.
+#     Les vues qui résolvent N transactions l'appellent 1× puis font .get() par tx
+#     (anti-N+1). lru_cache : les fichiers static ne bougent pas en prod (dev :
+#     restart serveur si ajout de logo).
+#   - institution_icon_url(obj_or_slug) : unitaire (templates), bâti SUR le map
+#     caché → 0 scan disque par appel.
+#
+# ⛔ has_logo() ne passe PAS par ce cache : c'est le write-path (backfill écrit les
+#    fichiers), un map caché y serait périmé. Garder son check disque frais.
+# =============================================================================
+
+# Priorité d'extension dans miniature/ (PNG > JPG > JPEG si un même slug a plusieurs
+# fichiers). Pas de "svg" ici : le SVG vit dans svg/ et écrase toujours en aval.
+_MINIATURE_PRIORITY = {"png": 0, "jpg": 1, "jpeg": 2}
+
+
+@functools.lru_cache(maxsize=None)
+def get_institution_icon_map() -> dict[str, str]:
+    """Accesseur caché du map {slug → URL statique}. SVG prioritaire sur miniature."""
+    return _build_institution_icon_map()
+
+
+def _build_institution_icon_map() -> dict[str, str]:
+    """
+    Scan disque pur (svg/ + miniature/) → dict. Séparé du cache pour être
+    instrumentable par les tests (preuve anti-N+1 : N résolutions → 1 build).
+
+    Retourne {} si les dossiers n'existent pas (ex. tests sans static).
+    """
+    from django.templatetags.static import static
+
+    base = institutions_icon_base()
+    svg_dir = base / "svg"
+    miniature_dir = base / "miniature"
+
+    result: dict[str, str] = {}
+
+    # Miniatures (fallback) : meilleure extension par slug.
+    if miniature_dir.exists():
+        best: dict[str, tuple[int, str]] = {}
+        for f in miniature_dir.iterdir():
+            if not f.is_file() or f.name.startswith("."):
+                continue
+            prio = _MINIATURE_PRIORITY.get(f.suffix.lstrip(".").lower(), 99)
+            if f.stem not in best or prio < best[f.stem][0]:
+                best[f.stem] = (prio, f.name)
+        result = {
+            slug: static(f"icons/institutions/miniature/{fname}")
+            for slug, (_, fname) in best.items()
+        }
+
+    # SVG : priorité absolue (paths purs, currentColor, pas de fond) → écrase la miniature.
+    if svg_dir.exists():
+        for f in svg_dir.iterdir():
+            if (
+                f.is_file()
+                and not f.name.startswith(".")
+                and f.suffix.lower() == ".svg"
+            ):
+                result[f.stem] = static(f"icons/institutions/svg/{f.name}")
+
+    return result
+
+
+def _coerce_slug(institution_or_slug) -> str:
+    """Objet Institution (icon_slug prioritaire → slug) ou chaîne slug → slug nu."""
+    obj = institution_or_slug
+    if hasattr(obj, "icon_slug"):
+        return str(obj.icon_slug or getattr(obj, "slug", ""))
+    if hasattr(obj, "slug"):
+        return str(obj.slug)
+    return str(obj)
+
+
+def institution_icon_url(institution_or_slug) -> str:
+    """
+    URL statique du logo pour une institution (objet ou slug), ou "" si absent.
+
+    Unitaire — bâti sur le map caché → 0 scan disque par appel. Destiné aux
+    templates (faible volume) ; les vues à fort volume utilisent get_institution_icon_map().
+    """
+    return get_institution_icon_map().get(_coerce_slug(institution_or_slug), "")

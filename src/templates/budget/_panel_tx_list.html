@@ -115,7 +115,7 @@ Données :
                 {% comment %}
                 Délègue le rendu de la ligne à _panel_tx_row.html.
                 tx.institution_icon_url est annoté en Python dans budget_panel_transactions()
-                (via _resolve_institution_icon_map()) — on le passe explicitement au partial.
+                (via services.logos.get_institution_icon_map()) — on le passe explicitement au partial.
                 with institution_icon_url=tx.institution_icon_url permet au partial de fonctionner
                 aussi quand il est retourné seul par budget_toggle_ignore()
                 (dans ce cas, institution_icon_url est passé directement dans le contexte).

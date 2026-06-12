@@ -26,7 +26,6 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from accounts.models import Account, BalanceSnapshot
-from budget.utils import _resolve_institution_icon_map
 from patrimoine.context_processors import SIDEBAR_SESSION_KEY
 from patrimoine.services.asset_classes import get_asset_class
 from patrimoine.services.balance_history import PERIODS, period_bounds
@@ -38,6 +37,7 @@ from patrimoine.services.chart_data import (
 )
 from patrimoine.services.valuation import current_value
 from patrimoine.views.overview import PERIOD_LABELS
+from services.logos import get_institution_icon_map
 from transactions.models import Transaction
 
 _PERIOD_KEY_PREFIX = "patrimoine_ac_period_"
@@ -152,7 +152,7 @@ def _get_tx_page(accounts, page_number: int):
     except InvalidPage:
         page_obj = paginator.page(1)
 
-    institution_icon_map = _resolve_institution_icon_map()
+    institution_icon_map = get_institution_icon_map()
     tx_list = list(page_obj.object_list)
     for tx in tx_list:
         slug = (

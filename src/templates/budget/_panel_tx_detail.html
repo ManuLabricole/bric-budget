@@ -4,7 +4,7 @@ budget/_panel_tx_detail.html — Fragment HTMX : détail d'une transaction (éta
 
 Contexte attendu :
     tx              — Transaction (select_related category/subcategory/account/bank)
-    institution_icon_url   — str URL statique résolue par _resolve_institution_icon_map()
+    institution_icon_url   — str URL statique résolue par services.logos.get_institution_icon_map()
 
 Chargé dans #panel-content par :
     - hx-get depuis _panel_tx_row.html (clic sur une ligne)

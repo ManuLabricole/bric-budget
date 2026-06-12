@@ -31,9 +31,9 @@ from budget.utils import (
     _add_months,
     _period_end_from_start,
     _period_from_session,
-    _resolve_institution_icon_map,
     safe_referer,
 )
+from services.logos import get_institution_icon_map
 from transactions.models import BudgetTarget, Category, SubCategory, Transaction
 from transactions.services import sync_internal_transfer
 
@@ -286,9 +286,9 @@ def budget_panel_transactions(request):
     period_start, period_end = _period_from_session(request.session)
     today = date.today()
 
-    # ── Icônes banque ─────────────────────────────────────────────────────────
-    # Délégué au helper privé _resolve_institution_icon_map() — voir définition plus haut.
-    institution_icon_map = _resolve_institution_icon_map()
+    # ── Icônes institution ────────────────────────────────────────────────────
+    # Map batch O(1) caché — source unique services.logos.get_institution_icon_map (#139).
+    institution_icon_map = get_institution_icon_map()
 
     # ── Recherche texte libre (filtre live) ──────────────────────────────────
     #
@@ -554,7 +554,7 @@ def budget_toggle_ignore(request, tx_id):
         request.user.id,
     )
 
-    institution_icon_map = _resolve_institution_icon_map()
+    institution_icon_map = get_institution_icon_map()
     slug = (
         tx.account.institution.icon_slug
         if tx.account and tx.account.institution
@@ -779,7 +779,7 @@ def budget_categorize_transaction(request):
         tx_full = Transaction.objects.select_related(
             "category", "subcategory", "account", "account__institution"
         ).get(pk=tx.pk)
-        institution_icon_map = _resolve_institution_icon_map()
+        institution_icon_map = get_institution_icon_map()
         islug = (
             tx_full.account.institution.icon_slug
             if tx_full.account and tx_full.account.institution
@@ -828,7 +828,7 @@ def budget_panel_tx_detail(request):
     )
 
     # Résolution icône institution — même helper que les autres vues panel
-    institution_icon_map = _resolve_institution_icon_map()
+    institution_icon_map = get_institution_icon_map()
     slug = (
         tx.account.institution.icon_slug
         if tx.account and tx.account.institution
@@ -893,7 +893,7 @@ def budget_toggle_reconcile(request, tx_id):
         request.user.id,
     )
 
-    institution_icon_map = _resolve_institution_icon_map()
+    institution_icon_map = get_institution_icon_map()
     slug = (
         tx.account.institution.icon_slug
         if tx.account and tx.account.institution
