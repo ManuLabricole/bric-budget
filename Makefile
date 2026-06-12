@@ -167,9 +167,9 @@ create-superuser:
 	@printf "  $(DIM)→ connecte-toi sur http://localhost:8000/admin$(RESET)\n"
 
 seed:
-	@printf "  🌱 $(CYAN)Seed des données initiales...$(RESET)\n"
+	@printf "  🌱 $(CYAN)Seed des référentiels (catégories + institutions)...$(RESET)\n"
 	@$(MANAGE) seed_initial
-	@printf "  $(DIM)→ banques, comptes, cartes, catégories créés$(RESET)\n"
+	@printf "  $(DIM)→ comptes perso : make setup-accounts (ou python manage.py setup_accounts)$(RESET)\n"
 
 reset-seed:
 	@printf "  🗑️  $(RED)Suppression des données seedées...$(RESET)\n"

@@ -1,10 +1,14 @@
 """
 transactions/management/commands/dev_reset_seed.py
 
-⛔ DEV ONLY — Deletes all data created by seed_initial.
+⛔ DEV ONLY — Wipes all business data (referentials + personal accounts/cards).
 
 Refuses to run when DEBUG=False (production).
 Pass --force-prod to override (rarely needed).
+
+Re-populate after a reset:
+    make seed              → referentials (categories + institutions)
+    python manage.py setup_accounts   → personal accounts (CSV/XLSX exports)
 
 Why a separate command (not Django's `flush`)?
 ----------------------------------------------
