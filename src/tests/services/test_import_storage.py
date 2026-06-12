@@ -40,7 +40,7 @@ class TestBuildImportFilename:
         from imports.storage import build_import_filename
 
         result = build_import_filename(
-            bank_slug="yuh",
+            institution_slug="yuh",
             account_names=["checking"],
             date_min=date(2026, 1, 1),
             date_max=date(2026, 4, 30),
@@ -55,7 +55,7 @@ class TestBuildImportFilename:
         from imports.storage import build_import_filename
 
         result = build_import_filename(
-            bank_slug="cic",
+            institution_slug="cic",
             account_names=["compte_courant", "livret_a"],
             date_min=date(2026, 1, 1),
             date_max=date(2026, 4, 30),
@@ -70,7 +70,7 @@ class TestBuildImportFilename:
         from imports.storage import build_import_filename
 
         result = build_import_filename(
-            bank_slug="ubs",
+            institution_slug="ubs",
             account_names=["compte_courant"],
             date_min=date(2026, 2, 1),
             date_max=date(2026, 4, 30),
@@ -86,7 +86,7 @@ class TestBuildImportFilename:
         from imports.storage import build_import_filename
 
         result = build_import_filename(
-            bank_slug="yuh",
+            institution_slug="yuh",
             account_names=["checking"],
             date_min=None,
             date_max=None,
@@ -101,7 +101,7 @@ class TestBuildImportFilename:
         from imports.storage import build_import_filename
 
         result = build_import_filename(
-            bank_slug="yuh",
+            institution_slug="yuh",
             account_names=["checking"],
             date_min=date(2026, 1, 1),
             date_max=date(2026, 1, 31),
@@ -117,7 +117,7 @@ class TestBuildImportFilename:
         from imports.storage import build_import_filename
 
         result = build_import_filename(
-            bank_slug="yuh",
+            institution_slug="yuh",
             account_names=["checking"],
             date_min=date(2026, 1, 1),
             date_max=date(2026, 1, 31),
@@ -208,7 +208,7 @@ class TestSaveImportFile:
         with override_settings(IMPORT_STORAGE_ROOT=storage_root):
             rel_path, is_encrypted = save_import_file(
                 src=src,
-                bank_slug="yuh",
+                institution_slug="yuh",
                 stored_filename="yuh_checking_20260101_20260131_10tx.csv",
                 year=2026,
             )
@@ -291,7 +291,7 @@ class TestSaveImportFile:
 
         # Un chemin relatif ne commence pas par /
         assert not str(rel_path).startswith("/")
-        # Il commence par le bank_slug
+        # Il commence par l'institution_slug
         assert str(rel_path).startswith("cic/")
 
     @override_settings(IMPORT_ENCRYPTION_KEY="")

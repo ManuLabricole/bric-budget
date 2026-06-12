@@ -73,7 +73,7 @@ def test_import_confirm_missing_tmp_file_returns_error(auth_client, tmp_path):
         "filepath": str(tmp_path / "nonexistent.csv"),
         "filename": "nonexistent.csv",
         "file_hash": "abc",
-        "bank_slug": "yuh",
+        "institution_slug": "yuh",
     }
     session.save()
     r = auth_client.post(reverse("imports:confirm"), HTTP_HOST="localhost")
@@ -99,7 +99,7 @@ def test_import_create_account_requires_login(client, bank):
     r = client.post(
         reverse("imports:create_account"),
         {
-            "bank_slug": bank.slug,
+            "institution_slug": bank.slug,
             "account_name": "X",
             "account_type": "checking",
             "iban": "CH001",
@@ -114,7 +114,7 @@ def test_import_create_account_missing_name_returns_error(auth_client, bank):
     r = auth_client.post(
         reverse("imports:create_account"),
         {
-            "bank_slug": bank.slug,
+            "institution_slug": bank.slug,
             "account_name": "",
             "account_type": "checking",
             "iban": "CH001",
@@ -132,7 +132,7 @@ def test_import_create_account_missing_identifier_returns_error(auth_client, ban
     r = auth_client.post(
         reverse("imports:create_account"),
         {
-            "bank_slug": bank.slug,
+            "institution_slug": bank.slug,
             "account_name": "Compte sans ID",
             "account_type": "checking",
             "iban": "",
@@ -151,7 +151,7 @@ def test_import_create_account_invalid_type_returns_error(auth_client, bank):
     r = auth_client.post(
         reverse("imports:create_account"),
         {
-            "bank_slug": bank.slug,
+            "institution_slug": bank.slug,
             "account_name": "Compte invalide",
             "account_type": "wrong_type",
             "iban": "CH001",
@@ -167,7 +167,7 @@ def test_import_create_account_unknown_bank_returns_error(auth_client):
     r = auth_client.post(
         reverse("imports:create_account"),
         {
-            "bank_slug": "bank-doesnt-exist",
+            "institution_slug": "bank-doesnt-exist",
             "account_name": "X",
             "account_type": "checking",
             "iban": "CH001",
@@ -192,7 +192,7 @@ def test_import_create_account_success_creates_checking_account(auth_client, ban
     auth_client.post(
         reverse("imports:create_account"),
         {
-            "bank_slug": bank.slug,
+            "institution_slug": bank.slug,
             "account_name": "Mon nouveau compte CH",
             "account_type": "checking",
             "iban": "CH9300762011623852957",

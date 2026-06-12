@@ -2,7 +2,7 @@
 {# Fragment affiché quand AccountAmbiguous est levé : plusieurs comptes actifs         #}
 {# pour une institution qui n'expose pas d'identifiant dans ses exports (ex: Yuh).          #}
 {# L'utilisateur clique sur le bon compte → POST select-account/ → dry-run repart.    #}
-{# Variables contexte : accounts (list[Account]), bank_slug, filename                  #}
+{# Variables contexte : accounts (list[Account]), institution_slug, filename            #}
 <style>
   @keyframes slide-up {
     from { opacity: 0; transform: translateY(10px); }

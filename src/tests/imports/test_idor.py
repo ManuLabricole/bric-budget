@@ -233,7 +233,7 @@ def test_import_select_account_idor_blocked_for_other_user(
         "filepath": str(fake_csv),
         "filename": "yuh_export.csv",
         "file_hash": "abc123",
-        "bank_slug": bank.slug,
+        "institution_slug": bank.slug,
     }
     session.save()
 

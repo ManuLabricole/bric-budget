@@ -106,10 +106,10 @@ class Command(BaseCommand):
                 continue
 
             # ── Créer (ou récupérer) la Bank ──────────────────────────────────
-            bank_slug = self._bank_slug(connector)
-            defaults = BANK_DEFAULTS[bank_slug]
+            institution_slug = self._institution_slug(connector)
+            defaults = BANK_DEFAULTS[institution_slug]
             bank, bank_created = Institution.objects.get_or_create(
-                slug=bank_slug,
+                slug=institution_slug,
                 defaults={
                     "name": defaults["name"],
                     "icon_slug": defaults["icon_slug"],
@@ -159,7 +159,7 @@ class Command(BaseCommand):
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
-    def _bank_slug(self, connector):
+    def _institution_slug(self, connector):
         if isinstance(connector, YuhConnector):
             return "yuh"
         if isinstance(connector, UBSConnector):

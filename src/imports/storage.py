@@ -23,7 +23,7 @@ Clé OBLIGATOIRE :
     (config() sans default lève UndefinedValueError).
 
 Structure de stockage :
-    IMPORT_STORAGE_ROOT / {bank_slug} / {year} / {stored_filename}.enc
+    IMPORT_STORAGE_ROOT / {institution_slug} / {year} / {stored_filename}.enc
 
     Exemple :
         assets/private/data/imports/yuh/2026/yuh_checking_20260101_20260430_b12345.67_42tx.csv.enc
@@ -122,7 +122,7 @@ def decrypt_bytes(data: bytes) -> bytes:
 
 
 def build_import_filename(
-    bank_slug: str,
+    institution_slug: str,
     account_names: list[str],
     date_min: date | None,
     date_max: date | None,
@@ -137,7 +137,7 @@ def build_import_filename(
         {bank}_{account}_{date_min}_{date_max}[_b{balance}]_{n}tx{ext}
 
     Paramètres :
-        bank_slug      : slug de la banque ("yuh", "ubs", "cic")
+        institution_slug      : slug de l'institution ("yuh", "ubs", "cic")
         account_names  : liste de noms de comptes normalisés (snake_case)
                          Si plusieurs comptes (CIC multi-feuilles) → "multi"
         date_min       : date de la transaction la plus ancienne du fichier
@@ -154,7 +154,7 @@ def build_import_filename(
 
     Pourquoi cette convention ?
         - Tri chronologique naturel (ls -la → ordre temporel)
-        - Banque identifiable immédiatement sans ouvrir le fichier
+        - Institution identifiable immédiatement sans ouvrir le fichier
         - Balance pour vérification rapide en cas de divergence comptable
         - n_transactions pour détecter les imports partiels ou les réimports
     """
@@ -171,7 +171,7 @@ def build_import_filename(
     # Normaliser l'extension : ".csv" → "csv"
     ext = original_ext.lstrip(".")
 
-    return f"{bank_slug}_{account_part}_{date_min_str}_{date_max_str}{balance_part}_{n_transactions}tx.{ext}"
+    return f"{institution_slug}_{account_part}_{date_min_str}_{date_max_str}{balance_part}_{n_transactions}tx.{ext}"
 
 
 # =============================================================================
@@ -181,7 +181,7 @@ def build_import_filename(
 
 def save_import_file(
     src: Path,
-    bank_slug: str,
+    institution_slug: str,
     stored_filename: str,
     year: int,
 ) -> tuple[Path, bool]:
@@ -189,7 +189,7 @@ def save_import_file(
     Chiffre et copie un fichier d'import vers le stockage permanent.
 
     Structure de destination :
-        IMPORT_STORAGE_ROOT / {bank_slug} / {year} / {stored_filename}.enc
+        IMPORT_STORAGE_ROOT / {institution_slug} / {year} / {stored_filename}.enc
 
     Le ".enc" est ajouté automatiquement pour distinguer les fichiers chiffrés
     des éventuels fichiers non chiffrés laissés par des imports CLI anciens.
@@ -204,7 +204,7 @@ def save_import_file(
         OSError               si le dossier de destination ne peut pas être créé
     """
     storage_root = Path(settings.IMPORT_STORAGE_ROOT)
-    dest_dir = storage_root / bank_slug / str(year)
+    dest_dir = storage_root / institution_slug / str(year)
 
     # exist_ok=True : pas d'erreur si le dossier existe déjà
     # parents=True  : crée toute la hiérarchie (yuh/2026/) si nécessaire
