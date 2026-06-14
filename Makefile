@@ -5,6 +5,9 @@
 SHELL := /bin/bash
 MANAGE := poetry run python src/manage.py
 
+# Port du serveur Django. Surchargeable pour les worktrees parallèles : make run PORT=8150
+PORT ?= 8000
+
 # --- Couleurs ANSI (via printf, car echo macOS n'interprète pas \033) ---
 RESET  := \033[0m
 BOLD   := \033[1m
@@ -113,10 +116,10 @@ run:
 	@printf "  🐍 $(CYAN)Démarrage Django...$(RESET)\n"
 	@printf "  $(DIM)─────────────────────────────────────────$(RESET)\n"
 	@printf "  🐘 PostgreSQL   $(DIM)localhost:5433$(RESET)\n"
-	@printf "  🌐 Django       $(DIM)http://localhost:8000$(RESET)\n"
-	@printf "  🔐 Admin        $(DIM)http://localhost:8000/admin$(RESET)\n"
+	@printf "  🌐 Django       $(DIM)http://localhost:$(PORT)$(RESET)\n"
+	@printf "  🔐 Admin        $(DIM)http://localhost:$(PORT)/admin$(RESET)\n"
 	@printf "  $(DIM)─────────────────────────────────────────$(RESET)\n\n"
-	@$(MANAGE) runserver
+	@$(MANAGE) runserver 0.0.0.0:$(PORT)
 
 test:
 	@printf "  🧪 $(CYAN)Lancement des tests...$(RESET)\n"

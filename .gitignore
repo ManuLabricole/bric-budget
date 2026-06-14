@@ -98,3 +98,9 @@ pip-audit-report.*
 
 # ─── MCP config — chemins absolus machine-spécifiques, ne pas partager ───────
 .mcp.json
+
+# ─── Worktrees parallèles (multi-Claude) ────────────────────────
+# Les worktrees /wt vivent dans le sibling ../.bric-worktrees/ (HORS repo) →
+# rien à ignorer ici. Filet de sécurité au cas où le `claude --worktree` natif
+# créerait son dossier par défaut DANS le repo :
+.claude/worktrees/
