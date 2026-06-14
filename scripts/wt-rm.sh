@@ -41,8 +41,23 @@ fi
 git -C "$MAIN" worktree prune
 
 if git -C "$MAIN" show-ref --verify --quiet "refs/heads/$BRANCH"; then
-  git -C "$MAIN" branch -D "$BRANCH"
-  echo "✅ branche locale $BRANCH supprimée"
+  # -d (minuscule) REFUSE de supprimer une branche pas encore mergée → garde-fou
+  # anti-perte. S'il refuse (cas normal après un squash-merge GitHub, où git ne
+  # "voit" pas le merge), on demande confirmation explicite avant le -D forcé.
+  if git -C "$MAIN" branch -d "$BRANCH" 2>/dev/null; then
+    echo "✅ branche locale $BRANCH supprimée (mergée)"
+  else
+    ahead=$(git -C "$MAIN" rev-list --count "origin/development..$BRANCH" 2>/dev/null || echo "?")
+    echo "⚠️  git ne voit pas $BRANCH comme mergée dans development ($ahead commit(s) d'écart)."
+    echo "    Normal si la PR a été squash-mergée. Sinon = travail pas encore sur development."
+    read -r -p "    Forcer la suppression de la branche ? [y/N] " ans
+    if [[ "$ans" == "y" || "$ans" == "Y" ]]; then
+      git -C "$MAIN" branch -D "$BRANCH"
+      echo "✅ branche locale $BRANCH supprimée (forcé)"
+    else
+      echo "↩️  branche conservée — worktree et base supprimés, branche gardée."
+    fi
+  fi
 fi
 
 docker exec "$PG_CONTAINER" dropdb -U bricbudget --if-exists "$DB"

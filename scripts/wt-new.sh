@@ -118,6 +118,7 @@ cat <<EOF
 │ 🤖 claude                 # lance une session Claude Code isolée
 │ 🌐 make run PORT=$PORT     # serveur dev sur http://localhost:$PORT
 │ 🧪 make test              # pytest sur la base test_$DB (isolée)
+│ 🎨 npm run build:css      # SI tu touches des templates (sinon nouvelles classes Tailwind ignorées)
 ├─────────────────────────────────────────────────────────────
 │ Fini & mergé ? → scripts/wt-rm.sh $ISSUE $SLUG
 ╰─────────────────────────────────────────────────────────────╯

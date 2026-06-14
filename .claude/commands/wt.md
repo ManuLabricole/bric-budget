@@ -30,6 +30,18 @@ claude                      # session Claude Code isolée pour cette issue
 make run PORT=<port>        # serveur dev (port affiché par le script)
 ```
 
+### Briefer la session worktree (1 session = 1 issue)
+
+Dans la nouvelle session Claude, donner un prompt **scopé à l'unique issue**, ex. :
+
+> Tu es dans le worktree de l'**issue #144**. Lis-la (`gh issue view 144`), fais
+> `/research` puis `/plan`, puis implémente **uniquement** cette issue. Reste dans
+> ce dossier. Vérif live GET/POST avant de déclarer terminé. À la fin :
+> `gh pr create --base development` (labels/milestone hérités) + agent
+> `bricbudget-reviewer`. Ne touche pas aux autres issues.
+
+Une session ne connaît que SON issue → pas de contamination entre les travaux parallèles.
+
 ## Discipline parallèle (humain)
 
 - Avant de lancer un lot, vérifier que les issues touchent des **fichiers disjoints**

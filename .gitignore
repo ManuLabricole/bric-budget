@@ -104,3 +104,8 @@ pip-audit-report.*
 # rien à ignorer ici. Filet de sécurité au cas où le `claude --worktree` natif
 # créerait son dossier par défaut DANS le repo :
 .claude/worktrees/
+# Dans un worktree, .venv et node_modules sont des SYMLINKS (pas des dossiers) :
+# les règles à slash final (.venv/ node_modules/) ne les matchent pas. Forme
+# ancrée sans slash → matche aussi le symlink (fix permanent du piège untracked).
+/.venv
+/node_modules
