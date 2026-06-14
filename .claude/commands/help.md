@@ -13,6 +13,9 @@
 /audit_cto    Audit CTO (sécu + déploiement + scalabilité)
 /review-pr    Review PR via gh + CTO gate
 /github       Maintenance GitHub Project (milestones, labels, phases)
+/wt           Ouvrir un worktree isolé pour résoudre une issue en parallèle
+/wt-list      Vue d'ensemble des worktrees actifs (branche, port, base, état)
+/wt-done      Teardown d'un worktree après merge (worktree + branche + base)
 /help         Cette liste
 /compact      Compaction native du contexte (built-in Claude Code)
 ```
@@ -28,6 +31,7 @@
 | Bug à investiguer | `/diagnose` |
 | Refactor archi à envisager | `/improve` |
 | Avant d'ouvrir une PR | `/audit-tests` puis `/review-pr` |
+| Mener plusieurs PR en parallèle | `/wt <issue> <slug>` → `cd` + `claude` (1 session/issue) ; `/wt-list` pour l'état, `/wt-done` après merge |
 | Déployer / infra Railway | skill `use-railway` |
 
 ## Mémoire & docs — qui porte quoi (plus de `/sync`)
