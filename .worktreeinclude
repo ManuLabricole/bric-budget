@@ -1,0 +1,9 @@
+# .worktreeinclude — fichiers gitignorés copiés dans chaque worktree créé par Claude Code.
+# Syntaxe .gitignore. Seuls les fichiers gitignorés ET matchés sont copiés
+# (les fichiers trackés ne sont jamais dupliqués).
+#
+# POURQUOI : un worktree est un checkout neuf → pas de .env. Sans ces lignes,
+# Django démarre sans SECRET_KEY/DATABASE_URL. Le script scripts/wt-new.sh
+# RÉÉCRIT ensuite DATABASE_URL pour pointer vers la base dédiée du worktree.
+.env
+.env.local

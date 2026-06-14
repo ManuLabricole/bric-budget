@@ -86,6 +86,22 @@ feat(scope): description courte
 
 Si hook bloque → corriger + recommiter. **Jamais `--no-verify`.**
 
+### Worktrees parallèles (multi-Claude) — `/wt`
+
+Pour mener **plusieurs PR de front**, une session Claude Code par issue, totalement
+isolée (branche + base Postgres + port). Renforce l'anti-stacking : impossible
+d'empiler, chaque branche vit dans son répertoire.
+
+```bash
+/wt 144 settings-split        # crée ../.bric-worktrees/144-settings-split (branche depuis development,
+                              # base bric_wt_144, port 8144, .venv/node_modules symlinkés)
+cd ../.bric-worktrees/144-settings-split && claude
+/wt-done 144 settings-split   # après merge : teardown worktree + branche + base
+```
+
+⛔ Ne PAS lancer `claude --worktree` nu (il branche depuis `main`). Toujours `/wt`.
+Détails : `commands/wt.md`, `scripts/wt-new.sh`.
+
 ---
 
 ## Règles de code
