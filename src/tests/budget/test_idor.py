@@ -405,6 +405,51 @@ def test_subcategory_create_under_other_user_perso_parent_blocked(client_a, cate
 
 
 @pytest.mark.django_db
+def test_two_users_can_each_create_restaurants_via_view(
+    client_a, client_b, user_a, user_b
+):
+    """
+    Acceptance #137 via la vue réelle : user A puis user B créent chacun une
+    catégorie « Restaurants ». Les DEUX doivent réussir (succès = status 200 +
+    objet en DB avec le bon owner). C'est le scénario tranché avec Emmanuel.
+    """
+    payload = {
+        "cat_type": "main",
+        "name": "Restaurants",
+        "icon": "heartbeat",
+        "colour_hex": "#e77f79",
+    }
+    r_a = client_a.post(reverse("budget:category_create_submit"), payload)
+    r_b = client_b.post(reverse("budget:category_create_submit"), payload)
+    assert r_a.status_code == 200
+    assert r_b.status_code == 200
+
+    cat_a = Category.objects.get(name="Restaurants", owner=user_a)
+    cat_b = Category.objects.get(name="Restaurants", owner=user_b)
+    assert cat_a.pk != cat_b.pk
+    assert cat_a.is_system is False and cat_b.is_system is False
+    # Le slug perso n'est PAS suffixé à cause de l'autre user (scope par owner).
+    assert cat_a.slug == "restaurants"
+    assert cat_b.slug == "restaurants"
+
+
+@pytest.mark.django_db
+def test_same_user_cannot_create_duplicate_category_via_view(client_a, user_a):
+    """Le même user qui retape « Restaurants » est bloqué côté vue (message d'erreur)."""
+    payload = {
+        "cat_type": "main",
+        "name": "Restaurants",
+        "icon": "heartbeat",
+        "colour_hex": "#e77f79",
+    }
+    first = client_a.post(reverse("budget:category_create_submit"), payload)
+    assert first.status_code == 200
+    second = client_a.post(reverse("budget:category_create_submit"), payload)
+    assert second.status_code == 200  # re-render du panel avec erreur, pas un 500
+    assert Category.objects.filter(name="Restaurants", owner=user_a).count() == 1
+
+
+@pytest.mark.django_db
 def test_category_create_sets_owner_to_request_user(client_a, user_a):
     """Une catégorie créée via l'UI appartient au créateur (owner=request.user)."""
     response = client_a.post(

@@ -224,7 +224,8 @@ def budget_category_cashflow_fragment(request, slug):
     après un toggle is_ignored depuis le panneau détail, pour mettre à jour
     le Sankey et les KPIs sans recharger toute la page.
     """
-    category = get_object_or_404(Category, slug=slug)
+    # for_user : slug non unique global (#137) → système OU à moi.
+    category = get_object_or_404(Category.objects.for_user(request.user), slug=slug)
     cc = _compute_category_cashflow_context(request, category)
     return render(
         request,
@@ -258,7 +259,8 @@ def budget_category_tx_fragment(request, slug):
     Target   : #cat-tx-results  swap="outerHTML"
     Template : budget/partials/_category_tx_fragment.html
     """
-    category = get_object_or_404(Category, slug=slug)
+    # for_user : slug non unique global (#137) → système OU à moi.
+    category = get_object_or_404(Category.objects.for_user(request.user), slug=slug)
     q = request.GET.get("q", "").strip()
     # Respecter la période active en session — même clé que budget_index
     period_start, period_end = _period_from_session(request.session)
@@ -306,7 +308,8 @@ def budget_category_detail(request, slug):
     automatique de l'absence de "__pool__" dans les nœuds.
     """
 
-    category = get_object_or_404(Category, slug=slug)
+    # for_user : slug non unique global (#137) → système OU à moi.
+    category = get_object_or_404(Category.objects.for_user(request.user), slug=slug)
 
     cc = _compute_category_cashflow_context(request, category)
     period_start = cc["period_start"]
@@ -687,10 +690,17 @@ def budget_category_create_submit(request):
             if not colour_hex:
                 errors.append("Choisissez une couleur.")
             else:
-                if Category.objects.filter(name__iexact=name).exists():
+                # Unicité scopée par owner (#137) : on bloque seulement si une
+                # catégorie VISIBLE par ce user (système ou sa perso) porte déjà ce
+                # nom. La perso d'un AUTRE user portant le même nom est autorisée.
+                if (
+                    Category.objects.for_user(request.user)
+                    .filter(name__iexact=name)
+                    .exists()
+                ):
                     errors.append(f"Une catégorie « {name} » existe déjà.")
                 else:
-                    slug = _generate_unique_slug(name, Category)
+                    slug = _generate_unique_slug(name, Category, owner=request.user)
                     cat = Category.objects.create(
                         name=name,
                         slug=slug,
@@ -729,7 +739,7 @@ def budget_category_create_submit(request):
                         f"Une sous-catégorie « {name} » existe déjà dans {parent.name}."
                     )
                 else:
-                    slug = _generate_unique_slug(name, SubCategory)
+                    slug = _generate_unique_slug(name, SubCategory, owner=request.user)
                     sub = SubCategory.objects.create(
                         category=parent,
                         name=name,
@@ -796,7 +806,9 @@ def budget_panel_category_delete_confirm(request, obj_type, slug):
     """
     obj: Category | SubCategory
     if obj_type == "category":
-        obj = get_object_or_404(Category, slug=slug)
+        # for_user : le slug n'est plus unique globalement (#137) → scoper sur
+        # système OU à moi, sinon MultipleObjectsReturned + IDOR sur la perso d'un autre.
+        obj = get_object_or_404(Category.objects.for_user(request.user), slug=slug)
         if obj.is_system:
             return HttpResponse(
                 "Catégorie système — suppression interdite.", status=403
@@ -808,7 +820,7 @@ def budget_panel_category_delete_confirm(request, obj_type, slug):
         rules_count = CategorizationRule.objects.filter(category=obj).count()
 
     elif obj_type == "subcategory":
-        obj = get_object_or_404(SubCategory, slug=slug)
+        obj = get_object_or_404(SubCategory.objects.for_user(request.user), slug=slug)
         if obj.is_system:
             return HttpResponse(
                 "Sous-catégorie système — suppression interdite.", status=403
@@ -857,9 +869,14 @@ def budget_category_delete(request, obj_type, slug):
     """
     obj: Category | SubCategory
     if obj_type == "category":
-        obj = get_object_or_404(Category, slug=slug, is_system=False)
+        # for_user + is_system=False : on ne supprime que SA propre perso (#137).
+        obj = get_object_or_404(
+            Category.objects.for_user(request.user), slug=slug, is_system=False
+        )
     elif obj_type == "subcategory":
-        obj = get_object_or_404(SubCategory, slug=slug, is_system=False)
+        obj = get_object_or_404(
+            SubCategory.objects.for_user(request.user), slug=slug, is_system=False
+        )
     else:
         return HttpResponse("Type invalide.", status=400)
 

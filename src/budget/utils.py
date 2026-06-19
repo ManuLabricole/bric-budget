@@ -54,23 +54,30 @@ def _period_from_session(session):
     )
 
 
-def _generate_unique_slug(name: str, model_class) -> str:
+def _generate_unique_slug(name: str, model_class, owner=None) -> str:
     """
     Génère un slug unique pour une catégorie ou sous-catégorie.
 
     Processus :
     1. slugify(name) → minuscules + ASCII + hyphens (ex: "Alimentation et Boissons" → "alimentation-et-boissons")
     2. Remplace les hyphens par underscores pour cohérence avec les slugs système existants
-    3. Si le slug existe déjà en DB, ajoute un suffixe numérique (_1, _2, …)
+    3. Si le slug existe déjà DANS LE SCOPE de l'owner, ajoute un suffixe numérique (_1, _2, …)
 
     Paramètres :
         name        : nom saisi par l'utilisateur
-        model_class : Category ou SubCategory (les deux ont un champ slug unique)
+        model_class : Category ou SubCategory (les deux ont un champ slug owner-scopé)
+        owner       : propriétaire de la nouvelle catégorie (#137).
+            - owner=None  → catégorie système : slug unique GLOBAL (parmi owner NULL).
+            - owner set   → catégorie perso : slug unique PAR USER seulement, donc
+              deux users peuvent garder le slug "restaurants" sans suffixe parasite.
+              On filtre sur owner pour ne PAS suffixer à cause du slug d'un autre user.
     """
     base_slug = slugify(name, allow_unicode=False).replace("-", "_")
+    # Scope d'unicité aligné sur les UniqueConstraint partielles du modèle (#137).
+    scope = model_class.objects.filter(owner=owner)
     slug = base_slug
     counter = 1
-    while model_class.objects.filter(slug=slug).exists():
+    while scope.filter(slug=slug).exists():
         slug = f"{base_slug}_{counter}"
         counter += 1
     return slug
