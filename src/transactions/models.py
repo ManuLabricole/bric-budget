@@ -67,8 +67,15 @@ class Category(models.Model):
     with SubCategory.default_nature as a suggestion at categorization time.
     """
 
-    name = models.CharField(max_length=100, unique=True)
-    slug = models.SlugField(max_length=100, unique=True)
+    # name / slug — unicité SCOPÉE par owner (issue #137).
+    #   Système (owner IS NULL) : unique GLOBAL — un seul "inconnu", un seul "revenus".
+    #   Perso   (owner set)     : unique PAR USER — chaque user peut avoir sa propre
+    #                             catégorie "Restaurants" sans collision.
+    # unique=True (global) retiré ici → remplacé par les UniqueConstraint partielles
+    # de Meta.constraints (cf. migration 0018). Garder unique=True ici rendrait
+    # impossible le multi-user (deux "Restaurants" → IntegrityError).
+    name = models.CharField(max_length=100)
+    slug = models.SlugField(max_length=100)
 
     # Icon identifier — maps to static/icons/categories/<icon>.svg
     # Example: "auto-transport", "food-drinks", "housing"
@@ -109,6 +116,35 @@ class Category(models.Model):
         verbose_name = "category"
         verbose_name_plural = "categories"
         ordering = ["order", "name"]
+        constraints = [
+            # Système (owner NULL) : slug/name uniques GLOBALEMENT.
+            # Pourquoi une contrainte partielle dédiée plutôt que (owner, slug) ?
+            # En Postgres les NULL sont distincts dans un UNIQUE → (owner, slug)
+            # n'empêcherait PAS deux système "inconnu". On force donc l'unicité
+            # globale uniquement sur les lignes owner IS NULL.
+            models.UniqueConstraint(
+                fields=["slug"],
+                condition=models.Q(owner__isnull=True),
+                name="category_system_slug_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["name"],
+                condition=models.Q(owner__isnull=True),
+                name="category_system_name_uniq",
+            ),
+            # Perso (owner set) : slug/name uniques PAR USER. Deux users peuvent
+            # chacun avoir "Restaurants" ; un même user ne peut pas le dupliquer.
+            models.UniqueConstraint(
+                fields=["owner", "slug"],
+                condition=models.Q(owner__isnull=False),
+                name="category_owner_slug_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["owner", "name"],
+                condition=models.Q(owner__isnull=False),
+                name="category_owner_name_uniq",
+            ),
+        ]
 
     def __str__(self):
         return self.name
@@ -149,7 +185,10 @@ class SubCategory(models.Model):
     )
 
     name = models.CharField(max_length=100)
-    slug = models.SlugField(max_length=100, unique=True)
+    # slug — unicité scopée par owner (issue #137), comme Category.
+    #   Système (owner NULL) : unique global ; Perso : unique par user.
+    # unique=True (global) retiré → UniqueConstraint partielles en Meta.
+    slug = models.SlugField(max_length=100)
 
     # Icon identifier — maps to static/icons/categories/<icon>.svg
     # Example: "auto-transport", "food-drinks", "housing"
@@ -190,8 +229,29 @@ class SubCategory(models.Model):
         verbose_name = "sub-category"
         verbose_name_plural = "sub-categories"
         ordering = ["category__order", "name"]
-        # Two sub-categories in the same category cannot share a name
-        unique_together = [("category", "name")]
+        constraints = [
+            # Deux sous-cat d'une MÊME catégorie ne peuvent pas partager un nom.
+            # Déjà owner-correct : la perso d'un autre user a un parent (category)
+            # distinct, donc (category, name) ne collisionne pas entre users.
+            # (ex-unique_together migré en UniqueConstraint nommée.)
+            models.UniqueConstraint(
+                fields=["category", "name"],
+                name="subcategory_category_name_uniq",
+            ),
+            # slug — système (owner NULL) unique global ; perso unique par user.
+            # Même raisonnement que Category : contrainte partielle dédiée au
+            # système car les NULL sont distincts dans un UNIQUE Postgres.
+            models.UniqueConstraint(
+                fields=["slug"],
+                condition=models.Q(owner__isnull=True),
+                name="subcategory_system_slug_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["owner", "slug"],
+                condition=models.Q(owner__isnull=False),
+                name="subcategory_owner_slug_uniq",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.category.name} › {self.name}"
