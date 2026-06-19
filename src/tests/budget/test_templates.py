@@ -65,6 +65,20 @@ def test_base_exposes_category_palette_in_tokens(auth_client):
 
 
 @pytest.mark.django_db
+def test_base_exposes_derived_palette_in_tokens(auth_client):
+    """window.BRICBUDGET_TOKENS.palette doit exposer les tiers primary/light/dark (#134)."""
+    from services.palette import DARK, LIGHT, PRIMARY
+
+    r = auth_client.get(reverse("budget:index"), HTTP_HOST="localhost")
+    content = r.content.decode()
+    assert "BRICBUDGET_TOKENS.palette" in content
+    # Une couleur représentative de chaque tier doit se retrouver dans le JSON injecté.
+    assert PRIMARY[0] in content
+    assert LIGHT[0] in content
+    assert DARK[0] in content
+
+
+@pytest.mark.django_db
 def test_base_defines_cat_fallback_css_var(auth_client):
     """CSS variable --cat-fallback définie dans base.html (fallback unique)."""
     r = auth_client.get(reverse("budget:index"), HTTP_HOST="localhost")

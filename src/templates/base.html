@@ -32,6 +32,9 @@
       // Palette catégories — exposée par budget.context_processors.design_tokens.
       // Source de vérité Python : budget/constants.py CATEGORY_COLOR_PALETTE.
       window.BRICBUDGET_TOKENS.categories = {{ category_palette_json|safe }};
+      // Palette dérivée (#134) — tiers d'allocation primary/light/dark.
+      // Source de vérité Python : services/palette.py (générée, cf. scripts/gen_palette.py).
+      window.BRICBUDGET_TOKENS.palette = {{ derived_palette_json|safe }};
         </script>
         <style>
       /* Fallback unique pour toutes les couleurs catégories (pastilles, dots, badges).
