@@ -228,7 +228,11 @@ def budget_modal_target_create(request):
 
     # GET sans category_id → liste de toutes les catégories avec leur objectif actuel
     if not category_id:
-        cats = Category.objects.filter(is_active=True).order_by("name")
+        cats = (
+            Category.objects.for_user(request.user)
+            .filter(is_active=True)
+            .order_by("name")
+        )
         targets_by_cat = {t.category_id: t for t in BudgetTarget.objects.all()}
         categories_with_targets = [
             {"category": cat, "target": targets_by_cat.get(cat.id)} for cat in cats
@@ -323,7 +327,11 @@ def budget_panel_transactions(request):
         .select_related("institution")
         .order_by("institution__name", "name")
     )
-    all_categories = Category.objects.filter(is_active=True).order_by("order", "name")
+    all_categories = (
+        Category.objects.for_user(request.user)
+        .filter(is_active=True)
+        .order_by("order", "name")
+    )
 
     # ── Queryset transactions ─────────────────────────────────────────────────
     #
@@ -655,12 +663,16 @@ def budget_panel_category_picker(request):
         pk=tx_id,
     )
     # Catégories système = seedées à l'init, non supprimables (ex: Alimentation, Transport...)
+    # is_system=True ⇒ owner NULL ⇒ déjà visibles par tous ; for_user inutile ici.
     system_cats = Category.objects.filter(is_active=True, is_system=True).order_by(
         "order"
     )
-    # Catégories personnalisées = créées par l'utilisateur (aucune pour l'instant en Phase 1C)
-    custom_cats = Category.objects.filter(is_active=True, is_system=False).order_by(
-        "order"
+    # Catégories personnalisées = créées par l'utilisateur → scopées for_user (#137) :
+    # un user ne voit QUE ses propres perso dans le picker, jamais celles d'un autre.
+    custom_cats = (
+        Category.objects.for_user(request.user)
+        .filter(is_active=True, is_system=False)
+        .order_by("order")
     )
 
     # Contexte inline (patrimoine, category) → le picker vit dans la carte #<detail_id>
@@ -718,8 +730,14 @@ def budget_categorize_transaction(request):
     source = request.POST.get("source", "")
 
     tx = get_object_or_404(Transaction.objects.for_user(request.user), pk=tx_id)
-    tx.category = get_object_or_404(Category, pk=cat_id)
-    tx.subcategory = SubCategory.objects.filter(pk=sub_id).first() if sub_id else None
+    # for_user sur la catégorie : on ne peut catégoriser sa tx qu'avec une catégorie
+    # système ou SA propre perso (#137 — sinon référence à la perso d'un autre user).
+    tx.category = get_object_or_404(Category.objects.for_user(request.user), pk=cat_id)
+    tx.subcategory = (
+        SubCategory.objects.for_user(request.user).filter(pk=sub_id).first()
+        if sub_id
+        else None
+    )
     tx.categorization_source = "manual"
 
     # Sync is_internal_transfer + is_ignored selon la catégorie choisie.

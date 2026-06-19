@@ -537,9 +537,17 @@ def budget_panel_category_manage(request):
     # les transactions de tous les users → fuite de données en contexte multi-user.
     # Django supporte Count(filter=Q(...)) depuis 2.0 — agrégat conditionnel SQL FILTER.
     cats = (
-        Category.objects.filter(is_active=True)
+        Category.objects.for_user(request.user)
+        .filter(is_active=True)
         .annotate(
-            subcat_count=Count("subcategories", distinct=True),
+            # subcat_count scopé : une sous-cat perso d'un AUTRE user rattachée à
+            # une catégorie système ne doit pas gonfler le compteur de cet user (#137).
+            subcat_count=Count(
+                "subcategories",
+                filter=Q(subcategories__owner__isnull=True)
+                | Q(subcategories__owner=request.user),
+                distinct=True,
+            ),
             tx_count=Count(
                 "transactions",
                 filter=Q(transactions__account__members=request.user),
@@ -561,17 +569,26 @@ def budget_panel_category_manage_detail(request, slug):
     HTMX : hx-target="#modal-content" hx-swap="innerHTML"
     Bouton ← : hx-get vers budget_panel_category_manage (retour à la liste).
     """
-    cat = get_object_or_404(Category, slug=slug, is_active=True)
+    # for_user : une catégorie perso d'un autre user → 404 (pas de fuite de son détail).
+    cat = get_object_or_404(
+        Category.objects.for_user(request.user), slug=slug, is_active=True
+    )
 
     # tx_count scopé : même logique que budget_panel_category_manage.
-    subcats = cat.subcategories.annotate(
-        tx_count=Count(
-            "transactions",
-            filter=Q(transactions__account__members=request.user),
-            distinct=True,
-        ),
-        rules_count=Count("rules", distinct=True),
-    ).order_by("name")
+    # Les sous-cats listées sont elles aussi scopées (système OU à moi) pour ne pas
+    # exposer une sous-cat perso d'un autre user rattachée à une catégorie système.
+    subcats = (
+        cat.subcategories.filter(Q(owner__isnull=True) | Q(owner=request.user))
+        .annotate(
+            tx_count=Count(
+                "transactions",
+                filter=Q(transactions__account__members=request.user),
+                distinct=True,
+            ),
+            rules_count=Count("rules", distinct=True),
+        )
+        .order_by("name")
+    )
 
     # Règles directement liées à cette catégorie principale
     rules = (
@@ -619,7 +636,7 @@ def budget_panel_category_create(request):
     - cats_with_subcats : pour le picker de catégorie parente (sous-cat uniquement)
     - color_palette : CATEGORY_COLOR_PALETTE — 16 couleurs pastels
     """
-    _, cats_with_subcats = _cats_with_subcats()
+    _, cats_with_subcats = _cats_with_subcats(request.user)
 
     return render(
         request,
@@ -681,6 +698,9 @@ def budget_category_create_submit(request):
                         colour_hex=colour_hex,
                         order=100,  # placée en fin de liste par défaut
                         is_system=False,
+                        # owner = créateur → catégorie perso, jamais visible par
+                        # un autre user (issue #137). is_system=False ⇒ owner non NULL.
+                        owner=request.user,
                     )
                     logger.info(
                         "Category created: id=%s slug=%s by user=%s",
@@ -696,7 +716,12 @@ def budget_category_create_submit(request):
             if not parent_id:
                 errors.append("Choisissez une catégorie parente.")
             else:
-                parent = get_object_or_404(Category, id=parent_id)
+                # Scope for_user : on ne peut rattacher une sous-cat qu'à une
+                # catégorie système ou à SA propre catégorie perso (#137 — sinon
+                # IDOR en écriture sur la perso d'un autre user).
+                parent = get_object_or_404(
+                    Category.objects.for_user(request.user), id=parent_id
+                )
                 if SubCategory.objects.filter(
                     category=parent, name__iexact=name
                 ).exists():
@@ -711,6 +736,8 @@ def budget_category_create_submit(request):
                         slug=slug,
                         icon=icon,
                         is_system=False,
+                        # owner = créateur → sous-catégorie perso (issue #137).
+                        owner=request.user,
                     )
                     logger.info(
                         "SubCategory created: id=%s slug=%s parent=%s by user=%s",
@@ -724,7 +751,7 @@ def budget_category_create_submit(request):
 
     if errors:
         # Re-render avec erreurs + pré-remplissage (posted = dict des valeurs soumises)
-        _, cats_with_subcats = _cats_with_subcats()
+        _, cats_with_subcats = _cats_with_subcats(request.user)
         return render(
             request,
             "budget/_panel_category_create.html",

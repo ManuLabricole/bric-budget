@@ -80,10 +80,13 @@ def sync_reference(modeladmin, request, queryset):
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    list_display = ("name", "order", "colour_hex", "is_system", "is_active")
+    # owner : NULL = catégorie système partagée ; sinon = perso d'un user (#137).
+    list_display = ("name", "order", "colour_hex", "is_system", "owner", "is_active")
     list_filter = ("is_system", "is_active")
     search_fields = ("name", "slug")
     prepopulated_fields = {"slug": ("name",)}
+    # raw_id_fields : évite de charger tous les users dans un <select> (scalabilité 50k users).
+    raw_id_fields = ("owner",)
     ordering = ("order",)
     actions = [sync_reference]
     # inlines: embed the SubCategoryInline table directly on the Category edit page
@@ -98,10 +101,12 @@ class CategoryAdmin(admin.ModelAdmin):
 @admin.register(SubCategory)
 class SubCategoryAdmin(admin.ModelAdmin):
     # category__name: FK traversal — shows the parent category name
-    list_display = ("name", "category", "default_nature", "is_active")
+    # owner : NULL = système partagé ; sinon = perso d'un user (#137).
+    list_display = ("name", "category", "default_nature", "owner", "is_active")
     list_filter = ("category", "default_nature", "is_active")
     search_fields = ("name", "slug")
     prepopulated_fields = {"slug": ("name",)}
+    raw_id_fields = ("owner",)
 
 
 # =============================================================================

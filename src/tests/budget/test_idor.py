@@ -15,7 +15,12 @@ import pytest
 from django.test import override_settings
 from django.urls import reverse
 
-from transactions.models import CategorizationRule, Transaction
+from transactions.models import (
+    CategorizationRule,
+    Category,
+    SubCategory,
+    Transaction,
+)
 
 # =============================================================================
 # Helpers
@@ -290,6 +295,131 @@ def test_subcategory_delete_confirm_tx_count_scoped_to_user(
         reverse("budget:category_delete_confirm", args=["subcategory", subcat.slug])
     )
     assert response.context["tx_count"] == 3
+
+
+# =============================================================================
+# Catégories scopées par owner (#137) — un user ne voit pas les perso d'un autre
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_category_for_user_returns_system_and_own_only(
+    system_category, category_a, category_b, user_a
+):
+    """Manager .for_user : système (owner NULL) OU à moi ; jamais la perso d'un autre."""
+    visible = set(Category.objects.for_user(user_a).values_list("slug", flat=True))
+    assert system_category.slug in visible  # système → visible
+    assert category_a.slug in visible  # ma perso → visible
+    assert category_b.slug not in visible  # perso d'un autre → INVISIBLE
+
+
+@pytest.mark.django_db
+def test_subcategory_for_user_excludes_other_user_perso(subcat_b, user_a):
+    visible = set(SubCategory.objects.for_user(user_a).values_list("slug", flat=True))
+    assert subcat_b.slug not in visible
+
+
+@pytest.mark.django_db
+def test_category_manage_lists_own_perso_not_other_user(
+    client_a, category_a, category_b
+):
+    """Le panel de gestion ne liste que système + perso du user connecté."""
+    response = client_a.get(reverse("budget:panel_category_manage"))
+    assert response.status_code == 200
+    slugs = {c.slug for c in response.context["cats"]}
+    assert category_a.slug in slugs
+    assert category_b.slug not in slugs
+    # Défense en profondeur : le nom de la perso d'un autre ne fuit pas dans le HTML.
+    assert "PERSO USER B CATEGORY" not in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_category_manage_detail_other_user_perso_returns_404(client_a, category_b):
+    """Accéder au détail d'une perso d'un autre user → 404 (pas de fuite)."""
+    response = client_a.get(
+        reverse("budget:panel_category_manage_detail", args=[category_b.slug])
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_category_manage_detail_own_perso_ok(client_a, category_a):
+    response = client_a.get(
+        reverse("budget:panel_category_manage_detail", args=[category_a.slug])
+    )
+    assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_category_picker_hides_other_user_perso(client_a, account_a, category_b):
+    """Le picker de catégorie (custom_cats) ne montre pas la perso d'un autre user."""
+    tx = make_tx(account_a, "picker-scope")
+    response = client_a.get(reverse("budget:panel_category_picker") + f"?tx_id={tx.pk}")
+    assert response.status_code == 200
+    custom_slugs = {c.slug for c in response.context["custom_cats"]}
+    assert category_b.slug not in custom_slugs
+    assert "PERSO USER B CATEGORY" not in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_categorize_with_other_user_perso_category_blocked(
+    client_a, account_a, category_b
+):
+    """POST categorize avec la perso d'un AUTRE user → 404, tx non catégorisée."""
+    tx = make_tx(account_a, "cat-foreign-perso")
+    response = client_a.post(
+        reverse("budget:categorize"),
+        {"tx_id": tx.pk, "category_id": category_b.pk},
+    )
+    assert response.status_code == 404
+    tx.refresh_from_db()
+    assert tx.category_id is None
+
+
+@pytest.mark.django_db
+def test_categorize_with_own_perso_category_allowed(client_a, account_a, category_a):
+    tx = make_tx(account_a, "cat-own-perso")
+    response = client_a.post(
+        reverse("budget:categorize"),
+        {"tx_id": tx.pk, "category_id": category_a.pk},
+    )
+    assert response.status_code == 200
+    tx.refresh_from_db()
+    assert tx.category_id == category_a.pk
+
+
+@pytest.mark.django_db
+def test_subcategory_create_under_other_user_perso_parent_blocked(client_a, category_b):
+    """Créer une sous-cat sous la catégorie perso d'un AUTRE user → bloqué (404)."""
+    response = client_a.post(
+        reverse("budget:category_create_submit"),
+        {
+            "cat_type": "sub",
+            "name": "Tentative IDOR",
+            "icon": "heartbeat",
+            "parent_id": str(category_b.pk),
+        },
+    )
+    assert response.status_code == 404
+    assert not SubCategory.objects.filter(name="Tentative IDOR").exists()
+
+
+@pytest.mark.django_db
+def test_category_create_sets_owner_to_request_user(client_a, user_a):
+    """Une catégorie créée via l'UI appartient au créateur (owner=request.user)."""
+    response = client_a.post(
+        reverse("budget:category_create_submit"),
+        {
+            "cat_type": "main",
+            "name": "Ma Catégorie Perso",
+            "icon": "heartbeat",
+            "colour_hex": "#e77f79",
+        },
+    )
+    assert response.status_code == 200
+    cat = Category.objects.get(name="Ma Catégorie Perso")
+    assert cat.owner_id == user_a.pk
+    assert cat.is_system is False
 
 
 # =============================================================================

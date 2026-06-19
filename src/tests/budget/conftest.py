@@ -99,3 +99,54 @@ def subcat(db, category):
         slug="budget-test-subcat",
         is_system=False,
     )
+
+
+# --- Catégories perso scopées par owner (#137) ------------------------------
+
+
+@pytest.fixture
+def system_category(db):
+    """Catégorie système partagée : owner NULL, visible par tous les users."""
+    return Category.objects.create(
+        name="Système Partagée",
+        slug="systeme-partagee",
+        order=1,
+        is_system=True,
+        owner=None,
+    )
+
+
+@pytest.fixture
+def category_a(db, user_a):
+    """Catégorie perso de user_a — ne doit JAMAIS être visible par user_b."""
+    return Category.objects.create(
+        name="PERSO USER A CATEGORY",
+        slug="perso-user-a",
+        order=50,
+        is_system=False,
+        owner=user_a,
+    )
+
+
+@pytest.fixture
+def category_b(db, user_b):
+    """Catégorie perso de user_b — ne doit JAMAIS être visible par user_a."""
+    return Category.objects.create(
+        name="PERSO USER B CATEGORY",
+        slug="perso-user-b",
+        order=51,
+        is_system=False,
+        owner=user_b,
+    )
+
+
+@pytest.fixture
+def subcat_b(db, category_b, user_b):
+    """Sous-catégorie perso de user_b."""
+    return SubCategory.objects.create(
+        category=category_b,
+        name="PERSO USER B SUBCAT",
+        slug="perso-user-b-subcat",
+        is_system=False,
+        owner=user_b,
+    )

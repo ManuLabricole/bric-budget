@@ -16,6 +16,36 @@ from django.conf import settings
 from django.db import models
 
 # =============================================================================
+# CategoryQuerySet / SubCategoryQuerySet — filtre de sécurité par user (IDOR)
+# =============================================================================
+
+
+class OwnedCategoryQuerySet(models.QuerySet):
+    """
+    QuerySet partagé par Category et SubCategory.
+
+    Méthode principale : .for_user(user)
+        Retourne les catégories visibles par `user` :
+            - catégories système (owner IS NULL, partagées entre tous les users) ;
+            - catégories perso dont `user` est le propriétaire.
+
+        Une catégorie perso d'un AUTRE user n'est JAMAIS retournée → garantit
+        l'isolation multi-user au niveau du référentiel (cf. issue #137).
+
+        À appeler en premier sur toute requête exposée dans une vue, comme pour
+        Transaction.objects.for_user(user) et Account.objects.for_user(user) :
+
+            Category.objects.for_user(request.user).filter(is_active=True)
+
+        Pourquoi sur le QuerySet et pas inline dans chaque vue ? DRY + sécurité :
+        un seul point de vérité pour la règle « système OU à moi », chaînable.
+    """
+
+    def for_user(self, user):
+        return self.filter(models.Q(owner__isnull=True) | models.Q(owner=user))
+
+
+# =============================================================================
 # Category — Top-level spending category
 # =============================================================================
 
@@ -55,7 +85,25 @@ class Category(models.Model):
     # is_system=True: seeded at setup, cannot be deleted/renamed by the user
     is_system = models.BooleanField(default=False)
 
+    # owner — propriétaire de la catégorie (issue #137, isolation multi-user).
+    #   NULL  : catégorie SYSTÈME, partagée entre tous les users (is_system=True).
+    #   sinon : catégorie PERSO d'un user (is_system=False) — jamais visible par
+    #           un autre user (filtrée via .for_user()).
+    # SET_NULL : supprimer un user ne doit pas effacer ses catégories perso ni les
+    #   transactions qui y pointent ; elles deviennent orphelines (owner NULL) plutôt
+    #   que d'être détruites en cascade. on_delete=CASCADE serait une perte de données.
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="categories",
+    )
+
     is_active = models.BooleanField(default=True)
+
+    # Manager custom — expose Category.objects.for_user(user) (système OU à moi).
+    objects = OwnedCategoryQuerySet.as_manager()
 
     class Meta:
         verbose_name = "category"
@@ -123,6 +171,20 @@ class SubCategory(models.Model):
     # is_system=False: created by the user in the UI — shown with a "perso" badge.
     # Mirrors Category.is_system but at the sub-category level.
     is_system = models.BooleanField(default=False)
+
+    # owner — même sémantique que Category.owner (issue #137) :
+    #   NULL = système partagé ; sinon = perso d'un user, jamais visible par un autre.
+    # SET_NULL : ne pas casser les transactions liées si le user est supprimé.
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="subcategories",
+    )
+
+    # Manager custom — expose SubCategory.objects.for_user(user) (système OU à moi).
+    objects = OwnedCategoryQuerySet.as_manager()
 
     class Meta:
         verbose_name = "sub-category"

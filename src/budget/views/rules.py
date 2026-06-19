@@ -185,7 +185,7 @@ def budget_panel_rule_create_standalone(request):
         - Picker catégorie identique à _rule_row_edit.html (réutilise ruleEditSelect)
         - Submit → budget_rule_create_submit (même vue, même payload)
     """
-    _, cats_with_subcats = _cats_with_subcats()
+    _, cats_with_subcats = _cats_with_subcats(request.user)
     return render(
         request,
         "budget/_panel_rule_create_standalone.html",
@@ -731,7 +731,7 @@ def budget_panel_rules_list(request):
         "category", "subcategory__category"
     ).order_by("-is_active", "-priority", "keyword")
 
-    all_categories, cats_with_subcats = _cats_with_subcats()
+    all_categories, cats_with_subcats = _cats_with_subcats(request.user)
 
     return render(
         request,
@@ -815,7 +815,7 @@ def budget_rule_row_edit(request, rule_id):
     rule = get_object_or_404(CategorizationRule, id=rule_id)
     if request.GET.get("cancel"):
         return render(request, "budget/_rule_row.html", {"rule": rule})
-    all_categories, cats_with_subcats = _cats_with_subcats()
+    all_categories, cats_with_subcats = _cats_with_subcats(request.user)
     return render(
         request,
         "budget/_rule_row_edit.html",
