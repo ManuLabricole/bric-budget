@@ -111,15 +111,17 @@ class AccountAdmin(admin.ModelAdmin):
 
 # =============================================================================
 # CheckingAccount — shown inline under Account in a real setup,
-# but registered standalone here so we can inspect IBAN/BIC directly.
+# but registered standalone here so we can inspect the BIC directly.
+# L'IBAN vit sur Account (source unique #82) — voir AccountAdmin.
 # =============================================================================
 
 
 @admin.register(CheckingAccount)
 class CheckingAccountAdmin(admin.ModelAdmin):
-    # account__name: FK traversal — shows the linked Account's name in the list
-    list_display = ("account", "iban", "bic")
-    search_fields = ("account__name", "iban")
+    # account__name: FK traversal — shows the linked Account's name in the list.
+    # account__iban: l'IBAN canonique est sur Account (#82), exposé en lecture.
+    list_display = ("account", "account__iban", "bic")
+    search_fields = ("account__name", "account__iban")
 
 
 # =============================================================================

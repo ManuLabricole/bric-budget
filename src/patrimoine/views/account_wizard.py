@@ -220,9 +220,10 @@ def account_create(request: HttpRequest) -> HttpResponse:
         except ValueError as exc:
             error = str(exc)
 
+    account: Account | None = None
     if error is None:
         try:
-            create_account(
+            account = create_account(
                 # @login_required garantit un user authentifié — cast pour mypy.
                 user=cast(CustomUser, request.user),
                 institution=institution,
@@ -252,8 +253,16 @@ def account_create(request: HttpRequest) -> HttpResponse:
             status=422,
         )
 
-    # Succès. Pas encore de page compte (#82) → retour bilan en full reload :
-    # le compte apparaît dans sa classe d'actifs, le panel se ferme avec la page.
+    # Succès → on atterrit directement sur la page zoom du compte créé (#82 PR C) :
+    # l'utilisateur enchaîne sur l'édition inline (IBAN/BIC/taux) si besoin.
+    # error is None ⇒ create_account a renvoyé un compte ; narrowing explicite pour
+    # mypy (pas d'assert : strippé sous python -O — cf. balance_history.py).
+    if (
+        account is None
+    ):  # pragma: no cover — inatteignable (error is None garantit account)
+        response = HttpResponse(status=204)
+        response["HX-Redirect"] = reverse("patrimoine:overview")
+        return response
     response = HttpResponse(status=204)
-    response["HX-Redirect"] = reverse("patrimoine:overview")
+    response["HX-Redirect"] = reverse("patrimoine:account_detail", args=[account.pk])
     return response

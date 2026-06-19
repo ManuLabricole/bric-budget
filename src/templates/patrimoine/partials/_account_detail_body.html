@@ -1,0 +1,107 @@
+{% comment %}
+patrimoine/partials/_account_detail_body.html — corps swappable HTMX (période).
+
+Cible swap : #account-detail-body.
+Inclus par account_detail.html ET renvoyé par set_account_period.
+auto-init.js ré-instancie le chart sur htmx:afterSwap.
+
+Requiert : account, back_url, current_value, chart_json, period, period_choices,
+           htmx_target, txs, page_obj, account_tx_url.
+{% endcomment %}
+{% load budget_filters %}
+<div id="account-detail-body" class="space-y-4">
+    {# ── Graphe évolution mono-compte ────────────────────────────────── #}
+    <section class="pb-2">
+        <header class="flex items-center justify-between gap-4 mb-3">
+            <div class="flex items-center gap-2 min-w-0">
+                {# Retour → page catégorie du compte (livrets/comptes-courants), sinon bilan (back_url). #}
+                <a href="{{ back_url }}"
+                   class="text-text-muted hover:text-text-base transition-colors flex-shrink-0">
+                    <svg class="w-5 h-5"
+                         fill="none"
+                         viewBox="0 0 24 24"
+                         stroke="currentColor"
+                         stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                    </svg>
+                </a>
+                <div class="min-w-0">
+                    <h1 class="text-xl font-semibold text-text-base truncate">{{ account.name }}</h1>
+                    <p class="text-xs text-text-muted truncate">{{ account.institution.name }}</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3 flex-shrink-0">
+                {# Valeur courante CHF (— si non valorisable : sans ancre / conversion absente). #}
+                <span class="text-sm font-semibold tabular-nums {% if current_value is not None %}text-text-base{% else %}text-text-disabled{% endif %}">
+                    {% if current_value is not None %}
+                        {{ current_value|chf }} CHF
+                    {% else %}
+                        —
+                    {% endif %}
+                </span>
+                {# Sélecteur période — style harmonisé budget : rounded-full + bg-gold/15 actif #}
+                <div class="flex items-center gap-0.5">
+                    {% for key, label in period_choices %}
+                        <form method="post"
+                              action="{% url 'patrimoine:set_account_period' account.pk key %}"
+                              hx-post="{% url 'patrimoine:set_account_period' account.pk key %}"
+                              hx-target="{{ htmx_target }}"
+                              hx-swap="outerHTML">
+                            {% csrf_token %}
+                            <button type="submit"
+                                    class="px-2.5 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-colors {% if period == key %}text-gold bg-gold/15{% else %}text-text-muted hover:text-gold hover:bg-gold/15{% endif %}">
+                                {{ label }}
+                            </button>
+                        </form>
+                    {% endfor %}
+                </div>
+            </div>
+        </header>
+        {% if not chart_json.anchored %}
+            <p class="text-[11px] text-warning mb-2">
+                ⚠ Compte sans relevé de référence — courbe relative (solde absolu inconnu).
+            </p>
+        {% elif not chart_json.complete %}
+            <p class="text-[11px] text-warning mb-2">⚠ Valorisation CHF partielle — conversion en attente.</p>
+        {% endif %}
+        {# data-stacked="0" : un seul compte → ligne gold standard (pas d'empilement). #}
+        <div data-chart="balance"
+             data-chart-data="account-chart-data"
+             data-stacked="0"
+             class="h-72 w-full"></div>
+        {{ chart_json|json_script:"account-chart-data" }}
+    </section>
+    {# ── Transactions du compte ──────────────────────────────────────── #}
+    <section>
+        <div class="flex items-end gap-0 border-b border-edge/60 pt-4">
+            <span class="pb-3 pr-8 text-sm font-medium text-gold border-b border-gold -mb-px">Transactions</span>
+        </div>
+        {% if txs %}
+            <div id="account-tx-scroll"
+                 class="overflow-y-auto max-h-[520px]"
+                 style="-ms-overflow-style:none;
+                        scrollbar-width:none">
+                {% for tx in txs %}
+                    {% ifchanged tx.date %}
+                        <div class="px-4 py-1.5 sticky top-0 z-10 bg-surface-2/90 backdrop-blur-sm border-b border-edge/20">
+                            <span class="text-[10px] font-medium text-text-muted">{{ tx.date|date:"j F Y" }}</span>
+                        </div>
+                    {% endifchanged %}
+                    {% include "budget/_panel_tx_row.html" with institution_icon_url=tx.institution_icon_url panel_source="patrimoine" panel_target="#ac-tx-detail" %}
+                {% endfor %}
+                {% if page_obj.has_next %}
+                    <div hx-get="{{ account_tx_url }}?page={{ page_obj.next_page_number }}"
+                         hx-trigger="intersect root:#account-tx-scroll once"
+                         hx-swap="outerHTML"
+                         class="py-4 flex justify-center">
+                        <span class="text-[10px] text-text-disabled">Chargement…</span>
+                    </div>
+                {% endif %}
+            </div>
+        {% else %}
+            <div class="flex flex-col items-center justify-center py-12 text-text-disabled">
+                <p class="text-xs">Aucune transaction pour ce compte</p>
+            </div>
+        {% endif %}
+    </section>
+</div>

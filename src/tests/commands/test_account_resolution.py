@@ -161,9 +161,9 @@ def test_ubs_raises_when_no_iban_in_file(ubs_bank):
 @pytest.mark.django_db
 def test_ubs_raises_when_iban_not_in_db(ubs_bank):
     """
-    IBAN extrait du fichier mais aucun CheckingAccount avec cet IBAN → AccountNotFound.
+    IBAN extrait du fichier mais aucun Account avec cet IBAN → AccountNotFound.
 
-    Scénario d'onboarding : le compte a été créé en DB mais CheckingAccount.iban
+    Scénario d'onboarding : le compte a été créé en DB mais Account.iban
     n'a pas été renseigné.
     """
     connector = UBSConnector()
@@ -179,7 +179,7 @@ def test_ubs_returns_account_matching_iban(ubs_bank):
 
     L'IBAN dans ubs_sample.csv est 'CH00 0000 0000 0000 0000 0'.
     UBSConnector.extract_account_identifier() normalise → 'CH0000000000000000000'.
-    Le resolver cherche dans Account.iban (champ universel sur Account, pas CheckingAccount.iban).
+    Le resolver cherche dans Account.iban (champ universel et source unique #82).
     """
     account = Account.objects.create(
         institution=ubs_bank,

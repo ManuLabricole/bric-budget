@@ -62,11 +62,10 @@ def test_checking_creates_account_details_and_account_iban(user, institution):
     )
 
     assert account.opened_at == date(2024, 1, 15)
-    # L'IBAN vit sur Account (colonne vertébrale identité) ET CheckingAccount
-    # (rétrocompat resolver) — décision actée 2026-06-10.
+    # L'IBAN vit UNIQUEMENT sur Account (source de vérité, #82) ; CheckingAccount
+    # ne porte plus que le BIC — décision actée 2026-06-10, consolidée #82.
     assert account.iban == "CH5604835012345678009"
     details = CheckingAccount.objects.get(account=account)
-    assert details.iban == "CH5604835012345678009"
     assert details.bic == "YUHHCHZZ"
 
 

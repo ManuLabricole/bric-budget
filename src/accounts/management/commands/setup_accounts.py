@@ -14,12 +14,12 @@ Logique :
 
 Ce que la commande remplit automatiquement :
     - Bank : name, slug, icon_slug, default_currency
-    - Account : bank, name, account_type, currency, contract_number
-    - CheckingAccount : account (IBAN laissé vide — à compléter dans l'admin)
+    - Account : bank, name, account_type, currency, contract_number, iban
+    - CheckingAccount : account (BIC laissé vide — à compléter dans l'admin)
     - SavingsAccount : account (taux laissé à 0 — à compléter dans l'admin)
 
 Ce que la commande NE remplit PAS (à compléter manuellement dans l'admin) :
-    - CheckingAccount.iban  (CIC n'expose que le RIB, pas l'IBAN complet)
+    - Account.iban  (CIC n'expose que le RIB, pas l'IBAN complet)
     - CheckingAccount.bic   (jamais dans les exports)
     - SavingsAccount.interest_rate  (jamais dans les exports)
 """
@@ -244,13 +244,15 @@ class Command(BaseCommand):
             name=name,
             account_type=account_type,
             currency=currency,
+            # IBAN canonique sur Account (source unique #82) ; "" → None.
+            iban=iban or None,
             contract_number=contract_number,
             is_active=True,
         )
 
         # Créer la spécialisation selon le type
         if account_type == Account.AccountType.CHECKING:
-            CheckingAccount.objects.create(account=account, iban=iban, bic="")
+            CheckingAccount.objects.create(account=account, bic="")
             missing = []
             if not iban:
                 missing.append("IBAN")
@@ -271,7 +273,7 @@ class Command(BaseCommand):
 
         for ca in CheckingAccount.objects.select_related("account"):
             missing = []
-            if not ca.iban:
+            if not ca.account.iban:  # IBAN canonique sur Account (#82)
                 missing.append("IBAN")
             if not ca.bic:
                 missing.append("BIC")

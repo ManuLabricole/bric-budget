@@ -43,9 +43,10 @@ logger = logging.getLogger(__name__)
 
 
 def _build_checking(account: Account, fields: dict[str, Any]) -> None:
+    # L'IBAN est déjà posé sur account.iban par create_account (source unique #82) ;
+    # CheckingAccount ne porte plus que le BIC.
     details = CheckingAccount(
         account=account,
-        iban=fields.get("iban") or None,  # "" → None (unique=True, NULL != NULL)
         bic=fields.get("bic") or "",
     )
     details.full_clean()

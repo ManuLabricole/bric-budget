@@ -168,14 +168,16 @@ def test_create_checking_success(client_logged, user, bank):
     resp = client_logged.post(_create_url(), _checking_payload(), **_HX)
 
     assert resp.status_code == 204
-    assert resp["HX-Redirect"] == reverse("patrimoine:overview")
     account = Account.objects.for_user(user).get()
-    # IBAN normalisé (espaces retirés, majuscules) — posé sur Account ET Details.
+    # #82 PR C : succès → page zoom du compte créé (plus le bilan).
+    assert resp["HX-Redirect"] == reverse(
+        "patrimoine:account_detail", args=[account.pk]
+    )
+    # IBAN normalisé (espaces retirés, majuscules) — posé sur Account.iban SEUL (#82).
     assert account.iban == "CH5604835012345678009"
     # Identité d'import bis : n° de contrat commun à tous les types (trimé).
     assert account.contract_number == "1234567890"
     details = CheckingAccount.objects.get(account=account)
-    assert details.iban == "CH5604835012345678009"
     assert details.bic == "YUHHCHZZ"
 
 

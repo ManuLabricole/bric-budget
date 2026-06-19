@@ -1,0 +1,84 @@
+{% comment %}
+patrimoine/partials/_account_detail_field.html — une ligne du panneau Détails éditable.
+
+Deux modes dans le même partial (swap HTMX outerHTML sur #field-<name>) :
+  - lecture (editing=False) : valeur + crayon ✏️ → GET account_field_form.
+  - édition (editing=True)  : input + Enregistrer/Annuler → POST account_field_save.
+
+Validation entièrement DANS la vue (pas de Django Form, convention projet). En
+erreur, la vue renvoie ce partial en mode édition avec `error` + `raw_value`.
+
+Requiert : account, field {name, label, value, suffix?, kind}, editing.
+Optionnel (erreur POST) : error (str), raw_value (str saisi).
+{% endcomment %}
+<div id="field-{{ field.name }}" class="flex items-start gap-3 px-5 py-3">
+    <dt class="text-xs text-text-muted w-32 flex-shrink-0 pt-1.5">{{ field.label }}</dt>
+    <dd class="flex-1 min-w-0">
+        {% if editing %}
+            {# ── Mode édition ── #}
+            <form hx-post="{% url 'patrimoine:account_field_save' account.pk field.name %}"
+                  hx-target="#field-{{ field.name }}"
+                  hx-swap="outerHTML"
+                  hx-disabled-elt="this"
+                  class="flex flex-col gap-2">
+                {% csrf_token %}
+                <div class="flex items-center gap-2">
+                    <input type="text"
+                           name="value"
+                           value="{% if raw_value is not None %}{{ raw_value }}{% elif field.value is not None %}{{ field.value }}{% endif %}"
+                           autofocus
+                           autocomplete="off"
+                           class="flex-1 min-w-0 bg-surface-2 border {% if error %}border-expense/60{% else %}border-edge/60{% endif %} rounded-lg px-3 py-1.5 text-sm text-text-base focus:outline-none focus:border-gold/60 transition-colors tabular-nums">
+                    {% if field.suffix %}<span class="text-sm text-text-muted flex-shrink-0">{{ field.suffix }}</span>{% endif %}
+                </div>
+                {% if error %}<p class="text-[11px] text-expense">{{ error }}</p>{% endif %}
+                <div class="flex items-center gap-2">
+                    <button type="submit"
+                            class="px-3 py-1 text-xs font-medium text-gold border border-gold/30 rounded-lg hover:bg-gold/10 transition-colors">
+                        Enregistrer
+                    </button>
+                    {% comment %}
+                    Annuler → re-affiche la ligne en LECTURE. account_field_form ne rend que
+                    l'édition ; pas d'endpoint GET « lecture seule » dédié → on re-fetch la
+                    page et hx-select extrait juste #field-<name> (déjà en lecture). Léger,
+                    aucune vue de plus.
+                    {% endcomment %}
+                    <button type="button"
+                            hx-get="{% url 'patrimoine:account_detail' account.pk %}"
+                            hx-select="#field-{{ field.name }}"
+                            hx-target="#field-{{ field.name }}"
+                            hx-swap="outerHTML"
+                            class="px-3 py-1 text-xs text-text-muted hover:text-text-base transition-colors">
+                        Annuler
+                    </button>
+                </div>
+            </form>
+        {% else %}
+            {# ── Mode lecture ── #}
+            <div class="flex items-center gap-2 group">
+                <span class="text-sm flex-1 min-w-0 break-all {% if field.value is not None %}text-text-base{% else %}text-text-disabled{% endif %}">
+                    {% if field.value is not None %}
+                        {{ field.value }}
+                        {% if field.suffix %}{{ field.suffix }}{% endif %}
+                    {% else %}
+                        —
+                    {% endif %}
+                </span>
+                <button type="button"
+                        hx-get="{% url 'patrimoine:account_field_form' account.pk field.name %}"
+                        hx-target="#field-{{ field.name }}"
+                        hx-swap="outerHTML"
+                        title="Modifier {{ field.label }}"
+                        class="flex-shrink-0 p-1 rounded text-text-disabled opacity-0 group-hover:opacity-100 hover:text-gold transition-all">
+                    <svg class="w-3.5 h-3.5"
+                         fill="none"
+                         viewBox="0 0 24 24"
+                         stroke-width="1.8"
+                         stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" />
+                    </svg>
+                </button>
+            </div>
+        {% endif %}
+    </dd>
+</div>
