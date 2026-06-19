@@ -143,6 +143,30 @@ def account_class_series(
     }
 
 
+def single_account_series(
+    account,
+    start: datetime.date,
+    end: datetime.date,
+) -> dict:
+    """
+    Données courbe pour UN seul compte (page zoom compte).
+
+    Pas de stacking (un seul compte) : `total` = sa série CHF, `series` vide → la
+    courbe rend la ligne gold standard (cf. balance.js mode standard). Le compte doit
+    être pré-scopé for_user (SR-001) par l'appelant — ce service ne vérifie pas.
+    """
+    from .balance_history import account_balance_series
+
+    s = account_balance_series(account, start, end, in_chf=True)
+    return {
+        "dates": [d.isoformat() for d in s.dates],
+        "total": [float(v) for v in s.values],
+        "series": [],
+        "anchored": s.anchored,
+        "complete": s.complete,
+    }
+
+
 def distribution(nodes: list[BilanNode]) -> dict:
     """
     Données de répartition (donut ET treemap) à partir des nœuds de bilan de niveau 1.
