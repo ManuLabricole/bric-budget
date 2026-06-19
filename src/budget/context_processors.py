@@ -8,16 +8,23 @@ Ajouté à TEMPLATES.OPTIONS.context_processors dans config/settings.py.
 import json
 
 from budget.constants import CATEGORY_COLOR_PALETTE
+from services.colors import palette_dict as derived_palette_dict
 
 
 def design_tokens(request):
     """
-    Expose la palette catégories en JSON pour injection dans `window.BRICBUDGET_TOKENS.categories`.
+    Expose les couleurs Python dans `window.BRICBUDGET_TOKENS` (charts, picker).
 
-    Pourquoi : permet aux scripts JS (charts, picker) d'utiliser les couleurs par défaut
-    de la palette sans dupliquer la liste dans `static/js/`. Source de vérité unique en Python.
+    Pourquoi : les scripts JS utilisent les couleurs sans dupliquer les listes dans
+    `static/js/`. Source de vérité unique en Python. Règle existante : zéro hex inline en JS.
 
-    Format : {"ocre": "#eed8b4", "caramel": "#deab5e", ...}
+    Deux clés injectées dans base.html :
+      - `category_palette_json` → `.categories` : {"ocre": "#eed8b4", ...} (catégories budget) ;
+      - `derived_palette_json`  → `.palette`    : {"primary": [...], "light": [...], "dark": [...]}
+        (palette dérivée #134 — tiers d'allocation pour comptes / institutions / positions).
     """
     palette_dict = {c["name"].lower(): c["hex"] for c in CATEGORY_COLOR_PALETTE}
-    return {"category_palette_json": json.dumps(palette_dict)}
+    return {
+        "category_palette_json": json.dumps(palette_dict),
+        "derived_palette_json": json.dumps(derived_palette_dict()),
+    }
