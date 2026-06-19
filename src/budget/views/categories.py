@@ -809,6 +809,9 @@ def budget_panel_category_delete_confirm(request, obj_type, slug):
         # for_user : le slug n'est plus unique globalement (#137) → scoper sur
         # système OU à moi, sinon MultipleObjectsReturned + IDOR sur la perso d'un autre.
         obj = get_object_or_404(Category.objects.for_user(request.user), slug=slug)
+        assert isinstance(
+            obj, Category
+        )  # narrow mypy : for_user partagé Category/SubCategory
         if obj.is_system:
             return HttpResponse(
                 "Catégorie système — suppression interdite.", status=403
@@ -821,6 +824,9 @@ def budget_panel_category_delete_confirm(request, obj_type, slug):
 
     elif obj_type == "subcategory":
         obj = get_object_or_404(SubCategory.objects.for_user(request.user), slug=slug)
+        assert isinstance(
+            obj, SubCategory
+        )  # narrow mypy : for_user partagé Category/SubCategory
         if obj.is_system:
             return HttpResponse(
                 "Sous-catégorie système — suppression interdite.", status=403
