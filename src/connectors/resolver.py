@@ -38,7 +38,7 @@ Ajouter une nouvelle banque
 Ajouter un nouveau compte (banque existante)
 --------------------------------------------
 1. Créer Account en DB (admin ou seed) — bank, name, account_type, currency
-2. Créer la spécialisation : CheckingAccount (IBAN + BIC) ou SavingsAccount
+2. Créer la spécialisation : CheckingAccount (BIC ; IBAN sur Account.iban) ou SavingsAccount
 3. Renseigner l'identifiant de résolution :
    - UBS  → Account.iban (IBAN sans espaces — jamais en clair dans le code, via .env)
    - CIC  → Account.contract_number (RIB sans espaces)
@@ -249,8 +249,8 @@ def resolve_accounts(
     elif isinstance(connector, UBSConnector):
         # UBS encode l'IBAN en ligne 2 du fichier (checking ET savings).
         # Matching direct sur Account.iban — pas besoin de connaître le sous-type.
-        # C'est pour ça que Account.iban existe : CheckingAccount.iban ne couvrait
-        # pas les comptes épargne, qui ont aussi un IBAN dans leurs exports UBS.
+        # C'est pour ça que Account.iban est la source unique (#82) : il couvre
+        # aussi les comptes épargne, qui ont un IBAN dans leurs exports UBS.
         identifier = connector.extract_account_identifier(filepath)
         if not identifier:
             raise ValueError(

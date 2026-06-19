@@ -210,9 +210,10 @@ class Command(BaseCommand):
 
         if existing:
             existing.name = name
+            # IBAN canonique sur Account (source unique #82) ; "" → None.
+            existing.iban = iban or None
             existing.save()
             ca, _ = CheckingAccount.objects.get_or_create(account=existing)
-            ca.iban = iban
             ca.bic = bic or ""
             ca.save()
             self.stdout.write(f"    · Mis à jour : {name}{status}")
@@ -223,10 +224,12 @@ class Command(BaseCommand):
                 name=name,
                 account_type=Account.AccountType.CHECKING,
                 currency=currency,
+                # IBAN canonique sur Account (source unique #82) ; "" → None.
+                iban=iban or None,
                 contract_number=contract_number,
                 is_active=True,
             )
-            CheckingAccount.objects.create(account=account, iban=iban, bic=bic or "")
+            CheckingAccount.objects.create(account=account, bic=bic or "")
             self.stdout.write(self.style.SUCCESS(f"    ✓ Créé : {name}{status}"))
             return 1, 0
 
@@ -261,7 +264,7 @@ class Command(BaseCommand):
         for ca in CheckingAccount.objects.select_related("account__institution"):
             if not ca.is_complete:
                 missing = []
-                if not ca.iban:
+                if not ca.account.iban:  # IBAN canonique sur Account (#82)
                     missing.append("IBAN")
                 if not ca.bic:
                     missing.append("BIC")

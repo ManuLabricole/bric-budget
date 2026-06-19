@@ -173,12 +173,11 @@ def test_create_checking_success(client_logged, user, bank):
     assert resp["HX-Redirect"] == reverse(
         "patrimoine:account_detail", args=[account.pk]
     )
-    # IBAN normalisé (espaces retirés, majuscules) — posé sur Account ET Details.
+    # IBAN normalisé (espaces retirés, majuscules) — posé sur Account.iban SEUL (#82).
     assert account.iban == "CH5604835012345678009"
     # Identité d'import bis : n° de contrat commun à tous les types (trimé).
     assert account.contract_number == "1234567890"
     details = CheckingAccount.objects.get(account=account)
-    assert details.iban == "CH5604835012345678009"
     assert details.bic == "YUHHCHZZ"
 
 

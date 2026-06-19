@@ -821,12 +821,15 @@ def import_create_account(request):
                 name=account_name,
                 account_type=account_type,
                 currency=currency,
+                # IBAN canonique sur Account (source unique #82) — c'est ce que
+                # le resolver d'import matche. "" → None (unique=True, NULL != NULL).
+                iban=iban or None,
                 contract_number=contract_number,
                 is_active=True,
             )
             account.members.add(request.user)  # for_user() sinon invisible
             if account_type == Account.AccountType.CHECKING:
-                CheckingAccount.objects.create(account=account, iban=iban, bic=bic)
+                CheckingAccount.objects.create(account=account, bic=bic)
             else:
                 SavingsAccount.objects.create(account=account, interest_rate=0)
         # Audit log : compte créé pendant l'import (mutation métier critique).

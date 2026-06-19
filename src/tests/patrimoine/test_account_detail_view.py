@@ -39,14 +39,12 @@ def other_user(db):
 def checking_details(db, chf_account):
     """CheckingAccount rattaché au compte courant CHF de la conftest.
 
-    IBAN posé sur Account ET CheckingAccount, comme le fait create_account (les deux
-    sont toujours en phase — l'édition inline maintient l'invariant).
+    IBAN posé sur Account.iban (source unique #82) ; CheckingAccount ne porte
+    plus que le BIC.
     """
     chf_account.iban = "CH5604835012345678009"
     chf_account.save(update_fields=["iban"])
-    return CheckingAccount.objects.create(
-        account=chf_account, iban="CH5604835012345678009", bic="YUHHCHZZ"
-    )
+    return CheckingAccount.objects.create(account=chf_account, bic="YUHHCHZZ")
 
 
 @pytest.fixture
@@ -186,10 +184,10 @@ def test_field_form_iban_returns_edit_input(
 
 
 @pytest.mark.django_db
-def test_field_save_iban_valid_syncs_account_and_checking(
+def test_field_save_iban_valid_writes_account_only(
     client_logged, chf_account, checking_details
 ):
-    """POST IBAN valide → normalisé + posé sur Account ET CheckingAccount ; ligne lecture."""
+    """POST IBAN valide → normalisé + posé sur Account.iban SEUL (mono-écriture #82) ; ligne lecture."""
     resp = client_logged.post(
         reverse("patrimoine:account_field_save", args=[chf_account.pk, "iban"]),
         {"value": "ch93 0076 2011 6238 5295 7"},
@@ -199,8 +197,7 @@ def test_field_save_iban_valid_syncs_account_and_checking(
     assert resp.status_code == 200
     chf_account.refresh_from_db()
     expected = "CH9300762011623852957"
-    assert chf_account.iban == expected  # Account.iban synchronisé
-    assert CheckingAccount.objects.get(account=chf_account).iban == expected
+    assert chf_account.iban == expected  # Account.iban = source unique
     # Ligne re-rendue en LECTURE (crayon présent, plus de bouton Enregistrer).
     assert "Enregistrer" not in html
     assert expected in html
@@ -227,7 +224,7 @@ def test_field_save_iban_invalid_returns_422_and_keeps_db(
 def test_field_save_iban_duplicate_returns_422(
     client_logged, chf_account, checking_details, chf_institution, user
 ):
-    """IBAN déjà pris par un autre compte → 422 (unique=True sur Account ET Checking)."""
+    """IBAN déjà pris par un autre compte → 422 (unique=True sur Account.iban)."""
     other = Account.objects.create(
         institution=chf_institution,
         name="Autre",
@@ -236,7 +233,7 @@ def test_field_save_iban_duplicate_returns_422(
         iban="CH9300762011623852957",
     )
     other.members.add(user)
-    CheckingAccount.objects.create(account=other, iban="CH9300762011623852957")
+    CheckingAccount.objects.create(account=other)
 
     resp = client_logged.post(
         reverse("patrimoine:account_field_save", args=[chf_account.pk, "iban"]),
@@ -252,7 +249,7 @@ def test_field_save_iban_duplicate_returns_422(
 def test_field_save_iban_empty_clears_to_none(
     client_logged, chf_account, checking_details
 ):
-    """IBAN effacé → None sur Account ET Checking (NULL != NULL autorise plusieurs)."""
+    """IBAN effacé → None sur Account.iban (NULL != NULL autorise plusieurs)."""
     resp = client_logged.post(
         reverse("patrimoine:account_field_save", args=[chf_account.pk, "iban"]),
         {"value": ""},
@@ -260,7 +257,6 @@ def test_field_save_iban_empty_clears_to_none(
     assert resp.status_code == 200
     chf_account.refresh_from_db()
     assert chf_account.iban is None
-    assert CheckingAccount.objects.get(account=chf_account).iban is None
 
 
 # ── Édition inline BIC ──────────────────────────────────────────────────────────

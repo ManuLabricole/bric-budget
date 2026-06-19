@@ -45,8 +45,8 @@ Account matching
 ----------------
 Each sheet has a RIB in row 2: "R.I.B. : 10096 18027 00064764601"
 We normalise (strip spaces, remove "R.I.B. : ") and match against:
-  - CheckingAccount.iban    → for C/C sheets
-  - SavingsAccount.account_reference → for Livret A / LDDS sheets
+  - Account.contract_number → the resolver matches every CIC sheet on the RIB
+    (C/C and Livret alike) ; IBAN n'est PAS utilisé pour CIC.
 
 Account type detection (from title row 1):
   "C/C" in title → checking

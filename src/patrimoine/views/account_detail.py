@@ -11,7 +11,7 @@ Vues :
   - account_field_form    : passe un champ éditable en mode édition (GET, HTMX)
   - account_field_save    : valide + persiste un champ (POST, HTMX) — PAS de Django Form
 
-Champs éditables : IBAN, BIC (CheckingAccount) · Taux d'intérêt (SavingsAccount).
+Champs éditables : IBAN (Account.iban) · BIC (CheckingAccount) · Taux d'intérêt (SavingsAccount).
 Le **type de compte est en lecture seule** (hors scope #82 : muter le OneToOne).
 
 Sécurité (SR-001) : le compte est TOUJOURS résolu via Account.objects.for_user(user)
@@ -128,7 +128,8 @@ def _editable_fields(account: Account) -> list[dict]:
             {
                 "name": "iban",
                 "label": "IBAN",
-                "value": checking.iban if checking else None,
+                # IBAN canonique = Account.iban (source unique, consolidation #82).
+                "value": account.iban,
                 "kind": "text",
             }
         )
@@ -401,10 +402,10 @@ def account_field_save(
 
 def _save_iban(account: Account, value: str | None) -> str | None:
     """
-    Persiste l'IBAN sur Account ET CheckingAccount (gardés en phase, cf. create_account).
+    Persiste l'IBAN sur Account UNIQUEMENT (source de vérité canonique, #82).
 
     Retourne un message d'erreur si l'IBAN est déjà pris par un autre compte
-    (unique=True sur les deux tables), sinon None. Atomique.
+    (unique=True sur Account.iban), sinon None. Atomique.
     """
     try:
         with transaction.atomic():
@@ -412,10 +413,6 @@ def _save_iban(account: Account, value: str | None) -> str | None:
             # full_clean() lève ValidationError sur collision unique AVANT le save.
             account.full_clean()
             account.save(update_fields=["iban"])
-            checking, _ = CheckingAccount.objects.get_or_create(account=account)
-            checking.iban = value
-            checking.full_clean()
-            checking.save(update_fields=["iban"])
     except (ValidationError, IntegrityError):
         return "Un compte avec cet IBAN existe déjà."
     return None
