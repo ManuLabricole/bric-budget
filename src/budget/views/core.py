@@ -134,7 +134,11 @@ def budget_index(request):
         .select_related("institution")
         .order_by("institution__name", "name")
     )
-    all_categories = Category.objects.filter(is_active=True).order_by("order", "name")
+    all_categories = (
+        Category.objects.for_user(request.user)
+        .filter(is_active=True)
+        .order_by("order", "name")
+    )
 
     # ── 3. Queryset de base ───────────────────────────────────────────────────
     #
@@ -834,9 +838,12 @@ def budget_toggle_filter_category(request, slug):
         # Tout sélectionner → aucune exclusion
         hidden = []
     elif slug == "none":
-        # Tout masquer → exclure toutes les catégories actives
+        # Tout masquer → exclure toutes les catégories actives visibles par l'user
+        # (#137 : ne pas faire fuiter les slugs perso d'un autre user dans la session).
         hidden = list(
-            Category.objects.filter(is_active=True).values_list("slug", flat=True)
+            Category.objects.for_user(request.user)
+            .filter(is_active=True)
+            .values_list("slug", flat=True)
         )
     elif slug in hidden:
         # Ré-afficher → retirer de la liste d'exclusion

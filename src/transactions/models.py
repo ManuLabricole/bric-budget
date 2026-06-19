@@ -16,6 +16,36 @@ from django.conf import settings
 from django.db import models
 
 # =============================================================================
+# CategoryQuerySet / SubCategoryQuerySet — filtre de sécurité par user (IDOR)
+# =============================================================================
+
+
+class OwnedCategoryQuerySet(models.QuerySet):
+    """
+    QuerySet partagé par Category et SubCategory.
+
+    Méthode principale : .for_user(user)
+        Retourne les catégories visibles par `user` :
+            - catégories système (owner IS NULL, partagées entre tous les users) ;
+            - catégories perso dont `user` est le propriétaire.
+
+        Une catégorie perso d'un AUTRE user n'est JAMAIS retournée → garantit
+        l'isolation multi-user au niveau du référentiel (cf. issue #137).
+
+        À appeler en premier sur toute requête exposée dans une vue, comme pour
+        Transaction.objects.for_user(user) et Account.objects.for_user(user) :
+
+            Category.objects.for_user(request.user).filter(is_active=True)
+
+        Pourquoi sur le QuerySet et pas inline dans chaque vue ? DRY + sécurité :
+        un seul point de vérité pour la règle « système OU à moi », chaînable.
+    """
+
+    def for_user(self, user):
+        return self.filter(models.Q(owner__isnull=True) | models.Q(owner=user))
+
+
+# =============================================================================
 # Category — Top-level spending category
 # =============================================================================
 
@@ -37,8 +67,15 @@ class Category(models.Model):
     with SubCategory.default_nature as a suggestion at categorization time.
     """
 
-    name = models.CharField(max_length=100, unique=True)
-    slug = models.SlugField(max_length=100, unique=True)
+    # name / slug — unicité SCOPÉE par owner (issue #137).
+    #   Système (owner IS NULL) : unique GLOBAL — un seul "inconnu", un seul "revenus".
+    #   Perso   (owner set)     : unique PAR USER — chaque user peut avoir sa propre
+    #                             catégorie "Restaurants" sans collision.
+    # unique=True (global) retiré ici → remplacé par les UniqueConstraint partielles
+    # de Meta.constraints (cf. migration 0018). Garder unique=True ici rendrait
+    # impossible le multi-user (deux "Restaurants" → IntegrityError).
+    name = models.CharField(max_length=100)
+    slug = models.SlugField(max_length=100)
 
     # Icon identifier — maps to static/icons/categories/<icon>.svg
     # Example: "auto-transport", "food-drinks", "housing"
@@ -55,12 +92,59 @@ class Category(models.Model):
     # is_system=True: seeded at setup, cannot be deleted/renamed by the user
     is_system = models.BooleanField(default=False)
 
+    # owner — propriétaire de la catégorie (issue #137, isolation multi-user).
+    #   NULL  : catégorie SYSTÈME, partagée entre tous les users (is_system=True).
+    #   sinon : catégorie PERSO d'un user (is_system=False) — jamais visible par
+    #           un autre user (filtrée via .for_user()).
+    # SET_NULL : supprimer un user ne doit pas effacer ses catégories perso ni les
+    #   transactions qui y pointent ; elles deviennent orphelines (owner NULL) plutôt
+    #   que d'être détruites en cascade. on_delete=CASCADE serait une perte de données.
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="categories",
+    )
+
     is_active = models.BooleanField(default=True)
+
+    # Manager custom — expose Category.objects.for_user(user) (système OU à moi).
+    objects = OwnedCategoryQuerySet.as_manager()
 
     class Meta:
         verbose_name = "category"
         verbose_name_plural = "categories"
         ordering = ["order", "name"]
+        constraints = [
+            # Système (owner NULL) : slug/name uniques GLOBALEMENT.
+            # Pourquoi une contrainte partielle dédiée plutôt que (owner, slug) ?
+            # En Postgres les NULL sont distincts dans un UNIQUE → (owner, slug)
+            # n'empêcherait PAS deux système "inconnu". On force donc l'unicité
+            # globale uniquement sur les lignes owner IS NULL.
+            models.UniqueConstraint(
+                fields=["slug"],
+                condition=models.Q(owner__isnull=True),
+                name="category_system_slug_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["name"],
+                condition=models.Q(owner__isnull=True),
+                name="category_system_name_uniq",
+            ),
+            # Perso (owner set) : slug/name uniques PAR USER. Deux users peuvent
+            # chacun avoir "Restaurants" ; un même user ne peut pas le dupliquer.
+            models.UniqueConstraint(
+                fields=["owner", "slug"],
+                condition=models.Q(owner__isnull=False),
+                name="category_owner_slug_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["owner", "name"],
+                condition=models.Q(owner__isnull=False),
+                name="category_owner_name_uniq",
+            ),
+        ]
 
     def __str__(self):
         return self.name
@@ -101,7 +185,10 @@ class SubCategory(models.Model):
     )
 
     name = models.CharField(max_length=100)
-    slug = models.SlugField(max_length=100, unique=True)
+    # slug — unicité scopée par owner (issue #137), comme Category.
+    #   Système (owner NULL) : unique global ; Perso : unique par user.
+    # unique=True (global) retiré → UniqueConstraint partielles en Meta.
+    slug = models.SlugField(max_length=100)
 
     # Icon identifier — maps to static/icons/categories/<icon>.svg
     # Example: "auto-transport", "food-drinks", "housing"
@@ -124,12 +211,47 @@ class SubCategory(models.Model):
     # Mirrors Category.is_system but at the sub-category level.
     is_system = models.BooleanField(default=False)
 
+    # owner — même sémantique que Category.owner (issue #137) :
+    #   NULL = système partagé ; sinon = perso d'un user, jamais visible par un autre.
+    # SET_NULL : ne pas casser les transactions liées si le user est supprimé.
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="subcategories",
+    )
+
+    # Manager custom — expose SubCategory.objects.for_user(user) (système OU à moi).
+    objects = OwnedCategoryQuerySet.as_manager()
+
     class Meta:
         verbose_name = "sub-category"
         verbose_name_plural = "sub-categories"
         ordering = ["category__order", "name"]
-        # Two sub-categories in the same category cannot share a name
-        unique_together = [("category", "name")]
+        constraints = [
+            # Deux sous-cat d'une MÊME catégorie ne peuvent pas partager un nom.
+            # Déjà owner-correct : la perso d'un autre user a un parent (category)
+            # distinct, donc (category, name) ne collisionne pas entre users.
+            # (ex-unique_together migré en UniqueConstraint nommée.)
+            models.UniqueConstraint(
+                fields=["category", "name"],
+                name="subcategory_category_name_uniq",
+            ),
+            # slug — système (owner NULL) unique global ; perso unique par user.
+            # Même raisonnement que Category : contrainte partielle dédiée au
+            # système car les NULL sont distincts dans un UNIQUE Postgres.
+            models.UniqueConstraint(
+                fields=["slug"],
+                condition=models.Q(owner__isnull=True),
+                name="subcategory_system_slug_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["owner", "slug"],
+                condition=models.Q(owner__isnull=False),
+                name="subcategory_owner_slug_uniq",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.category.name} › {self.name}"

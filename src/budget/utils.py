@@ -54,23 +54,30 @@ def _period_from_session(session):
     )
 
 
-def _generate_unique_slug(name: str, model_class) -> str:
+def _generate_unique_slug(name: str, model_class, owner=None) -> str:
     """
     Génère un slug unique pour une catégorie ou sous-catégorie.
 
     Processus :
     1. slugify(name) → minuscules + ASCII + hyphens (ex: "Alimentation et Boissons" → "alimentation-et-boissons")
     2. Remplace les hyphens par underscores pour cohérence avec les slugs système existants
-    3. Si le slug existe déjà en DB, ajoute un suffixe numérique (_1, _2, …)
+    3. Si le slug existe déjà DANS LE SCOPE de l'owner, ajoute un suffixe numérique (_1, _2, …)
 
     Paramètres :
         name        : nom saisi par l'utilisateur
-        model_class : Category ou SubCategory (les deux ont un champ slug unique)
+        model_class : Category ou SubCategory (les deux ont un champ slug owner-scopé)
+        owner       : propriétaire de la nouvelle catégorie (#137).
+            - owner=None  → catégorie système : slug unique GLOBAL (parmi owner NULL).
+            - owner set   → catégorie perso : slug unique PAR USER seulement, donc
+              deux users peuvent garder le slug "restaurants" sans suffixe parasite.
+              On filtre sur owner pour ne PAS suffixer à cause du slug d'un autre user.
     """
     base_slug = slugify(name, allow_unicode=False).replace("-", "_")
+    # Scope d'unicité aligné sur les UniqueConstraint partielles du modèle (#137).
+    scope = model_class.objects.filter(owner=owner)
     slug = base_slug
     counter = 1
-    while model_class.objects.filter(slug=slug).exists():
+    while scope.filter(slug=slug).exists():
         slug = f"{base_slug}_{counter}"
         counter += 1
     return slug
@@ -178,24 +185,29 @@ def _vary_color(hex_color, factor):
     return f"#{round(r * factor):02x}{round(g * factor):02x}{round(b * factor):02x}"
 
 
-def _cats_with_subcats():
+def _cats_with_subcats(user=None):
     """
     Retourne une liste de tuples (Category, [SubCategory, ...]) pour peupler
     le <select> de sous-catégories groupé par catégorie dans les formulaires d'édition.
 
+    `user` (issue #137) : si fourni, scope les catégories/sous-catégories via
+    .for_user(user) — l'utilisateur ne voit que les catégories système et SES
+    perso, jamais celles d'un autre user. À TOUJOURS passer depuis une vue
+    (request.user). None = pas de scoping (chemins internes/tests uniquement).
+
     Construit en deux passes Python (pas de N+1) :
-        1. charger toutes les sous-catégories actives avec leur catégorie
+        1. charger toutes les sous-catégories visibles avec leur catégorie
         2. grouper par category_id dans un dict, puis zipper avec les catégories
     """
-    all_categories = list(
-        Category.objects.filter(is_active=True).order_by("order", "name")
-    )
+    cat_qs = Category.objects.filter(is_active=True)
+    sub_qs = SubCategory.objects.filter(is_active=True)
+    if user is not None:
+        cat_qs = cat_qs.for_user(user)
+        sub_qs = sub_qs.for_user(user)
+
+    all_categories = list(cat_qs.order_by("order", "name"))
     subcat_by_cat: dict[int, list] = {}
-    for sub in (
-        SubCategory.objects.filter(is_active=True)
-        .select_related("category")
-        .order_by("name")
-    ):
+    for sub in sub_qs.select_related("category").order_by("name"):
         subcat_by_cat.setdefault(sub.category_id, []).append(sub)
 
     return all_categories, [

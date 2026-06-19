@@ -224,7 +224,8 @@ def budget_category_cashflow_fragment(request, slug):
     après un toggle is_ignored depuis le panneau détail, pour mettre à jour
     le Sankey et les KPIs sans recharger toute la page.
     """
-    category = get_object_or_404(Category, slug=slug)
+    # for_user : slug non unique global (#137) → système OU à moi.
+    category = get_object_or_404(Category.objects.for_user(request.user), slug=slug)
     cc = _compute_category_cashflow_context(request, category)
     return render(
         request,
@@ -258,7 +259,8 @@ def budget_category_tx_fragment(request, slug):
     Target   : #cat-tx-results  swap="outerHTML"
     Template : budget/partials/_category_tx_fragment.html
     """
-    category = get_object_or_404(Category, slug=slug)
+    # for_user : slug non unique global (#137) → système OU à moi.
+    category = get_object_or_404(Category.objects.for_user(request.user), slug=slug)
     q = request.GET.get("q", "").strip()
     # Respecter la période active en session — même clé que budget_index
     period_start, period_end = _period_from_session(request.session)
@@ -306,7 +308,8 @@ def budget_category_detail(request, slug):
     automatique de l'absence de "__pool__" dans les nœuds.
     """
 
-    category = get_object_or_404(Category, slug=slug)
+    # for_user : slug non unique global (#137) → système OU à moi.
+    category = get_object_or_404(Category.objects.for_user(request.user), slug=slug)
 
     cc = _compute_category_cashflow_context(request, category)
     period_start = cc["period_start"]
@@ -537,9 +540,17 @@ def budget_panel_category_manage(request):
     # les transactions de tous les users → fuite de données en contexte multi-user.
     # Django supporte Count(filter=Q(...)) depuis 2.0 — agrégat conditionnel SQL FILTER.
     cats = (
-        Category.objects.filter(is_active=True)
+        Category.objects.for_user(request.user)
+        .filter(is_active=True)
         .annotate(
-            subcat_count=Count("subcategories", distinct=True),
+            # subcat_count scopé : une sous-cat perso d'un AUTRE user rattachée à
+            # une catégorie système ne doit pas gonfler le compteur de cet user (#137).
+            subcat_count=Count(
+                "subcategories",
+                filter=Q(subcategories__owner__isnull=True)
+                | Q(subcategories__owner=request.user),
+                distinct=True,
+            ),
             tx_count=Count(
                 "transactions",
                 filter=Q(transactions__account__members=request.user),
@@ -561,17 +572,26 @@ def budget_panel_category_manage_detail(request, slug):
     HTMX : hx-target="#modal-content" hx-swap="innerHTML"
     Bouton ← : hx-get vers budget_panel_category_manage (retour à la liste).
     """
-    cat = get_object_or_404(Category, slug=slug, is_active=True)
+    # for_user : une catégorie perso d'un autre user → 404 (pas de fuite de son détail).
+    cat = get_object_or_404(
+        Category.objects.for_user(request.user), slug=slug, is_active=True
+    )
 
     # tx_count scopé : même logique que budget_panel_category_manage.
-    subcats = cat.subcategories.annotate(
-        tx_count=Count(
-            "transactions",
-            filter=Q(transactions__account__members=request.user),
-            distinct=True,
-        ),
-        rules_count=Count("rules", distinct=True),
-    ).order_by("name")
+    # Les sous-cats listées sont elles aussi scopées (système OU à moi) pour ne pas
+    # exposer une sous-cat perso d'un autre user rattachée à une catégorie système.
+    subcats = (
+        cat.subcategories.filter(Q(owner__isnull=True) | Q(owner=request.user))
+        .annotate(
+            tx_count=Count(
+                "transactions",
+                filter=Q(transactions__account__members=request.user),
+                distinct=True,
+            ),
+            rules_count=Count("rules", distinct=True),
+        )
+        .order_by("name")
+    )
 
     # Règles directement liées à cette catégorie principale
     rules = (
@@ -619,7 +639,7 @@ def budget_panel_category_create(request):
     - cats_with_subcats : pour le picker de catégorie parente (sous-cat uniquement)
     - color_palette : CATEGORY_COLOR_PALETTE — 16 couleurs pastels
     """
-    _, cats_with_subcats = _cats_with_subcats()
+    _, cats_with_subcats = _cats_with_subcats(request.user)
 
     return render(
         request,
@@ -670,10 +690,17 @@ def budget_category_create_submit(request):
             if not colour_hex:
                 errors.append("Choisissez une couleur.")
             else:
-                if Category.objects.filter(name__iexact=name).exists():
+                # Unicité scopée par owner (#137) : on bloque seulement si une
+                # catégorie VISIBLE par ce user (système ou sa perso) porte déjà ce
+                # nom. La perso d'un AUTRE user portant le même nom est autorisée.
+                if (
+                    Category.objects.for_user(request.user)
+                    .filter(name__iexact=name)
+                    .exists()
+                ):
                     errors.append(f"Une catégorie « {name} » existe déjà.")
                 else:
-                    slug = _generate_unique_slug(name, Category)
+                    slug = _generate_unique_slug(name, Category, owner=request.user)
                     cat = Category.objects.create(
                         name=name,
                         slug=slug,
@@ -681,6 +708,9 @@ def budget_category_create_submit(request):
                         colour_hex=colour_hex,
                         order=100,  # placée en fin de liste par défaut
                         is_system=False,
+                        # owner = créateur → catégorie perso, jamais visible par
+                        # un autre user (issue #137). is_system=False ⇒ owner non NULL.
+                        owner=request.user,
                     )
                     logger.info(
                         "Category created: id=%s slug=%s by user=%s",
@@ -696,7 +726,12 @@ def budget_category_create_submit(request):
             if not parent_id:
                 errors.append("Choisissez une catégorie parente.")
             else:
-                parent = get_object_or_404(Category, id=parent_id)
+                # Scope for_user : on ne peut rattacher une sous-cat qu'à une
+                # catégorie système ou à SA propre catégorie perso (#137 — sinon
+                # IDOR en écriture sur la perso d'un autre user).
+                parent = get_object_or_404(
+                    Category.objects.for_user(request.user), id=parent_id
+                )
                 if SubCategory.objects.filter(
                     category=parent, name__iexact=name
                 ).exists():
@@ -704,13 +739,15 @@ def budget_category_create_submit(request):
                         f"Une sous-catégorie « {name} » existe déjà dans {parent.name}."
                     )
                 else:
-                    slug = _generate_unique_slug(name, SubCategory)
+                    slug = _generate_unique_slug(name, SubCategory, owner=request.user)
                     sub = SubCategory.objects.create(
                         category=parent,
                         name=name,
                         slug=slug,
                         icon=icon,
                         is_system=False,
+                        # owner = créateur → sous-catégorie perso (issue #137).
+                        owner=request.user,
                     )
                     logger.info(
                         "SubCategory created: id=%s slug=%s parent=%s by user=%s",
@@ -724,7 +761,7 @@ def budget_category_create_submit(request):
 
     if errors:
         # Re-render avec erreurs + pré-remplissage (posted = dict des valeurs soumises)
-        _, cats_with_subcats = _cats_with_subcats()
+        _, cats_with_subcats = _cats_with_subcats(request.user)
         return render(
             request,
             "budget/_panel_category_create.html",
@@ -769,7 +806,12 @@ def budget_panel_category_delete_confirm(request, obj_type, slug):
     """
     obj: Category | SubCategory
     if obj_type == "category":
-        obj = get_object_or_404(Category, slug=slug)
+        # for_user : le slug n'est plus unique globalement (#137) → scoper sur
+        # système OU à moi, sinon MultipleObjectsReturned + IDOR sur la perso d'un autre.
+        obj = get_object_or_404(Category.objects.for_user(request.user), slug=slug)
+        assert isinstance(
+            obj, Category
+        )  # narrow mypy : for_user partagé Category/SubCategory
         if obj.is_system:
             return HttpResponse(
                 "Catégorie système — suppression interdite.", status=403
@@ -781,7 +823,10 @@ def budget_panel_category_delete_confirm(request, obj_type, slug):
         rules_count = CategorizationRule.objects.filter(category=obj).count()
 
     elif obj_type == "subcategory":
-        obj = get_object_or_404(SubCategory, slug=slug)
+        obj = get_object_or_404(SubCategory.objects.for_user(request.user), slug=slug)
+        assert isinstance(
+            obj, SubCategory
+        )  # narrow mypy : for_user partagé Category/SubCategory
         if obj.is_system:
             return HttpResponse(
                 "Sous-catégorie système — suppression interdite.", status=403
@@ -830,9 +875,14 @@ def budget_category_delete(request, obj_type, slug):
     """
     obj: Category | SubCategory
     if obj_type == "category":
-        obj = get_object_or_404(Category, slug=slug, is_system=False)
+        # for_user + is_system=False : on ne supprime que SA propre perso (#137).
+        obj = get_object_or_404(
+            Category.objects.for_user(request.user), slug=slug, is_system=False
+        )
     elif obj_type == "subcategory":
-        obj = get_object_or_404(SubCategory, slug=slug, is_system=False)
+        obj = get_object_or_404(
+            SubCategory.objects.for_user(request.user), slug=slug, is_system=False
+        )
     else:
         return HttpResponse("Type invalide.", status=400)
 
