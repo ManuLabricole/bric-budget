@@ -65,6 +65,12 @@ class Institution(models.Model):
 
     is_active = models.BooleanField(default=True)
 
+    # Couleur stable d'affichage (#134). Les institutions sont globales/seedées, donc
+    # le domaine d'allocation = "toutes les institutions" (pas par user). Allouée puis
+    # FIGÉE comme Account.colour_hex. Sert aux seeds (#149/#118) et à un futur
+    # découpage des charts patrimoine par institution. blank = backfillé (migration 0020).
+    colour_hex = models.CharField(max_length=7, blank=True, default="")
+
     class Meta:
         verbose_name = "institution"
         verbose_name_plural = "institutions"

@@ -21,6 +21,7 @@ from typing import Any
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
+from services.colors import allocate_color
 from users.models import CustomUser
 
 from .models import (
@@ -143,6 +144,19 @@ def create_account(
         account.full_clean()
         account.save()
         account.members.add(user)  # sans membre, invisible via for_user() (SR-001)
+
+        # Couleur stable du compte dans les charts patrimoine (#134). Domaine
+        # d'allocation = les comptes DE CE USER (isolation SR-001 via for_user) :
+        # on ne « consomme » que les teintes que ce user voit déjà, donc le user B
+        # n'est jamais contraint par les couleurs du user A. La couleur est posée
+        # une fois puis figée (jamais réassignée quand d'autres comptes arrivent).
+        used = [
+            a.colour_hex
+            for a in Account.objects.for_user(user).exclude(pk=account.pk)
+            if a.colour_hex
+        ]
+        account.colour_hex = allocate_color(used)
+        account.save(update_fields=["colour_hex"])
 
         builder = _DETAILS_BUILDERS.get(account_type)
         if builder is not None:
