@@ -468,6 +468,62 @@ def test_category_create_sets_owner_to_request_user(client_a, user_a):
 
 
 # =============================================================================
+# Écriture catégories — complétude « IMPOSSIBLE » (#149) : delete/categorize
+#
+# Compléments à la matrice : supprimer la perso d'un autre, supprimer une sous-cat
+# système, ou catégoriser avec la sous-cat d'un autre — tout doit être bloqué.
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_category_delete_other_user_perso_returns_404(client_a, category_b):
+    """POST delete sur la catégorie perso d'un AUTRE user → 404 (for_user l'exclut)."""
+    response = client_a.post(
+        reverse("budget:category_delete", args=["category", category_b.slug])
+    )
+    assert response.status_code == 404
+    assert Category.objects.filter(pk=category_b.pk).exists()  # jamais supprimée
+
+
+@pytest.mark.django_db
+def test_subcategory_delete_system_returns_404(client_a, system_category):
+    """POST delete sur une SOUS-catégorie système (is_system=True) → 404 (filtre is_system=False)."""
+    sys_sub = SubCategory.objects.create(
+        category=system_category,
+        name="Sous-système",
+        slug="sous-systeme",
+        is_system=True,
+        owner=None,
+    )
+    response = client_a.post(
+        reverse("budget:category_delete", args=["subcategory", sys_sub.slug])
+    )
+    assert response.status_code == 404
+    assert SubCategory.objects.filter(pk=sys_sub.pk).exists()  # système intouchable
+
+
+@pytest.mark.django_db
+def test_categorize_with_other_user_perso_subcategory_ignored(
+    client_a, account_a, system_category, subcat_b
+):
+    """Catégoriser avec la SOUS-catégorie d'un AUTRE user → ignorée (subcategory reste None) ;
+    la catégorie système est posée. Pas de fuite cross-user via le sub_id forgé."""
+    tx = make_tx(account_a, "sub-foreign")
+    response = client_a.post(
+        reverse("budget:categorize"),
+        {
+            "tx_id": tx.pk,
+            "category_id": system_category.pk,
+            "subcategory_id": subcat_b.pk,  # appartient à user_b
+        },
+    )
+    assert response.status_code == 200
+    tx.refresh_from_db()
+    assert tx.category_id == system_category.pk
+    assert tx.subcategory_id is None  # la sous-cat d'un autre n'est jamais liée
+
+
+# =============================================================================
 # CategorizationRule scopée par owner (#145) — IDOR sur les vues CRUD règles
 #
 # Un user authentifié ne doit PAS pouvoir toggle / éditer / supprimer / lister

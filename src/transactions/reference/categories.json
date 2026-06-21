@@ -66,22 +66,6 @@
           "default_nature": "variable_discretionary",
           "is_system": true,
           "is_active": true
-        },
-        {
-          "name": "Repas maison",
-          "slug": "repas_maison",
-          "icon": "chef-hat",
-          "default_nature": "variable_mandatory",
-          "is_system": false,
-          "is_active": true
-        },
-        {
-          "name": "Uber Eats",
-          "slug": "uber_eats",
-          "icon": "moped",
-          "default_nature": "variable_discretionary",
-          "is_system": false,
-          "is_active": true
         }
       ]
     },
@@ -180,14 +164,6 @@
           "icon": "droplet",
           "default_nature": "variable_discretionary",
           "is_system": true,
-          "is_active": true
-        },
-        {
-          "name": "Amendes",
-          "slug": "amendes",
-          "icon": "file-invoice",
-          "default_nature": "variable_discretionary",
-          "is_system": false,
           "is_active": true
         }
       ]
@@ -295,41 +271,6 @@
           "icon": "receipt",
           "default_nature": "fixed_mandatory",
           "is_system": true,
-          "is_active": true
-        },
-        {
-          "name": "Aménagement / Bricolage",
-          "slug": "amenagement_bricolage",
-          "icon": "hammer",
-          "default_nature": "variable_discretionary",
-          "is_system": false,
-          "is_active": true
-        }
-      ]
-    },
-    {
-      "name": "Dépenses exceptionnelles",
-      "slug": "depenses_exceptionnelles",
-      "icon": "rosette",
-      "colour_hex": "#204cff",
-      "order": 4,
-      "is_system": false,
-      "is_active": true,
-      "subcategories": [
-        {
-          "name": "Mariage",
-          "slug": "mariage",
-          "icon": "heart",
-          "default_nature": "variable_discretionary",
-          "is_system": false,
-          "is_active": true
-        },
-        {
-          "name": "Déménagement",
-          "slug": "demenagement",
-          "icon": "truck",
-          "default_nature": "variable_discretionary",
-          "is_system": false,
           "is_active": true
         }
       ]
@@ -446,14 +387,6 @@
           "default_nature": "variable_mandatory",
           "is_system": true,
           "is_active": true
-        },
-        {
-          "name": "Apport SAS",
-          "slug": "apport_sas",
-          "icon": "building-skyscraper",
-          "default_nature": "fixed_mandatory",
-          "is_system": false,
-          "is_active": true
         }
       ]
     },
@@ -556,14 +489,6 @@
           "default_nature": "fixed_discretionary",
           "is_system": true,
           "is_active": true
-        },
-        {
-          "name": "Administration",
-          "slug": "administration",
-          "icon": "file-text",
-          "default_nature": "variable_mandatory",
-          "is_system": false,
-          "is_active": true
         }
       ]
     },
@@ -598,14 +523,6 @@
           "icon": "tool",
           "default_nature": "fixed_discretionary",
           "is_system": true,
-          "is_active": true
-        },
-        {
-          "name": "Frais administratif",
-          "slug": "frais_administratif",
-          "icon": "file-invoice",
-          "default_nature": "variable_mandatory",
-          "is_system": false,
           "is_active": true
         }
       ]
@@ -694,14 +611,6 @@
           "default_nature": "neutral",
           "is_system": true,
           "is_active": true
-        },
-        {
-          "name": "Arnaque",
-          "slug": "arnaque",
-          "icon": "alert-triangle",
-          "default_nature": "neutral",
-          "is_system": false,
-          "is_active": true
         }
       ]
     },
@@ -769,22 +678,6 @@
           "default_nature": "savings",
           "is_system": true,
           "is_active": true
-        },
-        {
-          "name": "Rachat Crypto",
-          "slug": "rachat_crypto",
-          "icon": "currency-bitcoin",
-          "default_nature": "savings",
-          "is_system": false,
-          "is_active": true
-        },
-        {
-          "name": "Rachat / Désépargne",
-          "slug": "rachat_desepargne",
-          "icon": "arrow-bar-down",
-          "default_nature": "savings",
-          "is_system": false,
-          "is_active": true
         }
       ]
     },
@@ -844,38 +737,6 @@
           "default_nature": "variable_discretionary",
           "is_system": true,
           "is_active": true
-        },
-        {
-          "name": "Concert",
-          "slug": "concert",
-          "icon": "music",
-          "default_nature": "variable_discretionary",
-          "is_system": false,
-          "is_active": true
-        },
-        {
-          "name": "Livres",
-          "slug": "livres",
-          "icon": "book",
-          "default_nature": "variable_discretionary",
-          "is_system": false,
-          "is_active": true
-        },
-        {
-          "name": "Évènements / Weekend",
-          "slug": "evenements_weekend",
-          "icon": "calendar-event",
-          "default_nature": "variable_discretionary",
-          "is_system": false,
-          "is_active": true
-        },
-        {
-          "name": "Velo",
-          "slug": "velo",
-          "icon": "bike",
-          "default_nature": "variable_discretionary",
-          "is_system": false,
-          "is_active": true
         }
       ]
     },
@@ -887,24 +748,7 @@
       "order": 13,
       "is_system": true,
       "is_active": true,
-      "subcategories": [
-        {
-          "name": "Prêt Étudiant",
-          "slug": "pret_etudiant",
-          "icon": "school",
-          "default_nature": "fixed_mandatory",
-          "is_system": false,
-          "is_active": true
-        },
-        {
-          "name": "BUT | Lit",
-          "slug": "but_lit",
-          "icon": "bed",
-          "default_nature": "fixed_mandatory",
-          "is_system": false,
-          "is_active": true
-        }
-      ]
+      "subcategories": []
     },
     {
       "name": "Remboursements",
@@ -945,30 +789,6 @@
           "icon": "shield",
           "default_nature": "income",
           "is_system": true,
-          "is_active": true
-        },
-        {
-          "name": "Dépenses professionnelles",
-          "slug": "remb_depenses_pro",
-          "icon": "report-money",
-          "default_nature": "income",
-          "is_system": false,
-          "is_active": true
-        },
-        {
-          "name": "Santé",
-          "slug": "remb_sante",
-          "icon": "heartbeat",
-          "default_nature": "income",
-          "is_system": false,
-          "is_active": true
-        },
-        {
-          "name": "Remboursements Amis",
-          "slug": "remboursements_amis",
-          "icon": "users",
-          "default_nature": "income",
-          "is_system": false,
           "is_active": true
         }
       ]
@@ -1020,46 +840,6 @@
           "icon": "building",
           "default_nature": "income",
           "is_system": true,
-          "is_active": true
-        },
-        {
-          "name": "Désépargne",
-          "slug": "desepargne",
-          "icon": "arrow-bar-down",
-          "default_nature": "income",
-          "is_system": false,
-          "is_active": true
-        },
-        {
-          "name": "Ventes",
-          "slug": "ventes",
-          "icon": "tag",
-          "default_nature": "income",
-          "is_system": false,
-          "is_active": true
-        },
-        {
-          "name": "Chômage",
-          "slug": "chomage",
-          "icon": "user-off",
-          "default_nature": "income",
-          "is_system": false,
-          "is_active": true
-        },
-        {
-          "name": "HM Participation aux Charges",
-          "slug": "hm_participation_charges",
-          "icon": "home",
-          "default_nature": "income",
-          "is_system": false,
-          "is_active": true
-        },
-        {
-          "name": "Cadeaux Mariage",
-          "slug": "cadeaux_mariage",
-          "icon": "heart",
-          "default_nature": "income",
-          "is_system": false,
           "is_active": true
         }
       ]
