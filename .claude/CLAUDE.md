@@ -149,10 +149,10 @@ gh project item-add 7 --owner ManuLabricole --url <PR_URL>
 ```
 
 **Corps PR — pattern issues :**
-- PRs feature (→ `development`) : `Part of #N` — **jamais `Closes`** (GitHub ferme uniquement sur merge vers `main`)
-- PRs release (`development` → `main`) : `Closes #N1, Closes #N2` — pour **toutes** les issues du milestone
+- PRs feature (→ `development`) : `Closes #N` — `development` est la **branche par défaut** (depuis 2026-06-22) → le merge sur `development` **ferme l'issue automatiquement** ET crée le lien issue↔PR. (Garder `Part of #N` pour une issue parente/epic qu'on ne ferme pas.)
+- PRs release (`development` → `main`) : les issues sont déjà fermées au merge sur `development` ; lister `Closes #N…` reste optionnel (traçabilité du milestone).
 
-**Fermeture manuelle des issues :** quand le travail est complet et mergé sur `development`, fermer l'issue manuellement avec un commentaire référençant les PRs.
+**Fermeture des issues = automatique** au merge sur `development` via `Closes #N` dans le corps de la PR. Fermeture manuelle uniquement en rattrapage (mot-clé oublié).
 
 **Multi-PR sur une issue — à ÉVITER** (cause de stacking, incident #125). Préférer
 **découper en issues distinctes** (1 issue = 1 branche). Si vraiment inévitable :
