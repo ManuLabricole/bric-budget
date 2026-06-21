@@ -101,10 +101,17 @@ def budget_panel_rule_create(request):
     )
 
     # Catégorie cible : passée explicitement depuis l'étape intro, ou fallback sur tx.category.
-    category = get_object_or_404(Category, pk=cat_id) if cat_id else tx.category
+    # SR-001 IDOR : ne pointer que vers une catégorie visible par le user (système OU à moi).
+    category = (
+        get_object_or_404(Category.objects.for_user(request.user), pk=cat_id)
+        if cat_id
+        else tx.category
+    )
     subcategory = None
     if subcat_id:
-        subcategory = SubCategory.objects.filter(pk=subcat_id).first()
+        subcategory = (
+            SubCategory.objects.for_user(request.user).filter(pk=subcat_id).first()
+        )
     elif tx.subcategory:
         subcategory = tx.subcategory
 
@@ -316,16 +323,24 @@ def budget_rule_create_standalone_submit(request):
     sub_id = request.POST.get("subcategory_id") or None
     force = request.POST.get("force") == "1"
 
-    category = get_object_or_404(Category, pk=cat_id)
-    subcategory = SubCategory.objects.filter(pk=sub_id).first() if sub_id else None
+    # SR-001 IDOR : la catégorie cible doit être visible par le user (système OU à moi).
+    category = get_object_or_404(Category.objects.for_user(request.user), pk=cat_id)
+    subcategory = (
+        SubCategory.objects.for_user(request.user).filter(pk=sub_id).first()
+        if sub_id
+        else None
+    )
 
     if not force:
         # Étape 1 — chercher les transactions qui seront écrasées AVANT de créer la règle.
         # On vérifie les tx avec source="rule" et une règle différente de celle qu'on va créer.
         # existing_rule peut être None si la règle n'existe pas encore.
-        existing_rule = CategorizationRule.objects.filter(
-            keyword=keyword, category=category
-        ).first()
+        # Scopé par owner : le check doublon ne regarde que MES règles.
+        existing_rule = (
+            CategorizationRule.objects.for_user(request.user)
+            .filter(keyword=keyword, category=category)
+            .first()
+        )
         overwrite_qs = Transaction.objects.for_user(request.user).filter(
             _keyword_q(keyword), categorization_source="rule"
         )
@@ -361,13 +376,19 @@ def budget_rule_create_standalone_submit(request):
             )
 
     # Étape 2 — créer la règle + bulk apply
-    # Priorité = max existant + 1 → la dernière règle créée gagne toujours en cas de conflit
+    # Priorité = max sur MES règles + 1 → ma dernière règle gagne toujours en cas de conflit.
     next_priority = (
-        CategorizationRule.objects.aggregate(m=Max("priority"))["m"] or 0
+        CategorizationRule.objects.for_user(request.user).aggregate(m=Max("priority"))[
+            "m"
+        ]
+        or 0
     ) + 1
+    # owner=request.user DANS LE LOOKUP (cf. budget_rule_create_submit) : la règle
+    # appartient au créateur, pas de collision possible avec celle d'un autre user.
     rule, created = CategorizationRule.objects.get_or_create(
         keyword=keyword,
         category=category,
+        owner=request.user,
         defaults={
             "subcategory": subcategory,
             "target_field": "display_name",
@@ -498,8 +519,13 @@ def budget_rule_preview(request):
     if tx_id:
         get_object_or_404(Transaction.objects.for_user(request.user), pk=tx_id)
 
-    category = get_object_or_404(Category, pk=cat_id)
-    subcategory = SubCategory.objects.filter(pk=sub_id).first() if sub_id else None
+    # SR-001 IDOR : ne prévisualiser que vers une catégorie visible par le user.
+    category = get_object_or_404(Category.objects.for_user(request.user), pk=cat_id)
+    subcategory = (
+        SubCategory.objects.for_user(request.user).filter(pk=sub_id).first()
+        if sub_id
+        else None
+    )
 
     # Compter les transactions affectées SANS les modifier.
     # Toutes les transactions matchant le keyword sont comptées — sans exclusion.
@@ -559,14 +585,22 @@ def budget_rule_create_submit(request):
     if not keyword:
         return HttpResponseBadRequest("keyword requis")
 
-    category = get_object_or_404(Category, pk=cat_id)
-    subcategory = SubCategory.objects.filter(pk=sub_id).first() if sub_id else None
+    # SR-001 IDOR : la catégorie cible doit être visible par le user (système OU à moi).
+    category = get_object_or_404(Category.objects.for_user(request.user), pk=cat_id)
+    subcategory = (
+        SubCategory.objects.for_user(request.user).filter(pk=sub_id).first()
+        if sub_id
+        else None
+    )
 
     if not force:
         # Étape 1 — vérifier les transactions déjà catégorisées par UNE AUTRE règle.
-        existing_rule = CategorizationRule.objects.filter(
-            keyword=keyword, category=category
-        ).first()
+        # Scopé par owner : le check doublon ne regarde que MES règles.
+        existing_rule = (
+            CategorizationRule.objects.for_user(request.user)
+            .filter(keyword=keyword, category=category)
+            .first()
+        )
         overwrite_qs = Transaction.objects.for_user(request.user).filter(
             _keyword_q(keyword), categorization_source="rule"
         )
@@ -603,12 +637,20 @@ def budget_rule_create_submit(request):
             )
 
     # Étape 2 — créer la règle + bulk apply
+    # Priorité auto : max sur MES règles (système OU à moi) + 1.
     next_priority = (
-        CategorizationRule.objects.aggregate(m=Max("priority"))["m"] or 0
+        CategorizationRule.objects.for_user(request.user).aggregate(m=Max("priority"))[
+            "m"
+        ]
+        or 0
     ) + 1
+    # owner=request.user DANS LE LOOKUP (pas seulement defaults) : sans ça, un user
+    # pourrait "récupérer" la règle d'un autre par collision keyword+category. La
+    # règle créée appartient toujours au créateur (IDOR, SR-001).
     rule, created = CategorizationRule.objects.get_or_create(
         keyword=keyword,
         category=category,
+        owner=request.user,
         defaults={
             "subcategory": subcategory,
             "target_field": "display_name",
@@ -672,8 +714,9 @@ def budget_export_rules_download(request):
         - Accessible depuis l'UI sans ouvrir un terminal.
         - Utile avant la session de classification manuelle pour faire un backup rapide.
     """
+    # SR-001 IDOR : .for_user() → ne jamais exporter les règles d'autrui.
     rules = list(
-        CategorizationRule.objects.all()
+        CategorizationRule.objects.for_user(request.user)
         .values(
             "keyword",
             "category__slug",
@@ -727,9 +770,12 @@ def budget_panel_rules_list(request):
 
     Affiche toutes les règles triées : actives d'abord, puis par priorité desc, puis keyword.
     """
-    rules = CategorizationRule.objects.select_related(
-        "category", "subcategory__category"
-    ).order_by("-is_active", "-priority", "keyword")
+    # SR-001 IDOR : .for_user() → ne lister que les règles du user (ou système).
+    rules = (
+        CategorizationRule.objects.for_user(request.user)
+        .select_related("category", "subcategory__category")
+        .order_by("-is_active", "-priority", "keyword")
+    )
 
     all_categories, cats_with_subcats = _cats_with_subcats(request.user)
 
@@ -758,7 +804,10 @@ def budget_rule_toggle_active(request, rule_id):
     URL : POST /budget/rules/<rule_id>/toggle/
     HTMX : hx-target="#rule-<id>" hx-swap="outerHTML"
     """
-    rule = get_object_or_404(CategorizationRule, id=rule_id)
+    # SR-001 IDOR : .for_user() → un user ne peut toggle que ses règles (ou système).
+    rule = get_object_or_404(
+        CategorizationRule.objects.for_user(request.user), id=rule_id
+    )
     rule.is_active = not rule.is_active
     rule.save(update_fields=["is_active"])
     # Mutation DB (le comportement de catégorisation change) → INFO, pas DEBUG.
@@ -786,7 +835,10 @@ def budget_rule_delete(request, rule_id):
     HTMX : hx-target="#rule-<id>" hx-swap="outerHTML"
            hx-confirm="Supprimer ?" (confirmation navigateur native)
     """
-    rule = get_object_or_404(CategorizationRule, id=rule_id)
+    # SR-001 IDOR : .for_user() → un user ne peut supprimer que ses règles (ou système).
+    rule = get_object_or_404(
+        CategorizationRule.objects.for_user(request.user), id=rule_id
+    )
     logger.info(
         "rule_delete ok id=%s keyword=%r user=%s",
         rule.id,
@@ -812,7 +864,10 @@ def budget_rule_row_edit(request, rule_id):
 
     ?cancel=1 → retourne la ligne en mode lecture (bouton Annuler du formulaire).
     """
-    rule = get_object_or_404(CategorizationRule, id=rule_id)
+    # SR-001 IDOR : .for_user() → un user n'édite que ses règles (ou système).
+    rule = get_object_or_404(
+        CategorizationRule.objects.for_user(request.user), id=rule_id
+    )
     if request.GET.get("cancel"):
         return render(request, "budget/_rule_row.html", {"rule": rule})
     all_categories, cats_with_subcats = _cats_with_subcats(request.user)
@@ -845,7 +900,10 @@ def budget_rule_edit_submit(request, rule_id):
     keyword est normalisé en UPPERCASE (cohérence avec le wizard de création).
     Si keyword ou category_id manquent, la règle est retournée inchangée.
     """
-    rule = get_object_or_404(CategorizationRule, id=rule_id)
+    # SR-001 IDOR : .for_user() → un user ne sauvegarde que ses règles (ou système).
+    rule = get_object_or_404(
+        CategorizationRule.objects.for_user(request.user), id=rule_id
+    )
     keyword = request.POST.get("keyword", "").strip().upper()
     category_id = request.POST.get("category_id", "").strip()
     subcategory_id = request.POST.get("subcategory_id", "").strip() or None
