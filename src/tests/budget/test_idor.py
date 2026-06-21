@@ -468,16 +468,159 @@ def test_category_create_sets_owner_to_request_user(client_a, user_a):
 
 
 # =============================================================================
+# CategorizationRule scopée par owner (#145) — IDOR sur les vues CRUD règles
+#
+# Un user authentifié ne doit PAS pouvoir toggle / éditer / supprimer / lister
+# une règle appartenant à un autre user via un POST/GET forgé (SR-001).
+# Pattern : .for_user() retourne système (owner NULL) OU à moi ; jamais la perso
+# d'un autre → get_object_or_404 renvoie 404 pour l'attaquant, 200 pour l'owner.
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_idor_rule_toggle_blocked_for_other_user(client_b, rule_a):
+    """user B toggle une règle de user A → 404 (et l'état n'a pas changé)."""
+    response = client_b.post(reverse("budget:rule_toggle_active", args=[rule_a.id]))
+    assert response.status_code == 404
+    rule_a.refresh_from_db()
+    assert rule_a.is_active is True  # non modifiée
+
+
+@pytest.mark.django_db
+def test_idor_rule_toggle_allowed_for_owner(client_a, rule_a):
+    response = client_a.post(reverse("budget:rule_toggle_active", args=[rule_a.id]))
+    assert response.status_code == 200
+    rule_a.refresh_from_db()
+    assert rule_a.is_active is False
+
+
+@pytest.mark.django_db
+def test_idor_rule_delete_blocked_for_other_user(client_b, rule_a):
+    """user B supprime une règle de user A → 404 (la règle existe toujours)."""
+    response = client_b.post(reverse("budget:rule_delete", args=[rule_a.id]))
+    assert response.status_code == 404
+    assert CategorizationRule.objects.filter(id=rule_a.id).exists()
+
+
+@pytest.mark.django_db
+def test_idor_rule_delete_allowed_for_owner(client_a, rule_a):
+    response = client_a.post(reverse("budget:rule_delete", args=[rule_a.id]))
+    assert response.status_code == 200
+    assert not CategorizationRule.objects.filter(id=rule_a.id).exists()
+
+
+@pytest.mark.django_db
+def test_idor_rule_row_edit_blocked_for_other_user(client_b, rule_a):
+    """user B ouvre le formulaire d'édition d'une règle de user A → 404."""
+    response = client_b.get(reverse("budget:rule_row_edit", args=[rule_a.id]))
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_idor_rule_row_edit_allowed_for_owner(client_a, rule_a):
+    response = client_a.get(reverse("budget:rule_row_edit", args=[rule_a.id]))
+    assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_idor_rule_edit_submit_blocked_for_other_user(client_b, rule_a, category):
+    """user B sauvegarde l'édition d'une règle de user A → 404 (rien n'a changé)."""
+    response = client_b.post(
+        reverse("budget:rule_edit_submit", args=[rule_a.id]),
+        {"keyword": "HACKED", "category_id": category.id},
+    )
+    assert response.status_code == 404
+    rule_a.refresh_from_db()
+    assert rule_a.keyword == "RULE-OWNED-BY-A"
+
+
+@pytest.mark.django_db
+def test_idor_rule_edit_submit_allowed_for_owner(client_a, rule_a, category):
+    response = client_a.post(
+        reverse("budget:rule_edit_submit", args=[rule_a.id]),
+        {"keyword": "RENAMED", "category_id": category.id},
+    )
+    assert response.status_code == 200
+    rule_a.refresh_from_db()
+    assert rule_a.keyword == "RENAMED"
+
+
+@pytest.mark.django_db
+def test_rule_for_user_returns_own_and_system_not_other(rule_a, rule_b, user_a):
+    """Manager .for_user : ma règle + règles système (owner NULL), jamais la perso d'un autre."""
+    visible = set(
+        CategorizationRule.objects.for_user(user_a).values_list("keyword", flat=True)
+    )
+    assert "RULE-OWNED-BY-A" in visible  # ma règle → visible
+    assert "RULE-OWNED-BY-B" not in visible  # règle d'un autre → INVISIBLE
+
+
+@pytest.mark.django_db
+def test_panel_rules_list_hides_other_user_rule(client_a, rule_a, rule_b):
+    """Le panel CRUD ne liste que système + règles du user connecté (pas la perso d'un autre)."""
+    response = client_a.get(reverse("budget:panel_rules_list"))
+    assert response.status_code == 200
+    keywords = {r.keyword for r in response.context["rules"]}
+    assert "RULE-OWNED-BY-A" in keywords
+    assert "RULE-OWNED-BY-B" not in keywords
+    # Défense en profondeur : la règle d'un autre ne fuit pas dans le HTML.
+    assert "RULE-OWNED-BY-B" not in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_export_rules_excludes_other_user_rule(client_a, rule_a, rule_b):
+    """L'export JSON ne contient pas les règles d'un autre user."""
+    response = client_a.get(
+        reverse("budget:export_rules_download"), HTTP_HOST="localhost"
+    )
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "RULE-OWNED-BY-A" in body
+    assert "RULE-OWNED-BY-B" not in body
+
+
+@pytest.mark.django_db
+def test_rule_create_submit_sets_owner_to_request_user(client_a, account_a, category):
+    """Une règle créée via l'UI appartient au créateur (owner=request.user)."""
+    tx = make_tx(account_a, "rule-owner-create")
+    response = client_a.post(
+        reverse("budget:rule_create_submit"),
+        {
+            "tx_id": tx.pk,
+            "keyword": "OWNERCHECK",
+            "category_id": category.pk,
+            "force": "1",
+        },
+    )
+    assert response.status_code == 200
+    rule = CategorizationRule.objects.get(keyword="OWNERCHECK")
+    assert rule.owner_id == account_a.members.first().pk
+
+
+@pytest.mark.django_db
+def test_rule_create_standalone_sets_owner_to_request_user(client_a, user_a, category):
+    """Règle standalone créée via l'UI appartient au créateur (owner=request.user)."""
+    response = client_a.post(
+        reverse("budget:rule_create_standalone_submit"),
+        {"keyword": "STANDALONEOWNER", "category_id": category.pk, "force": "1"},
+    )
+    assert response.status_code == 200
+    rule = CategorizationRule.objects.get(keyword="STANDALONEOWNER")
+    assert rule.owner_id == user_a.pk
+
+
+# =============================================================================
 # rule_edit_submit — entrée non numérique → 200, règle inchangée
 # =============================================================================
 
 
 @pytest.fixture
-def rule_for_edit(db, category):
+def rule_for_edit(db, category, user_a):
     return CategorizationRule.objects.create(
         keyword="SUPERMARCHE",
         category=category,
         priority=10,
+        owner=user_a,
     )
 
 

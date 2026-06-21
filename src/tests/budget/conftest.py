@@ -5,7 +5,7 @@ tests/budget/conftest.py — Fixtures partagées pour tous les tests budget/.
 import pytest
 from django.test import Client
 
-from transactions.models import Category, SubCategory
+from transactions.models import CategorizationRule, Category, SubCategory
 
 
 @pytest.fixture
@@ -148,5 +148,34 @@ def subcat_b(db, category_b, user_b):
         name="PERSO USER B SUBCAT",
         slug="perso-user-b-subcat",
         is_system=False,
+        owner=user_b,
+    )
+
+
+# --- Règles de catégorisation scopées par owner (#145) ----------------------
+
+
+@pytest.fixture
+def rule_a(db, category, user_a):
+    """Règle de catégorisation appartenant à user_a — invisible/intouchable par user_b."""
+    return CategorizationRule.objects.create(
+        keyword="RULE-OWNED-BY-A",
+        category=category,
+        target_field="display_name",
+        priority=1,
+        is_active=True,
+        owner=user_a,
+    )
+
+
+@pytest.fixture
+def rule_b(db, category, user_b):
+    """Règle de catégorisation appartenant à user_b — invisible/intouchable par user_a."""
+    return CategorizationRule.objects.create(
+        keyword="RULE-OWNED-BY-B",
+        category=category,
+        target_field="display_name",
+        priority=2,
+        is_active=True,
         owner=user_b,
     )

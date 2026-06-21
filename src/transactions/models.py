@@ -16,29 +16,33 @@ from django.conf import settings
 from django.db import models
 
 # =============================================================================
-# CategoryQuerySet / SubCategoryQuerySet — filtre de sécurité par user (IDOR)
+# OwnedQuerySet — filtre de sécurité par owner (IDOR), partagé multi-modèles
 # =============================================================================
 
 
-class OwnedCategoryQuerySet(models.QuerySet):
+class OwnedQuerySet(models.QuerySet):
     """
-    QuerySet partagé par Category et SubCategory.
+    QuerySet partagé par tout modèle possédant un champ `owner` nullable :
+    Category, SubCategory et CategorizationRule (issues #137 puis #145).
 
     Méthode principale : .for_user(user)
-        Retourne les catégories visibles par `user` :
-            - catégories système (owner IS NULL, partagées entre tous les users) ;
-            - catégories perso dont `user` est le propriétaire.
+        Retourne les objets visibles par `user` :
+            - objets système (owner IS NULL, partagés entre tous les users) ;
+            - objets perso dont `user` est le propriétaire.
 
-        Une catégorie perso d'un AUTRE user n'est JAMAIS retournée → garantit
-        l'isolation multi-user au niveau du référentiel (cf. issue #137).
+        Un objet perso d'un AUTRE user n'est JAMAIS retourné → garantit
+        l'isolation multi-user au niveau du référentiel.
 
         À appeler en premier sur toute requête exposée dans une vue, comme pour
         Transaction.objects.for_user(user) et Account.objects.for_user(user) :
 
             Category.objects.for_user(request.user).filter(is_active=True)
+            CategorizationRule.objects.for_user(request.user)
 
         Pourquoi sur le QuerySet et pas inline dans chaque vue ? DRY + sécurité :
         un seul point de vérité pour la règle « système OU à moi », chaînable.
+        Rebaptisé OwnedQuerySet (ex-OwnedCategoryQuerySet) car il sert désormais
+        3 modèles, pas seulement les catégories (#145).
     """
 
     def for_user(self, user):
@@ -110,7 +114,7 @@ class Category(models.Model):
     is_active = models.BooleanField(default=True)
 
     # Manager custom — expose Category.objects.for_user(user) (système OU à moi).
-    objects = OwnedCategoryQuerySet.as_manager()
+    objects = OwnedQuerySet.as_manager()
 
     class Meta:
         verbose_name = "category"
@@ -223,7 +227,7 @@ class SubCategory(models.Model):
     )
 
     # Manager custom — expose SubCategory.objects.for_user(user) (système OU à moi).
-    objects = OwnedCategoryQuerySet.as_manager()
+    objects = OwnedQuerySet.as_manager()
 
     class Meta:
         verbose_name = "sub-category"
@@ -317,6 +321,27 @@ class CategorizationRule(models.Model):
     priority = models.PositiveSmallIntegerField(default=0)
 
     is_active = models.BooleanField(default=True)
+
+    # owner — propriétaire de la règle (issue #145, isolation multi-user / IDOR SR-001).
+    #   NULL  : règle SYSTÈME, partagée entre tous les users (seed de référence).
+    #   sinon : règle PERSO d'un user — jamais visible/modifiable par un autre
+    #           (filtrée via .for_user()).
+    # CASCADE (≠ Category.owner=SET_NULL) : une règle est une préférence pure de
+    #   catégorisation. Supprimer un user n'a aucune raison de garder ses règles
+    #   perso orphelines (elles ne portent aucune donnée historique, contrairement
+    #   aux catégories pointées par des transactions). On les efface avec lui.
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="categorization_rules",
+    )
+
+    # Manager custom — expose CategorizationRule.objects.for_user(user) (système OU à moi).
+    # Réutilise OwnedQuerySet (partagé avec Category/SubCategory) → un seul point de
+    # vérité pour le filtre IDOR « système OU à moi ».
+    objects = OwnedQuerySet.as_manager()
 
     class Meta:
         verbose_name = "categorization rule"
