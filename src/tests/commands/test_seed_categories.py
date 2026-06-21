@@ -198,3 +198,73 @@ def test_dry_run_writes_nothing(tiny_reference):
     assert Category.objects.count() == 0
     assert SubCategory.objects.count() == 0
     assert "dry-run" in out
+
+
+# =============================================================================
+# Scoping owner — #149 (Option C) : le référentiel ne seed QUE du système partagé
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_seed_only_creates_shared_system_categories():
+    """Tout ce que le seed crée est système partagé : owner NULL, is_system=True."""
+    _run()
+
+    assert not Category.objects.filter(owner__isnull=False).exists()
+    assert not Category.objects.filter(is_system=False).exists()
+    assert not SubCategory.objects.filter(owner__isnull=False).exists()
+    assert not SubCategory.objects.filter(is_system=False).exists()
+
+
+@pytest.mark.django_db
+def test_seeded_system_categories_all_have_a_colour():
+    """Garde-fou dédié (message clair si ça casse) : toute catégorie système seedée
+    a une couleur — sinon les charts/pastilles s'affichent sans couleur."""
+    _run()
+
+    sans_couleur = list(
+        Category.objects.filter(colour_hex="").values_list("slug", flat=True)
+    )
+    assert not sans_couleur, f"catégories système sans colour_hex : {sans_couleur}"
+
+
+@pytest.mark.django_db
+def test_seed_does_not_clobber_personal_category_with_same_slug(django_user_model):
+    """Une perso (owner=user) de même slug qu'une catégorie système n'est JAMAIS touchée
+    par le seed (le scope owner=None garantit la coexistence #137)."""
+    user = django_user_model.objects.create_user(email="u@bric.test", password="x")
+    # 'alimentation_boissons' est un slug système du référentiel réel committé.
+    perso = Category.objects.create(
+        slug="alimentation_boissons",
+        name="Mes courses à moi",
+        owner=user,
+        is_system=False,
+        colour_hex="#123456",
+    )
+
+    _run()
+
+    perso.refresh_from_db()
+    assert perso.owner_id == user.pk
+    assert perso.name == "Mes courses à moi"  # intacte, jamais écrasée par le seed
+    assert perso.is_system is False
+    # Le système a bien été créé À CÔTÉ (même slug, owner NULL) — coexistence #137.
+    assert Category.objects.filter(
+        slug="alimentation_boissons", owner__isnull=True, is_system=True
+    ).exists()
+    assert Category.objects.filter(slug="alimentation_boissons").count() == 2
+
+
+@pytest.mark.django_db
+def test_committed_reference_has_no_personal_entries():
+    """Garde-fou Option C : le référentiel partagé ne contient QUE du système
+    (zéro is_system=False). Sinon la migration 0017 le re-capturerait en perso."""
+    data = json.loads(seed_mod.reference_json_path().read_text(encoding="utf-8"))
+    for c in data["categories"]:
+        assert c.get("is_system") is True, (
+            f"catégorie perso dans le référentiel : {c['slug']}"
+        )
+        for s in c.get("subcategories", []):
+            assert s.get("is_system") is True, (
+                f"sous-cat perso dans le référentiel : {s['slug']}"
+            )

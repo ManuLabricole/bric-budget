@@ -66,12 +66,18 @@ class Command(BaseCommand):
             for cat_data in categories:
                 category, created = Category.objects.update_or_create(
                     slug=cat_data["slug"],
+                    # owner=None : le référentiel ne seed QUE le système partagé (#149).
+                    # Depuis #137 le slug n'est plus unique globalement (système owner NULL
+                    # vs perso (owner, slug)). Sans ce scope, update_or_create matcherait —
+                    # ou écraserait — une catégorie PERSO de même slug. Tout le référentiel
+                    # est système : zéro perso ici (les perso d'Emmanuel → seed #146).
+                    owner=None,
                     defaults={
                         "name": cat_data["name"],
                         "icon": cat_data.get("icon", ""),
                         "colour_hex": cat_data.get("colour_hex", ""),
                         "order": cat_data.get("order", 0),
-                        "is_system": cat_data.get("is_system", False),
+                        "is_system": cat_data.get("is_system", True),
                         # Zéro drift : désactiver une catégorie dans le référentiel
                         # la désactive en DB au deploy suivant.
                         "is_active": cat_data.get("is_active", True),
@@ -87,18 +93,19 @@ class Command(BaseCommand):
                     # Compat JSON historique : "neutral" n'est pas un choix du modèle.
                     if default_nature == "neutral":
                         default_nature = ""
-                    _, sub_c = SubCategory.objects.update_or_create(
+                    _, sub_was_created = SubCategory.objects.update_or_create(
                         slug=sub_data["slug"],
+                        owner=None,  # système partagé uniquement (#149) — cf. Category ci-dessus
                         defaults={
                             "category": category,
                             "name": sub_data["name"],
                             "icon": sub_data.get("icon", ""),
                             "default_nature": default_nature,
-                            "is_system": sub_data.get("is_system", False),
+                            "is_system": sub_data.get("is_system", True),
                             "is_active": sub_data.get("is_active", True),
                         },
                     )
-                    if sub_c:
+                    if sub_was_created:
                         sub_created += 1
                     else:
                         sub_updated += 1
