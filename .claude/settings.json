@@ -104,6 +104,15 @@
             "command": "bash .claude/hooks/ruff_format.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/github_convention_guard.sh"
+          }
+        ]
       }
     ]
   }
