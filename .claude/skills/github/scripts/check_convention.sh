@@ -8,6 +8,10 @@
 #   2. Aucune issue n'a >1 label priorité (P0/P1/P2).
 #   3. Aucun label phase-* ne subsiste (le milestone EST la phase).
 
+# Robustesse : -u (variable non définie = erreur), pipefail (échec d'un pipe propagé).
+# Pas de -e : on gère explicitement fail=1 pour agréger les violations.
+set -uo pipefail
+
 unset GITHUB_TOKEN
 fail=0
 
@@ -15,7 +19,7 @@ fail=0
 no_ms=$(gh issue list --state open --limit 200 --json number,milestone \
   --jq '.[] | select(.milestone == null) | "#\(.number)"' 2>/dev/null)
 if [ -n "$no_ms" ]; then
-  echo "❌ Issues ouvertes SANS milestone : $(echo "$no_ms" | tr '\n' ' ')"
+  echo "❌ Issues ouvertes SANS milestone : ${no_ms//$'\n'/ }"
   fail=1
 fi
 
@@ -29,7 +33,7 @@ if [ -n "$dup_p" ]; then
 fi
 
 # 3 — labels phase-* résiduels
-phase=$(gh label list --limit 200 2>/dev/null | grep -iE '^phase[-	 ]' )
+phase=$(gh label list --limit 200 2>/dev/null | grep -iE '^phase' )
 if [ -n "$phase" ]; then
   echo "❌ Labels phase-* résiduels (à supprimer) :"
   echo "$phase"
