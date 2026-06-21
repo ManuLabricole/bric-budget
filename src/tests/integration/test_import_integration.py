@@ -273,7 +273,7 @@ def test_cic_full_import_creates_correct_transaction_count(
     """
     # get_exchange_rate mocké : évite appels réseau pour les tx EUR
     with patch(
-        "transactions.services.get_exchange_rate",
+        "transactions.services.import_service.get_exchange_rate",
         return_value=Decimal("0.93"),
     ):
         connector = CICConnector()
@@ -302,7 +302,7 @@ def test_cic_transactions_have_amount_chf_from_exchange_rate(
     On mocke le taux à 0.93 → amount_chf = amount × 0.93.
     """
     with patch(
-        "transactions.services.get_exchange_rate",
+        "transactions.services.import_service.get_exchange_rate",
         return_value=Decimal("0.93"),
     ):
         connector = CICConnector()
