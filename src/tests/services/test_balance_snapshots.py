@@ -66,7 +66,10 @@ def test_daily_snapshots_created_from_balance_after(eur_account, user):
     C'est la fonctionnalité principale : passer d'un seul snapshot par import
     à un snapshot par jour pour une courbe de solde complète.
     """
-    with patch("transactions.services.get_exchange_rate", return_value=Decimal("0.93")):
+    with patch(
+        "transactions.services.import_service.get_exchange_rate",
+        return_value=Decimal("0.93"),
+    ):
         service = ImportService()
         transactions = [
             make_tx_with_balance("d1", "2026-03-01", balance_after=1500.0),
@@ -90,7 +93,10 @@ def test_daily_snapshots_created_from_balance_after(eur_account, user):
 @pytest.mark.django_db
 def test_daily_snapshot_balance_matches_balance_after(eur_account, user):
     """La valeur du snapshot = la valeur balance_after de la transaction."""
-    with patch("transactions.services.get_exchange_rate", return_value=Decimal("0.93")):
+    with patch(
+        "transactions.services.import_service.get_exchange_rate",
+        return_value=Decimal("0.93"),
+    ):
         service = ImportService()
         transactions = [
             make_tx_with_balance("val_check", "2026-03-15", balance_after=2345.67)
@@ -126,7 +132,10 @@ def test_daily_snapshot_balance_chf_set_for_chf_account(chf_account, user):
 @pytest.mark.django_db
 def test_daily_snapshot_balance_chf_none_for_eur_account(eur_account, user):
     """Pour un compte EUR, balance_chf = None dans le snapshot journalier (conversion non faite)."""
-    with patch("transactions.services.get_exchange_rate", return_value=Decimal("0.93")):
+    with patch(
+        "transactions.services.import_service.get_exchange_rate",
+        return_value=Decimal("0.93"),
+    ):
         service = ImportService()
         transactions = [
             make_tx_with_balance("eur_chf_none", "2026-03-15", balance_after=1000.0)
@@ -151,7 +160,10 @@ def test_cic_antichronological_first_seen_per_date_wins(eur_account, user):
     On passe les transactions dans l'ordre antichronologique pour simuler CIC.
     La 1ère transaction du jour (vue en premier) a le bon solde fin de journée.
     """
-    with patch("transactions.services.get_exchange_rate", return_value=Decimal("0.93")):
+    with patch(
+        "transactions.services.import_service.get_exchange_rate",
+        return_value=Decimal("0.93"),
+    ):
         service = ImportService()
         transactions = [
             # Antichronologique : 3ème tx du jour vue en premier → solde fin de journée
@@ -187,7 +199,10 @@ def test_no_daily_snapshots_when_all_transactions_skipped(eur_account, user):
 
     Logique : on ne génère pas de snapshots pour des données qu'on n'a pas "créées".
     """
-    with patch("transactions.services.get_exchange_rate", return_value=Decimal("0.93")):
+    with patch(
+        "transactions.services.import_service.get_exchange_rate",
+        return_value=Decimal("0.93"),
+    ):
         service = ImportService()
         transactions = [
             make_tx_with_balance("dup_snap", "2026-03-15", balance_after=1000.0)
@@ -220,7 +235,10 @@ def test_reimport_overlapping_period_updates_snapshot_not_duplicates(eur_account
 
     Contrainte unique_together = [("account", "date")] doit être respectée.
     """
-    with patch("transactions.services.get_exchange_rate", return_value=Decimal("0.93")):
+    with patch(
+        "transactions.services.import_service.get_exchange_rate",
+        return_value=Decimal("0.93"),
+    ):
         service = ImportService()
 
         # Premier import : solde 1000
@@ -325,7 +343,10 @@ def test_closing_snapshot_with_none_balance_does_not_overwrite_daily_balance(
     Régression : avant notre fix, "balance: None" dans update_or_create defaults
     écrasait la bonne valeur avec NULL.
     """
-    with patch("transactions.services.get_exchange_rate", return_value=Decimal("0.93")):
+    with patch(
+        "transactions.services.import_service.get_exchange_rate",
+        return_value=Decimal("0.93"),
+    ):
         service = ImportService()
 
         # Transaction avec balance_after renseigné (colonne F CIC)
