@@ -9,7 +9,12 @@ import datetime
 import pytest
 
 from patrimoine.services.bilan import overview_bilan
-from patrimoine.services.chart_data import chart_series, distribution
+from patrimoine.services.chart_data import (
+    _STACK_PALETTE,
+    account_class_series,
+    chart_series,
+    distribution,
+)
 
 
 def _d(s):
@@ -53,6 +58,39 @@ def test_chart_series_flags_incomplete_on_missing_chf(eur_account, make_snapshot
     make_snapshot(eur_account, "2026-03-10", balance=500, balance_chf=None)
     data = chart_series([eur_account], _d("2026-03-10"), _d("2026-03-10"))
     assert data["complete"] is False
+
+
+@pytest.mark.django_db
+def test_account_class_series_uses_stored_colour_hex(
+    chf_account, savings_account, make_snapshot
+):
+    """#134 : la série d'un compte est colorée par sa colour_hex stockée (pas le cyclique)."""
+    chf_account.colour_hex = "#abcdef"
+    chf_account.save(update_fields=["colour_hex"])
+    savings_account.colour_hex = "#fedcba"
+    savings_account.save(update_fields=["colour_hex"])
+
+    make_snapshot(chf_account, "2026-03-10", balance=1000, balance_chf=1000)
+    make_snapshot(savings_account, "2026-03-10", balance=500, balance_chf=500)
+
+    data = account_class_series(
+        [chf_account, savings_account], _d("2026-03-10"), _d("2026-03-10")
+    )
+    by_name = {s["name"]: s["color"] for s in data["series"]}
+    assert by_name[chf_account.name] == "#abcdef"
+    assert by_name[savings_account.name] == "#fedcba"
+
+
+@pytest.mark.django_db
+def test_account_class_series_falls_back_when_colour_hex_empty(
+    chf_account, make_snapshot
+):
+    """Filet : compte sans colour_hex (legacy) → couleur _STACK_PALETTE, jamais vide."""
+    assert chf_account.colour_hex == ""  # créé sans allocation (fixture brute)
+    make_snapshot(chf_account, "2026-03-10", balance=1000, balance_chf=1000)
+
+    data = account_class_series([chf_account], _d("2026-03-10"), _d("2026-03-10"))
+    assert data["series"][0]["color"] == _STACK_PALETTE[0]
 
 
 @pytest.mark.django_db

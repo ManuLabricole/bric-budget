@@ -149,6 +149,13 @@ class Account(models.Model):
     # soumis au droit français (compte joint transfrontalier, etc.).
     fiscal_country = models.CharField(max_length=2, blank=True, default="")
 
+    # Couleur stable d'affichage dans les charts patrimoine (#134). Allouée à la
+    # création via services.colors.allocate_color() (domaine = comptes du user) puis
+    # FIGÉE → le compte garde sa teinte même quand d'autres comptes arrivent. Pattern
+    # calqué sur Category.colour_hex. blank = comptes créés avant la feature (backfillés
+    # par la data-migration 0020) ou créés hors create_account (filet : _STACK_PALETTE).
+    colour_hex = models.CharField(max_length=7, blank=True, default="")
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     # Manager custom — expose Account.objects.for_user(user).

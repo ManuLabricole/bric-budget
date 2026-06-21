@@ -77,8 +77,11 @@ def chart_series(
     }
 
 
-# Palette pour différencier les comptes dans le mode empilé.
-# (8 couleurs, ordre fixe pour que le même compte garde la même couleur.)
+# Filet de sécurité pour différencier les comptes dans le mode empilé QUAND un
+# compte n'a pas de colour_hex stockée (créé hors create_account ou pas encore
+# backfillé). La vraie couleur stable vit en DB (Account.colour_hex, #134) ; ce
+# tableau ne sert plus que de fallback déterministe (ordre fixe) pour ne JAMAIS
+# rendre une série sans couleur.
 _STACK_PALETTE = (
     "#5fae9f",
     "#5d6bf0",
@@ -89,6 +92,19 @@ _STACK_PALETTE = (
     "#7a8df0",
     "#c88fe8",
 )
+
+
+def account_color(account, index: int) -> str:
+    """
+    Couleur stable d'un compte dans les charts patrimoine (#134).
+
+    Source de vérité = `Account.colour_hex` (allouée à la création puis figée).
+    Fallback `_STACK_PALETTE[index % len]` si le champ est vide (compte non
+    backfillé ou créé hors create_account) — garde-fou : jamais de série sans
+    couleur. Helper partagé par la courbe (account_class_series) ET les
+    pastilles/treemap de la vue asset_class, pour que les 3 restent alignés.
+    """
+    return account.colour_hex or _STACK_PALETTE[index % len(_STACK_PALETTE)]
 
 
 def account_class_series(
@@ -128,7 +144,7 @@ def account_class_series(
     series = [
         {
             "name": acc.name,
-            "color": _STACK_PALETTE[i % len(_STACK_PALETTE)],
+            "color": account_color(acc, i),
             "values": [float(v) for v in per_account[i].values],
         }
         for i, acc in enumerate(accounts)

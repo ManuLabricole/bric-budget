@@ -32,8 +32,8 @@ from patrimoine.services.asset_classes import get_asset_class
 from patrimoine.services.balance_history import PERIODS, period_bounds
 from patrimoine.services.bilan import BilanNode
 from patrimoine.services.chart_data import (
-    _STACK_PALETTE,
     account_class_series,
+    account_color,
     distribution,
 )
 from patrimoine.services.valuation import current_value
@@ -100,14 +100,13 @@ def _account_colors(accounts) -> dict[int, str]:
     """
     Couleur de chaque compte = sa couleur dans la courbe ET le treemap.
 
-    Indexé par position dans la liste `accounts` (ordre institution__name, name) —
-    identique à `account_class_series` (chart_data.py) et aux nœuds de distribution.
+    Source = Account.colour_hex (couleur stable allouée à la création, #134), avec
+    fallback _STACK_PALETTE indexé par position dans la liste `accounts` (ordre
+    institution__name, name) — MÊME helper que `account_class_series` (chart_data.py),
+    donc courbe, treemap et pastilles restent alignés compte par compte.
     L'onglet Comptes affiche une pastille de cette couleur devant chaque compte.
     """
-    return {
-        acc.pk: _STACK_PALETTE[i % len(_STACK_PALETTE)]
-        for i, acc in enumerate(accounts)
-    }
+    return {acc.pk: account_color(acc, i) for i, acc in enumerate(accounts)}
 
 
 def _build_institution_groups(accounts, values: dict, colors: dict) -> list[dict]:
