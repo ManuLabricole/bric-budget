@@ -54,6 +54,7 @@ django-stubs = "^6.0.5"
 djhtml = "^3.0.11"
 pip-audit = "^2.10.0"
 pytest-testmon = "^2.2.0"
+pytest-randomly = "^4.0"
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings"
