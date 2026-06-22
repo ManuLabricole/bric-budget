@@ -107,3 +107,53 @@ DEMO_RULES = [
     ("MONOPRIX", "alimentation_boissons", "courses", 60),
     ("SNCF", "auto_transports", "billets_train", 60),
 ]
+
+
+# ── Catégories perso de démo (#118) ──────────────────────────────────────────
+# Set CURÉ et générique (committé) pour la persona démo : montre la feature
+# « catégories perso » ET re-prouve l'isolation inter-user (un autre user ne les
+# voit pas — cf. fix SR-013). Les VRAIES perso d'Emmanuel restent privées
+# (dump_perso_categories → assets/private en prod, incrément 2).
+#   parent_slug=None    → catégorie perso top-level (colour_hex utilisé)
+#   parent_slug="<slug>"→ sous-cat rattachée à ce parent (catégorie SYSTÈME ou la
+#                          perso top-level ci-dessous)
+@dataclass(frozen=True)
+class PersoCat:
+    name: str
+    slug: str
+    icon: str
+    parent_slug: str | None = None
+    colour_hex: str = ""
+
+
+PERSO_CATEGORIES: list[PersoCat] = [
+    # Catégorie perso top-level + ses 2 sous-catégories
+    PersoCat(
+        "Dépenses exceptionnelles",
+        "depenses_exceptionnelles",
+        "rosette",
+        colour_hex="#204cff",
+    ),
+    PersoCat("Déménagement", "demenagement", "truck", "depenses_exceptionnelles"),
+    PersoCat("Mariage", "mariage", "heart", "depenses_exceptionnelles"),
+    # Sous-catégories perso rattachées à des catégories SYSTÈME (partagées) — c'est
+    # exactement le cas qui fuyait avant le fix : une perso sous une cat système.
+    PersoCat("Concert", "concert", "music", "loisirs_divertissements"),
+    PersoCat("Livres", "livres", "book", "loisirs_divertissements"),
+    PersoCat("Vélo", "velo", "bike", "loisirs_divertissements"),
+    PersoCat(
+        "Évènements / Weekend",
+        "evenements_weekend",
+        "calendar-event",
+        "loisirs_divertissements",
+    ),
+    PersoCat("Uber Eats", "uber_eats", "moped", "alimentation_boissons"),
+    PersoCat("Repas maison", "repas_maison", "chef-hat", "alimentation_boissons"),
+    PersoCat("Amendes", "amendes", "file-invoice", "auto_transports"),
+    PersoCat(
+        "Aménagement / Bricolage",
+        "amenagement_bricolage",
+        "hammer",
+        "besoins_essentiels",
+    ),
+]

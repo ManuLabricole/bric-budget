@@ -12,7 +12,13 @@ from django.contrib.auth import get_user_model
 
 from accounts.models import Account, BalanceSnapshot, Card
 from demo.seeder import reset_demo, seed_demo
-from transactions.models import CategorizationRule, ImportLog, Transaction
+from transactions.models import (
+    CategorizationRule,
+    Category,
+    ImportLog,
+    SubCategory,
+    Transaction,
+)
 
 
 @pytest.fixture
@@ -74,6 +80,15 @@ def test_seed_demo_via_real_pipeline(demo_env):
     assert not txs.filter(category__isnull=True).exists()  # toutes ont une catégorie
     assert txs.exclude(category__slug="inconnu").exists()  # certaines via les règles
     assert txs.filter(is_internal_transfer=True).exists()  # virements épargne détectés
+
+    # Catégories perso seedées pour le user démo (montre la feature, scopées owner).
+    # DB de test = fraîche → les 11 PersoCat passent (1 top-level + 10 sous-cats).
+    assert Category.objects.filter(owner=user, is_system=False).count() == 1
+    assert SubCategory.objects.filter(owner=user, is_system=False).count() == 10
+    # Dont une sous-cat perso sous une catégorie SYSTÈME (le cas qui fuyait avant #118).
+    assert SubCategory.objects.filter(
+        owner=user, name="Concert", category__is_system=True
+    ).exists()
 
 
 @pytest.mark.django_db

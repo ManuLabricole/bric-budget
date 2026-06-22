@@ -547,6 +547,44 @@ def test_two_users_can_each_create_restaurants_via_view(
 
 
 @pytest.mark.django_db
+def test_two_users_same_perso_subcat_under_system_category(
+    system_category, user_a, user_b
+):
+    """RÉGRESSION #118 : la contrainte (category, name) de SubCategory est scopée owner
+    → deux users ont chacun « Concert » sous une catégorie SYSTÈME, sans collision ni
+    fuite. Avant : contrainte plate (category, name) → IntegrityError au 2e user."""
+    from types import SimpleNamespace
+
+    from budget.utils import seed_perso_categories
+
+    defn = [
+        SimpleNamespace(
+            name="Concert",
+            slug="concert",
+            icon="music",
+            parent_slug=system_category.slug,
+            colour_hex="",
+        )
+    ]
+    seed_perso_categories(user_a, defn)
+    seed_perso_categories(user_b, defn)  # ne doit PAS lever (constraint scopée owner)
+    seed_perso_categories(user_a, defn)  # idempotent — toujours pas d'erreur
+
+    a = SubCategory.objects.get(category=system_category, name="Concert", owner=user_a)
+    b = SubCategory.objects.get(category=system_category, name="Concert", owner=user_b)
+    assert a.pk != b.pk
+    # Isolation : A ne voit pas le Concert de B (for_user).
+    assert b not in SubCategory.objects.for_user(user_a)
+    # Idempotence : une seule ligne pour A malgré le double seed.
+    assert (
+        SubCategory.objects.filter(
+            category=system_category, name="Concert", owner=user_a
+        ).count()
+        == 1
+    )
+
+
+@pytest.mark.django_db
 def test_same_user_cannot_create_duplicate_category_via_view(client_a, user_a):
     """Le même user qui retape « Restaurants » est bloqué côté vue (message d'erreur)."""
     payload = {

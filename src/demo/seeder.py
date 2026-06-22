@@ -34,6 +34,7 @@ from accounts.models import (
     Institution,
     SavingsAccount,
 )
+from budget.utils import seed_perso_categories
 from demo import generators, profiles
 from imports.orchestrator import persist_import_file, prepare_import, run_import
 from services.exchange_rates import to_chf
@@ -174,6 +175,9 @@ def seed_demo(
     accounts = _ensure_accounts(user)
     # Règles AVANT les imports → la catégorisation se fait à l'import (ImportService).
     rules = _ensure_rules(user)
+    # Catégories perso de démo : montre la feature ET re-prouve l'isolation inter-user.
+    n_pcat, n_psub = seed_perso_categories(user, profiles.PERSO_CATEGORIES)
+    logger.info("seed_demo perso: %d catégories + %d sous-catégories", n_pcat, n_psub)
 
     if flush:
         _flush_demo_data(list(accounts.values()))

@@ -8,6 +8,7 @@ Aucune vue ici — uniquement des fonctions pures ou quasi-pures.
 """
 
 import calendar
+import logging
 import re
 from datetime import date
 
@@ -219,3 +220,68 @@ def _cats_with_subcats(user=None):
     return all_categories, [
         (cat, subcat_by_cat.get(cat.id, [])) for cat in all_categories
     ]
+
+
+logger = logging.getLogger(__name__)
+
+
+def seed_perso_categories(user, defs) -> tuple[int, int]:
+    """Crée (idempotent) les catégories/sous-catégories PERSO de `defs` pour `user`.
+
+    `defs` : itérable d'objets (name, slug, icon, parent_slug, colour_hex) — cf.
+    demo.profiles.PersoCat. Les top-level (parent_slug=None) sont créées d'abord, puis
+    les sous-cats dont le parent est résolu PAR SLUG : catégorie SYSTÈME (owner NULL)
+    OU la perso top-level de CE user — jamais celle d'un autre (SR-001/SR-013).
+
+    owner=user + is_system=False → perso scopées (for_user). Clé naturelle
+    (slug, owner) → re-run idempotent. Retourne (n_categories, n_sous_categories).
+    Réutilisable hors démo (seed prod de l'admin via une commande, incrément 2).
+    """
+    from transactions.models import Category, SubCategory
+
+    n_cat = n_sub = 0
+    for d in defs:
+        if d.parent_slug is not None:
+            continue
+        Category.objects.update_or_create(
+            slug=d.slug,
+            owner=user,
+            defaults={
+                "name": d.name,
+                "icon": d.icon,
+                "colour_hex": d.colour_hex,
+                "is_system": False,
+                "is_active": True,
+            },
+        )
+        n_cat += 1
+
+    for d in defs:
+        if d.parent_slug is None:
+            continue
+        parent = (
+            Category.objects.filter(slug=d.parent_slug)
+            .filter(Q(owner__isnull=True) | Q(owner=user))
+            .first()
+        )
+        if parent is None:
+            logger.warning(
+                "seed_perso_categories: parent slug=%s introuvable pour sous-cat=%s",
+                d.parent_slug,
+                d.slug,
+            )
+            continue
+        SubCategory.objects.update_or_create(
+            slug=d.slug,
+            owner=user,
+            defaults={
+                "name": d.name,
+                "icon": d.icon,
+                "category": parent,
+                "is_system": False,
+                "is_active": True,
+            },
+        )
+        n_sub += 1
+
+    return n_cat, n_sub
