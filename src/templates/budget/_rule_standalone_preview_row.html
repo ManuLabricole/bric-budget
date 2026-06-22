@@ -49,6 +49,6 @@ Pas d'HTMX — lecture seule.
         {% else %}
             −
         {% endif %}
-        {{ tx.amount_chf|default:tx.amount|chf_dec }}
+        {{ tx.amount_chf|default:tx.amount|money_dec:"CHF" }}
     </span>
 </div>

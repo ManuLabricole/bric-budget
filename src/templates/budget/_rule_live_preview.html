@@ -42,7 +42,7 @@ Utilisé de deux façons :
                     {% else %}
                         −
                     {% endif %}
-                    {{ tx.amount|chf_dec }}
+                    {{ tx.amount|money_dec:tx.currency }}
                 </span>
             </div>
         {% endfor %}
