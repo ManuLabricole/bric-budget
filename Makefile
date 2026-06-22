@@ -54,8 +54,9 @@ help:
 	@printf "    $(BOLD)make test$(RESET)            Tests unitaires uniquement\n"
 	@printf "\n"
 	@printf "  $(CYAN)🧪 Dev tools$(RESET)\n"
-	@printf "    $(BOLD)make dev-randomize$(RESET)   Catégorisation aléatoire (transactions non catégorisées)\n"
-	@printf "    $(BOLD)make dev-randomize ALL=1$(RESET)  Re-randomiser toutes les transactions\n"
+	@printf "    $(BOLD)make demo-seed$(RESET)       Seed démo : 6 comptes via imports réels (flush)\n"
+	@printf "    $(BOLD)make demo-reset$(RESET)      Reset des données démo (garde l'utilisateur)\n"
+	@printf "    $(DIM)→ ou via l'admin : /admin/demo/$(RESET)\n"
 	@printf "\n"
 
 # =============================================================================
@@ -174,11 +175,6 @@ seed:
 	@$(MANAGE) seed_initial
 	@printf "  $(DIM)→ comptes perso : make setup-accounts (ou python manage.py setup_accounts)$(RESET)\n"
 
-reset-seed:
-	@printf "  🗑️  $(RED)Suppression des données seedées...$(RESET)\n"
-	@$(MANAGE) dev_reset_seed --yes
-	@printf "  $(DIM)→ relance make seed pour repeupler$(RESET)\n"
-
 import-all:
 	@printf "  📥 $(CYAN)Import all raw files$(if $(COMMIT), — écriture DB,  — dry run)...$(RESET)\n"
 	@$(MANAGE) import_all --dir assets/private/data/raw $(if $(COMMIT),--commit,)
@@ -211,24 +207,19 @@ export-rules:
 	@mkdir -p assets/private
 	@$(MANAGE) export_rules --output assets/private/rules_backup_$(shell date +%Y%m%d).json
 
-reset-categories:
-	@printf "  🔄 $(YELLOW)Reset catégories : positif → Revenus, négatif → Inconnu...$(RESET)\n"
-	@$(MANAGE) dev_reset_categories $(if $(DRY),--dry-run,)
-
 # =============================================================================
-# 🧪 Dev tools
+# 🧪 Dev tools — données de démo (app demo/, voir aussi /admin/demo/)
 # =============================================================================
 
-dev-randomize:
-	@printf "  🎲 $(YELLOW)DEV — Catégorisation aléatoire des transactions...$(RESET)\n"
-	@printf "  $(DIM)→ income → Revenus/Remboursements | dépenses → toutes les autres$(RESET)\n"
-	@$(MANAGE) dev_randomize_categories $(if $(ALL),--all,)
-	@printf "  ✅ $(GREEN)Fait — recharge /budget/ pour voir les données$(RESET)\n"
+demo-seed:
+	@printf "  🌱 $(YELLOW)DEV — Seed démo : 6 comptes via imports réels...$(RESET)\n"
+	@$(MANAGE) dev_seed --flush $(if $(MONTHS),--months=$(MONTHS),)
+	@printf "  ✅ $(GREEN)Fait — recharge /budget/ ou /patrimoine/ pour voir les données$(RESET)\n"
 
-dev-seed-realistic:
-	@printf "  🌱 $(YELLOW)DEV — Seed réaliste 12 mois (Genève, ratio 1.30)...$(RESET)\n"
-	@$(MANAGE) dev_seed_realistic $(if $(FLUSH),--flush,) $(if $(MONTHS),--months=$(MONTHS),)
-	@printf "  ✅ $(GREEN)Fait — recharge /budget/ pour voir les données$(RESET)\n"
+demo-reset:
+	@printf "  🗑️  $(RED)DEV — Reset des données démo (garde l'utilisateur)...$(RESET)\n"
+	@$(MANAGE) dev_reset --yes
+	@printf "  $(DIM)→ relance make demo-seed pour repeupler$(RESET)\n"
 
 backfill-logos:
 	@printf "  🏦 $(YELLOW)Téléchargement des logos institutions manquants (Google Favicons)...$(RESET)\n"
@@ -270,4 +261,4 @@ restore:
 	@printf "  ✅ $(GREEN)Restauration terminée$(RESET)\n"
 
 # =============================================================================
-.PHONY: help status up down logs run migrate makemigrations shell create-superuser seed reset-seed import-all import-yuh import-ubs import-cic backup restore dev-randomize dev-seed-realistic lint type check test coverage
+.PHONY: help status up down logs run migrate makemigrations shell create-superuser seed import-all import-yuh import-ubs import-cic backup restore demo-seed demo-reset lint type check test coverage

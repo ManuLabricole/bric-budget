@@ -1,6 +1,6 @@
 """
 demo/profiles.py — persona de démo (#118) : un·e ingénieur·e basé·e à Genève,
-~6 800 CHF/mois, qui épargne. Adapté du blueprint de dev_seed_realistic.
+~6 800 CHF/mois, qui épargne.
 
 On décrit des FLUX mensuels par compte, indépendamment du format de fichier.
 generators.py les rend au format exact de chaque banque ; seeder.py les importe
