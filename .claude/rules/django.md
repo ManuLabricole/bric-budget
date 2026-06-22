@@ -12,6 +12,10 @@ paths:
 - **IDOR (SR-001)** : accès toujours scopé utilisateur — `Transaction.objects.for_user(request.user)`,
   `Account.objects.filter(is_active=True, members=request.user)`,
   `ImportLog.objects.filter(file_hash=h, account__members=request.user)`. Jamais `.all()` / `.get(pk=)` nu.
+- **IDOR reverse-FK / PK (SR-013)** : une reverse-FK en template — `cat.subcategories.all`,
+  `cat.rules.all` — NE passe PAS par `.for_user()` (manager court-circuité) → **`Prefetch` scopé dans la
+  vue** (`Prefetch("subcategories", queryset=SubCategory.objects.for_user(u))`). Et `Model.objects.filter(pk=<input>)`
+  dont on rend un champ → `.for_user().filter(pk=…)`. Owned = Category / SubCategory / CategorizationRule.
 - **Argent (SR-002)** : `Decimal(str(x))`, JAMAIS `Decimal(float)`.
 - **Écritures multiples (SR-003)** : `with transaction.atomic():`.
 - **Logs (SR-005)** : `logger.{debug,info,exception}`, jamais `print()`.

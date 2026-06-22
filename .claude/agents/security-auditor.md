@@ -30,6 +30,11 @@ Rappel des plus piégeuses (non exhaustif — la source fait foi) :
   - `Transaction.objects.for_user(request.user)` — jamais `.all()` / `.get(pk=…)` nu.
   - `Account.objects.filter(is_active=True, members=request.user)`.
   - `ImportLog.objects.filter(file_hash=h, account__members=request.user)`.
+  - **Reverse-FK / PK (SR-013)** : `cat.subcategories.all` / `cat.rules.all` en TEMPLATE = NON scopé
+    (le manager `.for_user()` est court-circuité par la reverse-FK) → exiger un `Prefetch(… for_user …)`
+    dans la vue qui le rend. Idem `Model.objects.filter(pk=<input GET/POST>)` dont on rend un champ → exiger
+    `.for_user()`. **Grep systématique** : `subcategories.all` / `\.rules\.all` dans `src/templates/`, et
+    `SubCategory.objects.filter(pk=` / `Category.objects.filter(pk=` sans `for_user` dans les vues.
 - **SR-002** — `Decimal(str(x))`, JAMAIS `Decimal(float)`.
 - **SR-012 LLM** — appels Claude API : données utilisateur séparées des instructions, sortie validée (allowlist), pas de PII dans le system prompt.
 
