@@ -346,6 +346,7 @@ def test_cic_balance_snapshots_have_balance_chf_from_exchange_rate(
     # Aucun snapshot avec solde ne doit rester sans valorisation CHF (taux dispo).
     assert not snaps.filter(balance__isnull=False, balance_chf__isnull=True).exists()
     for snap in snaps.filter(balance__isnull=False):
+        assert snap.balance is not None  # garanti par le filter — narrowing pour mypy
         assert snap.balance_chf == (snap.balance * Decimal("0.93")).quantize(
             Decimal("0.01")
         )
