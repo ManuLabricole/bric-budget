@@ -236,10 +236,14 @@ def budget_rule_standalone_preview(request):
 
     cat_display_name = ""
     if cat_id:
-        cat = Category.objects.filter(pk=cat_id).first()
+        # SR-001 : cat_id/subcat_id viennent de GET params arbitraires et leur NOM
+        # est rendu → scoper for_user, sinon fuite du nom d'une perso d'un autre user.
+        cat = Category.objects.for_user(request.user).filter(pk=cat_id).first()
         if cat:
             sub = (
-                SubCategory.objects.filter(pk=subcat_id).first() if subcat_id else None
+                SubCategory.objects.for_user(request.user).filter(pk=subcat_id).first()
+                if subcat_id
+                else None
             )
             cat_display_name = sub.name if sub else cat.name
 
@@ -454,12 +458,18 @@ def budget_rule_live_preview(request):
 
     cat_display_name = ""
     if cat_id:
-        cat = Category.objects.filter(pk=cat_id).first()
+        # SR-001 : cat_id/subcat_id = GET params arbitraires, leur NOM est rendu →
+        # scoper for_user, sinon fuite du nom d'une perso d'un autre user.
+        cat = Category.objects.for_user(request.user).filter(pk=cat_id).first()
         if cat:
             # Si une sous-catégorie est passée, on l'affiche en priorité
             subcat_id = request.GET.get("subcategory_id")
             if subcat_id:
-                sub = SubCategory.objects.filter(pk=subcat_id).first()
+                sub = (
+                    SubCategory.objects.for_user(request.user)
+                    .filter(pk=subcat_id)
+                    .first()
+                )
                 cat_display_name = sub.name if sub else cat.name
             else:
                 cat_display_name = cat.name

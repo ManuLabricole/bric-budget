@@ -11,7 +11,7 @@ import calendar
 import re
 from datetime import date
 
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.text import slugify
 
@@ -204,6 +204,12 @@ def _cats_with_subcats(user=None):
     if user is not None:
         cat_qs = cat_qs.for_user(user)
         sub_qs = sub_qs.for_user(user)
+
+    # SR-001 — fuite inter-user : les templates picker font `cat.subcategories.all`
+    # (reverse-FK NON scopée) → une sous-cat perso d'un AUTRE user rattachée à une
+    # catégorie système était exposée. On préfetch la reverse-FK avec sub_qs (déjà
+    # for_user) → `cat.subcategories.all` ne renvoie plus que système + les miennes.
+    cat_qs = cat_qs.prefetch_related(Prefetch("subcategories", queryset=sub_qs))
 
     all_categories = list(cat_qs.order_by("order", "name"))
     subcat_by_cat: dict[int, list] = {}

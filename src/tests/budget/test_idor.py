@@ -362,6 +362,119 @@ def test_category_picker_hides_other_user_perso(client_a, account_a, category_b)
 
 
 @pytest.mark.django_db
+def test_category_picker_hides_other_user_perso_subcategory(
+    client_a, account_a, system_category, user_b
+):
+    """RÉGRESSION : une SOUS-catégorie perso d'un AUTRE user, rattachée à une catégorie
+    SYSTÈME (partagée), ne doit pas fuiter dans le picker. Le template fait
+    `cat.subcategories.all` → sans prefetch scopé, la perso de l'autre apparaissait
+    (et son bouton supprimer → 404). Bug réel : demo voyait « Frais administratif »."""
+    leaked = SubCategory.objects.create(
+        category=system_category,
+        name="PERSO USER B SUBCAT",
+        slug="perso-user-b-subcat",
+        is_system=False,
+        is_active=True,
+        owner=user_b,
+    )
+    tx = make_tx(account_a, "subpicker-scope")
+    response = client_a.get(reverse("budget:panel_category_picker") + f"?tx_id={tx.pk}")
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "PERSO USER B SUBCAT" not in body
+    assert f"subcategory/{leaked.slug}/delete-confirm" not in body
+
+
+@pytest.mark.django_db
+def test_category_picker_shows_own_perso_subcategory(
+    client_b, account_b, system_category, user_b
+):
+    """Anti sur-scoping : le user voit bien SA propre sous-cat perso sous une
+    catégorie système (le fix ne doit pas masquer les siennes)."""
+    SubCategory.objects.create(
+        category=system_category,
+        name="MA PERSO SUBCAT B",
+        slug="ma-perso-subcat-b",
+        is_system=False,
+        is_active=True,
+        owner=user_b,
+    )
+    tx = make_tx(account_b, "own-subpicker")
+    response = client_b.get(reverse("budget:panel_category_picker") + f"?tx_id={tx.pk}")
+    assert response.status_code == 200
+    assert "MA PERSO SUBCAT B" in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_cats_with_subcats_hides_other_user_perso_subcategory(
+    system_category, user_a, user_b
+):
+    """Le helper partagé des pickers de RÈGLE scope aussi les sous-catégories
+    (cat.subcategories.all préfetché for_user)."""
+    from budget.utils import _cats_with_subcats
+
+    SubCategory.objects.create(
+        category=system_category,
+        name="PERSO B SUB RULE",
+        slug="perso-b-sub-rule",
+        is_system=False,
+        is_active=True,
+        owner=user_b,
+    )
+    all_cats, _ = _cats_with_subcats(user_a)
+    cat = next(c for c in all_cats if c.id == system_category.id)
+    names = [s.name for s in cat.subcategories.all()]
+    assert "PERSO B SUB RULE" not in names
+
+
+@pytest.mark.django_db
+def test_rule_live_preview_does_not_leak_other_user_subcat_name(
+    client_a, system_category, user_b
+):
+    """RÉGRESSION (audit sécu) : passer le subcategory_id d'un AUTRE user en GET ne
+    doit pas rendre le NOM de sa sous-cat perso (fuite via la live preview de règle)."""
+    leaked = SubCategory.objects.create(
+        category=system_category,
+        name="SECRET SUBCAT B",
+        slug="secret-subcat-b",
+        is_system=False,
+        is_active=True,
+        owner=user_b,
+    )
+    response = client_a.get(
+        reverse("budget:rule_live_preview"),
+        {
+            "keyword": "X",
+            "category_id": system_category.pk,
+            "subcategory_id": leaked.pk,
+        },
+    )
+    assert response.status_code == 200
+    assert "SECRET SUBCAT B" not in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_rule_standalone_preview_does_not_leak_other_user_subcat_name(
+    client_a, system_category, user_b
+):
+    """RÉGRESSION (audit sécu) : idem pour la preview standalone (param kw + ids GET)."""
+    leaked = SubCategory.objects.create(
+        category=system_category,
+        name="SECRET SUBCAT B2",
+        slug="secret-subcat-b2",
+        is_system=False,
+        is_active=True,
+        owner=user_b,
+    )
+    response = client_a.get(
+        reverse("budget:rule_standalone_preview"),
+        {"kw": "X", "category_id": system_category.pk, "subcategory_id": leaked.pk},
+    )
+    assert response.status_code == 200
+    assert "SECRET SUBCAT B2" not in response.content.decode()
+
+
+@pytest.mark.django_db
 def test_categorize_with_other_user_perso_category_blocked(
     client_a, account_a, category_b
 ):

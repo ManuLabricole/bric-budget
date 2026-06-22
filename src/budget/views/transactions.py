@@ -18,6 +18,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import EmptyPage, InvalidPage, Paginator
+from django.db.models import Prefetch
 from django.db.models.functions import Abs
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, render
@@ -662,10 +663,19 @@ def budget_panel_category_picker(request):
         ),
         pk=tx_id,
     )
+    # SR-001 — fuite inter-user : le template fait `cat.subcategories.all` (reverse-FK
+    # NON scopée). Sans ce prefetch, une sous-cat perso d'un AUTRE user rattachée à une
+    # catégorie système apparaît dans le picker (et son delete → 404). On préfetch scopé.
+    scoped_subs = Prefetch(
+        "subcategories",
+        queryset=SubCategory.objects.for_user(request.user).filter(is_active=True),
+    )
     # Catégories système = seedées à l'init, non supprimables (ex: Alimentation, Transport...)
     # is_system=True ⇒ owner NULL ⇒ déjà visibles par tous ; for_user inutile ici.
-    system_cats = Category.objects.filter(is_active=True, is_system=True).order_by(
-        "order"
+    system_cats = (
+        Category.objects.filter(is_active=True, is_system=True)
+        .order_by("order")
+        .prefetch_related(scoped_subs)
     )
     # Catégories personnalisées = créées par l'utilisateur → scopées for_user (#137) :
     # un user ne voit QUE ses propres perso dans le picker, jamais celles d'un autre.
@@ -673,6 +683,7 @@ def budget_panel_category_picker(request):
         Category.objects.for_user(request.user)
         .filter(is_active=True, is_system=False)
         .order_by("order")
+        .prefetch_related(scoped_subs)
     )
 
     # Contexte inline (patrimoine, category) → le picker vit dans la carte #<detail_id>
