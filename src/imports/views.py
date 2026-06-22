@@ -532,7 +532,14 @@ def import_confirm(request):
 
     try:
         # Même chemin que le seed de dev (#118) : prepare → run → persist.
-        prepared = prepare_import(tmp_path, user=request.user)
+        # forced_account_id : compte choisi via le picker (Yuh multi-comptes) ;
+        # None pour UBS/CIC (résolus par IBAN/RIB). Sans ça, confirm re-résout sans
+        # forçage → AccountAmbiguous → import perdu.
+        prepared = prepare_import(
+            tmp_path,
+            user=request.user,
+            forced_account_id=pending.get("forced_account_id"),
+        )
         results = run_import(
             prepared,
             tmp_path,
@@ -864,6 +871,13 @@ def import_select_account(request):
             "Compte invalide ou inactif.",
             hint="Sélectionnez un compte de la liste.",
         )
+
+    # Mémoriser le compte choisi : import_confirm DOIT cibler CE compte. Sans ça,
+    # confirm re-résout sans forçage → AccountAmbiguous (Yuh multi-comptes) →
+    # import perdu (« part dans le vide »). Bug réel (#118).
+    pending["forced_account_id"] = account.pk
+    request.session["pending_import"] = pending
+    request.session.modified = True
 
     # Relancer le dry-run avec le compte forcé
     try:
