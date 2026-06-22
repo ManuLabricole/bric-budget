@@ -35,14 +35,15 @@ def test_seed_demo_via_real_pipeline(demo_env):
     assert user.check_password("test-demo-pwd")
     assert summary.user_email == demo_env.DEMO_USER_EMAIL
 
-    # 3 comptes (UBS courant + épargne, Yuh) + carte Yuh résolvable
-    assert Account.objects.filter(members=user).count() == 3
+    # 6 comptes : UBS (courant+épargne), CIC (courant+livret EUR), Yuh (courant+épargne)
+    assert Account.objects.filter(members=user).count() == 6
+    assert Account.objects.filter(members=user, currency="EUR").count() == 2  # CIC
     assert Card.objects.filter(
         checking_account__account__members=user, last_four="1150"
     ).exists()
 
-    # Imports via pipeline → ImportLog réels, TOUTES les tx liées à un import
-    assert ImportLog.objects.filter(account__members=user).count() >= 3
+    # Imports via pipeline → ImportLog réels (≥5 fichiers, CIC = 2 feuilles)
+    assert ImportLog.objects.filter(account__members=user).count() >= 5
     txs = Transaction.objects.filter(account__members=user)
     assert txs.count() > 30
     assert not txs.filter(import_log__isnull=True).exists()
@@ -55,8 +56,18 @@ def test_seed_demo_via_real_pipeline(demo_env):
         ImportLog.objects.filter(account__members=user).exclude(stored_path="").exists()
     )
 
-    # BalanceSnapshot créés (courbe de solde)
-    assert BalanceSnapshot.objects.filter(account__members=user).exists()
+    # CHAQUE compte a au moins un BalanceSnapshot → visible en patrimoine.
+    # (Régression : Yuh n'a pas de solde dans son CSV → était invisible.)
+    account_ids = list(
+        Account.objects.filter(members=user).values_list("id", flat=True)
+    )
+    accounts_with_snapshot = (
+        BalanceSnapshot.objects.filter(account_id__in=account_ids)
+        .values("account_id")
+        .distinct()
+        .count()
+    )
+    assert accounts_with_snapshot == 6
 
     # Catégorisation : règles démo seedées + appliquées à l'import
     assert CategorizationRule.objects.filter(owner=user).count() >= 10

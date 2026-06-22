@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import tempfile
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -30,6 +30,7 @@ from accounts.models import (
     BalanceSnapshot,
     Card,
     CheckingAccount,
+    ExchangeRate,
     Institution,
     SavingsAccount,
 )
@@ -46,49 +47,102 @@ from transactions.models import (
 logger = logging.getLogger(__name__)
 
 
+def _norm(identifier: str) -> str:
+    """IBAN/RIB sans espaces = ce que le resolver matche (stocké espacé en source)."""
+    return identifier.replace(" ", "")
+
+
 @dataclass(frozen=True)
 class _DemoAccount:
-    """Spécification d'un compte démo.
+    """Un compte démo. iban (UBS) OU contract_number (CIC RIB) sert à la résolution
+    d'import ; Yuh n'a aucun identifiant → résolu par forçage. currency CHF sauf CIC (EUR)."""
 
-    bank      : clé du générateur (generators.write_bank_file).
-    fixture   : chemin relatif sous demo/fixtures/ (mode --from-fixtures).
-    iban      : normalisé sans espaces = ce que le resolver matche (None pour Yuh,
-                résolu par convention).
-    """
-
-    bank: str
-    fixture: str
+    key: str
     institution: str
     name: str
     account_type: str
+    currency: str
     iban: str | None
+    contract_number: str
 
 
+@dataclass(frozen=True)
+class _DemoFile:
+    """Un fichier à importer. bank = clé generators.write_bank_file ; forced_account
+    = clé de compte à forcer (Yuh, sans identifiant), None sinon (UBS→IBAN, CIC→RIB :
+    1 .xlsx → 2 comptes résolus par RIB)."""
+
+    bank: str
+    fixture: str
+    forced_account: str | None
+
+
+# 3 banques × (courant + épargne) = 6 comptes.
 _DEMO_ACCOUNTS = [
     _DemoAccount(
-        bank="ubs_checking",
-        fixture="ubs/ubs_checking_demo.csv",
-        institution="ubs",
-        name="UBS Compte courant",
-        account_type=Account.AccountType.CHECKING,
-        iban=profiles.DEMO_UBS_CHECKING_IBAN.replace(" ", ""),
+        "ubs_courant",
+        "ubs",
+        "UBS Compte courant",
+        Account.AccountType.CHECKING,
+        "CHF",
+        _norm(profiles.DEMO_UBS_CHECKING_IBAN),
+        "",
     ),
     _DemoAccount(
-        bank="ubs_savings",
-        fixture="ubs/ubs_savings_demo.csv",
-        institution="ubs",
-        name="UBS Épargne",
-        account_type=Account.AccountType.SAVINGS,
-        iban=profiles.DEMO_UBS_SAVINGS_IBAN.replace(" ", ""),
+        "ubs_epargne",
+        "ubs",
+        "UBS Épargne",
+        Account.AccountType.SAVINGS,
+        "CHF",
+        _norm(profiles.DEMO_UBS_SAVINGS_IBAN),
+        "",
     ),
     _DemoAccount(
-        bank="yuh",
-        fixture="yuh/yuh_demo.csv",
-        institution="yuh",
-        name="Yuh",
-        account_type=Account.AccountType.CHECKING,
-        iban=None,
+        "cic_courant",
+        "cic",
+        "CIC Compte courant",
+        Account.AccountType.CHECKING,
+        "EUR",
+        None,
+        _norm(generators.CIC_CHECKING_RIB),
     ),
+    _DemoAccount(
+        "cic_livret",
+        "cic",
+        "CIC Livret",
+        Account.AccountType.SAVINGS,
+        "EUR",
+        None,
+        _norm(generators.CIC_SAVINGS_RIB),
+    ),
+    _DemoAccount(
+        "yuh_courant",
+        "yuh",
+        "Yuh Compte courant",
+        Account.AccountType.CHECKING,
+        "CHF",
+        None,
+        "",
+    ),
+    _DemoAccount(
+        "yuh_epargne",
+        "yuh",
+        "Yuh Épargne",
+        Account.AccountType.SAVINGS,
+        "CHF",
+        None,
+        "",
+    ),
+]
+
+# Fichiers importés. CIC = 1 .xlsx → 2 comptes (RIB). Yuh = 2 fichiers forcés
+# (pas d'identifiant dans le CSV → on cible explicitement le bon compte).
+_DEMO_FILES = [
+    _DemoFile("ubs_checking", "ubs/ubs_checking_demo.csv", None),
+    _DemoFile("ubs_savings", "ubs/ubs_savings_demo.csv", None),
+    _DemoFile("cic", "cic/cic_demo.xlsx", None),
+    _DemoFile("yuh", "yuh/yuh_demo.csv", "yuh_courant"),
+    _DemoFile("yuh_savings", "yuh/yuh_savings_demo.csv", "yuh_epargne"),
 ]
 
 FIXTURES_DIR = Path(settings.BASE_DIR) / "demo" / "fixtures"
@@ -124,14 +178,20 @@ def seed_demo(
         _flush_demo_data(list(accounts.values()))
 
     anchor = date.today()
+    # EUR→CHF en DB AVANT l'import CIC → get_exchange_rate tape le cache, 0 réseau.
+    _ensure_exchange_rates(anchor, months)
     imports = created = skipped = 0
     with tempfile.TemporaryDirectory(prefix="bric_demo_") as tmp:
         tmp_dir = Path(tmp)
-        for spec in _DEMO_ACCOUNTS:
+        for spec in _DEMO_FILES:
             path = _resolve_file(
                 spec, tmp_dir, months=months, anchor=anchor, from_fixtures=from_fixtures
             )
-            prepared = prepare_import(path, user=user)
+            # Yuh n'a pas d'identifiant dans le fichier → on force le bon compte.
+            forced_id = (
+                accounts[spec.forced_account].id if spec.forced_account else None
+            )
+            prepared = prepare_import(path, user=user, forced_account_id=forced_id)
             results = run_import(
                 prepared, path, filename=path.name, imported_by=user, dry_run=False
             )
@@ -145,6 +205,10 @@ def seed_demo(
             imports += sum(1 for r in results if r.log_pk)
             created += sum(r.count_created for r in results)
             skipped += sum(r.count_skipped for r in results)
+
+    # Garantit un solde affichable par compte. UBS/CIC en ont déjà via l'import ;
+    # Yuh n'expose pas de solde dans son CSV → sans ça il est INVISIBLE en patrimoine.
+    _ensure_balances(list(accounts.values()))
 
     # Applique les règles de catégorisation existantes (no-op si aucune règle).
     call_command("apply_rules")
@@ -217,7 +281,7 @@ def _ensure_demo_user():
 
 
 def _ensure_accounts(user) -> dict[str, Account]:
-    """Comptes démo (idempotent) + carte Yuh. Retourne {bank_key: Account}."""
+    """6 comptes démo (idempotent) + carte sur le courant Yuh. Retourne {key: Account}."""
     accounts: dict[str, Account] = {}
     for spec in _DEMO_ACCOUNTS:
         institution = Institution.objects.get(slug=spec.institution)
@@ -226,8 +290,9 @@ def _ensure_accounts(user) -> dict[str, Account]:
             name=spec.name,
             defaults={
                 "account_type": spec.account_type,
-                "currency": Account.Currency.CHF,
+                "currency": spec.currency,
                 "iban": spec.iban,
+                "contract_number": spec.contract_number,
                 "is_active": True,
             },
         )
@@ -238,10 +303,10 @@ def _ensure_accounts(user) -> dict[str, Account]:
             SavingsAccount.objects.get_or_create(
                 account=account, defaults={"interest_rate": Decimal("0.75")}
             )
-        accounts[spec.bank] = account
+        accounts[spec.key] = account
 
-    # Carte Yuh (last-four synthétique) → résolution carte à l'import des dépenses.
-    yuh_checking = accounts["yuh"].checking_account
+    # Carte sur le compte COURANT Yuh → résolution carte à l'import des dépenses.
+    yuh_checking = accounts["yuh_courant"].checking_account
     Card.objects.get_or_create(
         checking_account=yuh_checking,
         last_four=profiles.DEMO_YUH_CARD_LAST_FOUR,
@@ -281,7 +346,7 @@ def _ensure_rules(user) -> int:
 
 
 def _resolve_file(
-    spec: _DemoAccount,
+    spec: _DemoFile,
     tmp_dir: Path,
     *,
     months: int,
@@ -306,3 +371,42 @@ def _flush_demo_data(accounts: list[Account]) -> None:
         Transaction.objects.filter(account_id__in=account_ids).delete()
         ImportLog.objects.filter(account_id__in=account_ids).delete()
         BalanceSnapshot.objects.filter(account_id__in=account_ids).delete()
+
+
+def _ensure_balances(accounts: list[Account]) -> None:
+    """Crée un BalanceSnapshot par compte qui n'en a pas encore (sinon le compte est
+    invisible dans la vue patrimoine). Solde synthétique plausible par type de compte."""
+    fallback: dict[str, Decimal] = {
+        Account.AccountType.CHECKING: Decimal("3500.00"),
+        Account.AccountType.SAVINGS: Decimal("8000.00"),
+    }
+    today = date.today()
+    for account in accounts:
+        if BalanceSnapshot.objects.filter(account=account).exists():
+            continue
+        bal = fallback.get(account.account_type, Decimal("1000.00"))
+        BalanceSnapshot.objects.create(
+            account=account,
+            date=today,
+            currency=account.currency,
+            balance=bal,
+            balance_chf=bal if account.currency == "CHF" else None,
+            source=BalanceSnapshot.Source.IMPORT,
+        )
+
+
+def _ensure_exchange_rates(anchor: date, months: int) -> None:
+    """Pré-seede EUR→CHF en DB pour toute la période → get_exchange_rate (import CIC,
+    compte EUR) tape le cache DB, jamais le réseau (seed hors-ligne). Taux synthétique."""
+    start = anchor - timedelta(days=(months + 1) * 31)
+    rate = Decimal("0.96")
+    rows = [
+        ExchangeRate(
+            date=start + timedelta(days=i),
+            from_currency="EUR",
+            to_currency="CHF",
+            rate=rate,
+        )
+        for i in range((anchor - start).days + 2)
+    ]
+    ExchangeRate.objects.bulk_create(rows, ignore_conflicts=True)

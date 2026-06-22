@@ -72,6 +72,11 @@ YUH_CARD_FLOWS: list[Flow] = [
     Flow("STARBUCKS GENEVE", 12, 0, "debit", recurrent=False),
 ]
 
+# Épargne Yuh : versement mensuel entrant (transfert vers l'épargne).
+YUH_SAVINGS_FLOWS: list[Flow] = [
+    Flow("VERSEMENT EPARGNE YUH", 250, 27, "credit"),
+]
+
 
 # ── Règles de catégorisation démo ─────────────────────────────────────────────
 # (keyword cherché dans description_raw, slug catégorie, slug sous-catégorie|None,
@@ -97,4 +102,8 @@ DEMO_RULES = [
     ("CFF", "auto_transports", "transports_publics", 60),
     ("PHARMACIE", "sante", "medicaments", 60),
     ("NETFLIX", "loisirs_divertissements", "abonnements_loisirs", 60),
+    # CIC (EUR) + épargne Yuh
+    ("VERSEMENT EPARGNE", "virements", "transferts_internes", 95),
+    ("MONOPRIX", "alimentation_boissons", "courses", 60),
+    ("SNCF", "auto_transports", "billets_train", 60),
 ]
