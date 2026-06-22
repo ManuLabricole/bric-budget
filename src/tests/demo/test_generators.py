@@ -41,11 +41,25 @@ def test_ubs_checking_detected_and_parsed(tmp_path):
     assert rents and all(t["amount"] < 0 for t in rents)
 
 
-def test_ubs_savings_has_distinct_synthetic_iban(tmp_path):
+def test_ubs_savings_parses_and_has_distinct_iban(tmp_path):
     path = generators.write_bank_file("ubs_savings", tmp_path, months=6, anchor=ANCHOR)
+    txs = UBSConnector().parse(path)
+    assert len(txs) >= 5  # ~1 flux × 6 mois
     ident = UBSConnector().extract_account_identifier(path)
     assert ident == profiles.DEMO_UBS_SAVINGS_IBAN.replace(" ", "")
     assert ident != profiles.DEMO_UBS_CHECKING_IBAN.replace(" ", "")
+
+
+def test_ubs_files_have_disjoint_import_hashes(tmp_path):
+    """No de transaction unique par compte → import_hash UBS disjoints. Sinon les
+    transactions de l'épargne seraient dédupliquées contre le compte courant
+    (import_hash global) → 0 transaction importée (régression réelle attrapée en live)."""
+    chk = generators.write_bank_file("ubs_checking", tmp_path, months=6, anchor=ANCHOR)
+    sav = generators.write_bank_file("ubs_savings", tmp_path, months=6, anchor=ANCHOR)
+    chk_hashes = {t["import_hash"] for t in UBSConnector().parse(chk)}
+    sav_hashes = {t["import_hash"] for t in UBSConnector().parse(sav)}
+    assert chk_hashes and sav_hashes
+    assert chk_hashes.isdisjoint(sav_hashes)
 
 
 def test_yuh_detected_and_parsed(tmp_path):

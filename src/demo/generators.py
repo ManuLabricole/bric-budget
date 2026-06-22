@@ -125,12 +125,18 @@ def generate_ubs_csv(
     *,
     iban: str,
     account_number: str,
+    ref_prefix: str,
     months: int,
     anchor: date,
     initial_balance: float = 0.0,
     rng: Random | None = None,
 ) -> str:
-    """Rend un relevé UBS : 8 lignes méta (IBAN ligne 2) + ligne vide + en-tête + transactions."""
+    """Rend un relevé UBS : 8 lignes méta (IBAN ligne 2) + ligne vide + en-tête + transactions.
+
+    ref_prefix : préfixe des « No de transaction ». DOIT être unique par compte —
+    l'import_hash UBS en dérive, donc deux comptes qui réutilisent TX0001 verraient
+    leurs transactions dédupliquées entre eux (l'import_hash est global).
+    """
     rng = rng or Random(_SEED)
     events = _events(flows, months=months, anchor=anchor, rng=rng)
 
@@ -153,10 +159,10 @@ def generate_ubs_csv(
                 credit,
                 "",  # sous-montant
                 f"{balance:.2f}",
-                f"TX{i:04d}",
+                f"{ref_prefix}{i:04d}",
                 flow.label,  # Description1 = marchand
                 desc2,
-                f"Ref TX{i:04d}",
+                f"Ref {ref_prefix}{i:04d}",
                 "",  # notes
                 "",  # colonne finale → trailing ';'
             ]
@@ -248,6 +254,7 @@ def write_bank_file(
             profiles.UBS_CHECKING_FLOWS,
             iban=profiles.DEMO_UBS_CHECKING_IBAN,
             account_number=profiles.DEMO_UBS_CHECKING_NUMBER,
+            ref_prefix="UBSC",
             months=months,
             anchor=anchor,
             rng=rng,
@@ -258,6 +265,7 @@ def write_bank_file(
             profiles.UBS_SAVINGS_FLOWS,
             iban=profiles.DEMO_UBS_SAVINGS_IBAN,
             account_number=profiles.DEMO_UBS_SAVINGS_NUMBER,
+            ref_prefix="UBSS",
             months=months,
             anchor=anchor,
             rng=rng,
