@@ -273,7 +273,7 @@ def test_cic_full_import_creates_correct_transaction_count(
     """
     # get_exchange_rate mocké : évite appels réseau pour les tx EUR
     with patch(
-        "transactions.services.import_service.get_exchange_rate",
+        "services.exchange_rates.get_exchange_rate",
         return_value=Decimal("0.93"),
     ):
         connector = CICConnector()
@@ -302,7 +302,7 @@ def test_cic_transactions_have_amount_chf_from_exchange_rate(
     On mocke le taux à 0.93 → amount_chf = amount × 0.93.
     """
     with patch(
-        "transactions.services.import_service.get_exchange_rate",
+        "services.exchange_rates.get_exchange_rate",
         return_value=Decimal("0.93"),
     ):
         connector = CICConnector()
@@ -320,3 +320,32 @@ def test_cic_transactions_have_amount_chf_from_exchange_rate(
         assert tx.amount_chf is not None
         expected = (tx.amount * Decimal("0.93")).quantize(Decimal("0.01"))
         assert tx.amount_chf == expected
+
+
+@pytest.mark.django_db
+def test_cic_balance_snapshots_have_balance_chf_from_exchange_rate(
+    cic_file, cic_account_cc, user
+):
+    """Chaîne complète CIC EUR : les BalanceSnapshot importés sont valorisés en CHF.
+
+    Régression #118 : le pipeline convertissait amount_chf mais PAS balance_chf →
+    patrimoine affichait « — » / « conversion en attente » sur les comptes EUR.
+    Ici on prouve la symétrie via le VRAI parser + service (pas de snapshot mocké).
+    """
+    with patch(
+        "services.exchange_rates.get_exchange_rate",
+        return_value=Decimal("0.93"),
+    ):
+        connector = CICConnector()
+        transactions = connector.parse(cic_file)
+        file_hash = compute_file_hash(cic_file)
+        ImportService().run(transactions, cic_account_cc, user, "cic.xlsx", file_hash)
+
+    snaps = BalanceSnapshot.objects.filter(account=cic_account_cc)
+    assert snaps.exists()
+    # Aucun snapshot avec solde ne doit rester sans valorisation CHF (taux dispo).
+    assert not snaps.filter(balance__isnull=False, balance_chf__isnull=True).exists()
+    for snap in snaps.filter(balance__isnull=False):
+        assert snap.balance_chf == (snap.balance * Decimal("0.93")).quantize(
+            Decimal("0.01")
+        )

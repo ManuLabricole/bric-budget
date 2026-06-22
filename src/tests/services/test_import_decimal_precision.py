@@ -116,7 +116,7 @@ def test_eur_account_amount_chf_uses_exchange_rate(eur_account, user):
     service = ImportService()
 
     with patch(
-        "transactions.services.import_service.get_exchange_rate",
+        "services.exchange_rates.get_exchange_rate",
         return_value=Decimal("1.05"),
     ):
         service.run([tx], eur_account, user, "eur-conv.csv", make_file_hash("eur-conv"))
@@ -144,7 +144,7 @@ def test_eur_account_amount_chf_none_when_rate_unavailable(eur_account, user):
     service = ImportService()
 
     with patch(
-        "transactions.services.import_service.get_exchange_rate",
+        "services.exchange_rates.get_exchange_rate",
         return_value=None,
     ):
         result = service.run(

@@ -355,9 +355,7 @@ def test_eur_account_negative_default_category_no_float_decimal_error(
     tx = make_tx("eur_neg", amount=-30.0, currency="EUR")
 
     rate = Decimal("0.93")
-    with patch(
-        "transactions.services.import_service.get_exchange_rate", return_value=rate
-    ):
+    with patch("services.exchange_rates.get_exchange_rate", return_value=rate):
         result = ImportService().run(
             [tx], eur_account, user, "f.csv", make_file_hash("heur1")
         )
@@ -380,9 +378,7 @@ def test_eur_account_positive_default_category_assigns_revenus(
     tx = make_tx("eur_pos", amount=1500.0, currency="EUR")
 
     rate = Decimal("0.95")
-    with patch(
-        "transactions.services.import_service.get_exchange_rate", return_value=rate
-    ):
+    with patch("services.exchange_rates.get_exchange_rate", return_value=rate):
         result = ImportService().run(
             [tx], eur_account, user, "f.csv", make_file_hash("heur2")
         )

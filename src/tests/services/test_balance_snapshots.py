@@ -67,7 +67,7 @@ def test_daily_snapshots_created_from_balance_after(eur_account, user):
     à un snapshot par jour pour une courbe de solde complète.
     """
     with patch(
-        "transactions.services.import_service.get_exchange_rate",
+        "services.exchange_rates.get_exchange_rate",
         return_value=Decimal("0.93"),
     ):
         service = ImportService()
@@ -94,7 +94,7 @@ def test_daily_snapshots_created_from_balance_after(eur_account, user):
 def test_daily_snapshot_balance_matches_balance_after(eur_account, user):
     """La valeur du snapshot = la valeur balance_after de la transaction."""
     with patch(
-        "transactions.services.import_service.get_exchange_rate",
+        "services.exchange_rates.get_exchange_rate",
         return_value=Decimal("0.93"),
     ):
         service = ImportService()
@@ -130,11 +130,43 @@ def test_daily_snapshot_balance_chf_set_for_chf_account(chf_account, user):
 
 
 @pytest.mark.django_db
-def test_daily_snapshot_balance_chf_none_for_eur_account(eur_account, user):
-    """Pour un compte EUR, balance_chf = None dans le snapshot journalier (conversion non faite)."""
+def test_daily_snapshot_balance_chf_converted_for_eur_account(eur_account, user):
+    """Compte EUR : balance_chf = balance × taux (converti comme amount_chf).
+
+    RÉGRESSION (#118) : avant, le snapshot journalier laissait balance_chf=None
+    pour les comptes non-CHF → patrimoine « Valorisation CHF partielle » et solde
+    affiché « — ». Le solde DOIT être valorisé en CHF dès qu'un taux est dispo.
+    """
     with patch(
-        "transactions.services.import_service.get_exchange_rate",
+        "services.exchange_rates.get_exchange_rate",
         return_value=Decimal("0.93"),
+    ):
+        service = ImportService()
+        transactions = [
+            make_tx_with_balance("eur_chf_conv", "2026-03-15", balance_after=1000.0)
+        ]
+        service.run(
+            transactions, eur_account, user, "cic.xlsx", make_file_hash("eur_conv")
+        )
+
+    from datetime import date
+
+    snap = BalanceSnapshot.objects.get(account=eur_account, date=date(2026, 3, 15))
+    assert snap.balance == Decimal("1000.0")
+    assert snap.balance_chf == Decimal("930.00")  # 1000 × 0.93
+
+
+@pytest.mark.django_db
+def test_daily_snapshot_balance_chf_none_when_rate_unavailable(eur_account, user):
+    """Compte EUR sans taux (API down) : balance_chf reste None — best effort.
+
+    Symétrie avec amount_chf : on ne perd pas le snapshot, on le backfillera plus
+    tard (commande backfill_chf). Le None n'est jamais un oubli de calcul, juste
+    une indisponibilité réseau ponctuelle.
+    """
+    with patch(
+        "services.exchange_rates.get_exchange_rate",
+        return_value=None,
     ):
         service = ImportService()
         transactions = [
@@ -147,6 +179,7 @@ def test_daily_snapshot_balance_chf_none_for_eur_account(eur_account, user):
     from datetime import date
 
     snap = BalanceSnapshot.objects.get(account=eur_account, date=date(2026, 3, 15))
+    assert snap.balance == Decimal("1000.0")  # le solde brut est conservé
     assert snap.balance_chf is None
 
 
@@ -161,7 +194,7 @@ def test_cic_antichronological_first_seen_per_date_wins(eur_account, user):
     La 1ère transaction du jour (vue en premier) a le bon solde fin de journée.
     """
     with patch(
-        "transactions.services.import_service.get_exchange_rate",
+        "services.exchange_rates.get_exchange_rate",
         return_value=Decimal("0.93"),
     ):
         service = ImportService()
@@ -200,7 +233,7 @@ def test_no_daily_snapshots_when_all_transactions_skipped(eur_account, user):
     Logique : on ne génère pas de snapshots pour des données qu'on n'a pas "créées".
     """
     with patch(
-        "transactions.services.import_service.get_exchange_rate",
+        "services.exchange_rates.get_exchange_rate",
         return_value=Decimal("0.93"),
     ):
         service = ImportService()
@@ -236,7 +269,7 @@ def test_reimport_overlapping_period_updates_snapshot_not_duplicates(eur_account
     Contrainte unique_together = [("account", "date")] doit être respectée.
     """
     with patch(
-        "transactions.services.import_service.get_exchange_rate",
+        "services.exchange_rates.get_exchange_rate",
         return_value=Decimal("0.93"),
     ):
         service = ImportService()
@@ -344,7 +377,7 @@ def test_closing_snapshot_with_none_balance_does_not_overwrite_daily_balance(
     écrasait la bonne valeur avec NULL.
     """
     with patch(
-        "transactions.services.import_service.get_exchange_rate",
+        "services.exchange_rates.get_exchange_rate",
         return_value=Decimal("0.93"),
     ):
         service = ImportService()
@@ -410,3 +443,77 @@ def test_computed_balance_calculated_from_previous_snapshot(chf_account, user):
 
     snap = BalanceSnapshot.objects.get(account=chf_account, date=date(2026, 3, 22))
     assert snap.computed_balance == Decimal("10050.00")
+
+
+# =============================================================================
+# H. Conversion CHF systématique du solde (régression #118 — « calculs oubliés »)
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_closing_snapshot_balance_chf_converted_for_eur_account(eur_account, user):
+    """Closing snapshot EUR : balance_chf = balance extrait × taux.
+
+    Même oubli que le snapshot journalier : la clôture laissait balance_chf=None
+    pour les comptes non-CHF. balance_after=None ici → on isole le closing pur
+    (paramètre balance = footer extrait).
+    """
+    with patch(
+        "services.exchange_rates.get_exchange_rate",
+        return_value=Decimal("0.95"),
+    ):
+        service = ImportService()
+        transactions = [
+            make_tx_with_balance("eur_close", "2026-03-31", balance_after=None)
+        ]
+        service.run(
+            transactions,
+            eur_account,
+            user,
+            "cic.xlsx",
+            make_file_hash("eur_close"),
+            balance=2000.0,
+        )
+
+    from datetime import date
+
+    snap = BalanceSnapshot.objects.get(account=eur_account, date=date(2026, 3, 31))
+    assert snap.balance == Decimal("2000.0")
+    assert snap.balance_chf == Decimal("1900.00")  # 2000 × 0.95
+
+
+@pytest.mark.django_db
+def test_no_snapshot_has_balance_without_balance_chf_when_rate_available(
+    eur_account, user
+):
+    """Invariant anti-« calcul oublié » : aucun snapshot avec un solde mais sans
+    balance_chf tant qu'un taux est dispo.
+
+    Garde-fou : si une future branche de création de snapshot oublie la conversion
+    CHF, ce test casse immédiatement (au lieu de laisser le patrimoine afficher « — »).
+    """
+    with patch(
+        "services.exchange_rates.get_exchange_rate",
+        return_value=Decimal("0.93"),
+    ):
+        service = ImportService()
+        transactions = [
+            make_tx_with_balance("inv1", "2026-03-01", balance_after=1500.0),
+            make_tx_with_balance("inv2", "2026-03-02", balance_after=1450.0),
+        ]
+        service.run(
+            transactions,
+            eur_account,
+            user,
+            "cic.xlsx",
+            make_file_hash("invariant"),
+            balance=1450.0,
+        )
+
+    orphans = BalanceSnapshot.objects.filter(
+        account=eur_account, balance__isnull=False, balance_chf__isnull=True
+    )
+    assert not orphans.exists(), (
+        f"{orphans.count()} snapshot(s) avec balance mais sans balance_chf alors "
+        "qu'un taux est dispo — conversion CHF oubliée."
+    )

@@ -36,6 +36,7 @@ from accounts.models import (
 )
 from demo import generators, profiles
 from imports.orchestrator import persist_import_file, prepare_import, run_import
+from services.exchange_rates import to_chf
 from transactions.models import (
     CategorizationRule,
     Category,
@@ -375,7 +376,12 @@ def _flush_demo_data(accounts: list[Account]) -> None:
 
 def _ensure_balances(accounts: list[Account]) -> None:
     """Crée un BalanceSnapshot par compte qui n'en a pas encore (sinon le compte est
-    invisible dans la vue patrimoine). Solde synthétique plausible par type de compte."""
+    invisible dans la vue patrimoine). Solde synthétique plausible par type de compte.
+
+    En pratique seuls les comptes Yuh (CHF, pas de solde dans leur CSV) tombent ici ;
+    les comptes CIC (EUR) sont déjà ancrés par l'import. On convertit quand même
+    balance_chf via le taux pré-seedé pour ne jamais recréer le trou « — » si un
+    compte non-CHF arrive ici un jour (même porte to_chf que l'import)."""
     fallback: dict[str, Decimal] = {
         Account.AccountType.CHECKING: Decimal("3500.00"),
         Account.AccountType.SAVINGS: Decimal("8000.00"),
@@ -390,7 +396,7 @@ def _ensure_balances(accounts: list[Account]) -> None:
             date=today,
             currency=account.currency,
             balance=bal,
-            balance_chf=bal if account.currency == "CHF" else None,
+            balance_chf=to_chf(bal, account.currency, today),
             source=BalanceSnapshot.Source.IMPORT,
         )
 

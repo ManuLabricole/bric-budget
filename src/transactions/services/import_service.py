@@ -40,7 +40,7 @@ from django.db import transaction as db_transaction
 
 from accounts.models import Account, BalanceSnapshot, Card
 from connectors.base import TransactionDict
-from services.exchange_rates import get_exchange_rate
+from services.exchange_rates import to_chf
 from transactions.models import CategorizationRule, Category, ImportLog, Transaction
 
 from .internal_transfer import INTERNAL_TRANSFER_SLUG
@@ -391,13 +391,16 @@ class ImportService:
         if not (daily_balances and transactions_to_create):
             return
         for _snap_date_str, _snap_balance in daily_balances.items():
+            _snap_date = _dt.date.fromisoformat(_snap_date_str)
             BalanceSnapshot.objects.update_or_create(
                 account=account,
-                date=_dt.date.fromisoformat(_snap_date_str),
+                date=_snap_date,
                 defaults={
                     "balance": _snap_balance,
                     "currency": account.currency,
-                    "balance_chf": _snap_balance if account.currency == "CHF" else None,
+                    # Converti comme amount_chf (symétrie) : EUR/GBP ne restent
+                    # plus NULL → patrimoine valorise en CHF au lieu d'afficher « — ».
+                    "balance_chf": to_chf(_snap_balance, account.currency, _snap_date),
                     "source": BalanceSnapshot.Source.IMPORT,
                 },
             )
@@ -445,10 +448,11 @@ class ImportService:
             # Premier import pour ce compte : pas de base de calcul
             computed = None
 
-        # CHF : balance_chf = balance directement. EUR/GBP : None jusqu'au
-        # chargement des taux (Phase 1C — frankfurter.app).
+        # balance_chf converti EXACTEMENT comme amount_chf (même porte to_chf) :
+        # plus de NULL silencieux sur les comptes non-CHF — c'était la cause du
+        # « conversion en attente » et du solde « — » en patrimoine.
         extracted = Decimal(str(balance)) if balance is not None else None
-        balance_chf = extracted if account.currency == "CHF" else None
+        balance_chf = to_chf(extracted, account.currency, snapshot_date)
 
         if extracted is not None or computed is not None:
             # Ne jamais écraser un solde banque existant par None. Important pour
@@ -581,19 +585,10 @@ class ImportService:
                 category = default_unknown_category  # None if not seeded yet
 
         # --- amount_chf ------------------------------------------------------
-        # For CHF accounts: amount_chf = amount (no conversion needed).
-        # For other currencies: fetch the rate from DB or frankfurter.app API,
-        # then multiply. If the API fails, amount_chf stays None — the import
-        # continues, and the field can be backfilled later.
-        if account.currency == "CHF":
-            amount_chf = amount
-        else:
-            rate = get_exchange_rate(parsed_date, account.currency)
-            if rate is not None:
-                # Quantize to 2 decimal places — same precision as amount
-                amount_chf = (amount * rate).quantize(Decimal("0.01"))
-            else:
-                amount_chf = None
+        # Conversion CHF centralisée (services.exchange_rates.to_chf) : CHF →
+        # identité, sinon montant × taux (cache DB puis API), None si taux down.
+        # Même porte que balance_chf des snapshots → conversion jamais oubliée.
+        amount_chf = to_chf(amount, account.currency, parsed_date)
 
         # --- Flags virement interne ------------------------------------------
         # Si la catégorie matchée est "virements", on marque la transaction comme

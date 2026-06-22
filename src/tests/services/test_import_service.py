@@ -138,7 +138,7 @@ def test_amount_chf_calculated_from_exchange_rate(eur_account, user):
     tx = make_tx("eur_seed", amount=-100.0, currency="EUR")
 
     with patch(
-        "transactions.services.import_service.get_exchange_rate",
+        "services.exchange_rates.get_exchange_rate",
         return_value=Decimal("0.93"),
     ):
         service.run([tx], eur_account, user, "file.csv", make_file_hash("eur"))
@@ -164,9 +164,7 @@ def test_amount_chf_is_none_when_rate_unavailable(eur_account, user):
     service = ImportService()
     tx = make_tx("eur_none_seed", amount=-100.0, currency="EUR")
 
-    with patch(
-        "transactions.services.import_service.get_exchange_rate", return_value=None
-    ):
+    with patch("services.exchange_rates.get_exchange_rate", return_value=None):
         result = service.run(
             [tx], eur_account, user, "file.csv", make_file_hash("none")
         )
