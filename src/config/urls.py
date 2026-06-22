@@ -24,6 +24,8 @@ from django.http import HttpResponse
 from django.shortcuts import render
 from django.urls import include, path
 
+from demo.admin_views import seed_control
+
 # URL de l'interface admin Django — lue depuis .env pour ne pas être devinable.
 # En local : ADMIN_URL=admin (défaut, pratique)
 # En prod  : ADMIN_URL=un-chemin-secret-que-seul-toi-connais (ex: "gestion-b4f2a1")
@@ -52,6 +54,13 @@ urlpatterns = [
     # /healthz/ — Railway pingue cette URL toutes les 30s pour vérifier que
     # l'app répond. Si elle ne répond plus, Railway redémarre le container.
     path("healthz/", healthz, name="healthz"),
+    # /<admin>/demo/ — page seed/reset démo (#118), staff requis + dev-guard.
+    # AVANT l'include admin pour être matchée avant que l'admin ne capture `demo/`.
+    path(
+        f"{ADMIN_URL}/demo/",
+        admin.site.admin_view(seed_control),
+        name="demo_seed_control",
+    ),
     path(f"{ADMIN_URL}/", admin.site.urls),
     # Landing page à la racine — avant auth.urls pour prendre la priorité sur `/`.
     path("", include("users.urls")),
