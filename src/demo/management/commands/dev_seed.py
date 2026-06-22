@@ -58,8 +58,8 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(
                 f"✓ Démo : user {summary.user_email} · {summary.accounts} comptes · "
-                f"{summary.imports} imports · {summary.created} transactions créées "
-                f"(skipped {summary.skipped})"
+                f"{summary.rules} règles · {summary.imports} imports · "
+                f"{summary.created} transactions créées (skipped {summary.skipped})"
             )
         )
         self.stdout.write("  Login : DEMO_USER_EMAIL / DEMO_USER_PASSWORD du .env.")

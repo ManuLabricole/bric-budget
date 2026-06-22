@@ -12,7 +12,7 @@ from django.contrib.auth import get_user_model
 
 from accounts.models import Account, BalanceSnapshot, Card
 from demo.seeder import reset_demo, seed_demo
-from transactions.models import ImportLog, Transaction
+from transactions.models import CategorizationRule, ImportLog, Transaction
 
 
 @pytest.fixture
@@ -57,6 +57,12 @@ def test_seed_demo_via_real_pipeline(demo_env):
 
     # BalanceSnapshot créés (courbe de solde)
     assert BalanceSnapshot.objects.filter(account__members=user).exists()
+
+    # Catégorisation : règles démo seedées + appliquées à l'import
+    assert CategorizationRule.objects.filter(owner=user).count() >= 10
+    assert not txs.filter(category__isnull=True).exists()  # toutes ont une catégorie
+    assert txs.exclude(category__slug="inconnu").exists()  # certaines via les règles
+    assert txs.filter(is_internal_transfer=True).exists()  # virements épargne détectés
 
 
 @pytest.mark.django_db

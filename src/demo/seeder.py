@@ -35,7 +35,13 @@ from accounts.models import (
 )
 from demo import generators, profiles
 from imports.orchestrator import persist_import_file, prepare_import, run_import
-from transactions.models import ImportLog, Transaction
+from transactions.models import (
+    CategorizationRule,
+    Category,
+    ImportLog,
+    SubCategory,
+    Transaction,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +98,7 @@ FIXTURES_DIR = Path(settings.BASE_DIR) / "demo" / "fixtures"
 class SeedSummary:
     user_email: str
     accounts: int
+    rules: int
     imports: int
     created: int
     skipped: int
@@ -110,6 +117,8 @@ def seed_demo(
     # (revenus/inconnu pour la catégorisation par défaut à l'import).
     call_command("sync_reference_data")
     accounts = _ensure_accounts(user)
+    # Règles AVANT les imports → la catégorisation se fait à l'import (ImportService).
+    rules = _ensure_rules(user)
 
     if flush:
         _flush_demo_data(list(accounts.values()))
@@ -143,14 +152,16 @@ def seed_demo(
     summary = SeedSummary(
         user_email=user.email,
         accounts=len(accounts),
+        rules=rules,
         imports=imports,
         created=created,
         skipped=skipped,
     )
     logger.info(
-        "seed_demo ok user=%s accounts=%d imports=%d created=%d skipped=%d",
+        "seed_demo ok user=%s accounts=%d rules=%d imports=%d created=%d skipped=%d",
         summary.user_email,
         summary.accounts,
+        summary.rules,
         summary.imports,
         summary.created,
         summary.skipped,
@@ -237,6 +248,36 @@ def _ensure_accounts(user) -> dict[str, Account]:
         defaults={"user": user, "card_type": Card.CardType.DEBIT, "is_active": True},
     )
     return accounts
+
+
+def _ensure_rules(user) -> int:
+    """Règles de catégorisation démo (owner=user), idempotent. Retourne le nombre
+    créé ce run. Les catégories visées sont système (owner NULL, référentiel)."""
+    created = 0
+    for keyword, cat_slug, sub_slug, priority in profiles.DEMO_RULES:
+        category = Category.objects.filter(slug=cat_slug, owner__isnull=True).first()
+        if category is None:
+            logger.warning("règle démo ignorée — catégorie absente : %s", cat_slug)
+            continue
+        subcategory = (
+            SubCategory.objects.filter(slug=sub_slug, owner__isnull=True).first()
+            if sub_slug
+            else None
+        )
+        _, was_created = CategorizationRule.objects.get_or_create(
+            keyword=keyword,
+            owner=user,
+            defaults={
+                "category": category,
+                "subcategory": subcategory,
+                "target_field": CategorizationRule.TargetField.DESCRIPTION_RAW,
+                "priority": priority,
+                "is_active": True,
+            },
+        )
+        if was_created:
+            created += 1
+    return created
 
 
 def _resolve_file(

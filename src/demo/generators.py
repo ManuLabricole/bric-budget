@@ -286,3 +286,19 @@ def write_bank_file(
     # utf-8-sig : les connecteurs UBS/Yuh lisent avec le BOM (comme les vrais exports).
     path.write_text(content, encoding="utf-8-sig")
     return path
+
+
+# bank → sous-dossier des fixtures committées (demo/fixtures/<subdir>/).
+_FIXTURE_SUBDIR = {"ubs_checking": "ubs", "ubs_savings": "ubs", "yuh": "yuh"}
+
+
+def write_fixtures(root: Path, *, anchor: date, months: int = 12) -> list[Path]:
+    """(Re)génère toutes les fixtures committées sous root/<banque>/.
+
+    Appelée par dev_generate_fixtures avec un anchor FIXE → fichiers stables
+    (pas de churn git à chaque regénération).
+    """
+    return [
+        write_bank_file(bank, root / subdir, months=months, anchor=anchor)
+        for bank, subdir in _FIXTURE_SUBDIR.items()
+    ]

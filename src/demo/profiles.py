@@ -71,3 +71,30 @@ YUH_CARD_FLOWS: list[Flow] = [
     Flow("NETFLIX", 20, 8, "debit"),
     Flow("STARBUCKS GENEVE", 12, 0, "debit", recurrent=False),
 ]
+
+
+# ── Règles de catégorisation démo ─────────────────────────────────────────────
+# (keyword cherché dans description_raw, slug catégorie, slug sous-catégorie|None,
+# priorité). Slugs RÉELS du référentiel (underscore). Les "VIREMENT…" pointent sur
+# `virements` → déclenche le flag virement interne (is_internal_transfer/is_ignored).
+DEMO_RULES = [
+    ("SALAIRE", "revenus", "salaire", 100),
+    ("VIREMENT COMPTE EPARGNE", "virements", "transferts_internes", 95),
+    ("VIREMENT DEPUIS COMPTE COURANT", "virements", "transferts_internes", 95),
+    ("NOTES DE FRAIS", "remboursements", None, 90),
+    ("LOYER", "besoins_essentiels", "loyer", 80),
+    ("CHARGES COPROPRIETE", "besoins_essentiels", "frais_loyer", 80),
+    ("ASSURANCE MALADIE", "sante", "assurance_maladie", 80),
+    ("SWISSCOM", "factures_services", "telephone_portable", 70),
+    ("ELECTRICITE", "factures_services", "electricite", 70),
+    ("ACOMPTE IMPOTS", "impots", "impots_generaux", 70),
+    ("MIGROS", "alimentation_boissons", "courses", 60),
+    ("COOP", "alimentation_boissons", "courses", 60),
+    ("MANOR FOOD", "alimentation_boissons", "courses", 60),
+    ("RESTAURANT", "alimentation_boissons", "restaurants", 60),
+    ("STARBUCKS", "alimentation_boissons", "cafes", 60),
+    ("TPG", "auto_transports", "transports_publics", 60),
+    ("CFF", "auto_transports", "transports_publics", 60),
+    ("PHARMACIE", "sante", "medicaments", 60),
+    ("NETFLIX", "loisirs_divertissements", "abonnements_loisirs", 60),
+]
