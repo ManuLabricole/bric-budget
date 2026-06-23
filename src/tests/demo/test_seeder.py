@@ -126,6 +126,9 @@ def test_reset_demo_wipes_data_keeps_user(demo_env):
 
     reset_demo()
 
+    # #202 : reset_demo cible désormais is_demo=True (marqueur déterministe) — on teste
+    # ce vrai invariant, pas members=user (qui passerait par coïncidence).
+    assert not Account.objects.filter(is_demo=True).exists()
     assert not Account.objects.filter(members=user).exists()
     assert not Transaction.objects.filter(account__members=user).exists()
     assert user_model.objects.filter(email=demo_env.DEMO_USER_EMAIL).exists()

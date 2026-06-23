@@ -239,8 +239,8 @@ def seed_demo(
 
 
 def reset_demo() -> str:
-    """Supprime les comptes démo et leurs données (transactions, imports, snapshots,
-    cartes). Garde le user démo (re-login OK). Retourne l'email du user démo."""
+    """Supprime les comptes is_demo=True et leurs données (transactions, imports,
+    snapshots, cartes). Le user démo n'est jamais touché. Retourne son email (settings)."""
     email = str(
         settings.DEMO_USER_EMAIL
     )  # settings → Any ; on garantit str pour le retour
