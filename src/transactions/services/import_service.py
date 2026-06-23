@@ -130,7 +130,7 @@ class ImportService:
 
         # ── 2. Lookups (une requête chacun, réutilisés par ligne) ────────────
         existing_hashes = self._load_existing_hashes(transactions)
-        rules = self._load_rules()
+        rules = self._load_rules(imported_by)
         default_income_category, default_unknown_category = (
             self._load_default_categories()
         )
@@ -199,10 +199,17 @@ class ImportService:
             )
         )
 
-    def _load_rules(self) -> list[CategorizationRule]:
-        """Règles actives triées par priorité décroissante (une requête)."""
+    def _load_rules(self, imported_by) -> list[CategorizationRule]:
+        """Règles actives de l'utilisateur qui importe, triées par priorité (une requête).
+
+        SR-001 / #205 : SCOPÉ for_user(imported_by) → uniquement les règles SYSTÈME
+        (owner NULL, partagées) OU PERSO de cet utilisateur. Sans ce filtre, les règles
+        perso de N'IMPORTE QUEL user catégorisaient les transactions de l'importeur
+        (fuite + catégorisation croisée — un keyword = souvent un nom de commerçant).
+        """
         return list(
-            CategorizationRule.objects.filter(is_active=True)
+            CategorizationRule.objects.for_user(imported_by)
+            .filter(is_active=True)
             .select_related("category", "subcategory")
             .order_by("-priority")
         )
