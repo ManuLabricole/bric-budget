@@ -556,7 +556,13 @@ def budget_panel_category_manage(request):
                 filter=Q(transactions__account__members=request.user),
                 distinct=True,
             ),
-            rules_count=Count("rules", distinct=True),
+            # SR-001 : scoper le count comme subcategories_count/tx_count, sinon sur une
+            # catégorie SYSTÈME il compte les règles PERSO d'autres users (fuite du compteur).
+            rules_count=Count(
+                "rules",
+                filter=Q(rules__owner__isnull=True) | Q(rules__owner=request.user),
+                distinct=True,
+            ),
         )
         .order_by("order", "name")
     )
@@ -588,7 +594,12 @@ def budget_panel_category_manage_detail(request, slug):
                 filter=Q(transactions__account__members=request.user),
                 distinct=True,
             ),
-            rules_count=Count("rules", distinct=True),
+            # SR-001 : idem, scoper le count des règles de la sous-cat (cf. ci-dessus).
+            rules_count=Count(
+                "rules",
+                filter=Q(rules__owner__isnull=True) | Q(rules__owner=request.user),
+                distinct=True,
+            ),
         )
         .order_by("name")
     )
