@@ -1,0 +1,50 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+    <h1>Données de démo</h1>
+    {% if not demo_debug %}<p class="errornote">⚠️ DEBUG=False — seed/reset désactivés en dehors du dev.</p>{% endif %}
+    <div class="module">
+        <h2>État</h2>
+        <div class="form-row">
+            {% if demo_status.exists %}
+                <p>
+                    User démo : <strong>{{ demo_status.user_email }}</strong> —
+                    {{ demo_status.accounts }} compte(s), {{ demo_status.transactions }} transaction(s).
+                </p>
+            {% else %}
+                <p>
+                    Aucun user démo
+                    (<strong>{{ demo_status.user_email|default:"DEMO_USER_EMAIL non défini" }}</strong>)
+                    — lance un seed.
+                </p>
+            {% endif %}
+        </div>
+    </div>
+    <div class="module">
+        <h2>Actions</h2>
+        <div class="form-row">
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="seed">
+                <button type="submit"
+                        class="button default"
+                        {% if not demo_debug %}disabled{% endif %}>
+                    🌱 Seed démo (flush + 6 comptes via imports réels)
+                </button>
+            </form>
+        </div>
+        <div class="form-row">
+            <form method="post"
+                  onsubmit="return confirm('Supprimer toutes les données de démo ?');">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="reset">
+                <button type="submit"
+                        class="button"
+                        {% if not demo_debug %}disabled{% endif %}>🗑️ Reset démo</button>
+            </form>
+        </div>
+        <p class="help">
+            Login démo : <code>DEMO_USER_EMAIL</code> / <code>DEMO_USER_PASSWORD</code> du
+            <code>.env</code>. Le seed prend quelques secondes (imports réels).
+        </p>
+    </div>
+{% endblock %}

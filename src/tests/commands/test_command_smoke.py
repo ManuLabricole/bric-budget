@@ -10,7 +10,7 @@ leurs fichiers dédiés — ici on garantit juste qu'elles se chargent.)
 import pytest
 from django.core.management import get_commands, load_command_class
 
-PROJECT_APPS = {"accounts", "transactions", "patrimoine", "users"}
+PROJECT_APPS = {"accounts", "transactions", "patrimoine", "users", "demo"}
 
 
 def _project_commands() -> list[str]:

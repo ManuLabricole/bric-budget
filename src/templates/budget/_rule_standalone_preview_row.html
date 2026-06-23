@@ -49,6 +49,8 @@ Pas d'HTMX — lecture seule.
         {% else %}
             −
         {% endif %}
-        {{ tx.amount_chf|default:tx.amount|chf_dec }}
+        {# default_if_none (pas default) : un montant CHF de 0 est valide → ne pas le #}
+        {# remplacer par le montant en devise d'origine. Fallback uniquement si None. #}
+        {{ tx.amount_chf|default_if_none:tx.amount|money_dec:"CHF" }}
     </span>
 </div>

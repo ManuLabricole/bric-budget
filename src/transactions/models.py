@@ -234,13 +234,20 @@ class SubCategory(models.Model):
         verbose_name_plural = "sub-categories"
         ordering = ["category__order", "name"]
         constraints = [
-            # Deux sous-cat d'une MÊME catégorie ne peuvent pas partager un nom.
-            # Déjà owner-correct : la perso d'un autre user a un parent (category)
-            # distinct, donc (category, name) ne collisionne pas entre users.
-            # (ex-unique_together migré en UniqueConstraint nommée.)
+            # Nom unique par sous-catégorie d'une catégorie — SCOPÉ owner (#137).
+            # ⚠️ L'ancienne contrainte plate (category, name) supposait à tort qu'une
+            # perso a toujours un parent distinct par user : FAUX, une perso peut vivre
+            # sous une catégorie SYSTÈME (partagée, ex. « Concert » sous « Loisirs »).
+            # On scinde donc comme Category : système global, perso par user.
             models.UniqueConstraint(
                 fields=["category", "name"],
-                name="subcategory_category_name_uniq",
+                condition=models.Q(owner__isnull=True),
+                name="subcategory_system_category_name_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["category", "name", "owner"],
+                condition=models.Q(owner__isnull=False),
+                name="subcategory_owner_category_name_uniq",
             ),
             # slug — système (owner NULL) unique global ; perso unique par user.
             # Même raisonnement que Category : contrainte partielle dédiée au

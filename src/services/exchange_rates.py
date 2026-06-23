@@ -106,3 +106,31 @@ def get_exchange_rate(
     )
 
     return rate
+
+
+def to_chf(amount: Decimal | None, currency: str, on: date_type) -> Decimal | None:
+    """
+    Convertit `amount` (exprimé en `currency`) en CHF au taux de la date `on`.
+
+    LE point unique de conversion CHF du projet : montant des transactions
+    (amount_chf) ET solde des snapshots (balance_chf) passent par ici. Avant,
+    seul amount_chf était converti et balance_chf restait NULL pour les comptes
+    EUR → patrimoine « Valorisation CHF partielle — conversion en attente » et
+    solde affiché « — ». Un calcul oublié = une cata : on garde la symétrie ici.
+
+    Contrat (ne lève JAMAIS) :
+        - amount is None      → None (rien à convertir)
+        - currency == "CHF"   → amount tel quel (identité, aucun arrondi)
+        - sinon               → (amount × taux) arrondi à 0.01
+        - taux indisponible   → None (réseau down / API KO) — best effort,
+          backfillable plus tard via la commande `backfill_chf`.
+    """
+    if amount is None:
+        return None
+    if currency == "CHF":
+        return amount
+    rate = get_exchange_rate(on, currency)
+    if rate is None:
+        return None
+    # SR-002 : amount est déjà Decimal ; rate est Decimal → produit exact, puis arrondi.
+    return (amount * rate).quantize(Decimal("0.01"))

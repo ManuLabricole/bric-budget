@@ -104,6 +104,9 @@ INSTALLED_APPS = [
     "imports",
     # patrimoine/ lit accounts + transactions au runtime (pas de modèle propre en 3A)
     "patrimoine",
+    # demo/ : seed/démo dev. Toujours installée (testable en DEBUG=False), inerte en
+    # prod — points d'entrée gardés par assert_dev_environment, admin si DEBUG (cf. demo/apps.py).
+    "demo.apps.DemoConfig",
     "axes",  # brute-force protection — doit être après contrib.auth
 ]
 
@@ -501,3 +504,11 @@ IMPORT_STORAGE_ROOT = Path(config("IMPORT_STORAGE_ROOT", default=_default_storag
 # si elle est vide quand on tente de chiffrer ou déchiffrer un fichier.
 # Générer :  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 IMPORT_ENCRYPTION_KEY = config("IMPORT_ENCRYPTION_KEY", default="")
+
+
+# ── Démo / seed dev (#118) ────────────────────────────────────────────────────
+# Identifiants du user de démo créé par `manage.py dev_seed` (app demo/). Vivent
+# dans .env — jamais committés. Le user est loginable avec ces identifiants en local.
+# Le seed refuse de tourner si le mot de passe est vide (pas de user démo sans mdp).
+DEMO_USER_EMAIL = config("DEMO_USER_EMAIL", default="demo@bricbudget.local")
+DEMO_USER_PASSWORD = config("DEMO_USER_PASSWORD", default="")

@@ -38,7 +38,7 @@ ligne (spacer + KPIs) appartient au <summary> → cliquer la ligne étend (cf. F
     {# Valeur CHF #}
     <span class="text-sm text-text-base tabular-nums w-28 text-right flex-shrink-0">
         {% if node.value != None %}
-            {{ node.value|chf }}
+            {{ node.value|money:"CHF" }}
         {% else %}
             —
         {% endif %}
@@ -46,7 +46,7 @@ ligne (spacer + KPIs) appartient au <summary> → cliquer la ligne étend (cf. F
     {# +/- value latente — SOON pour les liquidités (cash ne s'apprécie pas) #}
     <span class="text-xs text-text-disabled tabular-nums w-20 text-right flex-shrink-0">
         {% if node.delta != None %}
-            {{ node.delta|chf }}
+            {{ node.delta|money:"CHF" }}
         {% else %}
             —
         {% endif %}

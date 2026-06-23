@@ -43,6 +43,14 @@ def test_current_value_none_when_chf_conversion_missing(eur_account, make_snapsh
 
 
 @pytest.mark.django_db
+def test_current_value_eur_account_returns_chf_anchor(eur_account, make_snapshot):
+    """Compte EUR avec balance_chf converti → renvoie la valeur CHF (pas l'EUR brut,
+    pas None). Régression #118 : dès que l'import convertit le solde, il s'affiche."""
+    make_snapshot(eur_account, "2026-03-10", balance=500, balance_chf=480)
+    assert current_value(eur_account, on=_d("2026-03-10")) == Decimal("480")
+
+
+@pytest.mark.django_db
 def test_net_worth_series_sums_accounts_in_chf(chf_account, eur_account, make_snapshot):
     make_snapshot(chf_account, "2026-03-10", balance=1000, balance_chf=1000)
     make_snapshot(eur_account, "2026-03-10", balance=500, balance_chf=480)

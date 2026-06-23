@@ -134,10 +134,13 @@ Les "cartes" visuelles sont définies par chaque page dans panel_left / panel_ri
 
   // Ouverture automatique de la modal — écoute tout swap HTMX sur #modal-content.
   // Cela évite de câbler hx-on::after-request sur chaque bouton qui cible la modal.
-  // htmx:afterSwap fire sur l'ÉLÉMENT CIBLE (pas sur le déclencheur), donc on écoute
-  // sur body et on filtre par e.target.id.
+  // ⚠️ htmx 2.x : la cible RÉELLE du swap est e.detail.target. Sur un listener délégué
+  // au body, e.target peut être l'élément DÉCLENCHEUR (ex. la corbeille d'une sous-cat
+  // perso dans #panel-content) → le modal ne s'ouvrait pas. On lit donc e.detail.target
+  // en priorité (fallback e.target). cf. category_detail.html qui utilise déjà ce pattern.
   document.body.addEventListener('htmx:afterSwap', function(e) {
-    if (e.target && e.target.id === 'modal-content') openModal();
+    var swapped = (e.detail && e.detail.target) || e.target;
+    if (swapped && swapped.id === 'modal-content') openModal();
   });
 
   // ── Toast "Catégorie modifiée" ─────────────────────────────────────────────

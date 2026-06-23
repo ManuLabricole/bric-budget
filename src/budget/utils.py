@@ -8,10 +8,11 @@ Aucune vue ici — uniquement des fonctions pures ou quasi-pures.
 """
 
 import calendar
+import logging
 import re
 from datetime import date
 
-from django.db.models import Q
+from django.db.models import F, Prefetch, Q
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.text import slugify
 
@@ -205,6 +206,12 @@ def _cats_with_subcats(user=None):
         cat_qs = cat_qs.for_user(user)
         sub_qs = sub_qs.for_user(user)
 
+    # SR-001 — fuite inter-user : les templates picker font `cat.subcategories.all`
+    # (reverse-FK NON scopée) → une sous-cat perso d'un AUTRE user rattachée à une
+    # catégorie système était exposée. On préfetch la reverse-FK avec sub_qs (déjà
+    # for_user) → `cat.subcategories.all` ne renvoie plus que système + les miennes.
+    cat_qs = cat_qs.prefetch_related(Prefetch("subcategories", queryset=sub_qs))
+
     all_categories = list(cat_qs.order_by("order", "name"))
     subcat_by_cat: dict[int, list] = {}
     for sub in sub_qs.select_related("category").order_by("name"):
@@ -213,3 +220,72 @@ def _cats_with_subcats(user=None):
     return all_categories, [
         (cat, subcat_by_cat.get(cat.id, [])) for cat in all_categories
     ]
+
+
+logger = logging.getLogger(__name__)
+
+
+def seed_perso_categories(user, defs) -> tuple[int, int]:
+    """Crée (idempotent) les catégories/sous-catégories PERSO de `defs` pour `user`.
+
+    `defs` : itérable d'objets (name, slug, icon, parent_slug, colour_hex) — cf.
+    demo.profiles.PersoCat. Les top-level (parent_slug=None) sont créées d'abord, puis
+    les sous-cats dont le parent est résolu PAR SLUG : catégorie SYSTÈME (owner NULL)
+    OU la perso top-level de CE user — jamais celle d'un autre (SR-001/SR-013).
+
+    owner=user + is_system=False → perso scopées (for_user). Clé naturelle
+    (slug, owner) → re-run idempotent. Retourne (n_categories, n_sous_categories).
+    Réutilisable hors démo (seed prod de l'admin via une commande, incrément 2).
+    """
+    from transactions.models import Category, SubCategory
+
+    n_cat = n_sub = 0
+    for d in defs:
+        if d.parent_slug is not None:
+            continue
+        Category.objects.update_or_create(
+            slug=d.slug,
+            owner=user,
+            defaults={
+                "name": d.name,
+                "icon": d.icon,
+                "colour_hex": d.colour_hex,
+                "is_system": False,
+                "is_active": True,
+            },
+        )
+        n_cat += 1
+
+    for d in defs:
+        if d.parent_slug is None:
+            continue
+        # Préférer le parent PERSO du user (owner=user) au parent SYSTÈME de même slug :
+        # sans tri, .first() peut rattacher la sous-cat au mauvais arbre (parent système)
+        # alors qu'un parent perso homonyme existe. nulls_last → perso (non-null) d'abord.
+        parent = (
+            Category.objects.filter(slug=d.parent_slug)
+            .filter(Q(owner__isnull=True) | Q(owner=user))
+            .order_by(F("owner").asc(nulls_last=True))
+            .first()
+        )
+        if parent is None:
+            logger.warning(
+                "seed_perso_categories: parent slug=%s introuvable pour sous-cat=%s",
+                d.parent_slug,
+                d.slug,
+            )
+            continue
+        SubCategory.objects.update_or_create(
+            slug=d.slug,
+            owner=user,
+            defaults={
+                "name": d.name,
+                "icon": d.icon,
+                "category": parent,
+                "is_system": False,
+                "is_active": True,
+            },
+        )
+        n_sub += 1
+
+    return n_cat, n_sub

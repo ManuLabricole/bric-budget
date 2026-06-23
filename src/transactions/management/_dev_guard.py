@@ -2,14 +2,12 @@
 transactions/management/_dev_guard.py — Helper for DEV ONLY management commands.
 
 Used by commands that MUST NOT run in production :
-  - dev_randomize_categories  — random tx categorization (dev seeding)
-  - dev_seed_realistic        — 12 months of fake transactions
-  - dev_reset_seed                — wipes all seeded business data
-  - dev_reset_categories          — wipes all tx categorizations
+  - dev_seed                  — seed une DB de démo (app demo/) via le pipeline d'import
+  - dev_reset                 — supprime les comptes/données de démo
   - recalculate_display_names — one-shot backfill (already executed in prod)
 
 Pourquoi un guard centralisé :
-    Une commande comme `dev_reset_seed` lancée par erreur en prod détruit la base.
+    Une commande comme `dev_reset` lancée par erreur en prod détruit des données.
     Le guard refuse de tourner si DEBUG=False (= settings prod).
     On peut forcer via `--force-prod` pour les cas exceptionnels (migration data).
 """
@@ -32,7 +30,7 @@ def assert_dev_environment(command_name: str, allow_force: bool = True) -> None:
         class Command(BaseCommand):
             def handle(self, *args, **options):
                 if not options.get("force_prod"):
-                    assert_dev_environment("dev_reset_seed")
+                    assert_dev_environment("dev_reset")
                 # ... destructive code ...
     """
     if settings.DEBUG:

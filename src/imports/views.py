@@ -13,19 +13,17 @@ Stockage temporaire :
     La session Django stocke le chemin temp + métadonnées (pas le fichier lui-même).
 """
 
-import hashlib
 import logging
 import os
 import tempfile
 from collections import defaultdict
 from datetime import date, timedelta
-from decimal import Decimal
 from pathlib import Path
 from typing import Any, cast
 
 from django.contrib.auth.decorators import login_required
 from django.db import transaction as db_transaction
-from django.db.models import Count, Max, Min
+from django.db.models import Count
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -40,7 +38,12 @@ from connectors.resolver import (
     detect_connector,
     resolve_accounts,
 )
-from imports.storage import build_import_filename, save_import_file
+from imports.orchestrator import (
+    account_file_hash,
+    persist_import_file,
+    prepare_import,
+    run_import,
+)
 from transactions.models import ImportLog, Transaction
 from transactions.services import ImportService, compute_file_hash
 
@@ -71,21 +74,6 @@ def _activity_window(period_mode: str, period_offset: int):
     )
     can_go_next = period_offset > 0
     return start_date, end_date, period_display, can_go_next
-
-
-def _account_file_hash(file_hash: str, sheet_name: str | None) -> str:
-    """
-    Retourne un hash unique par (fichier, compte).
-
-    Pour Yuh/UBS : sheet_name=None → file_hash inchangé (1 compte par fichier).
-    Pour CIC     : sheet_name="Compte courant" etc. → hash dérivé = sha256(file_hash:sheet_name).
-
-    Pourquoi ? ImportLog.file_hash est UNIQUE en DB. Un fichier CIC génère N ImportLogs
-    (1 par feuille), chacun a besoin d'un hash distinct pour éviter l'IntegrityError.
-    """
-    if sheet_name is None:
-        return file_hash
-    return hashlib.sha256(f"{file_hash}:{sheet_name}".encode()).hexdigest()
 
 
 @login_required
@@ -472,7 +460,7 @@ def _handle_dry_run(request):
                 account=match.account,
                 imported_by=request.user,
                 filename=uploaded.name,
-                file_hash=_account_file_hash(file_hash, match.sheet_name),
+                file_hash=account_file_hash(file_hash, match.sheet_name),
                 balance=balance,
                 dry_run=True,
             )
@@ -537,81 +525,52 @@ def import_confirm(request):
 
     tmp_path = Path(pending["filepath"])
     filename = pending["filename"]
-    file_hash = pending["file_hash"]
 
     if not tmp_path.exists():
         del request.session["pending_import"]
         return _error(request, "Fichier temporaire introuvable. Recommencez l'import.")
 
     try:
-        connector = detect_connector(tmp_path)
-        if connector is None:
-            raise ValueError("Connecteur non détecté (fichier corrompu ?)")
-
-        matches = resolve_accounts(connector, tmp_path, user=request.user)
-
-        if isinstance(connector, CICConnector):
-            sheets_info = {
-                s["sheet_name"]: s for s in connector.get_account_sheets(tmp_path)
-            }
-            balances = {
-                match.sheet_name: sheets_info.get(match.sheet_name, {}).get("balance")
-                for match in matches
-            }
-        else:
-            raw_balance = connector.extract_balance(tmp_path)
-            balances = {None: raw_balance}
-
-        service = ImportService()
-
-        # Accumuler les résultats pour récupérer les log_pk après la boucle.
-        # On en a besoin pour retrouver les transactions insérées (date_min/max)
-        # et déclencher le stockage permanent du fichier source.
-        service_results = []
-
-        for match in matches:
-            if match.sheet_name is not None:
-                transactions = connector.parse_sheet(tmp_path, match.sheet_name)
-            else:
-                transactions = connector.parse(tmp_path)
-            balance = balances.get(match.sheet_name)
-            result = service.run(
-                transactions=transactions,
-                account=match.account,
-                imported_by=request.user,
-                filename=filename,
-                file_hash=_account_file_hash(file_hash, match.sheet_name),
-                balance=balance,
-                dry_run=False,
-            )
-            service_results.append(result)
+        # Même chemin que le seed de dev (#118) : prepare → run → persist.
+        # forced_account_id : compte choisi via le picker (Yuh multi-comptes) ;
+        # None pour UBS/CIC (résolus par IBAN/RIB). Sans ça, confirm re-résout sans
+        # forçage → AccountAmbiguous → import perdu.
+        prepared = prepare_import(
+            tmp_path,
+            user=request.user,
+            forced_account_id=pending.get("forced_account_id"),
+        )
+        results = run_import(
+            prepared,
+            tmp_path,
+            filename=filename,
+            imported_by=request.user,
+            dry_run=False,
+        )
 
         # Audit log : import réussi — événement métier critique pour traçabilité prod.
-        total_created = sum(r.count_created for r in service_results)
-        total_skipped = sum(r.count_skipped for r in service_results)
+        total_created = sum(r.count_created for r in results)
+        total_skipped = sum(r.count_skipped for r in results)
         logger.info(
             "import_confirm ok filename=%s connector=%s accounts=%d "
             "created=%d skipped=%d user=%s",
             filename,
-            type(connector).__name__,
-            len(matches),
+            type(prepared.connector).__name__,
+            len(prepared.matches),
             total_created,
             total_skipped,
             request.user.id,
         )
 
-        # ── Stockage permanent du fichier source ─────────────────────────────
-        # On stocke le fichier AVANT le finally (qui supprime tmp_path) et
-        # uniquement si au moins un ImportLog a été créé (log_pk non None).
-        # Pour les imports "0 nouvelles transactions" (all skipped), on stocke
-        # quand même : l'utilisateur a confirmé la synchronisation.
-        _persist_import_file(
-            tmp_path=tmp_path,
+        # Stockage permanent du fichier source (chiffré), AVANT le finally qui
+        # supprime tmp_path. Pour un import "0 nouvelle transaction" (all skipped),
+        # persist_import_file court-circuite proprement (aucun log_pk).
+        persist_import_file(
+            path=tmp_path,
             filename=filename,
-            matches=matches,
-            balances=balances,
-            connector=connector,
-            service_results=service_results,
+            matches=prepared.matches,
+            balances=prepared.balances,
+            results=results,
         )
 
     except Exception as e:
@@ -620,8 +579,6 @@ def import_confirm(request):
 
     finally:
         # Nettoyage : supprimer le fichier temp et la clé session dans tous les cas.
-        # Si _persist_import_file a déjà lu le fichier (copy+encrypt), il existe
-        # toujours ici — on le supprime. Si une exception a eu lieu avant, pareil.
         if tmp_path.exists():
             os.unlink(tmp_path)
         request.session.pop("pending_import", None)
@@ -632,94 +589,6 @@ def import_confirm(request):
     response = HttpResponse()
     response["HX-Redirect"] = reverse("imports:upload")
     return response
-
-
-def _persist_import_file(
-    tmp_path, filename, matches, balances, connector, service_results
-):
-    """
-    Chiffre et stocke le fichier d'import dans IMPORT_STORAGE_ROOT, puis
-    met à jour les ImportLog avec le chemin et le nom canonique.
-
-    Appelé uniquement depuis import_confirm, après l'écriture en DB.
-
-    On l'extrait dans une fonction séparée pour :
-        - garder import_confirm lisible
-        - permettre de l'appeler silencieusement (les erreurs de stockage ne
-          doivent pas faire échouer un import déjà committé en DB)
-
-    Si le stockage échoue (ex: clé absente, disque plein), on logge l'erreur
-    mais on ne lève pas d'exception — l'import est déjà en DB, l'utilisateur
-    ne doit pas perdre ses données pour un problème de fichier.
-    """
-    log_pks = [r.log_pk for r in service_results if r.log_pk]
-    if not log_pks:
-        # Aucun ImportLog créé (toutes les runs ont échoué tôt) → pas de stockage
-        logger.warning(
-            "[import_storage] No log_pk found after confirm — skipping file storage."
-        )
-        return
-
-    try:
-        # Récupérer date_min / date_max des transactions insérées dans ces logs.
-        # Si 0 nouvelles transactions (all skipped), date_min/date_max seront None
-        # → build_import_filename utilisera "nodate" dans le nom.
-        agg = Transaction.objects.filter(import_log_id__in=log_pks).aggregate(
-            date_min=Min("date"), date_max=Max("date"), n=Count("id")
-        )
-
-        institution_slug = matches[0].account.institution.slug
-
-        # Noms de comptes normalisés : espaces → underscores, minuscules
-        account_names = [
-            m.account.name.lower().replace(" ", "_").replace("/", "_") for m in matches
-        ]
-
-        # Première balance disponible (None si aucun connecteur ne l'extrait)
-        raw_balance = next(iter(balances.values()), None)
-        balance_dec = Decimal(str(raw_balance)) if raw_balance is not None else None
-
-        year = agg["date_max"].year if agg["date_max"] else timezone.now().year
-
-        stored_filename = build_import_filename(
-            institution_slug=institution_slug,
-            account_names=account_names,
-            date_min=agg["date_min"],
-            date_max=agg["date_max"],
-            balance=balance_dec,
-            n_transactions=agg["n"] or 0,
-            original_ext=Path(filename).suffix,
-        )
-
-        stored_rel, is_enc = save_import_file(
-            tmp_path, institution_slug, stored_filename, year
-        )
-
-        # Mettre à jour tous les ImportLogs de cet import (CIC → plusieurs logs,
-        # même fichier physique → même stored_path dans chaque row).
-        ImportLog.objects.filter(pk__in=log_pks).update(
-            stored_filename=stored_filename,
-            stored_path=str(stored_rel),
-            is_encrypted=is_enc,
-        )
-
-        logger.info(
-            "import_storage_saved ok file=%s dest=%s encrypted=%s",
-            filename,
-            stored_rel,
-            is_enc,
-        )
-
-    except Exception as exc:
-        # Le stockage a échoué APRÈS que l'import a été committé en DB.
-        # On logge sans crasher : l'utilisateur a ses transactions, le fichier
-        # source n'est juste pas archivé. Il peut réimporter depuis l'original.
-        logger.error(
-            "[import_storage] Failed to persist %s: %s",
-            filename,
-            exc,
-            exc_info=True,
-        )
 
 
 @login_required
@@ -1003,6 +872,13 @@ def import_select_account(request):
             hint="Sélectionnez un compte de la liste.",
         )
 
+    # Mémoriser le compte choisi : import_confirm DOIT cibler CE compte. Sans ça,
+    # confirm re-résout sans forçage → AccountAmbiguous (Yuh multi-comptes) →
+    # import perdu (« part dans le vide »). Bug réel (#118).
+    pending["forced_account_id"] = account.pk
+    request.session["pending_import"] = pending
+    request.session.modified = True
+
     # Relancer le dry-run avec le compte forcé
     try:
         connector = detect_connector(tmp_path)
@@ -1028,7 +904,7 @@ def import_select_account(request):
                 account=match.account,
                 imported_by=request.user,
                 filename=filename,
-                file_hash=_account_file_hash(file_hash, match.sheet_name),
+                file_hash=account_file_hash(file_hash, match.sheet_name),
                 balance=balance,
                 dry_run=True,
             )
