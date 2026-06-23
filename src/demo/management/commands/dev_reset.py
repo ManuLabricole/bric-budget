@@ -9,7 +9,7 @@ Usage :
     python manage.py dev_reset --yes    # sans confirmation (scripting)
 """
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 from transactions.management._dev_guard import (
     add_force_prod_argument,
@@ -33,7 +33,14 @@ class Command(BaseCommand):
             assert_dev_environment("dev_reset")
 
         if not options["yes"]:
-            confirm = input("Supprimer toutes les données de démo ? [y/N] ")
+            # input() lève EOFError en run non-interactif (CI, pipe) → message clair
+            # plutôt qu'une stacktrace. Demander --yes pour scripter.
+            try:
+                confirm = input("Supprimer toutes les données de démo ? [y/N] ")
+            except EOFError:
+                raise CommandError(
+                    "Entrée non-interactive : relancer avec --yes pour confirmer."
+                ) from None
             if confirm.strip().lower() not in ("y", "yes", "o", "oui"):
                 self.stdout.write("Annulé.")
                 return

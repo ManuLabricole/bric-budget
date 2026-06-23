@@ -13,7 +13,7 @@ Usage :
     python manage.py dev_seed --from-fixtures # importe demo/fixtures/ (committées)
 """
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 from transactions.management._dev_guard import (
     add_force_prod_argument,
@@ -46,6 +46,11 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         if not options.get("force_prod"):
             assert_dev_environment("dev_seed")
+
+        # --months doit être strictement positif : <= 0 génère des fenêtres vides
+        # (pré-seed FX sur un range nul) → échec opaque plus loin. Fail-fast ici.
+        if options["months"] <= 0:
+            raise CommandError("--months doit être strictement positif.")
 
         # Import tardif : la logique vit dans le package (commande mince).
         from demo.seeder import seed_demo

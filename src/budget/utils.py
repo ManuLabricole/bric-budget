@@ -12,7 +12,7 @@ import logging
 import re
 from datetime import date
 
-from django.db.models import Prefetch, Q
+from django.db.models import F, Prefetch, Q
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.text import slugify
 
@@ -259,9 +259,13 @@ def seed_perso_categories(user, defs) -> tuple[int, int]:
     for d in defs:
         if d.parent_slug is None:
             continue
+        # Préférer le parent PERSO du user (owner=user) au parent SYSTÈME de même slug :
+        # sans tri, .first() peut rattacher la sous-cat au mauvais arbre (parent système)
+        # alors qu'un parent perso homonyme existe. nulls_last → perso (non-null) d'abord.
         parent = (
             Category.objects.filter(slug=d.parent_slug)
             .filter(Q(owner__isnull=True) | Q(owner=user))
+            .order_by(F("owner").asc(nulls_last=True))
             .first()
         )
         if parent is None:

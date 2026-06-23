@@ -57,10 +57,12 @@ def test_seed_demo_via_real_pipeline(demo_env):
     # l'épargne UBS importait 0 tx car elle réutilisait les No de transaction du courant).
     assert not ImportLog.objects.filter(account__members=user, count_created=0).exists()
 
-    # Fichier source chiffré stocké (preuve que persist_import_file a tourné)
-    assert (
-        ImportLog.objects.filter(account__members=user).exclude(stored_path="").exists()
-    )
+    # Fichier source CHIFFRÉ stocké : prouver le chiffrement, pas juste la persistance.
+    # (Un .exists() sur stored_path ne prouvait que « un fichier a été écrit », pas qu'il
+    # était chiffré → le test passait même si is_encrypted=False.)
+    stored = ImportLog.objects.filter(account__members=user).exclude(stored_path="")
+    assert stored.exists()
+    assert not stored.filter(is_encrypted=False).exists()
 
     # CHAQUE compte a au moins un BalanceSnapshot → visible en patrimoine.
     # (Régression : Yuh n'a pas de solde dans son CSV → était invisible.)
