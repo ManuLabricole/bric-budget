@@ -197,7 +197,7 @@ def test_compute_category_cashflow_scoped_to_user(
 def test_compute_category_cashflow_with_budget_target_computes_pct(
     rf, user, account, category
 ):
-    BudgetTarget.objects.create(category=category, amount=Decimal("200"))
+    BudgetTarget.objects.create(category=category, owner=user, amount=Decimal("200"))
     make_tx(account, category, amount="-50.00", seed="t")
     req = _make_request(rf, user)
     ctx = _compute_category_cashflow_context(req, category)

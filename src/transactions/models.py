@@ -720,20 +720,47 @@ class BudgetTarget(models.Model):
     amount is always in CHF.
     """
 
-    # unique=True: one target per category, period-independent
-    category = models.OneToOneField(
+    # category — un objectif vise UNE catégorie. ⚠️ Avant #201 c'était un OneToOneField
+    # → un seul objectif GLOBAL par catégorie. Sur une catégorie SYSTÈME (partagée), ça
+    # voulait dire un objectif unique partagé/écrasable entre TOUS les users (write
+    # cross-user). On passe en ForeignKey + unicité scopée (owner, category) ci-dessous.
+    category = models.ForeignKey(
         Category,
         on_delete=models.CASCADE,
-        related_name="budget_target",
+        related_name="budget_targets",
+    )
+
+    # owner — propriétaire de l'objectif (issue #201). Un objectif est TOUJOURS perso :
+    # il n'existe pas d'objectif « système » partagé (contrairement à Category/SubCategory).
+    # owner non-null + UniqueConstraint(owner, category) = chaque user a SON objectif sur
+    # une catégorie donnée, y compris sur une catégorie système, sans collision ni fuite.
+    # CASCADE : supprimer un user efface ses objectifs (pure préférence, aucune donnée
+    # historique pointée).
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="budget_targets",
     )
 
     # Target monthly spend in CHF
     amount = models.DecimalField(max_digits=10, decimal_places=2)
 
+    # Manager custom — expose BudgetTarget.objects.for_user(user). owner étant non-null,
+    # for_user se réduit à owner=user (la branche owner__isnull=True d'OwnedQuerySet est
+    # morte ici, mais on réutilise le même point de vérité pour rester cohérent).
+    objects = OwnedQuerySet.as_manager()
+
     class Meta:
         verbose_name = "budget target"
         verbose_name_plural = "budget targets"
         ordering = ["category__order"]
+        constraints = [
+            # Un objectif par (user, catégorie) — remplace l'unique implicite du OneToOne.
+            models.UniqueConstraint(
+                fields=["owner", "category"],
+                name="budgettarget_owner_category_uniq",
+            ),
+        ]
 
     def __str__(self):
-        return f"{self.category} → {self.amount} CHF/month"
+        return f"{self.category} → {self.amount} CHF/month (owner={self.owner_id})"

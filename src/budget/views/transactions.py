@@ -205,8 +205,7 @@ def budget_modal_target_create(request):
     category_id = request.POST.get("category_id") or request.GET.get("category_id")
 
     if request.method == "POST":
-        # SR-001 : sans for_user, user B écrirait/lirait l'objectif d'une catégorie
-        # PERSO de user A (BudgetTarget n'a pas d'owner → la seule barrière = la catégorie).
+        # for_user : la catégorie ciblée doit être visible (système OU à moi).
         category = get_object_or_404(
             Category.objects.for_user(request.user), id=category_id
         )
@@ -215,8 +214,11 @@ def budget_modal_target_create(request):
             amount = Decimal(str(amount_str))
         except (InvalidOperation, ValueError):
             return HttpResponse("Montant invalide", status=400)
+        # #201 : l'objectif est scopé owner=request.user → chacun a SON objectif sur une
+        # catégorie (y compris système), plus de write partagé/écrasé entre users.
         _, created = BudgetTarget.objects.update_or_create(
             category=category,
+            owner=request.user,
             defaults={"amount": amount},
         )
         log = logger.info if created else logger.debug
@@ -238,11 +240,9 @@ def budget_modal_target_create(request):
             .filter(is_active=True)
             .order_by("name")
         )
-        # SR-001 : BudgetTarget n'a pas d'owner → ne JAMAIS faire .all() (fuite des
-        # objectifs de TOUS les users). On borne aux catégories visibles par le user
-        # (système OU à moi) via category__in=cats (déjà scopé for_user ci-dessus).
+        # #201 : objectifs scopés owner via for_user → uniquement les miens.
         targets_by_cat = {
-            t.category_id: t for t in BudgetTarget.objects.filter(category__in=cats)
+            t.category_id: t for t in BudgetTarget.objects.for_user(request.user)
         }
         categories_with_targets = [
             {"category": cat, "target": targets_by_cat.get(cat.id)} for cat in cats
@@ -260,7 +260,10 @@ def budget_modal_target_create(request):
         Category.objects.for_user(request.user), id=category_id
     )
     existing_amount = None
-    target = BudgetTarget.objects.filter(category=category).first()
+    # #201 : mon objectif sur cette catégorie (scopé owner), pas celui d'un autre user.
+    target = (
+        BudgetTarget.objects.for_user(request.user).filter(category=category).first()
+    )
     if target:
         existing_amount = target.amount
 
