@@ -127,6 +127,13 @@ class Account(models.Model):
 
     is_active = models.BooleanField(default=True)
 
+    # is_demo — marqueur DÉTERMINISTE des comptes créés par le seed de démo (#202).
+    # Le seed (demo/seeder.py) ne résout/supprime QUE les comptes is_demo=True : sans ce
+    # marqueur, get_or_create matchait sur (institution, name) — risque de happer/supprimer
+    # le compte RÉEL d'un autre user homonyme en dev/staging partagé. JAMAIS posé par un
+    # import réel (defaults False).
+    is_demo = models.BooleanField(default=False, db_index=True)
+
     # Membres ayant accès à ce compte.
     # M2M → supporte les comptes joints (Emmanuel + Carys sur le même compte).
     # blank=True → pas de contrainte form-level ; la validation métier est dans les vues.
