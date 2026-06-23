@@ -505,7 +505,14 @@ def budget_index(request):
     # → active_categories est une référence vers l'une d'elles (pas une copie).
     #   On enrichit toutes les listes car le donut les utilise aussi, et pour ne pas
     #   dépendre de l'ordre d'exécution.
-    _targets_map = {t.category_id: t.amount for t in BudgetTarget.objects.all()}
+    # SR-001 : BudgetTarget n'a pas d'owner → .all() fuiterait les objectifs de TOUS
+    # les users dans le donut. On borne aux catégories visibles (système OU à moi).
+    _targets_map = {
+        t.category_id: t.amount
+        for t in BudgetTarget.objects.filter(
+            category__in=Category.objects.for_user(request.user)
+        )
+    }
     _period_months = PERIOD_MODE_MONTHS[period_mode]
 
     for _cat_list in (expense_categories, income_categories, recurring_categories):

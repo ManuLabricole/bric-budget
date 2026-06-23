@@ -593,9 +593,12 @@ def budget_panel_category_manage_detail(request, slug):
         .order_by("name")
     )
 
-    # Règles directement liées à cette catégorie principale
+    # Règles directement liées à cette catégorie principale — SCOPÉES for_user :
+    # sinon, sur une catégorie SYSTÈME, on exposait les keywords des règles PERSO
+    # d'autres users (un keyword = souvent un nom de commerçant/patronyme). SR-013.
     rules = (
-        CategorizationRule.objects.filter(category=cat)
+        CategorizationRule.objects.for_user(request.user)
+        .filter(category=cat)
         .select_related("subcategory")
         .order_by("-priority", "keyword")
     )
@@ -819,8 +822,15 @@ def budget_panel_category_delete_confirm(request, obj_type, slug):
         tx_count = (
             Transaction.objects.for_user(request.user).filter(category=obj).count()
         )
-        subcat_count = obj.subcategories.count()
-        rules_count = CategorizationRule.objects.filter(category=obj).count()
+        # Defense-in-depth : obj est forcément perso/à-moi ici (is_system → 403
+        # au-dessus), donc ces counts ne fuitent pas aujourd'hui. On scope quand même
+        # for_user pour rester sûr si la garde is_system évoluait (SR-013).
+        subcat_count = obj.subcategories.for_user(request.user).count()
+        rules_count = (
+            CategorizationRule.objects.for_user(request.user)
+            .filter(category=obj)
+            .count()
+        )
 
     elif obj_type == "subcategory":
         obj = get_object_or_404(SubCategory.objects.for_user(request.user), slug=slug)
@@ -835,7 +845,12 @@ def budget_panel_category_delete_confirm(request, obj_type, slug):
             Transaction.objects.for_user(request.user).filter(subcategory=obj).count()
         )
         subcat_count = 0
-        rules_count = CategorizationRule.objects.filter(subcategory=obj).count()
+        # Defense-in-depth (cf. branche category ci-dessus) : obj perso/à-moi ici.
+        rules_count = (
+            CategorizationRule.objects.for_user(request.user)
+            .filter(subcategory=obj)
+            .count()
+        )
 
     else:
         return HttpResponse("Type invalide.", status=400)

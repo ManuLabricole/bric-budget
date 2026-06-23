@@ -205,7 +205,11 @@ def budget_modal_target_create(request):
     category_id = request.POST.get("category_id") or request.GET.get("category_id")
 
     if request.method == "POST":
-        category = get_object_or_404(Category, id=category_id)
+        # SR-001 : sans for_user, user B écrirait/lirait l'objectif d'une catégorie
+        # PERSO de user A (BudgetTarget n'a pas d'owner → la seule barrière = la catégorie).
+        category = get_object_or_404(
+            Category.objects.for_user(request.user), id=category_id
+        )
         amount_str = request.POST.get("amount", "").replace(",", ".")
         try:
             amount = Decimal(str(amount_str))
@@ -234,7 +238,12 @@ def budget_modal_target_create(request):
             .filter(is_active=True)
             .order_by("name")
         )
-        targets_by_cat = {t.category_id: t for t in BudgetTarget.objects.all()}
+        # SR-001 : BudgetTarget n'a pas d'owner → ne JAMAIS faire .all() (fuite des
+        # objectifs de TOUS les users). On borne aux catégories visibles par le user
+        # (système OU à moi) via category__in=cats (déjà scopé for_user ci-dessus).
+        targets_by_cat = {
+            t.category_id: t for t in BudgetTarget.objects.filter(category__in=cats)
+        }
         categories_with_targets = [
             {"category": cat, "target": targets_by_cat.get(cat.id)} for cat in cats
         ]
@@ -245,7 +254,11 @@ def budget_modal_target_create(request):
         )
 
     # GET avec category_id → formulaire pour cette catégorie (création ou modification)
-    category = get_object_or_404(Category, id=category_id)
+    # SR-001 : sans for_user, user B pourrait passer l'id d'une catégorie PERSO de
+    # user A et lire son objectif (IDOR). On scope système OU à moi.
+    category = get_object_or_404(
+        Category.objects.for_user(request.user), id=category_id
+    )
     existing_amount = None
     target = BudgetTarget.objects.filter(category=category).first()
     if target:
