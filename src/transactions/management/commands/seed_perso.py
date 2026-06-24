@@ -93,7 +93,11 @@ def _ensure_perso_rules(user, rules) -> int:
             defaults={
                 "category": category,
                 "subcategory": subcategory,
-                "target_field": CategorizationRule.TargetField.DESCRIPTION_RAW,
+                # Cible CANONIQUE depuis Phase 2G : le display_name (nom propre,
+                # agnostique de la banque) — pas description_raw (texte brut, gardé
+                # seulement pour rétro-compat des anciennes règles). Un mot-clé Finary
+                # match plus fiablement le nom nettoyé que le brut bruité par banque.
+                "target_field": CategorizationRule.TargetField.DISPLAY_NAME,
                 "priority": priority,
                 "is_active": True,
             },

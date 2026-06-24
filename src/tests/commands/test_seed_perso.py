@@ -72,19 +72,31 @@ def test_seed_creates_personal_categories_and_rules(owner, system_referential):
     rules = CategorizationRule.objects.for_user(owner).filter(owner=owner)
     assert rules.count() == len(FINARY_RULES)
     assert all(r.category_id is not None for r in rules)
+    # Cible CANONIQUE (Phase 2G) : display_name, pas le brut description_raw.
+    assert all(
+        r.target_field == CategorizationRule.TargetField.DISPLAY_NAME for r in rules
+    )
 
 
 @pytest.mark.django_db
 def test_seed_creates_nothing_system_or_unowned(owner, system_referential):
     """Le seed perso ne crée AUCUNE catégorie/règle système (owner NULL) — il ne touche
-    que du perso. (Le système préexiste via la fixture, pas via le seed.)"""
+    que du perso. (Le système préexiste via la fixture, pas via le seed.)
+
+    Delta before/after (pas d'assertion absolue « zéro règle système ») : robuste même si
+    un référentiel système venait à contenir des règles un jour."""
     system_cats_before = Category.objects.unscoped().filter(owner__isnull=True).count()
+    system_rules_before = (
+        CategorizationRule.objects.unscoped().filter(owner__isnull=True).count()
+    )
 
     _run("--user", PERSO_EMAIL, "--no-apply")
 
-    # Aucune règle système créée (toutes ont un owner).
-    assert not CategorizationRule.objects.unscoped().filter(owner__isnull=True).exists()
-    # Le nombre de catégories système n'a pas bougé (le seed n'en crée pas).
+    # Le seed ne crée aucune règle ni catégorie SYSTÈME : les compteurs ne bougent pas.
+    assert (
+        CategorizationRule.objects.unscoped().filter(owner__isnull=True).count()
+        == system_rules_before
+    )
     assert (
         Category.objects.unscoped().filter(owner__isnull=True).count()
         == system_cats_before
