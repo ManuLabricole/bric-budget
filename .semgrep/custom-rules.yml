@@ -51,3 +51,110 @@ rules:
       confidence: HIGH
       references:
         - https://docs.python.org/3/howto/logging.html
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # IDOR — accès non scopé à un modèle sensible (SR-001, #162).
+  #
+  # Le cœur du modèle de menace : un accès par PK à Transaction / Account / Card /
+  # ImportLog / BalanceSnapshot DOIT passer par un manager scopé user
+  # (`.for_user(request.user)`) ou un filtre d'appartenance (`members=request.user`,
+  # `account__members=request.user`). Sinon → IDOR : l'utilisateur B incrémente l'ID
+  # dans l'URL et lit les données bancaires de l'utilisateur A.
+  #
+  # On ne cible QUE les formes "résolution par PK / tout l'ensemble" qui sont
+  # quasi toujours des accès web non scopés :
+  #   - $MODEL.objects.get(...)
+  #   - $MODEL.objects.all()
+  #   - get_object_or_404($MODEL, ...)
+  # On NE cible PAS `.filter(...)` : le scoping y est souvent indirect et légitime
+  # (account_id__in=ids déjà scopés en amont, import_log=log, etc.) → faux positifs.
+  #
+  # Échappatoire pour un cas légitime (ex: tâche système, agrégat admin déjà scopé) :
+  #   # nosemgrep: idor-unscoped-sensitive-model  ← avec un commentaire qui explique POURQUOI.
+  - id: idor-unscoped-sensitive-model
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Accès non scopé à un modèle sensible (Transaction/Account/Card/ImportLog/
+      BalanceSnapshot) par PK ou .all() — risque IDOR (SR-001). Filtrer par user :
+      `Model.objects.for_user(request.user)` ou `.filter(members=request.user)` /
+      `.filter(account__members=request.user)`, puis résoudre par PK sur ce queryset.
+      Ex : get_object_or_404(Transaction.objects.for_user(request.user), pk=tx_id).
+      Cas système légitime → # nosemgrep: idor-unscoped-sensitive-model + POURQUOI.
+    patterns:
+      - pattern-either:
+          # $MODEL.objects.get(...) — résolution par PK sans manager scopé.
+          # Tolère un filtre d'appartenance passé directement à .get().
+          - patterns:
+              - pattern-either:
+                  - pattern: Transaction.objects.get(...)
+                  - pattern: Account.objects.get(...)
+                  - pattern: Card.objects.get(...)
+                  - pattern: ImportLog.objects.get(...)
+                  - pattern: BalanceSnapshot.objects.get(...)
+              - pattern-not: Transaction.objects.get(..., members=request.user, ...)
+              - pattern-not: Account.objects.get(..., members=request.user, ...)
+              - pattern-not: Card.objects.get(..., members=request.user, ...)
+              - pattern-not: ImportLog.objects.get(..., members=request.user, ...)
+              - pattern-not: BalanceSnapshot.objects.get(..., members=request.user, ...)
+              # Forme canonique SR-001 pour les modèles scopés PAR COMPTE
+              # (account__members) — ImportLog/Transaction/BalanceSnapshot/Card.
+              # Sans ça, la règle flaguerait à tort le code correct prescrit par CLAUDE.md.
+              - pattern-not: Transaction.objects.get(..., account__members=request.user, ...)
+              - pattern-not: Card.objects.get(..., account__members=request.user, ...)
+              - pattern-not: ImportLog.objects.get(..., account__members=request.user, ...)
+              - pattern-not: BalanceSnapshot.objects.get(..., account__members=request.user, ...)
+          # $MODEL.objects.all() — renvoie TOUT, jamais scopé
+          - pattern: Transaction.objects.all(...)
+          - pattern: Account.objects.all(...)
+          - pattern: Card.objects.all(...)
+          - pattern: ImportLog.objects.all(...)
+          - pattern: BalanceSnapshot.objects.all(...)
+          # get_object_or_404($MODEL, ...) — résolution par PK sur le modèle nu.
+          # La forme scopée get_object_or_404(Model.objects.for_user(u), pk=…) passe
+          # `$MODEL.objects...` en 1er arg, pas le modèle nu → non matchée (pas de FP).
+          - pattern: get_object_or_404(Transaction, ...)
+          - pattern: get_object_or_404(Account, ...)
+          - pattern: get_object_or_404(Card, ...)
+          - pattern: get_object_or_404(ImportLog, ...)
+          - pattern: get_object_or_404(BalanceSnapshot, ...)
+    paths:
+      exclude:
+        - "**/tests/**"
+        - "**/migrations/**"
+        - "**/management/commands/**"
+    metadata:
+      category: security
+      technology: [python, django]
+      confidence: MEDIUM
+      cwe:
+        - "CWE-639: Authorization Bypass Through User-Controlled Key"
+      owasp:
+        - "A01:2021 - Broken Access Control"
+      references:
+        - https://owasp.org/Top10/A01_2021-Broken_Access_Control/
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # print() en production — défense en profondeur SR-005 (#162).
+  # Double le `T20` (flake8-print) de ruff côté SAST : un print() est invisible
+  # dans les logs Railway. Utiliser logger.debug/info/exception. tests/ migrations/
+  # management/commands/ exclus (CLI = sortie console légitime).
+  - id: print-in-production
+    languages: [python]
+    severity: ERROR
+    message: >-
+      print() interdit en production — invisible dans les logs Railway (SR-005).
+      Utiliser logger.debug/info/warning/exception(...). Les commandes CLI
+      (management/commands/) et les tests sont exclus.
+    pattern: print(...)
+    paths:
+      exclude:
+        - "**/tests/**"
+        - "**/migrations/**"
+        - "**/management/commands/**"
+    metadata:
+      category: maintainability
+      technology: [python, django]
+      confidence: HIGH
+      references:
+        - https://docs.python.org/3/howto/logging.html

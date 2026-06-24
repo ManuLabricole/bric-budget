@@ -50,6 +50,17 @@ jobs:
       - name: Install Poetry
         run: pip install poetry
 
+      # Cache du virtualenv Poetry, clé = hash de poetry.lock + version Python.
+      # Aujourd'hui chaque job réinstalle tout de zéro (×4). Le cache rend
+      # `poetry install` quasi instantané sur les runs où le lock n'a pas bougé (#156).
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: poetry-venv-${{ runner.os }}-py3.13-${{ hashFiles('poetry.lock') }}
+          restore-keys: |
+            poetry-venv-${{ runner.os }}-py3.13-
+
       # --no-root : on installe les dépendances mais pas le projet lui-même
       # (il n'y a pas de package Python à installer, juste une app Django)
       - name: Install dependencies
@@ -63,6 +74,52 @@ jobs:
 
       - name: djlint — lint templates
         run: poetry run djlint src/templates/ --profile=django --lint
+
+      # vulture — détection de code mort. INFORMATIF (continue-on-error) : il
+      # remonte des faux positifs connus (args schema_editor des migrations RunPython,
+      # params queryset des actions admin) → on exclut migrations/tests et on ne bloque
+      # PAS la CI tant que le backlog n'est pas nettoyé (#156). Résumé sur la PR.
+      - name: vulture — dead code (informatif)
+        id: vulture
+        continue-on-error: true
+        run: |
+          poetry run vulture src/ \
+            --min-confidence 80 \
+            --exclude "*/migrations/*,*/tests/*" \
+            | tee vulture-report.txt
+
+      - name: vulture — résumé PR
+        if: always()
+        run: |
+          {
+            echo "### 🦅 vulture — code mort potentiel (informatif)";
+            if [ -s vulture-report.txt ]; then
+              echo '```';
+              cat vulture-report.txt;
+              echo '```';
+            else
+              echo "Aucun code mort détecté.";
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # djhtml — formatage des templates Django. INFORMATIF : 23 templates ne sont
+      # pas encore au format djhtml ; on liste les écarts sans bloquer (#156). À
+      # passer en bloquant une fois le backlog templates reformaté (issue dédiée).
+      - name: djhtml — format templates (informatif)
+        id: djhtml
+        continue-on-error: true
+        run: |
+          poetry run djhtml --check src/templates/ | tee djhtml-report.txt
+
+      - name: djhtml — résumé PR
+        if: always()
+        run: |
+          {
+            echo "### 🧱 djhtml — formatage templates (informatif)";
+            echo '```';
+            cat djhtml-report.txt 2>/dev/null || echo "(rien à signaler)";
+            echo '```';
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # bandit — linter sécurité Python (PyCQA). Seuil médium+ : on ignore les Low
       # (essentiellement les `assert` de pytest = B101, non pertinents).
@@ -136,6 +193,14 @@ jobs:
       - name: Install Poetry
         run: pip install poetry
 
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: poetry-venv-${{ runner.os }}-py3.13-${{ hashFiles('poetry.lock') }}
+          restore-keys: |
+            poetry-venv-${{ runner.os }}-py3.13-
+
       - name: Install dependencies
         run: poetry install --no-root
 
@@ -148,8 +213,44 @@ jobs:
       - name: Run migrations
         run: cd src && poetry run python manage.py migrate
 
-      - name: Run tests
-        run: cd src && poetry run pytest --color=yes -q
+      # pytest, lancé depuis la RACINE (pas `cd src`) pour que [tool.coverage]
+      # de pyproject.toml s'applique (source=["src"], omit migrations/tests) :
+      #   -n auto      → pytest-xdist : ~950 tests répartis sur tous les cœurs (#156).
+      #   --reuse-db   → réutilise la test_db migrée ci-dessus, skip la recréation.
+      #   --cov ...    → mesure la couverture (#154). --cov-fail-under=78 : seuil
+      #                  ancré 2 pts sous la baseline réelle (80%) → bloque toute
+      #                  régression nette sans casser sur du bruit. term-missing
+      #                  + le résumé ci-dessous rendent le % visible sur la PR.
+      # -p no:randomly : pytest-randomly est déjà installé (dep historique) et
+      # randomiserait l'ordre → risque de flaky en semaine de release. On fige
+      # l'ordre en CI (désactivation explicite du plugin), sans toucher la dep (#156).
+      - name: Run tests + coverage
+        run: |
+          poetry run pytest --color=yes -q \
+            -p no:randomly \
+            -n auto --reuse-db \
+            --cov --cov-report=term-missing --cov-report=xml \
+            --cov-fail-under=78
+
+      # Publie le % de couverture + le total directement sur la page de la PR
+      # ($GITHUB_STEP_SUMMARY) → visible sans ouvrir les logs (#154).
+      - name: Coverage — résumé PR
+        if: always()
+        run: |
+          {
+            echo "### 🧪 Couverture de test";
+            echo "Seuil bloquant : **78 %** (baseline réelle 80 %).";
+            echo "";
+            if [ -f coverage.xml ]; then
+              echo "<details><summary>Détail par fichier (term-missing)</summary>";
+              echo "";
+              poetry run coverage report --format=markdown;
+              echo "";
+              echo "</details>";
+            else
+              echo "⚠️ Pas de rapport de couverture (les tests ont échoué avant la mesure).";
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Checklist sécu natif Django, en mode PROD (DEBUG=False) : vérifie HSTS,
       # SSL redirect, cookies sécurisés, SECRET_KEY… --fail-level WARNING => toute
@@ -201,6 +302,14 @@ jobs:
 
       - name: Install Poetry
         run: pip install poetry
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: poetry-venv-${{ runner.os }}-py3.13-${{ hashFiles('poetry.lock') }}
+          restore-keys: |
+            poetry-venv-${{ runner.os }}-py3.13-
 
       - name: Install dependencies
         run: poetry install --no-root
