@@ -46,8 +46,8 @@ def test_full_run_seeds_every_referential():
 
     expected_cats, expected_subs = _expected_category_counts()
     assert Institution.objects.count() == len(KNOWN_INSTITUTIONS)
-    assert Category.objects.count() == expected_cats
-    assert SubCategory.objects.count() == expected_subs
+    assert Category.objects.unscoped().count() == expected_cats
+    assert SubCategory.objects.unscoped().count() == expected_subs
     # Sortie lisible dans les logs Railway : un bandeau par référentiel.
     assert "seed_institutions" in out
     assert "seed_categories" in out
@@ -61,8 +61,8 @@ def test_many_runs_are_idempotent():
 
     expected_cats, expected_subs = _expected_category_counts()
     assert Institution.objects.count() == len(KNOWN_INSTITUTIONS)
-    assert Category.objects.count() == expected_cats
-    assert SubCategory.objects.count() == expected_subs
+    assert Category.objects.unscoped().count() == expected_cats
+    assert SubCategory.objects.unscoped().count() == expected_subs
 
 
 @pytest.mark.django_db
@@ -70,7 +70,7 @@ def test_dry_run_writes_nothing():
     out = _run("--dry-run")
 
     assert Institution.objects.count() == 0
-    assert Category.objects.count() == 0
+    assert Category.objects.unscoped().count() == 0
     assert "dry-run" in out
 
 
@@ -85,4 +85,4 @@ def test_failing_seed_raises_command_error(tmp_path, monkeypatch):
         _run()
 
     # seed_institutions (passé avant) a pu écrire — mais l'échec est visible, c'est le contrat.
-    assert Category.objects.count() == 0
+    assert Category.objects.unscoped().count() == 0

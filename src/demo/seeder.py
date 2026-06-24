@@ -330,16 +330,26 @@ def _ensure_rules(user) -> int:
     créé ce run. Les catégories visées sont système (owner NULL, référentiel)."""
     created = 0
     for keyword, cat_slug, sub_slug, priority in profiles.DEMO_RULES:
-        category = Category.objects.filter(slug=cat_slug, owner__isnull=True).first()
+        # #213 : seed démo → catégories SYSTÈME (owner NULL), accès global légitime
+        # via unscoped() (auditable par grep "unscoped(").
+        category = (
+            Category.objects.unscoped()
+            .filter(slug=cat_slug, owner__isnull=True)
+            .first()
+        )
         if category is None:
             logger.warning("règle démo ignorée — catégorie absente : %s", cat_slug)
             continue
         subcategory = (
-            SubCategory.objects.filter(slug=sub_slug, owner__isnull=True).first()
+            SubCategory.objects.unscoped()
+            .filter(slug=sub_slug, owner__isnull=True)
+            .first()
             if sub_slug
             else None
         )
-        _, was_created = CategorizationRule.objects.get_or_create(
+        # #213 fail-closed : get_or_create fait son lookup via get_queryset (→ .none()),
+        # d'où le queryset scopé for_user pour l'idempotence du seed démo.
+        _, was_created = CategorizationRule.objects.for_user(user).get_or_create(
             keyword=keyword,
             owner=user,
             defaults={

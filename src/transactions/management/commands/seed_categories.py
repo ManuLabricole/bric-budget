@@ -64,7 +64,10 @@ class Command(BaseCommand):
         # à moitié écrit — tout ou rien.
         with transaction.atomic():
             for cat_data in categories:
-                category, created = Category.objects.update_or_create(
+                # #213 fail-closed : update_or_create fait son lookup via get_queryset
+                # (→ .none()) → sans unscoped() il recrée et viole l'unicité au re-run.
+                # Seed du référentiel SYSTÈME = accès global légitime (auditable).
+                category, created = Category.objects.unscoped().update_or_create(
                     slug=cat_data["slug"],
                     # owner=None : le référentiel ne seed QUE le système partagé (#149).
                     # Depuis #137 le slug n'est plus unique globalement (système owner NULL
@@ -93,17 +96,20 @@ class Command(BaseCommand):
                     # Compat JSON historique : "neutral" n'est pas un choix du modèle.
                     if default_nature == "neutral":
                         default_nature = ""
-                    _, sub_was_created = SubCategory.objects.update_or_create(
-                        slug=sub_data["slug"],
-                        owner=None,  # système partagé uniquement (#149) — cf. Category ci-dessus
-                        defaults={
-                            "category": category,
-                            "name": sub_data["name"],
-                            "icon": sub_data.get("icon", ""),
-                            "default_nature": default_nature,
-                            "is_system": sub_data.get("is_system", True),
-                            "is_active": sub_data.get("is_active", True),
-                        },
+                    # #213 : cf. Category ci-dessus — unscoped() pour l'idempotence du seed.
+                    _, sub_was_created = (
+                        SubCategory.objects.unscoped().update_or_create(
+                            slug=sub_data["slug"],
+                            owner=None,  # système partagé uniquement (#149) — cf. Category ci-dessus
+                            defaults={
+                                "category": category,
+                                "name": sub_data["name"],
+                                "icon": sub_data.get("icon", ""),
+                                "default_nature": default_nature,
+                                "is_system": sub_data.get("is_system", True),
+                                "is_active": sub_data.get("is_active", True),
+                            },
+                        )
                     )
                     if sub_was_created:
                         sub_created += 1

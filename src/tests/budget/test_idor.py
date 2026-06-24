@@ -514,7 +514,7 @@ def test_subcategory_create_under_other_user_perso_parent_blocked(client_a, cate
         },
     )
     assert response.status_code == 404
-    assert not SubCategory.objects.filter(name="Tentative IDOR").exists()
+    assert not SubCategory.objects.unscoped().filter(name="Tentative IDOR").exists()
 
 
 @pytest.mark.django_db
@@ -537,8 +537,8 @@ def test_two_users_can_each_create_restaurants_via_view(
     assert r_a.status_code == 200
     assert r_b.status_code == 200
 
-    cat_a = Category.objects.get(name="Restaurants", owner=user_a)
-    cat_b = Category.objects.get(name="Restaurants", owner=user_b)
+    cat_a = Category.objects.unscoped().get(name="Restaurants", owner=user_a)
+    cat_b = Category.objects.unscoped().get(name="Restaurants", owner=user_b)
     assert cat_a.pk != cat_b.pk
     assert cat_a.is_system is False and cat_b.is_system is False
     # Le slug perso n'est PAS suffixé à cause de l'autre user (scope par owner).
@@ -570,16 +570,20 @@ def test_two_users_same_perso_subcat_under_system_category(
     seed_perso_categories(user_b, defn)  # ne doit PAS lever (constraint scopée owner)
     seed_perso_categories(user_a, defn)  # idempotent — toujours pas d'erreur
 
-    a = SubCategory.objects.get(category=system_category, name="Concert", owner=user_a)
-    b = SubCategory.objects.get(category=system_category, name="Concert", owner=user_b)
+    a = SubCategory.objects.unscoped().get(
+        category=system_category, name="Concert", owner=user_a
+    )
+    b = SubCategory.objects.unscoped().get(
+        category=system_category, name="Concert", owner=user_b
+    )
     assert a.pk != b.pk
     # Isolation : A ne voit pas le Concert de B (for_user).
     assert b not in SubCategory.objects.for_user(user_a)
     # Idempotence : une seule ligne pour A malgré le double seed.
     assert (
-        SubCategory.objects.filter(
-            category=system_category, name="Concert", owner=user_a
-        ).count()
+        SubCategory.objects.unscoped()
+        .filter(category=system_category, name="Concert", owner=user_a)
+        .count()
         == 1
     )
 
@@ -597,7 +601,10 @@ def test_same_user_cannot_create_duplicate_category_via_view(client_a, user_a):
     assert first.status_code == 200
     second = client_a.post(reverse("budget:category_create_submit"), payload)
     assert second.status_code == 200  # re-render du panel avec erreur, pas un 500
-    assert Category.objects.filter(name="Restaurants", owner=user_a).count() == 1
+    assert (
+        Category.objects.unscoped().filter(name="Restaurants", owner=user_a).count()
+        == 1
+    )
 
 
 @pytest.mark.django_db
@@ -613,7 +620,7 @@ def test_category_create_sets_owner_to_request_user(client_a, user_a):
         },
     )
     assert response.status_code == 200
-    cat = Category.objects.get(name="Ma Catégorie Perso")
+    cat = Category.objects.unscoped().get(name="Ma Catégorie Perso")
     assert cat.owner_id == user_a.pk
     assert cat.is_system is False
 
@@ -633,7 +640,9 @@ def test_category_delete_other_user_perso_returns_404(client_a, category_b):
         reverse("budget:category_delete", args=["category", category_b.slug])
     )
     assert response.status_code == 404
-    assert Category.objects.filter(pk=category_b.pk).exists()  # jamais supprimée
+    assert (
+        Category.objects.unscoped().filter(pk=category_b.pk).exists()
+    )  # jamais supprimée
 
 
 @pytest.mark.django_db
@@ -650,7 +659,9 @@ def test_subcategory_delete_system_returns_404(client_a, system_category):
         reverse("budget:category_delete", args=["subcategory", sys_sub.slug])
     )
     assert response.status_code == 404
-    assert SubCategory.objects.filter(pk=sys_sub.pk).exists()  # système intouchable
+    assert (
+        SubCategory.objects.unscoped().filter(pk=sys_sub.pk).exists()
+    )  # système intouchable
 
 
 @pytest.mark.django_db
@@ -706,14 +717,14 @@ def test_idor_rule_delete_blocked_for_other_user(client_b, rule_a):
     """user B supprime une règle de user A → 404 (la règle existe toujours)."""
     response = client_b.post(reverse("budget:rule_delete", args=[rule_a.id]))
     assert response.status_code == 404
-    assert CategorizationRule.objects.filter(id=rule_a.id).exists()
+    assert CategorizationRule.objects.unscoped().filter(id=rule_a.id).exists()
 
 
 @pytest.mark.django_db
 def test_idor_rule_delete_allowed_for_owner(client_a, rule_a):
     response = client_a.post(reverse("budget:rule_delete", args=[rule_a.id]))
     assert response.status_code == 200
-    assert not CategorizationRule.objects.filter(id=rule_a.id).exists()
+    assert not CategorizationRule.objects.unscoped().filter(id=rule_a.id).exists()
 
 
 @pytest.mark.django_db
@@ -800,7 +811,7 @@ def test_rule_create_submit_sets_owner_to_request_user(client_a, account_a, cate
         },
     )
     assert response.status_code == 200
-    rule = CategorizationRule.objects.get(keyword="OWNERCHECK")
+    rule = CategorizationRule.objects.unscoped().get(keyword="OWNERCHECK")
     assert rule.owner_id == account_a.members.first().pk
 
 
@@ -812,7 +823,7 @@ def test_rule_create_standalone_sets_owner_to_request_user(client_a, user_a, cat
         {"keyword": "STANDALONEOWNER", "category_id": category.pk, "force": "1"},
     )
     assert response.status_code == 200
-    rule = CategorizationRule.objects.get(keyword="STANDALONEOWNER")
+    rule = CategorizationRule.objects.unscoped().get(keyword="STANDALONEOWNER")
     assert rule.owner_id == user_a.pk
 
 

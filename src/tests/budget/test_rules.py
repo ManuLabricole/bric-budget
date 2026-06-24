@@ -184,7 +184,7 @@ def test_rule_toggle_active_404_for_nonexistent_rule(auth_client):
 def test_rule_delete_removes_from_db(auth_client, rule):
     rule_id = rule.id
     auth_client.post(reverse("budget:rule_delete", args=[rule.id]))
-    assert not CategorizationRule.objects.filter(id=rule_id).exists()
+    assert not CategorizationRule.objects.unscoped().filter(id=rule_id).exists()
 
 
 @pytest.mark.django_db

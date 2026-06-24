@@ -589,8 +589,12 @@ def budget_panel_category_manage_detail(request, slug):
     # tx_count scopé : même logique que budget_panel_category_manage.
     # Les sous-cats listées sont elles aussi scopées (système OU à moi) pour ne pas
     # exposer une sous-cat perso d'un autre user rattachée à une catégorie système.
+    # #213 fail-closed : le related-manager cat.subcategories utilise le default
+    # manager (OwnedManager → .none()). On part donc de SubCategory.objects.for_user
+    # (système OU mes perso) filtré sur la catégorie — scope explicite, plus de fuite.
     subcats = (
-        cat.subcategories.filter(Q(owner__isnull=True) | Q(owner=request.user))
+        SubCategory.objects.for_user(request.user)
+        .filter(category=cat)
         .annotate(
             tx_count=Count(
                 "transactions",
@@ -749,9 +753,13 @@ def budget_category_create_submit(request):
                 parent = get_object_or_404(
                     Category.objects.for_user(request.user), id=parent_id
                 )
-                if SubCategory.objects.filter(
-                    category=parent, name__iexact=name
-                ).exists():
+                # #213 fail-closed : scope explicite for_user (système OU mes perso)
+                # — on ne bloque que sur une sous-cat VISIBLE par ce user.
+                if (
+                    SubCategory.objects.for_user(request.user)
+                    .filter(category=parent, name__iexact=name)
+                    .exists()
+                ):
                     errors.append(
                         f"Une sous-catégorie « {name} » existe déjà dans {parent.name}."
                     )

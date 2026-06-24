@@ -80,7 +80,7 @@ def test_category_create_submit_creates_main_category(auth_client):
             "colour_hex": "#eed8b4",
         },
     )
-    assert Category.objects.filter(name="Nouvelle catégorie").exists()
+    assert Category.objects.unscoped().filter(name="Nouvelle catégorie").exists()
 
 
 @pytest.mark.django_db
@@ -94,27 +94,29 @@ def test_category_create_submit_creates_subcategory(auth_client, existing_cat):
             "parent_id": str(existing_cat.id),
         },
     )
-    assert SubCategory.objects.filter(
-        name="Sous catégorie CRUD", category=existing_cat
-    ).exists()
+    assert (
+        SubCategory.objects.unscoped()
+        .filter(name="Sous catégorie CRUD", category=existing_cat)
+        .exists()
+    )
 
 
 @pytest.mark.django_db
 def test_category_create_submit_missing_name_does_not_create(auth_client):
-    n_before = Category.objects.count()
+    n_before = Category.objects.unscoped().count()
     r = auth_client.post(
         reverse("budget:category_create_submit"),
         {"cat_type": "main", "name": "", "icon": "burger", "colour_hex": "#eed8b4"},
     )
     assert r.status_code == 200  # re-render avec erreurs
-    assert Category.objects.count() == n_before
+    assert Category.objects.unscoped().count() == n_before
 
 
 @pytest.mark.django_db
 def test_category_create_submit_duplicate_name_does_not_create(
     auth_client, existing_cat
 ):
-    n_before = Category.objects.count()
+    n_before = Category.objects.unscoped().count()
     auth_client.post(
         reverse("budget:category_create_submit"),
         {
@@ -124,17 +126,17 @@ def test_category_create_submit_duplicate_name_does_not_create(
             "colour_hex": "#eed8b4",
         },
     )
-    assert Category.objects.count() == n_before
+    assert Category.objects.unscoped().count() == n_before
 
 
 @pytest.mark.django_db
 def test_category_create_submit_main_without_colour_fails(auth_client):
-    n_before = Category.objects.count()
+    n_before = Category.objects.unscoped().count()
     auth_client.post(
         reverse("budget:category_create_submit"),
         {"cat_type": "main", "name": "Sans couleur", "icon": "burger"},
     )
-    assert Category.objects.count() == n_before
+    assert Category.objects.unscoped().count() == n_before
 
 
 # =============================================================================
@@ -155,7 +157,7 @@ def test_category_delete_requires_login(client, existing_cat):
 def test_category_delete_removes_category(auth_client, existing_cat):
     slug = existing_cat.slug
     auth_client.post(reverse("budget:category_delete", args=["category", slug]))
-    assert not Category.objects.filter(slug=slug).exists()
+    assert not Category.objects.unscoped().filter(slug=slug).exists()
 
 
 @pytest.mark.django_db
@@ -174,7 +176,7 @@ def test_category_delete_system_category_forbidden(auth_client, system_cat):
     slug = system_cat.slug
     r = auth_client.post(reverse("budget:category_delete", args=["category", slug]))
     assert r.status_code == 404
-    assert Category.objects.filter(slug=slug).exists()  # toujours en DB
+    assert Category.objects.unscoped().filter(slug=slug).exists()  # toujours en DB
 
 
 @pytest.mark.django_db
@@ -193,9 +195,9 @@ def test_category_delete_subcategory_removes_only_subcategory(
         category=existing_cat, name="To Delete", slug="to-delete-crud", is_system=False
     )
     auth_client.post(reverse("budget:category_delete", args=["subcategory", sub.slug]))
-    assert not SubCategory.objects.filter(slug="to-delete-crud").exists()
+    assert not SubCategory.objects.unscoped().filter(slug="to-delete-crud").exists()
     # Parent intact
-    assert Category.objects.filter(slug=existing_cat.slug).exists()
+    assert Category.objects.unscoped().filter(slug=existing_cat.slug).exists()
 
 
 # =============================================================================
@@ -229,9 +231,11 @@ def test_rule_create_submit_creates_rule(auth_client, cat_for_rule):
         reverse("budget:rule_create_submit"),
         {"keyword": "newkw", "category_id": str(cat_for_rule.id), "force": "1"},
     )
-    assert CategorizationRule.objects.filter(
-        keyword="NEWKW", category=cat_for_rule
-    ).exists()
+    assert (
+        CategorizationRule.objects.unscoped()
+        .filter(keyword="NEWKW", category=cat_for_rule)
+        .exists()
+    )
 
 
 @pytest.mark.django_db
@@ -240,7 +244,7 @@ def test_rule_create_submit_uppercases_keyword(auth_client, cat_for_rule):
         reverse("budget:rule_create_submit"),
         {"keyword": "lower case", "category_id": str(cat_for_rule.id), "force": "1"},
     )
-    assert CategorizationRule.objects.filter(keyword="LOWER CASE").exists()
+    assert CategorizationRule.objects.unscoped().filter(keyword="LOWER CASE").exists()
 
 
 @pytest.mark.django_db
@@ -259,9 +263,9 @@ def test_rule_create_submit_idempotent_get_or_create(auth_client, cat_for_rule):
     auth_client.post(reverse("budget:rule_create_submit"), payload)
     auth_client.post(reverse("budget:rule_create_submit"), payload)
     assert (
-        CategorizationRule.objects.filter(
-            keyword="DUPKW", category=cat_for_rule
-        ).count()
+        CategorizationRule.objects.unscoped()
+        .filter(keyword="DUPKW", category=cat_for_rule)
+        .count()
         == 1
     )
 
@@ -291,9 +295,11 @@ def test_rule_create_standalone_creates_compound_keyword(auth_client, cat_for_ru
             "force": "1",
         },
     )
-    assert CategorizationRule.objects.filter(
-        keyword="MIGROS COOP ALDI", category=cat_for_rule
-    ).exists()
+    assert (
+        CategorizationRule.objects.unscoped()
+        .filter(keyword="MIGROS COOP ALDI", category=cat_for_rule)
+        .exists()
+    )
 
 
 @pytest.mark.django_db
@@ -305,16 +311,18 @@ def test_rule_create_standalone_single_keyword_via_keyword_field(
         reverse("budget:rule_create_standalone_submit"),
         {"keyword": "essence", "category_id": str(cat_for_rule.id), "force": "1"},
     )
-    assert CategorizationRule.objects.filter(
-        keyword="ESSENCE", category=cat_for_rule
-    ).exists()
+    assert (
+        CategorizationRule.objects.unscoped()
+        .filter(keyword="ESSENCE", category=cat_for_rule)
+        .exists()
+    )
 
 
 @pytest.mark.django_db
 def test_rule_create_standalone_missing_keywords_no_create(auth_client, cat_for_rule):
-    n_before = CategorizationRule.objects.count()
+    n_before = CategorizationRule.objects.unscoped().count()
     auth_client.post(
         reverse("budget:rule_create_standalone_submit"),
         {"category_id": str(cat_for_rule.id), "force": "1"},
     )
-    assert CategorizationRule.objects.count() == n_before
+    assert CategorizationRule.objects.unscoped().count() == n_before

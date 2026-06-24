@@ -75,7 +75,10 @@ def _generate_unique_slug(name: str, model_class, owner=None) -> str:
     """
     base_slug = slugify(name, allow_unicode=False).replace("-", "_")
     # Scope d'unicité aligné sur les UniqueConstraint partielles du modèle (#137).
-    scope = model_class.objects.filter(owner=owner)
+    # unscoped() (#213) : la vérif d'unicité doit voir TOUTE la partition owner=owner
+    # (y compris owner=None système) telle que la contrainte DB la voit, pas le scope
+    # fail-closed. Le filtre owner=owner restreint déjà à la bonne partition.
+    scope = model_class.objects.unscoped().filter(owner=owner)
     slug = base_slug
     counter = 1
     while scope.filter(slug=slug).exists():
@@ -200,8 +203,11 @@ def _cats_with_subcats(user=None):
         1. charger toutes les sous-catégories visibles avec leur catégorie
         2. grouper par category_id dans un dict, puis zipper avec les catégories
     """
-    cat_qs = Category.objects.filter(is_active=True)
-    sub_qs = SubCategory.objects.filter(is_active=True)
+    # #213 fail-closed : on part de unscoped() (queryset non borné) puis on scope
+    # explicitement via for_user(user). user=None = chemin interne/test → on garde
+    # le contrat « pas de scoping » via unscoped(), sinon le manager renverrait .none().
+    cat_qs = Category.objects.unscoped().filter(is_active=True)
+    sub_qs = SubCategory.objects.unscoped().filter(is_active=True)
     if user is not None:
         cat_qs = cat_qs.for_user(user)
         sub_qs = sub_qs.for_user(user)
@@ -243,7 +249,9 @@ def seed_perso_categories(user, defs) -> tuple[int, int]:
     for d in defs:
         if d.parent_slug is not None:
             continue
-        Category.objects.update_or_create(
+        # #213 fail-closed : update_or_create fait son lookup via get_queryset (→ .none()),
+        # d'où le queryset scopé for_user pour l'idempotence (sinon re-create → collision).
+        Category.objects.for_user(user).update_or_create(
             slug=d.slug,
             owner=user,
             defaults={
@@ -262,9 +270,11 @@ def seed_perso_categories(user, defs) -> tuple[int, int]:
         # Préférer le parent PERSO du user (owner=user) au parent SYSTÈME de même slug :
         # sans tri, .first() peut rattacher la sous-cat au mauvais arbre (parent système)
         # alors qu'un parent perso homonyme existe. nulls_last → perso (non-null) d'abord.
+        # #213 : for_user(user) = système (owner NULL) OU perso de ce user — repart
+        # d'un queryset non borné (le manager seul renverrait .none()).
         parent = (
-            Category.objects.filter(slug=d.parent_slug)
-            .filter(Q(owner__isnull=True) | Q(owner=user))
+            Category.objects.for_user(user)
+            .filter(slug=d.parent_slug)
             .order_by(F("owner").asc(nulls_last=True))
             .first()
         )
@@ -275,7 +285,8 @@ def seed_perso_categories(user, defs) -> tuple[int, int]:
                 d.slug,
             )
             continue
-        SubCategory.objects.update_or_create(
+        # #213 : cf. Category ci-dessus — for_user scopé pour l'idempotence.
+        SubCategory.objects.for_user(user).update_or_create(
             slug=d.slug,
             owner=user,
             defaults={

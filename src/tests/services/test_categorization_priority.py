@@ -164,7 +164,8 @@ def test_inactive_rule_is_ignored(cat_a, cat_b):
 
     # On simule le filtre is_active=True de ImportService.run()
     active_rules = list(
-        CategorizationRule.objects.filter(is_active=True)
+        CategorizationRule.objects.unscoped()
+        .filter(is_active=True)
         .select_related("category", "subcategory")
         .order_by("-priority")
     )
@@ -198,7 +199,8 @@ def test_no_matching_rule_returns_none(cat_a):
     service = ImportService()
 
     active_rules = list(
-        CategorizationRule.objects.filter(is_active=True)
+        CategorizationRule.objects.unscoped()
+        .filter(is_active=True)
         .select_related("category", "subcategory")
         .order_by("-priority")
     )
