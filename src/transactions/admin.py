@@ -29,11 +29,32 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 # =============================================================================
+# OwnedAdminMixin — #213 : bypass fail-closed pour l'admin
+# =============================================================================
+
+
+class OwnedAdminMixin:
+    """Changelist admin sur un modèle owned (fail-closed #213).
+
+    Le manager par défaut renvoie .none() (fail-closed) → sans override, la
+    changelist admin afficherait 0 ligne. L'admin est un accès GLOBAL légitime :
+    on bascule sur unscoped() (auditable par grep "unscoped("). L'inline hérite
+    déjà du base manager (_base) côté FK, mais une changelist standalone passe par
+    le default manager → ce mixin est requis sur chaque ModelAdmin owned.
+    """
+
+    def get_queryset(self, request):
+        # self.model est fourni par (Inline)ModelAdmin ; .objects est l'OwnedManager
+        # du modèle owned → unscoped() existe (mypy ne voit pas le type concret ici).
+        return self.model.objects.unscoped()  # type: ignore[attr-defined]
+
+
+# =============================================================================
 # SubCategory — shown as inline inside CategoryAdmin
 # =============================================================================
 
 
-class SubCategoryInline(admin.TabularInline):
+class SubCategoryInline(OwnedAdminMixin, admin.TabularInline):
     """
     TabularInline: renders sub-categories as a table of rows directly
     inside the Category edit page. No need to navigate to a separate page.
@@ -79,7 +100,7 @@ def sync_reference(modeladmin, request, queryset):
 
 
 @admin.register(Category)
-class CategoryAdmin(admin.ModelAdmin):
+class CategoryAdmin(OwnedAdminMixin, admin.ModelAdmin):
     # owner : NULL = catégorie système partagée ; sinon = perso d'un user (#137).
     list_display = ("name", "order", "colour_hex", "is_system", "owner", "is_active")
     list_filter = ("is_system", "is_active")
@@ -99,7 +120,7 @@ class CategoryAdmin(admin.ModelAdmin):
 
 
 @admin.register(SubCategory)
-class SubCategoryAdmin(admin.ModelAdmin):
+class SubCategoryAdmin(OwnedAdminMixin, admin.ModelAdmin):
     # category__name: FK traversal — shows the parent category name
     # owner : NULL = système partagé ; sinon = perso d'un user (#137).
     list_display = ("name", "category", "default_nature", "owner", "is_active")
@@ -152,7 +173,7 @@ class CategorizationRuleForm(forms.ModelForm):
 
 
 @admin.register(CategorizationRule)
-class CategorizationRuleAdmin(admin.ModelAdmin):
+class CategorizationRuleAdmin(OwnedAdminMixin, admin.ModelAdmin):
     form = CategorizationRuleForm
     list_display = (
         "keyword",
@@ -183,13 +204,19 @@ class CategorizationRuleAdmin(admin.ModelAdmin):
             if object_id:
                 # Règle introuvable = flux normal (form admin en création) → silence justifié.
                 try:  # nosemgrep: silent-except-pass
-                    rule = CategorizationRule.objects.select_related("category").get(
-                        pk=object_id
+                    # #213 : l'admin est un accès GLOBAL légitime → unscoped()
+                    # (auditable par grep "unscoped(").
+                    rule = (
+                        CategorizationRule.objects.unscoped()
+                        .select_related("category")
+                        .get(pk=object_id)
                     )
                     if rule.category:
-                        kwargs["queryset"] = SubCategory.objects.filter(
-                            category=rule.category, is_active=True
-                        ).order_by("name")
+                        kwargs["queryset"] = (
+                            SubCategory.objects.unscoped()
+                            .filter(category=rule.category, is_active=True)
+                            .order_by("name")
+                        )
                 except CategorizationRule.DoesNotExist:
                     pass
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
@@ -349,7 +376,7 @@ class ImportLogAdmin(admin.ModelAdmin):
 
 
 @admin.register(BudgetTarget)
-class BudgetTargetAdmin(admin.ModelAdmin):
+class BudgetTargetAdmin(OwnedAdminMixin, admin.ModelAdmin):
     list_display = ("category", "owner", "amount")
     list_filter = ("category",)
     raw_id_fields = (

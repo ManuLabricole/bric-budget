@@ -81,8 +81,8 @@ def test_seed_real_reference_creates_everything():
     _run()
 
     expected_cats, expected_subs = _expected_counts()
-    assert Category.objects.count() == expected_cats
-    assert SubCategory.objects.count() == expected_subs
+    assert Category.objects.unscoped().count() == expected_cats
+    assert SubCategory.objects.unscoped().count() == expected_subs
 
 
 @pytest.mark.django_db
@@ -90,22 +90,22 @@ def test_seed_real_reference_is_idempotent_over_many_runs():
     """Tournée 6 fois dans la semaine → ne change que ce qui doit l'être (= rien ici)."""
     _run()
     snapshot = list(
-        Category.objects.order_by("slug").values(
-            "slug", "name", "colour_hex", "order", "is_active", "is_system"
-        )
+        Category.objects.unscoped()
+        .order_by("slug")
+        .values("slug", "name", "colour_hex", "order", "is_active", "is_system")
     )
 
     for _ in range(3):
         _run()
 
     expected_cats, expected_subs = _expected_counts()
-    assert Category.objects.count() == expected_cats
-    assert SubCategory.objects.count() == expected_subs
+    assert Category.objects.unscoped().count() == expected_cats
+    assert SubCategory.objects.unscoped().count() == expected_subs
     assert (
         list(
-            Category.objects.order_by("slug").values(
-                "slug", "name", "colour_hex", "order", "is_active", "is_system"
-            )
+            Category.objects.unscoped()
+            .order_by("slug")
+            .values("slug", "name", "colour_hex", "order", "is_active", "is_system")
         )
         == snapshot
     )
@@ -120,23 +120,23 @@ def test_seed_real_reference_is_idempotent_over_many_runs():
 def test_seed_syncs_fields_including_is_active_and_icon(tiny_reference):
     _run()
 
-    cat = Category.objects.get(slug="transport")
+    cat = Category.objects.unscoped().get(slug="transport")
     assert cat.name == "Transport"
     assert cat.colour_hex == "#aabbcc"
     assert cat.is_active is True
-    sub = SubCategory.objects.get(slug="carburant")
+    sub = SubCategory.objects.unscoped().get(slug="carburant")
     assert sub.icon == "fuel"
     assert sub.default_nature == "variable_mandatory"
     # is_active arrive du JSON — une sous-catégorie retirée du référentiel actif
     # doit être désactivée en DB (zéro drift).
-    assert SubCategory.objects.get(slug="vieux-truc").is_active is False
+    assert SubCategory.objects.unscoped().get(slug="vieux-truc").is_active is False
 
 
 @pytest.mark.django_db
 def test_seed_applies_only_the_delta_on_change(tiny_reference):
     """« Dans un mois j'ajoute/modifie une catégorie » → le deploy applique SEUL ce delta."""
     _run()
-    untouched_sub = SubCategory.objects.get(slug="carburant")
+    untouched_sub = SubCategory.objects.unscoped().get(slug="carburant")
 
     data = json.loads(tiny_reference.read_text())
     data["categories"][0]["name"] = "Transports & Mobilité"
@@ -148,23 +148,23 @@ def test_seed_applies_only_the_delta_on_change(tiny_reference):
 
     _run()
 
-    cat = Category.objects.get(slug="transport")
+    cat = Category.objects.unscoped().get(slug="transport")
     assert cat.name == "Transports & Mobilité"
     assert cat.colour_hex == "#112233"
-    assert SubCategory.objects.filter(slug="velo").exists()
+    assert SubCategory.objects.unscoped().filter(slug="velo").exists()
     # Le reste n'a pas bougé.
-    assert SubCategory.objects.get(slug="carburant").pk == untouched_sub.pk
-    assert SubCategory.objects.get(slug="carburant").name == "Carburant"
+    assert SubCategory.objects.unscoped().get(slug="carburant").pk == untouched_sub.pk
+    assert SubCategory.objects.unscoped().get(slug="carburant").name == "Carburant"
 
 
 @pytest.mark.django_db
 def test_seed_restores_manual_db_drift(tiny_reference):
     _run()
-    Category.objects.filter(slug="transport").update(colour_hex="#000000")
+    Category.objects.unscoped().filter(slug="transport").update(colour_hex="#000000")
 
     _run()
 
-    assert Category.objects.get(slug="transport").colour_hex == "#aabbcc"
+    assert Category.objects.unscoped().get(slug="transport").colour_hex == "#aabbcc"
 
 
 @pytest.mark.django_db
@@ -172,7 +172,7 @@ def test_neutral_default_nature_becomes_empty(tiny_reference):
     """Compat JSON historique : "neutral" n'est pas un choix du modèle → ""."""
     _run()
 
-    assert SubCategory.objects.get(slug="vieux-truc").default_nature == ""
+    assert SubCategory.objects.unscoped().get(slug="vieux-truc").default_nature == ""
 
 
 # =============================================================================
@@ -188,15 +188,15 @@ def test_missing_file_raises_command_error(tmp_path, monkeypatch):
     with pytest.raises(CommandError):
         _run()
 
-    assert Category.objects.count() == 0
+    assert Category.objects.unscoped().count() == 0
 
 
 @pytest.mark.django_db
 def test_dry_run_writes_nothing(tiny_reference):
     out = _run("--dry-run")
 
-    assert Category.objects.count() == 0
-    assert SubCategory.objects.count() == 0
+    assert Category.objects.unscoped().count() == 0
+    assert SubCategory.objects.unscoped().count() == 0
     assert "dry-run" in out
 
 
@@ -210,10 +210,10 @@ def test_seed_only_creates_shared_system_categories():
     """Tout ce que le seed crée est système partagé : owner NULL, is_system=True."""
     _run()
 
-    assert not Category.objects.filter(owner__isnull=False).exists()
-    assert not Category.objects.filter(is_system=False).exists()
-    assert not SubCategory.objects.filter(owner__isnull=False).exists()
-    assert not SubCategory.objects.filter(is_system=False).exists()
+    assert not Category.objects.unscoped().filter(owner__isnull=False).exists()
+    assert not Category.objects.unscoped().filter(is_system=False).exists()
+    assert not SubCategory.objects.unscoped().filter(owner__isnull=False).exists()
+    assert not SubCategory.objects.unscoped().filter(is_system=False).exists()
 
 
 @pytest.mark.django_db
@@ -223,7 +223,7 @@ def test_seeded_system_categories_all_have_a_colour():
     _run()
 
     sans_couleur = list(
-        Category.objects.filter(colour_hex="").values_list("slug", flat=True)
+        Category.objects.unscoped().filter(colour_hex="").values_list("slug", flat=True)
     )
     assert not sans_couleur, f"catégories système sans colour_hex : {sans_couleur}"
 
@@ -249,10 +249,12 @@ def test_seed_does_not_clobber_personal_category_with_same_slug(django_user_mode
     assert perso.name == "Mes courses à moi"  # intacte, jamais écrasée par le seed
     assert perso.is_system is False
     # Le système a bien été créé À CÔTÉ (même slug, owner NULL) — coexistence #137.
-    assert Category.objects.filter(
-        slug="alimentation_boissons", owner__isnull=True, is_system=True
-    ).exists()
-    assert Category.objects.filter(slug="alimentation_boissons").count() == 2
+    assert (
+        Category.objects.unscoped()
+        .filter(slug="alimentation_boissons", owner__isnull=True, is_system=True)
+        .exists()
+    )
+    assert Category.objects.unscoped().filter(slug="alimentation_boissons").count() == 2
 
 
 @pytest.mark.django_db

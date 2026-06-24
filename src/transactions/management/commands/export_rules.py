@@ -57,8 +57,9 @@ class Command(BaseCommand):
         # .values() retourne un queryset de dicts plats — pas d'objets ORM.
         # Les champs FK (category, subcategory) sont traversés avec __ pour obtenir
         # le slug (clé métier stable) plutôt que l'ID (clé technique instable).
+        # #213 : export CLI global (admin) → unscoped() (auditable par grep).
         rules_qs = (
-            CategorizationRule.objects.all()
+            CategorizationRule.objects.unscoped()
             .values(
                 "keyword",
                 "category__slug",

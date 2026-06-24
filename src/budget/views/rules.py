@@ -389,7 +389,10 @@ def budget_rule_create_standalone_submit(request):
     ) + 1
     # owner=request.user DANS LE LOOKUP (cf. budget_rule_create_submit) : la règle
     # appartient au créateur, pas de collision possible avec celle d'un autre user.
-    rule, created = CategorizationRule.objects.get_or_create(
+    # #213 fail-closed : get_or_create fait son lookup via get_queryset (→ .none()),
+    # on doit donc partir d'un queryset scopé for_user, sinon il recrée toujours et
+    # se heurte à la contrainte d'unicité (IntegrityError).
+    rule, created = CategorizationRule.objects.for_user(request.user).get_or_create(
         keyword=keyword,
         category=category,
         owner=request.user,
@@ -657,7 +660,8 @@ def budget_rule_create_submit(request):
     # owner=request.user DANS LE LOOKUP (pas seulement defaults) : sans ça, un user
     # pourrait "récupérer" la règle d'un autre par collision keyword+category. La
     # règle créée appartient toujours au créateur (IDOR, SR-001).
-    rule, created = CategorizationRule.objects.get_or_create(
+    # #213 fail-closed : get_or_create via queryset scopé for_user (cf. rule_create).
+    rule, created = CategorizationRule.objects.for_user(request.user).get_or_create(
         keyword=keyword,
         category=category,
         owner=request.user,

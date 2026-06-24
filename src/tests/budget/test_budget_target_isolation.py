@@ -48,9 +48,9 @@ def test_post_does_not_overwrite_other_users_target(client_b, category, user_a, 
     assert resp.status_code in (200, 204)
 
     # A garde son objectif intact ; B a le sien → 2 rows distincts.
-    assert BudgetTarget.objects.get(owner=user_a, category=category).amount == Decimal(
-        "100"
-    )
-    assert BudgetTarget.objects.get(owner=user_b, category=category).amount == Decimal(
-        "200"
-    )
+    assert BudgetTarget.objects.unscoped().get(
+        owner=user_a, category=category
+    ).amount == Decimal("100")
+    assert BudgetTarget.objects.unscoped().get(
+        owner=user_b, category=category
+    ).amount == Decimal("200")

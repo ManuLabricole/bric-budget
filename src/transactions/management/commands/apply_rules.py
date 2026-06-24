@@ -90,10 +90,11 @@ class Command(BaseCommand):
 
         # ── 1. Charger les règles actives (scopées owner si fourni), par priorité ──
         # Même ordre que dans ImportService.run() — la règle la plus haute gagne.
+        # #213 : sans owner = commande CLI globale (admin) → unscoped() (auditable).
         rules_qs = (
             CategorizationRule.objects.for_user(owner)
             if owner is not None
-            else CategorizationRule.objects.all()
+            else CategorizationRule.objects.unscoped()
         )
         rules = list(
             rules_qs.filter(is_active=True)

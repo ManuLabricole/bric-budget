@@ -216,7 +216,9 @@ def budget_modal_target_create(request):
             return HttpResponse("Montant invalide", status=400)
         # #201 : l'objectif est scopé owner=request.user → chacun a SON objectif sur une
         # catégorie (y compris système), plus de write partagé/écrasé entre users.
-        _, created = BudgetTarget.objects.update_or_create(
+        # #213 fail-closed : update_or_create fait son lookup via get_queryset (→ .none()),
+        # d'où le queryset scopé for_user pour retrouver l'objectif existant.
+        _, created = BudgetTarget.objects.for_user(request.user).update_or_create(
             category=category,
             owner=request.user,
             defaults={"amount": amount},
@@ -687,9 +689,11 @@ def budget_panel_category_picker(request):
         queryset=SubCategory.objects.for_user(request.user).filter(is_active=True),
     )
     # Catégories système = seedées à l'init, non supprimables (ex: Alimentation, Transport...)
-    # is_system=True ⇒ owner NULL ⇒ déjà visibles par tous ; for_user inutile ici.
+    # is_system=True ⇒ owner NULL. #213 fail-closed : on passe par for_user (qui inclut
+    # owner IS NULL) pour exiger un scope explicite — sinon le manager renvoie .none().
     system_cats = (
-        Category.objects.filter(is_active=True, is_system=True)
+        Category.objects.for_user(request.user)
+        .filter(is_active=True, is_system=True)
         .order_by("order")
         .prefetch_related(scoped_subs)
     )

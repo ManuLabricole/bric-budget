@@ -219,8 +219,12 @@ class ImportService:
 
         first() retourne None si la catégorie n'existe pas encore (DB non seedée).
         """
-        default_income_category = Category.objects.filter(slug="revenus").first()
-        default_unknown_category = Category.objects.filter(slug="inconnu").first()
+        # #213 : les catégories par défaut sont SYSTÈME (owner NULL), partagées par
+        # tous les users → accès global légitime via unscoped() (scopé owner__isnull
+        # pour ne jamais ramasser une perso homonyme). Auditable par grep "unscoped(".
+        system_categories = Category.objects.unscoped().filter(owner__isnull=True)
+        default_income_category = system_categories.filter(slug="revenus").first()
+        default_unknown_category = system_categories.filter(slug="inconnu").first()
         return default_income_category, default_unknown_category
 
     def _extract_daily_balances(
