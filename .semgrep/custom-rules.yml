@@ -97,6 +97,13 @@ rules:
               - pattern-not: Card.objects.get(..., members=request.user, ...)
               - pattern-not: ImportLog.objects.get(..., members=request.user, ...)
               - pattern-not: BalanceSnapshot.objects.get(..., members=request.user, ...)
+              # Forme canonique SR-001 pour les modèles scopés PAR COMPTE
+              # (account__members) — ImportLog/Transaction/BalanceSnapshot/Card.
+              # Sans ça, la règle flaguerait à tort le code correct prescrit par CLAUDE.md.
+              - pattern-not: Transaction.objects.get(..., account__members=request.user, ...)
+              - pattern-not: Card.objects.get(..., account__members=request.user, ...)
+              - pattern-not: ImportLog.objects.get(..., account__members=request.user, ...)
+              - pattern-not: BalanceSnapshot.objects.get(..., account__members=request.user, ...)
           # $MODEL.objects.all() — renvoie TOUT, jamais scopé
           - pattern: Transaction.objects.all(...)
           - pattern: Account.objects.all(...)
