@@ -29,6 +29,8 @@ Pourquoi `reverse("admin:…")` et pas une URL en dur ?
     chemin quel que soit le préfixe configuré.
 """
 
+import secrets
+
 import pytest
 from django.contrib import admin
 from django.contrib.auth import get_user_model
@@ -64,7 +66,9 @@ def admin_client(db) -> Client:
     """
     superuser = get_user_model().objects.create_user(
         email="admin-smoke@bric.test",
-        password="pw-Strong-123",  # noqa: S106 (mot de passe de test, pas un secret prod)
+        # Login via force_login() → le mot de passe n'est jamais vérifié. Généré au
+        # runtime (pas de littéral) pour ne pas déclencher le scan de secrets (GitGuardian).
+        password=secrets.token_urlsafe(),
         is_staff=True,
         is_superuser=True,
     )
