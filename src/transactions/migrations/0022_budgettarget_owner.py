@@ -33,11 +33,28 @@ def backfill_owner(apps, schema_editor):
 
 
 def reverse_backfill(apps, schema_editor):
-    # Irréversible proprement (les lignes purgées ne sont pas restaurées). On remet owner
-    # à NULL pour permettre le rollback du schéma. ⚠️ Le retour OneToOne échouera s'il
-    # existe désormais 2 objectifs (multi-user) sur une même catégorie — rollback best-effort.
+    # Reverse du backfill : on remet owner à NULL pour permettre le rollback du schéma.
+    # (Les lignes purgées au forward ne sont pas restaurées — perte assumée, pré-launch.)
     BudgetTarget = apps.get_model("transactions", "BudgetTarget")
     BudgetTarget.objects.update(owner=None)
+
+
+def dedup_targets_for_onetoone(apps, schema_editor):
+    """Reverse-ONLY (forward = noop). Garde UN seul objectif par catégorie (le plus
+    récent) avant que le rollback ne restaure le OneToOne(category).
+
+    Sans ça, en multi-user (plusieurs objectifs par catégorie via owner), l'AlterField
+    FK→OneToOne échouerait sur l'unique implicite. Placé APRÈS l'AlterField(category)
+    dans les opérations → s'exécute AVANT lui lors du rollback (ordre inversé). Rend la
+    migration réellement réversible (SR-004) au lieu de casser à mi-parcours.
+    """
+    BudgetTarget = apps.get_model("transactions", "BudgetTarget")
+    seen: set[int] = set()
+    for target in BudgetTarget.objects.order_by("category_id", "-id"):
+        if target.category_id in seen:
+            target.delete()
+        else:
+            seen.add(target.category_id)
 
 
 class Migration(migrations.Migration):
@@ -83,6 +100,10 @@ class Migration(migrations.Migration):
                 to="transactions.category",
             ),
         ),
+        # Reverse-only : au rollback, dédupe les objectifs par catégorie AVANT que
+        # l'AlterField ci-dessus ne soit inversé en OneToOne (sinon l'unique casse en
+        # multi-user). Forward = noop. (Placé ici → s'exécute en premier au reverse.)
+        migrations.RunPython(migrations.RunPython.noop, dedup_targets_for_onetoone),
         # Unicité scopée : un objectif par (user, catégorie)
         migrations.AddConstraint(
             model_name="budgettarget",
