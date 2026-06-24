@@ -16,6 +16,9 @@
 !.claude/README.md
 !.claude/VERSION
 !.claude/SECURITY_RULES.md
+# Exception ciblée : ADR isolation fail-closed (#204) — décision archi sécu,
+# 0 donnée sensible (pas d'IBAN/montant/banque) → publié pour traçabilité de l'epic.
+!.claude/plan_isolation_fail_closed.md
 assets/private/
 
 # Docs privés sortis de .claude/ (références AI-coding + sorties d'audits CTO)
