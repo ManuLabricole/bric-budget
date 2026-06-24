@@ -71,6 +71,7 @@ def test_dry_run_writes_nothing():
 
     assert Institution.objects.count() == 0
     assert Category.objects.unscoped().count() == 0
+    assert SubCategory.objects.unscoped().count() == 0
     assert "dry-run" in out
 
 
