@@ -239,17 +239,16 @@ def seed_demo(
 
 
 def reset_demo() -> str:
-    """Supprime les comptes démo et leurs données (transactions, imports, snapshots,
-    cartes). Garde le user démo (re-login OK). Retourne l'email du user démo."""
-    user_model = get_user_model()
+    """Supprime les comptes is_demo=True et leurs données (transactions, imports,
+    snapshots, cartes). Le user démo n'est jamais touché. Retourne son email (settings)."""
     email = str(
         settings.DEMO_USER_EMAIL
     )  # settings → Any ; on garantit str pour le retour
-    user = user_model.objects.filter(email=email).first()
-    if user is None:
-        return email
+    # #202 : cibler les comptes par le marqueur DÉTERMINISTE is_demo, JAMAIS
+    # "tous les comptes où le user démo est membre" — sinon un compte réel partagé
+    # par erreur avec le user démo serait supprimé en dev/staging.
     account_ids = list(
-        Account.objects.filter(members=user).values_list("id", flat=True)
+        Account.objects.filter(is_demo=True).values_list("id", flat=True)
     )
     with db_transaction.atomic():
         Transaction.objects.filter(account_id__in=account_ids).delete()
@@ -290,9 +289,13 @@ def _ensure_accounts(user) -> dict[str, Account]:
     accounts: dict[str, Account] = {}
     for spec in _DEMO_ACCOUNTS:
         institution = Institution.objects.get(slug=spec.institution)
+        # #202 : is_demo=True DANS le lookup → ne matche/crée QUE des comptes démo.
+        # Sans ça, get_or_create sur (institution, name) pouvait happer le compte RÉEL
+        # d'un autre user homonyme et lui ajouter le user démo en membre (fuite/pollution).
         account, _ = Account.objects.get_or_create(
             institution=institution,
             name=spec.name,
+            is_demo=True,
             defaults={
                 "account_type": spec.account_type,
                 "currency": spec.currency,
