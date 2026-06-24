@@ -213,6 +213,13 @@ jobs:
       - name: Run migrations
         run: cd src && poetry run python manage.py migrate
 
+      # Conformité modèle↔migration (#197, recoupe #165) : échoue si un champ ou une
+      # contrainte a changé sur un modèle sans migration générée. --check => exit
+      # non-zéro en cas de dérive ; --dry-run => n'écrit aucun fichier. Un modèle
+      # modifié sans `makemigrations` ⇒ CI rouge (critère d'acceptation #197).
+      - name: makemigrations --check (dérive modèle↔migration)
+        run: cd src && poetry run python manage.py makemigrations --check --dry-run
+
       # pytest, lancé depuis la RACINE (pas `cd src`) pour que [tool.coverage]
       # de pyproject.toml s'applique (source=["src"], omit migrations/tests) :
       #   -n auto      → pytest-xdist : ~950 tests répartis sur tous les cœurs (#156).
