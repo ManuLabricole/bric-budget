@@ -23,9 +23,11 @@ Usage :
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.base_user import AbstractBaseUser
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
@@ -43,7 +45,10 @@ logger = logging.getLogger(__name__)
 _OWNER_PREF = F("owner").asc(nulls_last=True)
 
 
-def _ensure_perso_rules(user, rules) -> int:
+def _ensure_perso_rules(
+    user: AbstractBaseUser,
+    rules: Sequence[tuple[str, str, str | None, int]],
+) -> int:
     """Crée (idempotent) les règles perso `rules` pour `user`. Retourne le nombre créé.
 
     Calqué sur `demo/seeder._ensure_rules`, à une différence près : la cat/subcat visée
@@ -52,6 +57,13 @@ def _ensure_perso_rules(user, rules) -> int:
     de même slug (`nulls_last` → owner non-null d'abord) — exactement comme
     `seed_perso_categories` choisit son parent. Sans ce tri, `.first()` pourrait viser le
     système alors qu'une perso homonyme existe.
+
+    `get_or_create` (≠ `update_or_create` côté catégories) par choix : l'idempotence est
+    un NO-OP pur. Conséquence assumée : si une règle existe déjà pour `(keyword, owner)`,
+    un changement de `cat_slug`/`sub_slug`/`priority` dans FINARY_RULES n'est PAS propagé
+    au re-run (supprimer la règle puis relancer). Garde-fou applicatif uniquement : il n'y
+    a pas de `UniqueConstraint(keyword, owner)` en DB, donc le `for_user(user)` du lookup
+    est ce qui garantit qu'on retrouve l'existant au lieu de ré-INSÉRER (manager fail-closed).
     """
     created = 0
     for keyword, cat_slug, sub_slug, priority in rules:
