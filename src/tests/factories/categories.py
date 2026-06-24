@@ -50,7 +50,9 @@ class SystemCategoryFactory(CategoryFactory):
     """
 
     is_system = True
-    owner = None
+    # SubFactory parente (owner=User) remise à NULL pour une catégorie système
+    # partagée. mypy ne modélise pas les attributs déclaratifs factory_boy → ignore typé.
+    owner = None  # type: ignore[assignment]
 
 
 class SubCategoryFactory(factory.django.DjangoModelFactory):
