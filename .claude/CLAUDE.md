@@ -127,7 +127,7 @@ app réelle) reste due — elle n'est PAS couverte par la CI.
 
 ```
 feature branch → commit (hooks: ruff/djlint/pytest) → gh pr create --base development
-→ ⚙️ agent `bricbudget-reviewer` (revue code) → corriger les bloquants
+→ ⚙️ agent `bricbudget-reviewer` (revue code) → 🐰 attendre + traiter CodeRabbit → corriger les bloquants
 → Emmanuel merge → development   (development → main : Emmanuel uniquement)
 ```
 
@@ -136,6 +136,18 @@ Après `gh pr create` → **déclencher l'agent `bricbudget-reviewer`** sur le d
 l'agent qui assure la revue (+ `security-auditor` sur le code sensible). Findings
 bloquants/sécurité → corriger **avant** merge. Voir `commands/github.md`.
 Auto-approve si : tests 100% verts + 0 ruff + 0 IDOR sans for_user + 0 print().
+
+⛔ **Après CHAQUE PR — traiter CodeRabbit (obligatoire, ne pas attendre qu'on le demande).**
+Le cycle de revue n'est PAS fini tant que 🐰 CodeRabbit n'a pas tourné :
+1. Attendre `CodeRabbit … Review completed` (`gh pr checks <PR>` ; il re-tourne à chaque push).
+2. Lire ses commentaires **+ les « 🤖 Prompt for AI Agents » + findings *outside-diff*** (souvent dans
+   le corps de la revue, pas en inline) : `gh pr view <PR> --json reviews` +
+   `gh api repos/ManuLabricole/bric-budget/pulls/<PR>/comments`.
+3. **Juger chaque suggestion** → pertinente = implémenter (commit + push re-déclenche CodeRabbit) ;
+   non pertinente / hors scope / déjà couverte = écarter **avec raison brève**. Jamais en masse aveugle.
+4. Récap à Emmanuel : finding → action. Vérifier `git rev-list --count origin/<branch>..HEAD ≥ 1`
+   après chaque commit (le formateur pre-commit peut l'avaler) ; pousser les branches **en série**
+   (pytest pre-push concurrents collisionnent sur `test_bricbudget`).
 
 `unset GITHUB_TOKEN` avant toute commande `gh`.
 
