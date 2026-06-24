@@ -27,9 +27,10 @@
 find src/tests -name "test_*.py" | sort
 # Nombre de tests par fichier
 grep -rc "^def test_\|^    def test_" src/tests/ | sort -t: -k2 -rn
-# Tests qui passent
-make test 2>&1 | tail -5
 ```
+> ⛔ NE PAS lancer `make test` / `make check` à la main pour juger l'état de la suite —
+> pre-push (pytest) + CI couvrent ça (cf. CLAUDE.md, cohérent avec la Phase 3 ci-dessous).
+> Pour l'état réel : lire le dernier run CI (`gh run list`) ou le rapport de couverture.
 
 Lire en parallèle (chemins RÉELS — la suite est structurée en packages par app) :
 - `src/tests/conftest.py` + le `conftest.py` du sous-dossier visé (`src/tests/budget/conftest.py`,

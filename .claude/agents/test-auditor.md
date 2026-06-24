@@ -108,8 +108,9 @@ grep -rc "objects.create(" src/tests/ | grep -v ':0' | sort -t: -k2 -rn
 grep -rln "from tests.factories\|import factories\|Factory(" src/tests/ || echo "AUCUNE factory utilisée"
 ```
 
-À juger 🟠 : un fichier avec >5 `objects.create(...)` quasi identiques = devrait passer par une
-factory. (Tant que #194 n'est pas mergé, c'est une **recommandation**, pas un bloquant.)
+À juger 🟠 : un fichier avec >5 `objects.create(...)` quasi identiques DOIT passer par une factory
+(`src/tests/factories/`) — les factories sont la fondation de test du repo (#194), le `create` inline
+dupliqué est une dette à signaler franchement, pas une simple « recommandation ».
 
 ### Axe 5 — Score de mutation (preuve ultime, optionnel)
 

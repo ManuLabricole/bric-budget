@@ -21,10 +21,13 @@ paths:
   ne casse pas 40 tests, et l'intention du test n'est plus noyée sous le setup.
   Helper legacy toléré tant qu'il existe (`make_tx(...)` dans `src/tests/services/conftest.py`) — mais
   pour un test de modèle/vue, viser la factory.
-- **Tout test de VUE vérifie le RENDU**, pas juste le statut : `assertContains` (contenu attendu) +
-  `assertTemplateUsed` (le bon template/partial). `assert response.status_code == 200` SEUL = théâtre :
-  une vue peut renvoyer 200 avec une page vide ou le mauvais fragment. Pour un partial HTMX, asserter
-  le contenu du fragment ET `assertNotContains(response, "<!DOCTYPE html>")` (inner HTML, pas page pleine).
+- **Tout test de VUE qui REND DU HTML vérifie le rendu**, pas juste le statut : `assertContains`
+  (contenu attendu) + `assertTemplateUsed` (le bon template/partial). `assert response.status_code == 200`
+  SEUL = théâtre : une vue peut renvoyer 200 avec une page vide ou le mauvais fragment. Pour un partial
+  HTMX, asserter le contenu du fragment ET `assertNotContains(response, "<!DOCTYPE html>")` (inner HTML).
+  ⚠️ Ne s'applique QU'aux réponses HTML rendues : une **redirection** (login, POST→redirect) s'asserte
+  via `assertRedirects` / le statut 3xx + `response["Location"]` ; une réponse **JSON ou non-HTML** via
+  son payload (`response.json()`, en-têtes) — pas `assertContains`/`assertTemplateUsed`.
 - **Tout POST vérifie l'effet DB** : `obj.refresh_from_db()` puis `assert` sur le champ modifié.
   Un POST dont on ne vérifie que le statut ne teste pas la mutation.
 - **Comportement, pas implémentation.** Tester via le client HTTP / l'API publique, pas en mockant
