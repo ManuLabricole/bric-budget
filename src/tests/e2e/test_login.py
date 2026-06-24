@@ -22,11 +22,11 @@ def test_login_redirects_to_budget_dashboard(page, live_server, e2e_user):
 
     # Preuve d'une session authentifiée réelle : la sidebar rend request.user.email.
     # Si la session n'était pas posée, @login_required aurait renvoyé vers /login/.
-    assert page.get_by_text(E2E_EMAIL).is_visible()
+    expect(page.get_by_text(E2E_EMAIL)).to_be_visible()
 
     # Élément propre au dashboard budget — confirme que la page (et ses static)
     # se sont bien rendus, pas juste un redirect nu.
-    assert page.get_by_text("Distribution").is_visible()
+    expect(page.get_by_text("Distribution")).to_be_visible()
 
 
 def test_login_wrong_password_shows_error(page, live_server, e2e_user):
