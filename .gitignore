@@ -110,3 +110,10 @@ pip-audit-report.*
 # ancrée sans slash → matche aussi le symlink (fix permanent du piège untracked).
 /.venv
 /node_modules
+
+# ─── E2E Playwright — artefacts de run (traces, screenshots, vidéos) ─────────
+# Générés en cas d'échec local/CI (--output / --tracing / --screenshot). Jamais
+# commit : ce sont des sorties de debug, pas du code. Le navigateur lui-même est
+# en cache hors repo (~/.cache/ms-playwright).
+e2e-artifacts/
+test-results/
