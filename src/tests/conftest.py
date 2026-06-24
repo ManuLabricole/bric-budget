@@ -22,8 +22,42 @@ from pathlib import Path
 
 import openpyxl
 import pytest
+from pytest_factoryboy import register
 
 from services import logos as _logos_service
+from tests.factories import (
+    AccountFactory,
+    BalanceSnapshotFactory,
+    CategorizationRuleFactory,
+    CategoryFactory,
+    CheckingAccountFactory,
+    InstitutionFactory,
+    SavingsAccountFactory,
+    SubCategoryFactory,
+    SystemCategoryFactory,
+    TransactionFactory,
+    UserFactory,
+)
+
+# pytest-factoryboy : expose chaque factory comme fixture pytest (#194).
+#   - `<model>_factory`  → la CLASSE factory (ex. `account_factory`) pour fabriquer
+#     plusieurs objets dans un test : `account_factory(currency="EUR")`.
+#   - `<prefix>`          → UNE instance prête à l'emploi (ex. `factory_account`).
+# On PRÉFIXE les fixtures-instance par `factory_` pour NE PAS shadower les fixtures
+# historiques `user`/`account`/`category`/`bank` définies dans les conftests locaux
+# (qui portent des valeurs précises et restent la source des tests existants).
+# Un NOUVEAU test crée ses données en 1 ligne via `account_factory(...)` / `factory_account`.
+register(UserFactory, "factory_user")
+register(InstitutionFactory, "factory_institution")
+register(AccountFactory, "factory_account")
+register(CheckingAccountFactory, "factory_checking_account")
+register(SavingsAccountFactory, "factory_savings_account")
+register(BalanceSnapshotFactory, "factory_balance_snapshot")
+register(CategoryFactory, "factory_category")
+register(SystemCategoryFactory, "factory_system_category")
+register(SubCategoryFactory, "factory_sub_category")
+register(CategorizationRuleFactory, "factory_categorization_rule")
+register(TransactionFactory, "factory_transaction")
 
 
 @pytest.fixture(autouse=True)

@@ -21,9 +21,10 @@ import hashlib
 import pytest
 
 from connectors.base import TransactionDict
+from tests.factories import AccountFactory, InstitutionFactory, UserFactory
 
 # =============================================================================
-# Fixtures DB — Utilisateur + Comptes
+# Fixtures DB — Utilisateur + Comptes (délèguent aux factories #194)
 # =============================================================================
 
 
@@ -33,23 +34,16 @@ def user(db):
     Utilisateur CustomUser minimal pour les imports.
 
     ImportService.run() prend imported_by=User pour créer l'ImportLog.
-    On en a besoin dans tous les tests d'ImportService.
-
-    'db' est une fixture pytest-django built-in : accorde l'accès lecture/écriture
-    à la base de données pour la durée du test.
+    On en a besoin dans tous les tests d'ImportService. Email + mot de passe conservés
+    à l'identique (`test@bricbudget.ch` / `testpass`) — comportement inchangé côté tests.
     """
-    from django.contrib.auth import get_user_model
-
-    User = get_user_model()
-    return User.objects.create_user(email="test@bricbudget.ch", password="testpass")
+    return UserFactory(email="test@bricbudget.ch", password="testpass")
 
 
 @pytest.fixture
 def chf_bank(db):
     """Banque CHF fictive pour les comptes de test."""
-    from accounts.models import Institution
-
-    return Institution.objects.create(
+    return InstitutionFactory(
         name="Test Bank CHF",
         slug="test-bank-chf",
         country="CH",
@@ -60,9 +54,7 @@ def chf_bank(db):
 @pytest.fixture
 def eur_bank(db):
     """Banque EUR fictive pour les comptes de test."""
-    from accounts.models import Institution
-
-    return Institution.objects.create(
+    return InstitutionFactory(
         name="Test Bank EUR",
         slug="test-bank-eur",
         country="FR",
@@ -77,10 +69,9 @@ def chf_account(db, chf_bank):
 
     Utilisé pour tester que amount_chf == amount (pas de conversion nécessaire).
     Pas de CheckingAccount associé → _load_cards() retourne {} (aucune carte).
+    Pas de membre (les tests ImportService ne filtrent pas par for_user).
     """
-    from accounts.models import Account
-
-    return Account.objects.create(
+    return AccountFactory(
         institution=chf_bank,
         name="Test CHF Account",
         account_type="checking",
@@ -95,9 +86,7 @@ def eur_account(db, eur_bank):
 
     Utilisé pour tester le calcul de amount_chf via le taux de change.
     """
-    from accounts.models import Account
-
-    return Account.objects.create(
+    return AccountFactory(
         institution=eur_bank,
         name="Test EUR Account",
         account_type="checking",

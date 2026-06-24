@@ -16,60 +16,48 @@ from decimal import Decimal
 
 import pytest
 
+from tests.factories import AccountFactory, InstitutionFactory, UserFactory
+
 
 @pytest.fixture
 def user(db):
-    from django.contrib.auth import get_user_model
-
-    return get_user_model().objects.create_user(
-        email="patrimoine@test.ch", password="pass"
-    )
+    return UserFactory(email="patrimoine@test.ch")
 
 
 @pytest.fixture
 def chf_institution(db):
-    from accounts.models import Institution
-
-    return Institution.objects.create(
+    return InstitutionFactory(
         name="Test CHF", slug="pat-chf", country="CH", default_currency="CHF"
     )
 
 
 @pytest.fixture
 def eur_institution(db):
-    from accounts.models import Institution
-
-    return Institution.objects.create(
+    return InstitutionFactory(
         name="Test EUR", slug="pat-eur", country="FR", default_currency="EUR"
     )
 
 
 @pytest.fixture
 def chf_account(db, chf_institution, user):
-    from accounts.models import Account
-
-    acc = Account.objects.create(
+    return AccountFactory(
         institution=chf_institution,
         name="CHF Courant",
         account_type="checking",
         currency="CHF",
+        members=[user],
     )
-    acc.members.add(user)
-    return acc
 
 
 @pytest.fixture
 def eur_account(db, eur_institution, user):
-    from accounts.models import Account
-
-    acc = Account.objects.create(
+    return AccountFactory(
         institution=eur_institution,
         name="EUR Courant",
         account_type="checking",
         currency="EUR",
+        members=[user],
     )
-    acc.members.add(user)
-    return acc
 
 
 # Compteur global pour garantir des import_hash uniques entre tous les appels.
