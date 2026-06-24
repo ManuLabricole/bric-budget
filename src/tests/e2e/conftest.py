@@ -20,6 +20,7 @@ Le marker `e2e` est appliqué AUTOMATIQUEMENT à tous les tests de ce paquet
 """
 
 import os
+import secrets
 
 import pytest
 
@@ -33,12 +34,12 @@ import pytest
 # src/tests/e2e/, il n'est pas chargé par le reste de la suite).
 os.environ.setdefault("DJANGO_ALLOW_ASYNC_UNSAFE", "1")
 
-# Identifiants de l'utilisateur de démo E2E.
-# Le mot de passe respecte AUTH_PASSWORD_VALIDATORS (≥ 8 car, pas commun, pas
-# 100 % numérique, pas similaire à l'email) sinon create_user passe mais un test
-# qui exercerait la validation échouerait — ici on reste cohérent par principe.
+# Identifiants de l'utilisateur de démo E2E. Mot de passe GÉNÉRÉ au runtime (aucun
+# littéral à scanner — GitGuardian) : la connexion passe par le vrai formulaire avec
+# CETTE même variable au create_user ET au login, et le login Django ne valide pas la
+# robustesse du mot de passe (seul le signup le fait) → un secret aléatoire convient.
 E2E_EMAIL = "e2e.user@bricbudget.test"
-E2E_PASSWORD = "E2eSmoke!2026"
+E2E_PASSWORD = secrets.token_urlsafe(16)
 
 
 def pytest_collection_modifyitems(config, items):
