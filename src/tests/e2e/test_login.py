@@ -10,6 +10,8 @@ StaticFilesHandler) dans un vrai chromium headless. Ils sont taggés `e2e`
 automatiquement (voir conftest local) → exclus de la suite par défaut.
 """
 
+from playwright.sync_api import expect
+
 from tests.e2e.conftest import E2E_EMAIL, E2E_PASSWORD, login
 
 
