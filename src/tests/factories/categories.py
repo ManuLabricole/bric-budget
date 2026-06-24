@@ -86,4 +86,7 @@ class CategorizationRuleFactory(factory.django.DjangoModelFactory):
     target_field = "display_name"
     priority = factory.Sequence(lambda n: n)
     is_active = True
-    owner = factory.SubFactory(UserFactory)
+    # owner dérivé de la catégorie (comme SubCategoryFactory) → rule.owner et
+    # rule.category.owner restent cohérents par défaut (modèle owned #213), sauf
+    # override explicite. Évite une règle perso pointant une catégorie d'un autre user.
+    owner = factory.SelfAttribute("category.owner")
