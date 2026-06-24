@@ -92,8 +92,10 @@ def login(page, live_server, email=E2E_EMAIL, password=E2E_PASSWORD):
     page.goto(f"{live_server.url}/login/")
     page.fill("input[name='username']", email)
     page.fill("input[name='password']", password)
+    page.click("button[type='submit']")
     # wait_for_url couvre le POST → 302 → GET /budget/ : on ne continue que
-    # lorsque l'URL finale est atteinte (le dashboard est rendu).
-    with page.expect_navigation(url=f"{live_server.url}/budget/"):
-        page.click("button[type='submit']")
+    # lorsque l'URL finale est atteinte (le dashboard est rendu). Pattern idiomatique
+    # Playwright 1.x (cohérent avec test_navigation.py), sans la race d'expect_navigation
+    # (déprécié) où la navigation peut démarrer avant l'entrée du context manager.
+    page.wait_for_url(f"{live_server.url}/budget/")
     return page
