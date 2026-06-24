@@ -931,9 +931,29 @@ def budget_rule_edit_submit(request, rule_id):
                 subcategory_id,
             )
             return render(request, "budget/_rule_row.html", {"rule": rule})
+        # SR-001 IDOR (F1) : valider que catégorie/sous-catégorie appartiennent au user
+        # (système OU à moi) AVANT de les poser sur la règle. Sinon un user pointe sa règle
+        # vers la catégorie PERSO d'un autre (write IDOR + fuite). La règle elle-même est déjà
+        # scopée for_user ; il manquait le scope sur les FK posées depuis le POST. Même pattern
+        # que les autres vues règles (create/preview). Échec → règle inchangée.
+        category = Category.objects.for_user(request.user).filter(pk=cat_id).first()
+        subcategory = (
+            SubCategory.objects.for_user(request.user).filter(pk=subcat_id).first()
+            if subcat_id is not None
+            else None
+        )
+        if category is None or (subcat_id is not None and subcategory is None):
+            logger.warning(
+                "rule_update rejected id=%s reason=idor_fk cat_id=%s subcat_id=%s user=%s",
+                rule.id,
+                cat_id,
+                subcat_id,
+                request.user.id,
+            )
+            return render(request, "budget/_rule_row.html", {"rule": rule})
         rule.keyword = keyword
-        rule.category_id = cat_id
-        rule.subcategory_id = subcat_id
+        rule.category_id = category.id
+        rule.subcategory_id = subcategory.id if subcategory else None
         rule.save(update_fields=["keyword", "category_id", "subcategory_id"])
         logger.info(
             "rule_update ok id=%s keyword=%r category=%s subcategory=%s user=%s",

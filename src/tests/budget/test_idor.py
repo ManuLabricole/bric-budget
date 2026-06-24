@@ -884,3 +884,44 @@ def test_storage_get_fernet_raises_improperly_configured_when_empty():
         with pytest.raises(ImproperlyConfigured) as exc_info:
             _get_fernet()
         assert "IMPORT_ENCRYPTION_KEY" in str(exc_info.value)
+
+
+# =============================================================================
+# F1 — IDOR write : budget_rule_edit_submit posait rule.category_id depuis le POST
+# sans for_user → un user pouvait pointer sa règle vers la catégorie PERSO d'un autre.
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_f1_rule_edit_cannot_point_to_other_users_category(
+    client_b, user_b, category, category_a
+):
+    """user_b ne peut pas repointer sa règle vers la catégorie PERSO de user_a (category_a)."""
+    rule = CategorizationRule.objects.create(
+        keyword="MIGROS", category=category, owner=user_b, is_active=True
+    )
+    resp = client_b.post(
+        reverse("budget:rule_edit_submit", args=[rule.id]),
+        {"keyword": "MIGROS", "category_id": category_a.id},
+    )
+    assert resp.status_code == 200
+    rule.refresh_from_db()
+    # F1 : la règle reste sur sa catégorie d'origine, JAMAIS repointée vers celle d'un autre.
+    assert rule.category_id == category.id
+    assert rule.category_id != category_a.id
+
+
+@pytest.mark.django_db
+def test_f1_rule_edit_allowed_for_own_visible_category(client_b, user_b, category):
+    """Non-régression : user_b PEUT repointer sa règle vers une catégorie visible (système)."""
+    cat2 = Category.objects.create(name="Systeme 2", slug="systeme-2", owner=None)
+    rule = CategorizationRule.objects.create(
+        keyword="X", category=category, owner=user_b, is_active=True
+    )
+    resp = client_b.post(
+        reverse("budget:rule_edit_submit", args=[rule.id]),
+        {"keyword": "X", "category_id": cat2.id},
+    )
+    assert resp.status_code == 200
+    rule.refresh_from_db()
+    assert rule.category_id == cat2.id  # bien mise à jour
