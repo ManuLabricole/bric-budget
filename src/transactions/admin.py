@@ -350,6 +350,10 @@ class ImportLogAdmin(admin.ModelAdmin):
 
 @admin.register(BudgetTarget)
 class BudgetTargetAdmin(admin.ModelAdmin):
-    list_display = ("category", "amount")
+    list_display = ("category", "owner", "amount")
     list_filter = ("category",)
+    raw_id_fields = (
+        "owner",
+        "category",
+    )  # #201 : éviter les dropdowns géants (scale users)
     ordering = ("category__order",)

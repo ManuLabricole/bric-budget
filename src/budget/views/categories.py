@@ -166,7 +166,10 @@ def _compute_category_cashflow_context(request, category):
         .count()
     )
     period_months = PERIOD_MODE_MONTHS.get(period_mode, 1)
-    budget_target = BudgetTarget.objects.filter(category=category).first()
+    # #201 : mon objectif sur cette catégorie (scopé owner), jamais celui d'un autre user.
+    budget_target = (
+        BudgetTarget.objects.for_user(request.user).filter(category=category).first()
+    )
 
     target_amount = target_pct = on_track = arc_fill_px = None
     if budget_target:
