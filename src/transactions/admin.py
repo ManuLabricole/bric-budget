@@ -99,6 +99,29 @@ def sync_reference(modeladmin, request, queryset):
     )
 
 
+@admin.action(description="✦ Seeder mes règles + catégories perso (Finary)")
+def seed_perso(modeladmin, request, queryset):
+    """Lance `seed_perso` sans console (#146) : catégories perso + règles Finary du
+    propriétaire (settings.PERSO_SEED_USER_EMAIL), owner=user, puis apply_rules.
+
+    queryset ignoré (le seed cible UN user fixe par settings, pas la sélection).
+    Idempotent et prod-safe → re-cliquer ne duplique rien. Calqué sur sync_reference.
+    """
+    try:
+        call_command("seed_perso")
+    except Exception as exc:
+        # Synchrone dans le worker : un échec ne doit pas remonter en 500 brut.
+        logger.exception("seed_perso via admin failed user=%s", request.user.pk)
+        modeladmin.message_user(
+            request, f"Échec du seed perso : {exc}", level=messages.ERROR
+        )
+        return
+    logger.info("seed_perso via admin user=%s", request.user.pk)
+    modeladmin.message_user(
+        request, "Catégories perso + règles Finary seedées (owner du propriétaire)."
+    )
+
+
 @admin.register(Category)
 class CategoryAdmin(OwnedAdminMixin, admin.ModelAdmin):
     # owner : NULL = catégorie système partagée ; sinon = perso d'un user (#137).
@@ -109,7 +132,7 @@ class CategoryAdmin(OwnedAdminMixin, admin.ModelAdmin):
     # raw_id_fields : évite de charger tous les users dans un <select> (scalabilité 50k users).
     raw_id_fields = ("owner",)
     ordering = ("order",)
-    actions = [sync_reference]
+    actions = [sync_reference, seed_perso]
     # inlines: embed the SubCategoryInline table directly on the Category edit page
     inlines = [SubCategoryInline]
 
@@ -186,6 +209,8 @@ class CategorizationRuleAdmin(OwnedAdminMixin, admin.ModelAdmin):
     list_filter = ("target_field", "category", "is_active")
     search_fields = ("keyword",)
     ordering = ("-priority", "keyword")
+    # #146 : seeder les règles Finary + catégories perso du propriétaire depuis l'admin.
+    actions = [seed_perso]
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         """
