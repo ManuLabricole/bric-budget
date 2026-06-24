@@ -216,7 +216,9 @@ def seed_demo(
     _ensure_balances(list(accounts.values()))
 
     # Applique les règles de catégorisation existantes (no-op si aucune règle).
-    call_command("apply_rules")
+    # #205 : scoper au user démo (--user) → règles ET transactions du démo uniquement,
+    # jamais le mode global (qui appliquerait les règles de tous les users).
+    call_command("apply_rules", user=user.email)
 
     summary = SeedSummary(
         user_email=user.email,
