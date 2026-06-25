@@ -51,3 +51,20 @@ paths:
 - `make test` (pytest) tourne en pre-push ; `make type` (mypy) + ruff + semgrep en CI.
 - Tests de query-count = des **maximums** (`django_assert_max_num_queries`), pas des cibles exactes
   (sinon fragiles). Ne jamais `--no-verify` ni `pytest -k` pour esquiver un test gênant.
+
+## Mutation testing (mutmut) — #198
+
+La couverture mesure les lignes exécutées, **pas** si un test détecterait un bug. Le mutation
+testing le révèle : `mutmut` mute le code (ex. `==`→`!=`, `+`→`-`) et rejoue les tests — un mutant
+**survivant** = une mutation qu'aucun test n'a tuée = du code couvert mais **non discriminé**.
+
+- **Scope** (`setup.cfg [mutmut]`) : `services/` (argent/FX/Decimal), `transactions/models.py`
+  + `managers.py` (manager `for_user` / IDOR), `connectors/` (parsers). PAS toute la suite (trop lent).
+- **Nightly only** (`.github/workflows/mutation.yml`, cron + `workflow_dispatch`) — jamais par-PR.
+  Job **informatif** (`|| true`) : le livrable est le **rapport des survivants** en artefact, pas un gate.
+- **Baseline** : lancer le workflow en `workflow_dispatch` une fois mergé → établit le 1ᵉʳ score.
+  Cible **>80 % de mutants tués** sur le périmètre ; les survivants se lisent via `mutmut results`
+  / `mutmut show <id>` et alimentent l'agent **`test-auditor`** (#195) pour proposer les assertions
+  manquantes. Tuer les survivants = travail **itératif** post-baseline (pas un prérequis de merge).
+- Local : `poetry run mutmut run` (lent ; restreindre via `paths_to_mutate` dans `setup.cfg` pour
+  itérer). Le dossier de travail `mutants/` est gitignoré.

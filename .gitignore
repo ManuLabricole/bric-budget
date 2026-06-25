@@ -117,3 +117,6 @@ pip-audit-report.*
 # en cache hors repo (~/.cache/ms-playwright).
 e2e-artifacts/
 test-results/
+
+# mutmut (#198) — copie de travail + résultats, régénérés à chaque run
+mutants/
