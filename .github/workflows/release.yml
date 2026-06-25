@@ -1,0 +1,116 @@
+# .github/workflows/release.yml — BricBudget Release
+#
+# Versioning AUTOMATISÉ via commitizen (`cz bump`, version_provider = "scm").
+# La source de vérité de la version = le TAG git. Ce workflow :
+#   1. lit le dernier tag + les Conventional Commits depuis ce tag,
+#   2. calcule le prochain numéro SemVer (feat=minor, fix/perf/refactor=patch,
+#      breaking=minor tant qu'on est en 0.x — major_version_zero=true),
+#   3. crée le tag `vX.Y.Z`, régénère le CHANGELOG, pousse le tag,
+#   4. publie la GitHub Release avec les notes générées.
+#
+# ⚠️ NE TOURNE JAMAIS sur une PR ni sur la CI de PR (cf. ci.yml). On release
+# UNIQUEMENT quand `development` est mergé sur `main` (push sur main), ou à la
+# demande manuelle (workflow_dispatch). C'est ce qui découple « versionner » de
+# « valider une PR » : aucune PR ne crée de tag.
+
+name: Release
+
+on:
+  # Déclencheur principal : un merge development → main (release effective).
+  push:
+    branches:
+      - main
+  # Déclencheur manuel de secours (onglet Actions → Run workflow), ex. pour
+  # rejouer une release ratée. dry_run=true => calcule le numéro SANS tagger.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry-run (calcule la version sans créer de tag ni de Release)"
+        type: boolean
+        default: false
+
+# Un seul run de release à la fois — évite deux bumps concurrents qui se
+# marcheraient dessus sur le tag. PAS de cancel-in-progress : une release en
+# cours ne doit jamais être annulée à mi-chemin (tag poussé sans Release).
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+# `cz bump` crée un commit (CHANGELOG) + un tag et les pousse ; la création de la
+# GitHub Release passe par l'API → il faut les permissions d'écriture sur le repo.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: cz bump + GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # fetch-depth: 0 → historique + TAGS complets. version_provider="scm"
+          # dérive la version de `git describe` : sans les tags, cz ne saurait
+          # pas d'où repartir. token : permet à `cz bump` de pousser le tag.
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # commitizen seul suffit ici (pas besoin d'installer toutes les deps du
+      # projet via Poetry) → install ciblé = job rapide.
+      - name: Install commitizen
+        run: pip install "commitizen>=4.13,<5"
+
+      # Identité git pour le commit de CHANGELOG + le tag créés par `cz bump`.
+      - name: Configure git author
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # ── Dry-run (workflow_dispatch uniquement) ──────────────────────────────
+      # Affiche le prochain numéro SANS rien créer. Sert à vérifier ce que la
+      # prochaine release produirait, sans tagger.
+      - name: cz bump — dry-run (aperçu)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: cz bump --dry-run
+
+      # ── Release effective ───────────────────────────────────────────────────
+      # `cz bump` :
+      #   --yes                  → pas d'interaction (CI).
+      #   --changelog            → régénère CHANGELOG.md, inclus dans le commit de bump.
+      #   --changelog-to-stdout  → émet en plus les notes de CETTE version sur stdout
+      #                            → on les capture pour la GitHub Release (cf. Refs #155).
+      # Crée le commit de bump + le tag vX.Y.Z. Si AUCUN commit bumpable depuis le
+      # dernier tag, cz sort en erreur (« no commits found ») → on ne casse pas le
+      # job, on ne crée juste pas de Release (étapes suivantes gardées par steps.bump).
+      - name: cz bump — tag + changelog
+        id: bump
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+        run: |
+          if cz bump --yes --changelog --changelog-to-stdout > RELEASE_NOTES.md; then
+            echo "bumped=true" >> "$GITHUB_OUTPUT"
+            echo "version=$(cz version --project)" >> "$GITHUB_OUTPUT"
+          else
+            echo "Aucun commit bumpable depuis le dernier tag — pas de release."
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push commit + tag
+        if: ${{ steps.bump.outputs.bumped == 'true' }}
+        run: |
+          git push origin HEAD
+          git push origin --tags
+
+      - name: Crée la GitHub Release
+        if: ${{ steps.bump.outputs.bumped == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ steps.bump.outputs.version }}" \
+            --title "v${{ steps.bump.outputs.version }}" \
+            --notes-file RELEASE_NOTES.md
