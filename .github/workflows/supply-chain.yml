@@ -24,6 +24,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Moindre privilège : les 2 jobs ne font que lire le repo + uploader un artefact
+# (upload-artifact ne requiert pas contents: write). Cœur d'une PR supply-chain.
+permissions:
+  contents: read
+
 jobs:
   # ── npm audit (deps JS) ──────────────────────────────────────────────────────
   # Audite package-lock.json contre l'advisory DB npm.
@@ -40,6 +45,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # Jobs read-only → ne pas laisser le token dans le git config (zizmor artipacked).
+          persist-credentials: false
 
       - name: Set up Node.js 20
         uses: actions/setup-node@v4
@@ -63,6 +71,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # Jobs read-only → ne pas laisser le token dans le git config (zizmor artipacked).
+          persist-credentials: false
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
