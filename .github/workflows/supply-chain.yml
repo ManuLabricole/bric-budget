@@ -99,7 +99,7 @@ jobs:
       # SBOM npm : @cyclonedx/cyclonedx-npm lit package-lock.json (pas d'install
       # requise, le lockfile suffit) et produit un CycloneDX JSON.
       - name: Generate npm SBOM (CycloneDX)
-        run: npx --yes @cyclonedx/cyclonedx-npm@latest --output-format JSON --output-file sbom-npm.json
+        run: npx --yes @cyclonedx/cyclonedx-npm@latest --package-lock-only --output-format JSON --output-file sbom-npm.json
 
       - name: Upload SBOM artifacts
         uses: actions/upload-artifact@v4
