@@ -122,6 +122,35 @@ def test_flush_reseeds_same_volume(demo_env):
 
 
 @pytest.mark.django_db
+def test_reseed_adopts_pre_is_demo_accounts_without_integrity_error(demo_env):
+    """Régression : une DB seedée AVANT le marqueur is_demo (#202) a des comptes
+    is_demo=False. Le re-seed doit les ADOPTER (matching par IBAN/RIB synthétique,
+    cf. _ensure_accounts) et NON tenter un INSERT en doublon d'IBAN — sinon
+    `IntegrityError: duplicate key "accounts_account_iban_key"` (bug remonté par le
+    bouton Seed de l'admin sur une DB de dev existante)."""
+    seed_demo(months=2)
+    user = get_user_model().objects.get(email=demo_env.DEMO_USER_EMAIL)
+    # Simule l'état pré-#202 : les comptes existent mais sans le marqueur démo.
+    Account.objects.filter(members=user).update(is_demo=False)
+    ubs_ibans = set(
+        Account.objects.filter(institution__slug="ubs").values_list("iban", flat=True)
+    )
+
+    # Ne doit PAS lever IntegrityError (le bug : duplicate key sur l'IBAN).
+    seed_demo(months=2, flush=True)
+
+    # Comptes à identifiant synthétique (UBS iban, CIC contract_number) : ADOPTÉS,
+    # pas dupliqués, et re-marqués is_demo=True (auto-heal).
+    ubs = Account.objects.filter(institution__slug="ubs")
+    assert ubs.count() == 2  # adoptés par IBAN → aucun doublon
+    assert not ubs.filter(is_demo=False).exists()  # auto-heal
+    assert set(ubs.values_list("iban", flat=True)) == ubs_ibans  # mêmes comptes
+    cic = Account.objects.filter(institution__slug="cic")
+    assert cic.count() == 2  # adoptés par (institution, contract_number)
+    assert not cic.filter(is_demo=False).exists()
+
+
+@pytest.mark.django_db
 def test_reset_demo_wipes_data_keeps_user(demo_env):
     seed_demo(months=2)
     user_model = get_user_model()
