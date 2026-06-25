@@ -63,6 +63,9 @@ def test_toggle_filter_account_non_htmx_redirects(client_a, account_a):
     """Requête nue (navigation directe) → redirect PRG, jamais un partial nu."""
     resp = client_a.get(reverse("budget:toggle_filter_account", args=[account_a.id]))
     assert resp.status_code == 302
+    # Épingle la cible du fallback PRG (safe_referer → budget:index) pour détecter
+    # une régression de routing — un 302 nu ne dit pas vers OÙ (cf. test category).
+    assert resp["Location"] == reverse("budget:index")
 
 
 # =============================================================================
