@@ -94,7 +94,7 @@ jobs:
       - name: Generate Python SBOM (CycloneDX)
         run: |
           poetry run pip install cyclonedx-bom
-          poetry run cyclonedx-py environment --output-format JSON --outfile sbom-python.json
+          poetry run cyclonedx-py environment --output-format JSON --output-file sbom-python.json
 
       # SBOM npm : @cyclonedx/cyclonedx-npm lit package-lock.json (pas d'install
       # requise, le lockfile suffit) et produit un CycloneDX JSON.
