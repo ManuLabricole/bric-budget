@@ -27,6 +27,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Moindre privilège : aucun job de cette CI n'écrit dans le repo (lint/test/smoke/e2e/
+# release-commands sont read-only). Le GITHUB_TOKEN est restreint en lecture.
+permissions:
+  contents: read
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -41,6 +46,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
@@ -184,6 +191,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
@@ -294,6 +303,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
@@ -368,6 +379,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
@@ -398,6 +411,16 @@ jobs:
           DEBUG: "False"
           ALLOWED_HOSTS: localhost
         run: cd src && poetry run python manage.py collectstatic --noinput
+
+      # axes (middleware actif en DEBUG=False) initialise ses tables au boot gunicorn :
+      # sans migrate préalable, le boot crashe → le guard deviendrait rouge pour une
+      # mauvaise raison (échec parasite non lié à /healthz/), ou vert par accident si
+      # le Postgres du service est recyclé. On migre pour un boot prod fidèle.
+      - name: Apply migrations (requis par axes au boot gunicorn)
+        env:
+          DEBUG: "False"
+          ALLOWED_HOSTS: localhost
+        run: cd src && poetry run python manage.py migrate --noinput
 
       # smoke : gunicorn (prod) + curl /healthz/ anonyme → 200. Le manifest généré
       # ci-dessus est requis (CompressedManifest exige staticfiles.json en DEBUG=False).
@@ -438,6 +461,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
@@ -518,6 +543,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v5

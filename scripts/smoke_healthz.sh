@@ -46,9 +46,11 @@ for attempt in $(seq 1 30); do
     echo "❌ gunicorn s'est arrêté avant de répondre (boot cassé en config prod)." >&2
     exit 1
   fi
-  code="$(curl -s -o /dev/null -w '%{http_code}' "${URL}" || echo 000)"
+  # Timeouts bornés : si gunicorn accepte la socket puis stalle, curl ne doit pas
+  # bloquer indéfiniment (sinon un échec smoke rapide devient un step CI suspendu).
+  code="$(curl -sS --connect-timeout 1 --max-time 2 -o /dev/null -w '%{http_code}' "${URL}" || echo 000)"
   if [ "${code}" = "200" ]; then
-    body="$(curl -s "${URL}")"
+    body="$(curl -sS --connect-timeout 1 --max-time 2 "${URL}")"
     echo "✅ /healthz/ → 200 (body: ${body})"
     exit 0
   fi
