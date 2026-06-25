@@ -289,62 +289,79 @@ def _ensure_demo_user():
 def _ensure_accounts(user) -> dict[str, Account]:
     """6 comptes démo (idempotent) + carte sur le courant Yuh. Retourne {key: Account}."""
     accounts: dict[str, Account] = {}
-    for spec in _DEMO_ACCOUNTS:
-        institution = Institution.objects.get(slug=spec.institution)
-        # Clé d'idempotence = l'identifiant STABLE et SYNTHÉTIQUE du compte
-        # (iban UBS, unique global ; contract_number CIC, scopé institution car
-        # non unique). Un IBAN/RIB tout-à-zéro (SR-008) n'appartient JAMAIS à un
-        # vrai compte → matcher dessus est plus sûr que matcher par (institution,
-        # name) et ne ré-ouvre PAS la faille #202 (happer le compte d'un homonyme).
-        # C'est aussi ce qui rend le seed robuste à une DB pré-#202 : le compte
-        # existant (is_demo=False) est retrouvé par son IBAN au lieu de provoquer
-        # un INSERT en doublon d'IBAN (contrainte unique globale → IntegrityError).
-        # Yuh n'a aucun identifiant dans son export → fallback (institution, name).
-        lookup: dict[str, object]
-        if spec.iban:
-            lookup = {"iban": spec.iban}
-        elif spec.contract_number:
-            lookup = {
-                "institution": institution,
-                "contract_number": spec.contract_number,
-            }
-        else:
-            lookup = {"institution": institution, "name": spec.name, "is_demo": True}
-        account, _ = Account.objects.get_or_create(
-            **lookup,
+    # SR-003 : ~25 écritures liées (6 comptes × get_or_create + auto-heal + members
+    # + spécialisation + carte) → un seul atomic pour ne jamais laisser un seed à
+    # moitié appliqué (3 comptes adoptés, 3 non) si une étape échoue.
+    with db_transaction.atomic():
+        for spec in _DEMO_ACCOUNTS:
+            institution = Institution.objects.get(slug=spec.institution)
+            # Clé d'idempotence = l'identifiant STABLE et SYNTHÉTIQUE du compte
+            # (iban UBS, unique global ; contract_number CIC, scopé institution car
+            # non unique). Un IBAN/RIB tout-à-zéro (SR-008) n'appartient JAMAIS à un
+            # vrai compte → matcher dessus est plus sûr que matcher par (institution,
+            # name) et ne ré-ouvre PAS la faille #202 (happer le compte d'un homonyme).
+            # C'est aussi ce qui rend le seed robuste à une DB pré-#202 : le compte
+            # existant (is_demo=False) est retrouvé par son IBAN au lieu de provoquer
+            # un INSERT en doublon d'IBAN (contrainte unique globale → IntegrityError).
+            # Yuh n'a aucun identifiant dans son export → fallback (institution, name) ;
+            # is_demo=True RESTE dans la clé (garde #202) : un compte Yuh réel d'un
+            # homonyme n'est jamais adopté. Contrepartie assumée : re-seeder une DB
+            # pré-#202 NON guérie recrée les comptes Yuh (doublon non bloquant) — la
+            # migration sûre est un re-flag is_demo=True manuel, jamais l'adoption.
+            lookup: dict[str, object]
+            if spec.iban:
+                lookup = {"iban": spec.iban}
+            elif spec.contract_number:
+                lookup = {
+                    "institution": institution,
+                    "contract_number": spec.contract_number,
+                }
+            else:
+                lookup = {
+                    "institution": institution,
+                    "name": spec.name,
+                    "is_demo": True,
+                }
+            account, _ = Account.objects.get_or_create(
+                **lookup,
+                defaults={
+                    "institution": institution,
+                    "name": spec.name,
+                    "account_type": spec.account_type,
+                    "currency": spec.currency,
+                    "iban": spec.iban,
+                    "contract_number": spec.contract_number,
+                    "is_active": True,
+                    "is_demo": True,
+                },
+            )
+            # Auto-heal : un compte démo créé AVANT le marqueur is_demo (#202) a
+            # is_demo=False. On l'adopte → reset_demo (qui ne cible que is_demo=True)
+            # peut le nettoyer et l'état redevient cohérent. Sûr : pour UBS/CIC le
+            # lookup ci-dessus garantit que le compte porte l'identifiant synthétique.
+            if not account.is_demo:
+                account.is_demo = True
+                account.save(update_fields=["is_demo"])
+            account.members.add(user)
+            if spec.account_type == Account.AccountType.CHECKING:
+                CheckingAccount.objects.get_or_create(account=account)
+            else:
+                SavingsAccount.objects.get_or_create(
+                    account=account, defaults={"interest_rate": Decimal("0.75")}
+                )
+            accounts[spec.key] = account
+
+        # Carte sur le compte COURANT Yuh → résolution carte à l'import des dépenses.
+        yuh_checking = accounts["yuh_courant"].checking_account
+        Card.objects.get_or_create(
+            checking_account=yuh_checking,
+            last_four=profiles.DEMO_YUH_CARD_LAST_FOUR,
             defaults={
-                "institution": institution,
-                "name": spec.name,
-                "account_type": spec.account_type,
-                "currency": spec.currency,
-                "iban": spec.iban,
-                "contract_number": spec.contract_number,
+                "user": user,
+                "card_type": Card.CardType.DEBIT,
                 "is_active": True,
-                "is_demo": True,
             },
         )
-        # Auto-heal : un compte démo créé AVANT le marqueur is_demo (#202) a
-        # is_demo=False. On l'adopte → reset_demo (qui ne cible que is_demo=True)
-        # peut le nettoyer et l'état redevient cohérent.
-        if not account.is_demo:
-            account.is_demo = True
-            account.save(update_fields=["is_demo"])
-        account.members.add(user)
-        if spec.account_type == Account.AccountType.CHECKING:
-            CheckingAccount.objects.get_or_create(account=account)
-        else:
-            SavingsAccount.objects.get_or_create(
-                account=account, defaults={"interest_rate": Decimal("0.75")}
-            )
-        accounts[spec.key] = account
-
-    # Carte sur le compte COURANT Yuh → résolution carte à l'import des dépenses.
-    yuh_checking = accounts["yuh_courant"].checking_account
-    Card.objects.get_or_create(
-        checking_account=yuh_checking,
-        last_four=profiles.DEMO_YUH_CARD_LAST_FOUR,
-        defaults={"user": user, "card_type": Card.CardType.DEBIT, "is_active": True},
-    )
     return accounts
 
 

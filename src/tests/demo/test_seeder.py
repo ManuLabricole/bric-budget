@@ -149,6 +149,13 @@ def test_reseed_adopts_pre_is_demo_accounts_without_integrity_error(demo_env):
     assert cic.count() == 2  # adoptés par (institution, contract_number)
     assert not cic.filter(is_demo=False).exists()
 
+    # Yuh (sans identifiant) : garde #202 ASSUMÉE > idempotence. Les comptes Yuh
+    # pré-#202 (is_demo=False) ne sont PAS adoptés — le fallback exige is_demo=True,
+    # pour ne jamais happer le compte d'un homonyme réel (cf. #202). On vérifie cette
+    # propriété de SÉCURITÉ (et non un count==2 qui exigerait de relâcher la garde) :
+    # les 2 Yuh d'origine restent intacts ; la migration sûre est un re-flag manuel.
+    assert Account.objects.filter(institution__slug="yuh", is_demo=False).count() == 2
+
 
 @pytest.mark.django_db
 def test_reset_demo_wipes_data_keeps_user(demo_env):

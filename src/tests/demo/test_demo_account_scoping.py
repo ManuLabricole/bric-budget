@@ -49,6 +49,13 @@ def test_reset_demo_spares_real_account_even_if_demo_user_is_member(settings):
 
 @pytest.mark.django_db
 def test_seed_lookup_does_not_grab_real_homonym_account():
+    """Contrat du lookup FALLBACK (#202) — le chemin sans identifiant (Yuh).
+
+    Teste l'invariant ORM du fallback `(institution, name, is_demo=True)`, pas
+    l'intégration complète de `_ensure_accounts` (les comptes à identifiant — UBS
+    iban / CIC contract_number — sont désormais résolus par cet identifiant). C'est
+    ce fallback que Yuh emprunte, et la garde anti-homonyme #202 doit y rester vraie.
+    """
     inst = _ubs()
     real = Account.objects.create(
         institution=inst,
