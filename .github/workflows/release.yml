@@ -79,6 +79,16 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
         run: cz bump --dry-run
 
+      # Garde-fou gouvernance : une release EFFECTIVE (tag + GitHub Release) ne doit
+      # partir que de main. Le trigger normal est push:main (OK), mais workflow_dispatch
+      # est lançable depuis n'importe quelle branche → on bloque un bump effectif hors
+      # main (le dry-run reste autorisé depuis n'importe où pour prévisualiser).
+      - name: Ensure release runs from main
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) && github.ref != 'refs/heads/main' }}
+        run: |
+          echo "❌ Une release ne peut partir que de refs/heads/main (ref actuelle : $GITHUB_REF)." >&2
+          exit 1
+
       # ── Release effective ───────────────────────────────────────────────────
       # `cz bump` :
       #   --yes                  → pas d'interaction (CI).
@@ -92,12 +102,23 @@ jobs:
         id: bump
         if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
         run: |
-          if cz bump --yes --changelog --changelog-to-stdout > RELEASE_NOTES.md; then
+          # On NE veut avaler QUE le cas « aucun commit à bumper » (run vert, pas de
+          # release). Toute AUTRE erreur (config commitizen, tag, changelog) doit casser
+          # le job — sinon un échec réel passerait pour un « rien à release » silencieux.
+          set +e
+          cz bump --yes --changelog --changelog-to-stdout > RELEASE_NOTES.md 2> bump_err.txt
+          code=$?
+          set -e
+          cat bump_err.txt >&2
+          if [ "$code" -eq 0 ]; then
             echo "bumped=true" >> "$GITHUB_OUTPUT"
             echo "version=$(cz version --project)" >> "$GITHUB_OUTPUT"
-          else
+          elif grep -qiE "NO_COMMITS_FOUND|NO_COMMITS_TO_BUMP|no commits found|not eligible to be bumped" bump_err.txt; then
             echo "Aucun commit bumpable depuis le dernier tag — pas de release."
             echo "bumped=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::cz bump a échoué pour une raison autre que l'absence de commits (voir stderr ci-dessus)." >&2
+            exit "$code"
           fi
 
       - name: Push commit + tag
