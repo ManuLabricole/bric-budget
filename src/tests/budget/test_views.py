@@ -12,6 +12,7 @@ from decimal import Decimal
 import pytest
 from django.test import Client
 from django.urls import reverse
+from pytest_django.asserts import assertTemplateUsed
 
 from transactions.models import Category, Transaction
 
@@ -223,6 +224,8 @@ def test_category_cashflow_fragment_returns_200(auth_client, cf_category):
         reverse("budget:category_cashflow_fragment", args=[cf_category.slug])
     )
     assert response.status_code == 200
+    # #196 : pas juste 200 — le bon partial doit être rendu (un template vidé → rouge).
+    assertTemplateUsed(response, "budget/_category_cashflow_card_inner.html")
 
 
 @pytest.mark.django_db
@@ -312,6 +315,8 @@ def test_category_detail_returns_200(auth_client, cf_category):
         reverse("budget:category_detail", args=[cf_category.slug])
     )
     assert response.status_code == 200
+    # #196 : la page detail rend bien son template (pas un 200 sur page vide).
+    assertTemplateUsed(response, "budget/category_detail.html")
 
 
 @pytest.mark.django_db
@@ -426,6 +431,46 @@ def test_panel_transactions_contains_category_filter(auth_client, cf_category):
 
 
 # =============================================================================
+# Garde anti-N+1 (#166) — vue chaude liste transactions (budget/views/transactions.py)
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_panel_transactions_no_n_plus_one(
+    auth_client, account, cf_category, django_assert_max_num_queries
+):
+    """
+    Le nombre de requêtes ne doit PAS croître avec le nombre de transactions :
+    le queryset porte un `select_related(category/subcategory/account/institution)`.
+    Mesuré à 6 requêtes sur ce jeu de données ; borne = 8 (marge auth/session).
+    Retirer le `select_related` → une requête PAR ligne en template → test rouge.
+    """
+    # 20 tx sur la période courante : assez pour qu'un N+1 explose la borne.
+    for i in range(20):
+        make_tx(account, cf_category, amount=f"-{i + 1}.00", seed=f"nplus1-{i}")
+    with django_assert_max_num_queries(8):
+        r = auth_client.get(reverse("budget:panel_transactions"))
+    assert r.status_code == 200
+
+
+@pytest.mark.django_db
+def test_category_cashflow_fragment_no_n_plus_one(
+    auth_client, account, cf_category, django_assert_max_num_queries
+):
+    """
+    Garde anti-N+1 sur le fragment cashflow (budget/views/categories.py).
+    Mesuré à 8 requêtes ; borne = 10. Indépendant du volume de transactions.
+    """
+    for i in range(20):
+        make_tx(account, cf_category, amount=f"-{i + 1}.00", seed=f"cf-nplus1-{i}")
+    with django_assert_max_num_queries(10):
+        r = auth_client.get(
+            reverse("budget:category_cashflow_fragment", args=[cf_category.slug])
+        )
+    assert r.status_code == 200
+
+
+# =============================================================================
 # budget_category_tx_fragment
 # =============================================================================
 
@@ -488,6 +533,8 @@ def test_category_tx_fragment_requires_login(client, cf_category):
 def test_category_tx_fragment_returns_200(auth_client, cf_category):
     r = auth_client.get(reverse("budget:category_tx_fragment", args=[cf_category.slug]))
     assert r.status_code == 200
+    # #196 : le bon partial liste-tx est rendu (sinon 200 sur fragment vide passe).
+    assertTemplateUsed(r, "budget/partials/_category_tx_fragment.html")
 
 
 @pytest.mark.django_db
