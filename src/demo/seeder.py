@@ -291,21 +291,44 @@ def _ensure_accounts(user) -> dict[str, Account]:
     accounts: dict[str, Account] = {}
     for spec in _DEMO_ACCOUNTS:
         institution = Institution.objects.get(slug=spec.institution)
-        # #202 : is_demo=True DANS le lookup → ne matche/crée QUE des comptes démo.
-        # Sans ça, get_or_create sur (institution, name) pouvait happer le compte RÉEL
-        # d'un autre user homonyme et lui ajouter le user démo en membre (fuite/pollution).
+        # Clé d'idempotence = l'identifiant STABLE et SYNTHÉTIQUE du compte
+        # (iban UBS, unique global ; contract_number CIC, scopé institution car
+        # non unique). Un IBAN/RIB tout-à-zéro (SR-008) n'appartient JAMAIS à un
+        # vrai compte → matcher dessus est plus sûr que matcher par (institution,
+        # name) et ne ré-ouvre PAS la faille #202 (happer le compte d'un homonyme).
+        # C'est aussi ce qui rend le seed robuste à une DB pré-#202 : le compte
+        # existant (is_demo=False) est retrouvé par son IBAN au lieu de provoquer
+        # un INSERT en doublon d'IBAN (contrainte unique globale → IntegrityError).
+        # Yuh n'a aucun identifiant dans son export → fallback (institution, name).
+        lookup: dict[str, object]
+        if spec.iban:
+            lookup = {"iban": spec.iban}
+        elif spec.contract_number:
+            lookup = {
+                "institution": institution,
+                "contract_number": spec.contract_number,
+            }
+        else:
+            lookup = {"institution": institution, "name": spec.name, "is_demo": True}
         account, _ = Account.objects.get_or_create(
-            institution=institution,
-            name=spec.name,
-            is_demo=True,
+            **lookup,
             defaults={
+                "institution": institution,
+                "name": spec.name,
                 "account_type": spec.account_type,
                 "currency": spec.currency,
                 "iban": spec.iban,
                 "contract_number": spec.contract_number,
                 "is_active": True,
+                "is_demo": True,
             },
         )
+        # Auto-heal : un compte démo créé AVANT le marqueur is_demo (#202) a
+        # is_demo=False. On l'adopte → reset_demo (qui ne cible que is_demo=True)
+        # peut le nettoyer et l'état redevient cohérent.
+        if not account.is_demo:
+            account.is_demo = True
+            account.save(update_fields=["is_demo"])
         account.members.add(user)
         if spec.account_type == Account.AccountType.CHECKING:
             CheckingAccount.objects.get_or_create(account=account)
