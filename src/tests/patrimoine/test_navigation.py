@@ -196,6 +196,30 @@ def test_overview_highlights_label_not_subitem(client, user):
     assert resp.context["active_asset_class_slug"] is None
 
 
+# --- garde anti-N+1 (#166) : page bilan (patrimoine/views/overview.py) -------
+
+
+@pytest.mark.django_db
+def test_overview_no_n_plus_one(
+    client, user, chf_account, savings_account, make_tx, django_assert_max_num_queries
+):
+    """
+    Le bilan (vue chaude) doit borner ses requêtes : `_user_accounts` charge les
+    comptes en `select_related("institution")`, et le moteur agrège snapshots/tx
+    par lots (`account_id__in`), pas compte par compte.
+
+    Jeu de données FIXE (2 comptes + 10 tx) → 33 requêtes mesurées ; borne = 36.
+    Retirer le `select_related("institution")` ou repasser à une boucle compte par
+    compte fait franchir la borne → test rouge.
+    """
+    client.force_login(user)
+    for i in range(10):
+        make_tx(chf_account, "2026-06-08", amount=-(i + 1))
+    with django_assert_max_num_queries(36):
+        resp = client.get(reverse("patrimoine:overview"))
+    assert resp.status_code == 200
+
+
 # --- context processor -------------------------------------------------------
 
 

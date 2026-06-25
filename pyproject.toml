@@ -29,10 +29,10 @@ build-backend = "poetry.core.masonry.api"
 package-mode = false
 
 [tool.poetry.group.dev.dependencies]
-ruff = "^0.15.8"
-djlint = "^1.36.4"
-commitizen = "^4.13.9"
-pytest = "^9.0"
+ruff = "^0.15.19"
+djlint = "^1.39.4"
+commitizen = "^4.16.4"
+pytest = "^9.1"
 pytest-django = "^4.12"
 
 
@@ -50,9 +50,9 @@ pytest-cov = "^7.1.0"
 bandit = "^1.9.4"
 vulture = "^2.16"
 mypy = "^2.1.0"
-django-stubs = "^6.0.5"
+django-stubs = "^6.0.6"
 djhtml = "^3.0.11"
-pip-audit = "^2.10.0"
+pip-audit = "^2.10.1"
 pytest-testmon = "^2.2.0"
 pytest-randomly = "^4.0"
 pytest-xdist = "^3.8.0"
@@ -129,9 +129,24 @@ exclude = [
 #   test     — adding or updating tests
 #   style    — formatting, no logic change
 name = "cz_conventional_commits"
-version = "0.2.0"
-version_files = ["pyproject.toml:version"]
+# Source de vérité = le TAG git (pas un champ dans un fichier).
+#   version_provider = "scm" → la version est dérivée des tags via `git describe`
+#   (cf. doc commitizen « version_provider »). On développe N features sans jamais
+#   écrire de numéro à la main ; `cz bump` lit le dernier tag + les Conventional
+#   Commits depuis ce tag pour calculer le prochain numéro et créer le nouveau tag.
+version_provider = "scm"
 tag_format = "v$version"
+# En 0.x (pré-1.0), un BREAKING CHANGE reste un bump MINEUR (pas majeur) : tant
+# qu'on n'a pas livré la 1.0, l'API est instable par convention SemVer.
+major_version_zero = true
+# update_changelog_on_bump = true → `cz bump` régénère le CHANGELOG dans la foulée.
+update_changelog_on_bump = true
+# Baseline = v0.1.0 (audit timeline 2026-06-19). Le 0.2.0 historique (pyproject /
+# package.json) est un FANTÔME jamais taggé → abandonné, pas de backfill. La 1ʳᵉ
+# release pilotée par cz sera v0.4.0 à la fermeture du milestone (merge dev→main).
+# Le champ `[project].version`/`package.json` n'est plus la source de vérité avec
+# version_provider="scm" (aucun code ne le lit : package-mode=false, pas de
+# __version__) → on ne le rewrite plus au bump, donc pas de `version_files`.
 
 [tool.ruff.lint.isort]
 # Tell isort that these are our first-party packages
