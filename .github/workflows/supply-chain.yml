@@ -44,13 +44,13 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # Jobs read-only → ne pas laisser le token dans le git config (zizmor artipacked).
           persist-credentials: false
 
       - name: Set up Node.js 20
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
 
@@ -70,18 +70,18 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # Jobs read-only → ne pas laisser le token dans le git config (zizmor artipacked).
           persist-credentials: false
 
       - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
       - name: Set up Node.js 20
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
 
@@ -90,7 +90,7 @@ jobs:
 
       # Cache du virtualenv Poetry — même clé que ci.yml (hash de poetry.lock).
       - name: Cache Poetry virtualenv
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/pypoetry/virtualenvs
           key: poetry-venv-${{ runner.os }}-py3.13-${{ hashFiles('poetry.lock') }}
@@ -113,7 +113,7 @@ jobs:
         run: npx --yes @cyclonedx/cyclonedx-npm@latest --package-lock-only --output-format JSON --output-file sbom-npm.json
 
       - name: Upload SBOM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sbom-cyclonedx
           path: |
