@@ -58,7 +58,10 @@ def test_seed_lookup_does_not_grab_real_homonym_account():
         is_demo=False,
     )
 
-    # Reproduit le get_or_create du seed (#202) : is_demo=True dans la clé.
+    # Reproduit le lookup FALLBACK du seed (compte sans identifiant — Yuh) :
+    # (institution, name, is_demo=True). Les comptes à identifiant synthétique
+    # (UBS iban / CIC contract_number) sont désormais résolus par cet identifiant
+    # (cf. _ensure_accounts), mais la garde anti-homonyme #202 reste sur ce fallback.
     acc, created = Account.objects.get_or_create(
         institution=inst,
         name="UBS Compte courant",

@@ -512,3 +512,13 @@ IMPORT_ENCRYPTION_KEY = config("IMPORT_ENCRYPTION_KEY", default="")
 # Le seed refuse de tourner si le mot de passe est vide (pas de user démo sans mdp).
 DEMO_USER_EMAIL = config("DEMO_USER_EMAIL", default="demo@bricbudget.local")
 DEMO_USER_PASSWORD = config("DEMO_USER_PASSWORD", default="")
+
+
+# ── Seed perso de l'admin (#146) ──────────────────────────────────────────────
+# User cible par défaut de `manage.py seed_perso` (catégories perso + règles Finary,
+# owner=user) et de l'action admin associée. Surchargeable via --user. C'est un EMAIL
+# de compte applicatif (pas un identifiant bancaire), donc committable en défaut —
+# overridable en .env pour une autre instance/propriétaire.
+PERSO_SEED_USER_EMAIL = config(
+    "PERSO_SEED_USER_EMAIL", default="emmanuel.barriol@gmail.com"
+)

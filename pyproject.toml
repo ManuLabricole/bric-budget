@@ -57,11 +57,26 @@ pytest-testmon = "^2.2.0"
 pytest-randomly = "^4.0"
 pytest-xdist = "^3.8.0"
 django-test-migrations = "^1.5.0"
+factory-boy = "^3.3.3"
+pytest-factoryboy = "^2.8.1"
+playwright = "^1.60.0"
+pytest-playwright = "^0.8.0"
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings"
 pythonpath = ["src"]
 testpaths = ["src/tests"]
+# addopts : options passées à CHAQUE run pytest.
+#   -m "not e2e" → EXCLUT par défaut les tests navigateur Playwright (#159).
+#     Ils vivent sous src/tests/e2e/ donc testpaths les découvrirait, mais ils
+#     exigent un chromium installé (`playwright install chromium`) absent du
+#     pre-push et du job CI principal `test` → sans ce filtre ils ERREUR-eraient
+#     (pas skip). On les opt-in explicitement via `pytest -m e2e` (job CI e2e dédié).
+addopts = "-m \"not e2e\""
+# markers : déclare les marqueurs custom pour éviter le warning "unknown mark".
+markers = [
+    "e2e: test end-to-end navigateur (Playwright + live_server). Opt-in, headless.",
+]
 
 
 # =============================================================================

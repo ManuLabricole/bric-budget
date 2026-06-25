@@ -1,0 +1,35 @@
+{% extends "base_public.html" %}
+{% comment %}
+404.html — page « introuvable » au design maison (#167).
+
+Django utilise automatiquement ce template (placé à la racine de TEMPLATES['DIRS'])
+pour les réponses 404 quand DEBUG=False — aucun handler404 custom n'est nécessaire.
+On étend base_public.html (chrome public, ni nav app ni requête DB) pour rester
+rendable même hors session authentifiée. Page volontairement statique : aucune
+résolution d'URL ni accès au contexte, juste un lien brut vers l'accueil.
+
+Tokens utilisés (déjà présents dans tailwind.css buildé, cf. login.html) :
+bg-surface-3, border-edge, text-text-base/-muted, bg-gold/text-black — donc PAS
+de nouveau build CSS requis.
+{% endcomment %}
+{% block title %}Page introuvable — BricBudget{% endblock %}
+{% block content %}
+    <main class="flex min-h-screen flex-col items-center justify-center px-4 text-center">
+        <div class="w-full max-w-sm space-y-6">
+            <p class="text-xs font-medium tracking-widest text-text-muted">ERREUR 404</p>
+            <h1 class="text-2xl font-semibold tracking-tight text-text-base">Page introuvable</h1>
+            <p class="text-sm text-text-muted">La page que vous cherchez n'existe pas ou a été déplacée.</p>
+            {% comment %}
+            href="/" volontaire (pas {% url %}) : une page d'erreur doit rester
+            rendable même si la résolution d'URL fait partie du problème. On désactive
+            D018 localement plutôt que de relâcher la règle globalement.
+            {% endcomment %}
+            {# djlint:off D018 #}
+            <a href="/"
+               class="inline-block rounded-lg bg-gold px-4 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-gold/90">
+                Retour à l'accueil
+            </a>
+            {# djlint:on D018 #}
+        </div>
+    </main>
+{% endblock %}

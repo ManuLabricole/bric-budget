@@ -332,6 +332,106 @@ jobs:
           poetry run python manage.py sync_reference_data
           poetry run python manage.py sync_reference_data --dry-run
 
+  # ── E2E navigateur (Playwright + live_server) ────────────────────────────────
+  # Job SÉPARÉ du job `test` (#159) : lance les smokes end-to-end navigateur dans un
+  # vrai chromium headless contre un vrai serveur Django (live_server). Ne touche PAS
+  # le step `test` principal — ces tests sont opt-in via le marker `e2e` (la suite par
+  # défaut les exclut, cf. pyproject `addopts = -m "not e2e"`). Navigateur en cache,
+  # artefacts (traces + screenshots) uploadés uniquement en cas d'échec pour debug.
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: bricbudget
+          POSTGRES_USER: bricbudget
+          POSTGRES_PASSWORD: bricbudget
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DEBUG: "True"
+      DATABASE_URL: postgresql://bricbudget:bricbudget@localhost:5432/bricbudget
+      IMPORT_ENCRYPTION_KEY: ""
+      ADMIN_URL: admin
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: poetry-venv-${{ runner.os }}-py3.13-${{ hashFiles('poetry.lock') }}
+          restore-keys: |
+            poetry-venv-${{ runner.os }}-py3.13-
+
+      - name: Install dependencies
+        run: poetry install --no-root
+
+      # Cache du navigateur Playwright : ~/.cache/ms-playwright. Clé indexée sur la
+      # version de playwright (poetry.lock) → re-télécharge seulement quand elle bouge.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('poetry.lock') }}
+
+      # Binaire navigateur (caché sous ~/.cache/ms-playwright) → re-téléchargé UNIQUEMENT
+      # sur cache-miss. Les libs système (fonts, libnss…) ne sont PAS dans ce cache →
+      # install-deps tourne toujours. On limite à chromium (1 navigateur = suite stable).
+      - name: Install Playwright chromium (binaire — sauté si cache-hit)
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: poetry run playwright install chromium
+      - name: Install Playwright system deps (libs OS, non cachées)
+        run: poetry run playwright install-deps chromium
+
+      - name: Generate CI secret key
+        run: python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(50))" >> "$GITHUB_ENV"
+
+      - name: Run migrations
+        run: cd src && poetry run python manage.py migrate --noinput
+
+      # -m e2e : opt-in explicite (la suite par défaut exclut ce marker).
+      # --reuse-db : réutilise la base migrée ci-dessus. -p no:randomly : ordre figé.
+      # --screenshot/--tracing only-on-failure : artefacts de debug seulement si rouge.
+      - name: Run E2E tests (headless)
+        run: |
+          poetry run pytest -m e2e -q \
+            -p no:randomly --reuse-db \
+            --screenshot=only-on-failure \
+            --tracing=retain-on-failure \
+            --output=e2e-artifacts
+
+      # En cas d'échec, on remonte traces Playwright + screenshots → ouvrables dans
+      # trace.playwright.dev pour rejouer le parcours pas à pas (critère d'acceptation).
+      - name: Upload E2E artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: e2e-artifacts/
+          retention-days: 7
+          if-no-files-found: ignore
+
   # ── Security (semgrep SAST) ──────────────────────────────────────────────────
   # Analyse statique de sécurité avec les rulesets registry semgrep (Django / OWASP
   # / secrets), maintenus par la communauté. `--error` fait échouer la CI sur toute
