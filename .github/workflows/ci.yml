@@ -27,6 +27,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Moindre privilège : aucun job de cette CI n'écrit dans le repo (lint/test/smoke/e2e/
+# release-commands sont read-only). Le GITHUB_TOKEN est restreint en lecture.
+permissions:
+  contents: read
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -331,6 +336,97 @@ jobs:
           poetry run python manage.py sync_reference_data
           poetry run python manage.py sync_reference_data
           poetry run python manage.py sync_reference_data --dry-run
+
+  # ── Deploy guards (collectstatic prod + smoke /healthz/) ─────────────────────
+  # Garde-fous contre les régressions « deploy-breaking » qui passent la CI au vert
+  # et ne pètent qu'au déploiement Railway (#165, part of #160). Job DÉDIÉ, séparé
+  # des jobs existants — ne touche aucun autre step.
+  #
+  #   1. collectstatic en config PROD (DEBUG=False → CompressedManifestStaticFilesStorage,
+  #      settings.py:377) : reproduit EXACTEMENT la phase build de nixpacks.toml:49. En
+  #      DEBUG=True le storage est permissif ; un {% static %} cassé n'échoue qu'avec le
+  #      manifest → build Railway rouge alors que la CI était verte. Ici → CI rouge.
+  #   2. smoke /healthz/ : démarre l'app comme en prod (gunicorn, DEBUG=False) et vérifie
+  #      que la route de liveness pinguée par Railway répond 200 en ANONYME. Un middleware
+  #      auth global ou un boot cassé la casserait → reboot en boucle. Ici → CI rouge.
+  #
+  # Note : makemigrations --check n'est PAS ici — il est porté par #197 (PR #223).
+  deploy-guard:
+    name: Deploy guards (collectstatic + smoke healthz)
+    runs-on: ubuntu-latest
+
+    # Postgres requis : settings.py lit DATABASE_URL au boot, et gunicorn initialise
+    # axes/middleware au démarrage. /healthz/ ne touche pas la DB, mais le boot oui.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: bricbudget
+          POSTGRES_USER: bricbudget
+          POSTGRES_PASSWORD: bricbudget
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://bricbudget:bricbudget@localhost:5432/bricbudget
+      IMPORT_ENCRYPTION_KEY: ""
+      ADMIN_URL: admin
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: poetry-venv-${{ runner.os }}-py3.13-${{ hashFiles('poetry.lock') }}
+          restore-keys: |
+            poetry-venv-${{ runner.os }}-py3.13-
+
+      - name: Install dependencies
+        run: poetry install --no-root
+
+      - name: Generate CI secret key
+        run: python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(50))" >> "$GITHUB_ENV"
+
+      # collectstatic en config PROD : reproduit nixpacks.toml:49. DEBUG=False active le
+      # manifest storage → un {% static %} cassé fait échouer ce step (donc la CI).
+      - name: collectstatic (prod manifest storage)
+        env:
+          DEBUG: "False"
+          ALLOWED_HOSTS: localhost
+        run: cd src && poetry run python manage.py collectstatic --noinput
+
+      # axes (middleware actif en DEBUG=False) initialise ses tables au boot gunicorn :
+      # sans migrate préalable, le boot crashe → le guard deviendrait rouge pour une
+      # mauvaise raison (échec parasite non lié à /healthz/), ou vert par accident si
+      # le Postgres du service est recyclé. On migre pour un boot prod fidèle.
+      - name: Apply migrations (requis par axes au boot gunicorn)
+        env:
+          DEBUG: "False"
+          ALLOWED_HOSTS: localhost
+        run: cd src && poetry run python manage.py migrate --noinput
+
+      # smoke : gunicorn (prod) + curl /healthz/ anonyme → 200. Le manifest généré
+      # ci-dessus est requis (CompressedManifest exige staticfiles.json en DEBUG=False).
+      - name: Smoke /healthz/ (gunicorn prod boot)
+        run: ./scripts/smoke_healthz.sh
 
   # ── E2E navigateur (Playwright + live_server) ────────────────────────────────
   # Job SÉPARÉ du job `test` (#159) : lance les smokes end-to-end navigateur dans un
