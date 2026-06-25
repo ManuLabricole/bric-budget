@@ -24,12 +24,15 @@ from __future__ import annotations
 import hashlib
 from datetime import date
 from decimal import Decimal
+from typing import cast
 from unittest.mock import patch
 
 import pytest
 from django.urls import reverse
 from django.utils import timezone
 
+from accounts.models import Account
+from connectors.base import TransactionDict
 from patrimoine.services.valuation import current_value, net_worth_series
 from tests.factories import (
     AccountFactory,
@@ -38,8 +41,20 @@ from tests.factories import (
     CategoryFactory,
     UserFactory,
 )
-from transactions.models import Transaction
+from transactions.models import Category, Transaction
 from transactions.services import ImportService
+
+
+# factory_boy ne propage pas le type du modèle à mypy (DjangoModelFactory.__call__
+# renvoie le type factory) → wrappers typés pour les sites qui passent le résultat à
+# du code de prod strictement typé (ImportService.run, lookups, comparaisons).
+def _acct(**kwargs: object) -> Account:
+    return cast(Account, AccountFactory(**kwargs))
+
+
+def _cat(**kwargs: object) -> Category:
+    return cast(Category, CategoryFactory(**kwargs))
+
 
 # Connectors normalisent leurs lignes en TransactionDict (cf. connectors/base.py).
 # On en fabrique directement ici : l'objet du test est la chaîne règle → catégo →
@@ -58,7 +73,7 @@ def make_tx_dict(
     currency: str = "CHF",
     on: str = "2026-03-17",
     seed: str | None = None,
-) -> dict:
+) -> TransactionDict:
     """Construit un TransactionDict normalisé (sortie de connecteur).
 
     `import_hash` dérivé de seed (ou description+amount) → unique & stable, comme
@@ -67,16 +82,19 @@ def make_tx_dict(
     """
     key = seed or f"{description}|{amount}|{on}"
     import_hash = hashlib.sha256(key.encode(), usedforsecurity=False).hexdigest()
-    return {
-        **TX_FIELDS_DEFAULTS,
-        "date": on,
-        "amount": amount,
-        "currency": currency,
-        "description_raw": description,
-        "display_name": description,
-        "merchant_name": description,
-        "import_hash": import_hash,
-    }
+    return cast(
+        TransactionDict,
+        {
+            **TX_FIELDS_DEFAULTS,
+            "date": on,
+            "amount": amount,
+            "currency": currency,
+            "description_raw": description,
+            "display_name": description,
+            "merchant_name": description,
+            "import_hash": import_hash,
+        },
+    )
 
 
 def _file_hash(label: str) -> str:
@@ -96,8 +114,8 @@ def test_rule_keyword_assigns_category_through_import_chain():
     Chaîne : TransactionDict → ImportService.run → _find_rule (substring) → DB.
     """
     user = UserFactory()
-    account = AccountFactory(members=[user])
-    category = CategoryFactory(name="Alimentation", slug="alimentation", owner=user)
+    account = _acct(members=[user])
+    category = _cat(name="Alimentation", slug="alimentation", owner=user)
     CategorizationRuleFactory(
         keyword="MIGROS", category=category, owner=user, target_field="display_name"
     )
@@ -125,8 +143,8 @@ def test_no_matching_rule_leaves_category_unassigned():
     source reste DEFAULT (jamais RULE) → on prouve que _find_rule n'a rien matché.
     """
     user = UserFactory()
-    account = AccountFactory(members=[user])
-    category = CategoryFactory(slug="loisirs", owner=user)
+    account = _acct(members=[user])
+    category = _cat(slug="loisirs", owner=user)
     CategorizationRuleFactory(keyword="SPOTIFY", category=category, owner=user)
 
     ImportService().run(
@@ -147,9 +165,9 @@ def test_no_matching_rule_leaves_category_unassigned():
 def test_higher_priority_rule_wins_at_import():
     """Deux règles matchent → la plus prioritaire (priority desc) gagne en DB."""
     user = UserFactory()
-    account = AccountFactory(members=[user])
-    cat_low = CategoryFactory(slug="cat-low", owner=user)
-    cat_high = CategoryFactory(slug="cat-high", owner=user)
+    account = _acct(members=[user])
+    cat_low = _cat(slug="cat-low", owner=user)
+    cat_high = _cat(slug="cat-high", owner=user)
     CategorizationRuleFactory(keyword="STORE", category=cat_low, owner=user, priority=1)
     CategorizationRuleFactory(
         keyword="APPLE STORE", category=cat_high, owner=user, priority=10
@@ -177,8 +195,8 @@ def test_rule_of_other_user_does_not_categorize_my_import():
     """
     user_a = UserFactory()
     user_b = UserFactory()
-    account_a = AccountFactory(members=[user_a])
-    cat_b = CategoryFactory(slug="cat-de-b", owner=user_b)
+    account_a = _acct(members=[user_a])
+    cat_b = _cat(slug="cat-de-b", owner=user_b)
     # Règle PERSO de B qui matcherait la description importée par A.
     CategorizationRuleFactory(keyword="COOP", category=cat_b, owner=user_b)
 
@@ -215,10 +233,8 @@ def test_budget_index_aggregates_transactions_by_category(client):
     contenu, pas juste le statut (rules/testing.md).
     """
     user = UserFactory()
-    account = AccountFactory(members=[user])
-    category = CategoryFactory(
-        name="Restaurants BudgetAgg", slug="resto-agg", owner=user
-    )
+    account = _acct(members=[user])
+    category = _cat(name="Restaurants BudgetAgg", slug="resto-agg", owner=user)
     # Deux dépenses dans le mois courant, même catégorie → agrégées.
     from tests.factories.transactions import TransactionFactory
 
@@ -255,11 +271,9 @@ def test_budget_index_excludes_ignored_transactions_from_aggregate(client):
     from tests.factories.transactions import TransactionFactory
 
     user = UserFactory()
-    account = AccountFactory(members=[user])
-    visible_cat = CategoryFactory(name="Visible Cat", slug="visible-cat", owner=user)
-    hidden_cat = CategoryFactory(
-        name="Hidden Ignored Cat", slug="hidden-cat", owner=user
-    )
+    account = _acct(members=[user])
+    visible_cat = _cat(name="Visible Cat", slug="visible-cat", owner=user)
+    hidden_cat = _cat(name="Hidden Ignored Cat", slug="hidden-cat", owner=user)
 
     TransactionFactory(
         account=account,
@@ -296,8 +310,8 @@ def test_budget_index_does_not_show_other_users_categories(client):
 
     user_a = UserFactory()
     user_b = UserFactory()
-    account_b = AccountFactory(members=[user_b])
-    cat_b = CategoryFactory(name="Cat Secrete De B", slug="cat-secrete-b", owner=user_b)
+    account_b = _acct(members=[user_b])
+    cat_b = _cat(name="Cat Secrete De B", slug="cat-secrete-b", owner=user_b)
     TransactionFactory(
         account=account_b,
         category=cat_b,
@@ -327,8 +341,8 @@ def test_net_worth_sums_chf_and_eur_accounts():
     """
     user = UserFactory()
     on = date(2026, 3, 17)
-    chf_account = AccountFactory(members=[user], currency="CHF")
-    eur_account = AccountFactory(members=[user], currency="EUR")
+    chf_account = _acct(members=[user], currency="CHF")
+    eur_account = _acct(members=[user], currency="EUR")
 
     BalanceSnapshotFactory(
         account=chf_account,
@@ -370,7 +384,7 @@ def test_net_worth_incomplete_when_eur_conversion_missing():
     """
     user = UserFactory()
     on = date(2026, 3, 17)
-    eur_account = AccountFactory(members=[user], currency="EUR")
+    eur_account = _acct(members=[user], currency="EUR")
     # balance_chf NULL = conversion pas encore calculée.
     BalanceSnapshotFactory(
         account=eur_account,
@@ -392,7 +406,7 @@ def test_net_worth_incomplete_when_eur_conversion_missing():
 def test_current_value_none_without_snapshot_anchor():
     """Cas limite : compte sans aucun snapshot → valeur inconnue (None), jamais 0."""
     user = UserFactory()
-    account = AccountFactory(members=[user], currency="CHF")
+    account = _acct(members=[user], currency="CHF")
 
     assert current_value(account, date(2026, 3, 17)) is None
 
@@ -407,8 +421,8 @@ def test_net_worth_excludes_other_users_account():
     user_a = UserFactory()
     user_b = UserFactory()
     on = date(2026, 3, 17)
-    account_a = AccountFactory(members=[user_a], currency="CHF")
-    account_b = AccountFactory(members=[user_b], currency="CHF")
+    account_a = _acct(members=[user_a], currency="CHF")
+    account_b = _acct(members=[user_b], currency="CHF")
 
     BalanceSnapshotFactory(
         account=account_a,
@@ -447,8 +461,8 @@ def test_two_users_import_same_payload_isolated_chains():
     """
     user_a = UserFactory()
     user_b = UserFactory()
-    account_a = AccountFactory(members=[user_a])
-    account_b = AccountFactory(members=[user_b])
+    account_a = _acct(members=[user_a])
+    account_b = _acct(members=[user_b])
 
     ImportService().run(
         transactions=[make_tx_dict(description="A-ONLY TX", amount=-11.0, seed="a")],
