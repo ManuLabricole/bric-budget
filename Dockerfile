@@ -35,6 +35,7 @@ https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo "$VERSION_C
 ENV POETRY_VERSION=2.4.1 \
     POETRY_VIRTUALENVS_CREATE=false \
     PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 RUN pip install --no-cache-dir "poetry==${POETRY_VERSION}"
 
@@ -58,6 +59,13 @@ RUN cd src \
  && SECRET_KEY=build-only-not-secret ALLOWED_HOSTS=localhost DEBUG=False \
     DATABASE_URL=postgresql://build:build@localhost:5432/build \
     poetry run python manage.py collectstatic --noinput
+
+# ── Sécurité : user non-root ──────────────────────────────────────────────────
+# On crée l'image en root (apt, install) puis on bascule sur un user sans privilège
+# pour le runtime ET le pre-deploy. dump_db_to_s3 écrit dans /tmp (world-writable),
+# migrate ne touche que la DB → aucun besoin de root au runtime.
+RUN useradd --create-home --uid 10001 appuser && chown -R appuser:appuser /app
+USER appuser
 
 # ── Start ─────────────────────────────────────────────────────────────────────
 # Ex-Procfile. Forme shell (string) → $PORT injecté par Railway est expansé.
