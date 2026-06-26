@@ -43,10 +43,17 @@ ts="$(date +%Y%m%d_%H%M%S)"
 out="$BACKUP_DIR/prod_${ts}.sql.gz"
 
 echo "💾 Dump PROD → $out (pg_dump via postgres:${PG_IMAGE_TAG})…"
+# set -e + pipefail : un pg_dump qui échoue (auth/réseau) sort AVANT le size-check
+# et laisserait un $out tronqué. Le trap supprime le dump partiel sur tout chemin
+# d'erreur ; on le désarme à la toute fin une fois le fichier validé.
+trap 'rm -f "$out"' EXIT
 # --clean --if-exists : le dump se restaure sur une base existante sans erreur.
 # --no-owner --no-privileges : restaurable dans une DB scratch sans rejouer les rôles.
-docker run --rm -i "postgres:${PG_IMAGE_TAG}" \
-    pg_dump "$PROD_DATABASE_URL" --clean --if-exists --no-owner --no-privileges \
+# -e PROD_DATABASE_URL : on passe le NOM de la variable (sa valeur secrète vient de
+# l'env du shell), jamais l'URL en argv → invisible dans `ps aux`. sh -c la déréférence
+# DANS le conteneur, où elle n'apparaît pas non plus dans la table des process hôte.
+docker run --rm -i -e PROD_DATABASE_URL "postgres:${PG_IMAGE_TAG}" \
+    sh -c 'pg_dump "$PROD_DATABASE_URL" --clean --if-exists --no-owner --no-privileges' \
     | gzip > "$out"
 
 # Un dump qui a échoué silencieusement (auth, réseau) produit un fichier minuscule.
@@ -56,6 +63,8 @@ if [ "$size_bytes" -lt 1024 ]; then
     exit 1
 fi
 
+# Dump validé → on désarme le trap pour CONSERVER le fichier.
+trap - EXIT
 echo "✅ Backup PROD créé : $out ($(du -h "$out" | cut -f1))"
 echo "   ⚠️ Données sensibles — gitignoré, ne jamais committer/partager."
 echo "   Restauration testée : voir le runbook (ops.md → « Restore testée »)."

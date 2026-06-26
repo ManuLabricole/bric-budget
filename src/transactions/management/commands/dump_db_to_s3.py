@@ -24,7 +24,7 @@ import os
 import subprocess
 import tempfile
 from datetime import timedelta
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import boto3
 from django.core.management.base import BaseCommand, CommandError
@@ -73,8 +73,15 @@ class Command(BaseCommand):
         logger.info("db backup → s3://%s/%s (%d octets bruts)", bucket, key, raw_bytes)
         self.stdout.write(self.style.SUCCESS(f"✅ Backup DB → s3://{bucket}/{key}"))
 
+        # Rotation = best-effort : le backup est DÉJÀ uploadé (ligne ci-dessus). Un
+        # échec de purge (S3 transitoire, droits delete manquants) ne doit PAS faire
+        # échouer le pre-deploy et bloquer migrate alors qu'un backup valide existe.
         retention = int(options["retention_days"])  # type: ignore[call-overload]
-        purged = _rotate(client, bucket, retention)
+        try:
+            purged = _rotate(client, bucket, retention)
+        except Exception:
+            logger.exception("db backup rotation a échoué (backup déjà conservé)")
+            purged = 0
         if purged:
             logger.info(
                 "db backup rotation : %d dump(s) > %dj supprimé(s)", purged, retention
@@ -116,12 +123,15 @@ def _pg_dump_gzip(database_url: str, out_path: str) -> int:
     la liste des process). pg_dump doit être dans le PATH (nixpacks postgresql).
     """
     u = urlparse(database_url)
+    # urlparse NE décode PAS le percent-encoding du userinfo → un user/mot de passe
+    # contenant @ : / % (ex. "p%40ss") serait passé tel quel à pg_dump et l'auth
+    # échouerait. On décode explicitement user + password (unquote("") == "").
     env = {
         **os.environ,
         "PGHOST": u.hostname or "",
         "PGPORT": str(u.port or 5432),
-        "PGUSER": u.username or "",
-        "PGPASSWORD": u.password or "",
+        "PGUSER": unquote(u.username or ""),
+        "PGPASSWORD": unquote(u.password or ""),
         "PGDATABASE": (u.path or "").lstrip("/"),
     }
     # --clean --if-exists : restaurable sur une base existante.

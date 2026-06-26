@@ -115,3 +115,23 @@ def test_missing_database_url_raises(monkeypatch):
 
     with pytest.raises(CommandError):
         call_command("dump_db_to_s3")
+
+
+def test_pg_dump_env_decodes_percent_encoded_credentials(s3, monkeypatch):
+    # urlparse ne décode PAS le %-encoding → un mot de passe "p@ss/w:rd" encodé en
+    # "p%40ss%2Fw%3Ard" doit arriver DÉCODÉ dans PGPASSWORD, sinon l'auth pg_dump casse.
+    monkeypatch.setenv(
+        "DATABASE_URL", "postgresql://us%40er:p%40ss%2Fw%3Ard@host:5432/db"
+    )
+    captured: dict = {}
+
+    def _capture_popen(*args, **kwargs):
+        captured["env"] = kwargs.get("env", {})
+        return _FakeProc(b"-- SQL DUMP\n" * 300, returncode=0)
+
+    monkeypatch.setattr(mod.subprocess, "Popen", _capture_popen)
+
+    call_command("dump_db_to_s3")
+
+    assert captured["env"]["PGUSER"] == "us@er"
+    assert captured["env"]["PGPASSWORD"] == "p@ss/w:rd"
