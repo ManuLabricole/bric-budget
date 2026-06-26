@@ -19,7 +19,11 @@
 # On déclare explicitement Python 3.13 pour ne pas dépendre de la détection auto.
 # nixpacks utilise Nix en dessous — "python313" est le nom du package Nix.
 [phases.setup]
-nixPkgs = ["python313"]
+# python313 : runtime. postgresql_16 : fournit `pg_dump` au RUNTIME pour la commande
+# de backup (dump_db_to_s3, #257), lancée en pre-deploy + cron. ⚠️ Doit être >= à la
+# version du serveur Postgres Railway (pg_dump refuse un serveur plus récent) → si
+# Railway passe en PG 17, bumper ici. Sans ce paquet : « pg_dump: command not found ».
+nixPkgs = ["python313", "postgresql_16"]
 
 # ── Phase install ─────────────────────────────────────────────────────────────
 # Nixpacks détecte pyproject.toml et lance poetry install automatiquement.
