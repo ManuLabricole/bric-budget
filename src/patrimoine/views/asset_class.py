@@ -14,6 +14,7 @@ Sécurité (SR-001) : listing scopé via Account.objects.for_user — jamais .al
 from __future__ import annotations
 
 import datetime
+import logging
 from decimal import Decimal
 
 from django.contrib.auth.decorators import login_required
@@ -26,19 +27,21 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from accounts.models import Account, BalanceSnapshot
-from budget.utils import _resolve_bank_icon_map
 from patrimoine.context_processors import SIDEBAR_SESSION_KEY
 from patrimoine.services.asset_classes import get_asset_class
 from patrimoine.services.balance_history import PERIODS, period_bounds
 from patrimoine.services.bilan import BilanNode
 from patrimoine.services.chart_data import (
-    _STACK_PALETTE,
     account_class_series,
+    account_color,
     distribution,
 )
 from patrimoine.services.valuation import current_value
 from patrimoine.views.overview import PERIOD_LABELS
+from services.logos import get_institution_icon_map
 from transactions.models import Transaction
+
+logger = logging.getLogger(__name__)
 
 _PERIOD_KEY_PREFIX = "patrimoine_ac_period_"
 _STACKED_KEY_PREFIX = "patrimoine_ac_stacked_"
@@ -93,12 +96,26 @@ def _earliest_date(accounts) -> datetime.date | None:
     return min(candidates) if candidates else None
 
 
-def _build_institution_groups(accounts, values: dict) -> list[dict]:
+def _account_colors(accounts) -> dict[int, str]:
+    """
+    Couleur de chaque compte = sa couleur dans la courbe ET le treemap.
+
+    Source = Account.colour_hex (couleur stable allouée à la création, #134), avec
+    fallback _STACK_PALETTE indexé par position dans la liste `accounts` (ordre
+    institution__name, name) — MÊME helper que `account_class_series` (chart_data.py),
+    donc courbe, treemap et pastilles restent alignés compte par compte.
+    L'onglet Comptes affiche une pastille de cette couleur devant chaque compte.
+    """
+    return {acc.pk: account_color(acc, i) for i, acc in enumerate(accounts)}
+
+
+def _build_institution_groups(accounts, values: dict, colors: dict) -> list[dict]:
     """
     Groupe les comptes par institution avec valeurs courantes en CHF.
 
-    Retourne [{institution, accounts: [{account, value}], total}].
+    Retourne [{institution, accounts: [{account, value, color}], total}].
     `values` = {account.pk: Decimal | None} pré-calculé par l'appelant (évite N+1).
+    `colors` = {account.pk: str hex} couleur de série (cf. _account_colors).
     `total` = somme des valeurs non-None (0 si aucune).
     """
     groups: dict[int | None, dict] = {}
@@ -112,7 +129,9 @@ def _build_institution_groups(accounts, values: dict) -> list[dict]:
                 "total": Decimal("0"),
             }
         val = values.get(acc.pk)
-        groups[key]["accounts"].append({"account": acc, "value": val})
+        groups[key]["accounts"].append(
+            {"account": acc, "value": val, "color": colors.get(acc.pk)}
+        )
         if val is not None:
             groups[key]["total"] += val
     return list(groups.values())
@@ -135,7 +154,7 @@ def _get_tx_page(accounts, page_number: int):
     except InvalidPage:
         page_obj = paginator.page(1)
 
-    bank_icon_map = _resolve_bank_icon_map()
+    institution_icon_map = get_institution_icon_map()
     tx_list = list(page_obj.object_list)
     for tx in tx_list:
         slug = (
@@ -143,7 +162,7 @@ def _get_tx_page(accounts, page_number: int):
             if tx.account and tx.account.institution
             else ""
         )
-        tx.bank_icon_url = bank_icon_map.get(slug, "")
+        tx.institution_icon_url = institution_icon_map.get(slug, "")
 
     return tx_list, page_obj
 
@@ -168,21 +187,25 @@ def _asset_class_context(request, asset_class) -> dict:
 
     chart_json = account_class_series(accounts, start, end)
 
+    # Source unique des couleurs : pastilles onglet Comptes, séries de la courbe
+    # et nœuds du treemap partagent _account_colors (même index pour les 3).
+    colors = _account_colors(accounts)
+
     # Distribution treemap : couleurs alignées avec les séries du graphe (_STACK_PALETTE).
     dist_nodes = [
         BilanNode(
             label=acc.name,
             value=values_today.get(acc.pk),
-            color=_STACK_PALETTE[i % len(_STACK_PALETTE)],
+            color=colors[acc.pk],
             url=None,
         )
-        for i, acc in enumerate(accounts)
+        for acc in accounts
     ]
     dist_json = distribution([n for n in dist_nodes if n.value is not None])
 
     ctx: dict = {
         "asset_class": asset_class,
-        "institution_groups": _build_institution_groups(accounts, values_today),
+        "institution_groups": _build_institution_groups(accounts, values_today, colors),
         "chart_json": chart_json,
         "dist_json": dist_json,
         "stacked": stacked,
@@ -244,6 +267,17 @@ def set_asset_class_period(request, slug: str, period: str):
     asset_class = _get_or_404(slug)
     if period in PERIODS:
         request.session[_period_key(slug)] = period
+        logger.debug(
+            "ac_set_period user=%s slug=%s period=%s", request.user.id, slug, period
+        )
+    else:
+        # Période inconnue (URL forgée) → ignorée, mais tracée.
+        logger.debug(
+            "ac_set_period rejected user=%s slug=%s period=%r",
+            request.user.id,
+            slug,
+            period,
+        )
     return _body_or_redirect(request, asset_class)
 
 
@@ -252,7 +286,11 @@ def set_asset_class_period(request, slug: str, period: str):
 def set_asset_class_stacked(request, slug: str):
     """Bascule mode standard/empilé (session). HTMX → swap corps ; sinon redirect."""
     asset_class = _get_or_404(slug)
-    request.session[_stacked_key(slug)] = request.POST.get("stacked") == "1"
+    stacked = request.POST.get("stacked") == "1"
+    request.session[_stacked_key(slug)] = stacked
+    logger.debug(
+        "ac_set_stacked user=%s slug=%s stacked=%s", request.user.id, slug, stacked
+    )
     return _body_or_redirect(request, asset_class)
 
 
@@ -262,6 +300,12 @@ def set_asset_class_tab(request, slug: str, tab: str):
     _get_or_404(slug)
     if tab in _VALID_TABS:
         request.session[_tab_key(slug)] = tab
+        logger.debug("ac_set_tab user=%s slug=%s tab=%s", request.user.id, slug, tab)
+    else:
+        # Onglet inconnu (URL forgée) → ignoré, mais tracé.
+        logger.debug(
+            "ac_set_tab rejected user=%s slug=%s tab=%r", request.user.id, slug, tab
+        )
     return redirect("patrimoine:asset_class", slug=slug)
 
 

@@ -1,0 +1,20 @@
+{% extends "base_public.html" %}
+{% block title %}BricBudget{% endblock %}
+{% block content %}
+    <div class="min-h-screen flex flex-col items-center justify-center px-4">
+        <div class="w-full max-w-sm space-y-10 text-center">
+            {# En-tête #}
+            <div class="space-y-2">
+                <h1 class="text-3xl font-semibold tracking-tight text-text-primary">BricBudget</h1>
+                <p class="text-sm text-text-muted">Suivi budgétaire & patrimoine personnel</p>
+            </div>
+            {# CTA #}
+            <div class="space-y-3">
+                <a href="{% url 'login' %}"
+                   class="block w-full py-2.5 px-4 bg-gold text-black text-sm font-semibold rounded-lg hover:bg-gold/90 transition-colors">
+                    Se connecter
+                </a>
+            </div>
+        </div>
+    </div>
+{% endblock %}

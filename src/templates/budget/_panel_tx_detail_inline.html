@@ -1,0 +1,199 @@
+{% load budget_filters static %}
+{% comment %}
+budget/_panel_tx_detail_inline.html — Détail transaction INLINE (carte fixe, réutilisable).
+
+≠ budget/_panel_tx_detail.html (overlay) : ici la carte vit dans une div fixe du
+panel droit (pas d'overlay, pas de bouton fermer/retour). Composant partagé :
+  - Patrimoine (page asset_class) → conteneur #ac-tx-detail.
+  - Budget (page category_detail) → conteneur #cat-tx-detail, sous le donut.
+
+Contenu = contenu interne du conteneur (le <div id="…"> est dans la page hôte).
+
+Paramètres (fournis par les vues budget/views/transactions.py, config _INLINE_TX) :
+    tx                  — Transaction (select_related category/subcategory/account/institution)
+    institution_icon_url       — str URL statique (logo institution)
+    detail_id           — id du conteneur sans '#' (ex. "ac-tx-detail", "cat-tx-detail") :
+                          cible des toggles Inclure/Pointer (swap innerHTML).
+    toggle_source       — valeur "source" postée par les toggles (ex. "patrimoine_detail")
+                          → la vue renvoie cette carte + la ligne centrale en OOB.
+    picker_source       — source passée au picker via le chevron ("" ou "category").
+    picker_target       — cible HTMX du picker ("#panel-content" overlay | "#cat-tx-detail" inline).
+    picker_overlay      — bool : ouvrir le picker dans l'overlay glissant (openPanel()).
+    cashflow_refresh_url — str|None : si défini, émet le signal data-cashflow-refresh
+                          (page category_detail → rafraîchit Sankey/KPIs après toggle_ignore).
+
+Spécificités vs détail overlay budget :
+    - Toggle "Inclure dans l'analyse budgétaire" (ON = incluse = is_ignored False),
+      inverse du libellé budget "Exclure".
+    - Badge "règle intelligente" superposé sur l'icône catégorie.
+{% endcomment %}
+{% comment %} ── Titre — même style que les autres cartes du panel (Distribution / Objectif) ── {% endcomment %}
+<div class="px-5 pt-4 pb-3">
+    <h2 class="text-sm font-semibold text-text-base">Détails de la transaction</h2>
+</div>
+{% comment %} ── Description + montant CHF ── {% endcomment %}
+<div class="px-5 pb-4">
+    <p class="text-xs text-text-muted uppercase tracking-wider mb-2 leading-relaxed">{{ tx.display_name }}</p>
+    {% comment %}
+    Montant principal en CHF — amount_chf renseigné pour comptes non-CHF (taux du jour),
+    sinon fallback sur amount (déjà en CHF). chf_dec = valeur absolue → signe manuel.
+    {% endcomment %}
+    {% if tx.amount >= 0 %}
+        <p class="text-2xl font-bold text-income">+{{ tx.amount_chf|default:tx.amount|chf_dec }} CHF</p>
+    {% else %}
+        <p class="text-2xl font-bold text-expense">−{{ tx.amount_chf|default:tx.amount|chf_dec }} CHF</p>
+    {% endif %}
+</div>
+<div class="border-t border-edge/60 mx-4 mb-3"></div>
+{% comment %} ── Catégorie + badge règle + chevron → picker (overlay ou inline selon contexte) ── {% endcomment %}
+<button hx-get="{% url 'budget:panel_category_picker' %}?tx_id={{ tx.id }}{% if picker_source %}&source={{ picker_source }}{% endif %}"
+        hx-target="{{ picker_target }}"
+        hx-swap="innerHTML"
+        {% if picker_overlay %}hx-on::after-request="openPanel()"{% endif %}
+        class="mx-4 mb-3 w-[calc(100%-2rem)] flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-hover transition-colors text-left">
+    {% comment %} Icône catégorie — relative pour superposer le badge règle ── {% endcomment %}
+    <div class="relative flex-shrink-0">
+        {% if tx.category and tx.category.icon %}
+            {% with icon_path="icons/categories/"|add:tx.category.icon|add:".svg" %}
+                <div class="w-9 h-9 rounded-full flex items-center justify-center"
+                     style="background-color: {{ tx.category.colour_hex|default:'#2d3033' }}">
+                    <img src="{% static icon_path %}"
+                         width="20"
+                         height="20"
+                         class="w-5 h-5 brightness-0 invert"
+                         alt="">
+                </div>
+            {% endwith %}
+        {% else %}
+            <div class="w-9 h-9 rounded-full flex items-center justify-center bg-edge">
+                <span class="text-text-disabled text-sm font-bold">?</span>
+            </div>
+        {% endif %}
+        {% comment %}
+        Badge "règle intelligente" — petite pastille dorée en haut à droite de l'icône,
+        affichée si la transaction a été catégorisée auto (rule ou ai). Étincelles = "smart".
+        {% endcomment %}
+        {% if tx.categorization_source == "rule" or tx.categorization_source == "ai" %}
+            <span class="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-gold flex items-center justify-center ring-2 ring-surface-2">
+                <svg class="w-2.5 h-2.5 text-black/80"
+                     viewBox="0 0 24 24"
+                     fill="currentColor">
+                    <path d="M9 3 7.6 6.6 4 8l3.6 1.4L9 13l1.4-3.6L14 8l-3.6-1.4L9 3Zm7 6-1 2.5L12 13l2.5 1L16 17l1-2.5L20 13l-2.5-1L16 9Z" />
+                </svg>
+            </span>
+        {% endif %}
+    </div>
+    <div class="flex-1 min-w-0">
+        <p class="text-sm font-medium text-text-base truncate">
+            {% if tx.subcategory %}
+                {{ tx.subcategory.name }}
+            {% elif tx.category %}
+                {{ tx.category.name }}
+            {% else %}
+                Non catégorisé
+            {% endif %}
+        </p>
+        {% if tx.categorization_source == "rule" or tx.categorization_source == "ai" %}
+            <p class="text-[9px] font-semibold text-gold uppercase tracking-wider mt-0.5">Règle intelligente appliquée</p>
+        {% endif %}
+    </div>
+    <svg class="w-4 h-4 text-text-muted flex-shrink-0"
+         fill="none"
+         viewBox="0 0 24 24"
+         stroke-width="2"
+         stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+    </svg>
+</button>
+<div class="border-t border-edge/60 mx-4 mb-3"></div>
+{% comment %} ── Metadata : Compte (logo + nom) · Montant natif · Date ── {% endcomment %}
+<div class="px-5 space-y-3 mb-4">
+    <div class="flex items-center justify-between">
+        <span class="text-sm text-text-muted">Compte</span>
+        <div class="flex items-center gap-1.5">
+            {% if institution_icon_url %}
+                <img src="{{ institution_icon_url }}"
+                     width="16"
+                     height="16"
+                     class="w-4 h-4 rounded-full bg-white p-[1px] flex-shrink-0"
+                     alt="">
+            {% endif %}
+            <span class="text-sm text-text-base">{{ tx.account.name }}</span>
+        </div>
+    </div>
+    {% comment %} Montant natif — seulement si compte non-CHF (le gros montant est déjà en CHF). {% endcomment %}
+    {% if tx.currency != "CHF" %}
+        <div class="flex items-center justify-between">
+            <span class="text-sm text-text-muted">Montant {{ tx.currency }}</span>
+            <span class="text-sm text-text-base tabular-nums">
+                {% if tx.amount >= 0 %}
+                    +
+                {% else %}
+                    −
+                {% endif %}
+                {{ tx.amount|chf_dec }} {{ tx.currency }}
+            </span>
+        </div>
+    {% endif %}
+    <div class="flex items-center justify-between">
+        <span class="text-sm text-text-muted">Date</span>
+        <span class="text-sm text-text-base">{{ tx.date|date:"d/m/Y" }}</span>
+    </div>
+</div>
+<div class="border-t border-edge/60 mx-4 mb-4"></div>
+{% comment %} ── Toggles : Inclure dans l'analyse (= NOT is_ignored) · Pointer (= is_reconciled) ── {% endcomment %}
+{% comment %}
+"Inclure dans l'analyse budgétaire" = inverse de is_ignored.
+    ON (doré) si is_ignored=False (incluse, défaut), OFF (gris) si is_ignored=True.
+    Le POST toggle_ignore bascule is_ignored ; source={{ toggle_source }} → renvoie cette
+    carte (cible #{{ detail_id }}) + la ligne centrale en OOB (#tx-id).
+{% endcomment %}
+<div class="px-5 space-y-4 pb-5">
+    <div class="flex flex-col gap-1.5">
+        <div class="flex items-center justify-between gap-3">
+            <span class="text-sm text-text-secondary">Inclure dans l'analyse budgétaire</span>
+            <form hx-post="{% url 'budget:toggle_ignore' tx.id %}"
+                  hx-target="#{{ detail_id }}"
+                  hx-swap="innerHTML">
+                <input type="hidden" name="source" value="{{ toggle_source }}">
+                <button type="submit"
+                        class="flex-shrink-0 w-9 h-5 rounded-full relative transition-colors {% if not tx.is_ignored %}bg-gold{% else %}bg-edge{% endif %}">
+                    <span class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform {% if not tx.is_ignored %}translate-x-4{% else %}translate-x-0{% endif %}"></span>
+                </button>
+            </form>
+        </div>
+        {% if tx.is_internal_transfer %}
+            {% comment %} Détecté comme mouvement interne → exclu automatiquement de l'analyse. {% endcomment %}
+            <div class="flex items-center gap-1.5 pl-0.5">
+                <svg class="w-3.5 h-3.5 text-gold flex-shrink-0"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="2"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 3M21 7.5H7.5" />
+                </svg>
+                <span class="text-[10px] font-semibold text-gold">Classifiée comme mouvement interne</span>
+            </div>
+        {% endif %}
+    </div>
+    <div class="flex items-center justify-between gap-3">
+        <span class="text-sm text-text-secondary">Pointer la transaction</span>
+        <form hx-post="{% url 'budget:toggle_reconcile' tx.id %}"
+              hx-target="#{{ detail_id }}"
+              hx-swap="innerHTML">
+            <input type="hidden" name="source" value="{{ toggle_source }}">
+            <button type="submit"
+                    class="flex-shrink-0 w-9 h-5 rounded-full relative transition-colors {% if tx.is_reconciled %}bg-gold{% else %}bg-edge{% endif %}">
+                <span class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform {% if tx.is_reconciled %}translate-x-4{% else %}translate-x-0{% endif %}"></span>
+            </button>
+        </form>
+    </div>
+    {% comment %}
+    Signal de rafraîchissement cashflow (category_detail uniquement) : émis après un
+    toggle_ignore — category_detail.js relit l'attribut au swap et recharge Sankey/KPIs.
+    Absent pour patrimoine (cashflow_refresh_url non fourni).
+    {% endcomment %}
+    {% if cashflow_refresh_url %}
+        <span data-cashflow-refresh="{{ cashflow_refresh_url }}" class="hidden"></span>
+    {% endif %}
+</div>

@@ -7,19 +7,19 @@ Usage :
     python manage.py setup_accounts --file export.csv --file releve_cic.xlsx
 
 Logique :
-    1. Pour chaque fichier → detect_connector() pour identifier la banque
+    1. Pour chaque fichier → detect_connector() pour identifier l'institution
     2. Crée la Bank en DB si elle n'existe pas (métadonnées hardcodées par connecteur)
     3. Extrait les identifiants de compte depuis le fichier
     4. Crée Account + CheckingAccount / SavingsAccount si ils n'existent pas déjà
 
 Ce que la commande remplit automatiquement :
     - Bank : name, slug, icon_slug, default_currency
-    - Account : bank, name, account_type, currency, contract_number
-    - CheckingAccount : account (IBAN laissé vide — à compléter dans l'admin)
+    - Account : bank, name, account_type, currency, contract_number, iban
+    - CheckingAccount : account (BIC laissé vide — à compléter dans l'admin)
     - SavingsAccount : account (taux laissé à 0 — à compléter dans l'admin)
 
 Ce que la commande NE remplit PAS (à compléter manuellement dans l'admin) :
-    - CheckingAccount.iban  (CIC n'expose que le RIB, pas l'IBAN complet)
+    - Account.iban  (CIC n'expose que le RIB, pas l'IBAN complet)
     - CheckingAccount.bic   (jamais dans les exports)
     - SavingsAccount.interest_rate  (jamais dans les exports)
 """
@@ -36,8 +36,8 @@ from connectors.ubs.parser import UBSConnector
 from connectors.yuh.parser import YuhConnector
 
 # ── Métadonnées statiques par connecteur ──────────────────────────────────────
-# Ces infos ne changent jamais — elles caractérisent la banque, pas le compte.
-# icon_slug doit correspondre à un fichier dans static/icons/banks/miniature/.
+# Ces infos ne changent jamais — elles caractérisent l'institution, pas le compte.
+# icon_slug doit correspondre à un fichier dans static/icons/institutions/miniature/.
 BANK_DEFAULTS = {
     "yuh": {
         "name": "Yuh",
@@ -92,7 +92,7 @@ class Command(BaseCommand):
                 raise CommandError(f"Fichier introuvable : {filepath}")
 
         self.stdout.write("")
-        created_banks = 0
+        created_institutions = 0
         created_accounts = 0
 
         for filepath in files:
@@ -106,10 +106,10 @@ class Command(BaseCommand):
                 continue
 
             # ── Créer (ou récupérer) la Bank ──────────────────────────────────
-            bank_slug = self._bank_slug(connector)
-            defaults = BANK_DEFAULTS[bank_slug]
+            institution_slug = self._institution_slug(connector)
+            defaults = BANK_DEFAULTS[institution_slug]
             bank, bank_created = Institution.objects.get_or_create(
-                slug=bank_slug,
+                slug=institution_slug,
                 defaults={
                     "name": defaults["name"],
                     "icon_slug": defaults["icon_slug"],
@@ -117,7 +117,7 @@ class Command(BaseCommand):
                 },
             )
             if bank_created:
-                created_banks += 1
+                created_institutions += 1
                 self.stdout.write(
                     self.style.SUCCESS(f"    ✓  Bank « {bank.name} » créée")
                 )
@@ -133,7 +133,7 @@ class Command(BaseCommand):
         self.stdout.write("─" * 50)
         self.stdout.write(
             self.style.SUCCESS(
-                f"✓  {created_banks} banque(s) et {created_accounts} compte(s) créé(s)."
+                f"✓  {created_institutions} institution(s) et {created_accounts} compte(s) créé(s)."
             )
         )
 
@@ -159,7 +159,7 @@ class Command(BaseCommand):
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
-    def _bank_slug(self, connector):
+    def _institution_slug(self, connector):
         if isinstance(connector, YuhConnector):
             return "yuh"
         if isinstance(connector, UBSConnector):
@@ -244,13 +244,15 @@ class Command(BaseCommand):
             name=name,
             account_type=account_type,
             currency=currency,
+            # IBAN canonique sur Account (source unique #82) ; "" → None.
+            iban=iban or None,
             contract_number=contract_number,
             is_active=True,
         )
 
         # Créer la spécialisation selon le type
         if account_type == Account.AccountType.CHECKING:
-            CheckingAccount.objects.create(account=account, iban=iban, bic="")
+            CheckingAccount.objects.create(account=account, bic="")
             missing = []
             if not iban:
                 missing.append("IBAN")
@@ -271,7 +273,7 @@ class Command(BaseCommand):
 
         for ca in CheckingAccount.objects.select_related("account"):
             missing = []
-            if not ca.iban:
+            if not ca.account.iban:  # IBAN canonique sur Account (#82)
                 missing.append("IBAN")
             if not ca.bic:
                 missing.append("BIC")

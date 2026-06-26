@@ -23,7 +23,7 @@ sur GitHub ; les docs projet privées vivent dans `project/` (gitignoré).
 |---------|------|
 | `CLAUDE.md` | Config d'entrée — règles toujours actives, stack, workflow git/PR, sécurité |
 | `rules/*.md` | Conventions path-scoped : `django.md` (`src/**/*.py`), `htmx.md` + `tailwind.md` (templates), `testing.md` (tests) |
-| `commands/*.md` | Slash-commands (tu les tapes) : `/hello`, `/research`, `/plan`, `/grill`, `/review-pr`, `/diagnose`, `/improve`, `/github`, `/audit_cto`, `/audit-tests`, `/help` |
+| `commands/*.md` | Slash-commands (tu les tapes) : `/hello`, `/research`, `/plan`, `/grill`, `/review-pr`, `/diagnose`, `/improve`, `/github`, `/audit_cto`, `/audit-tests`, `/wt`, `/wt-list`, `/wt-done`, `/help` |
 | `skills/security/` | Skill sécurité (auto par `description`) : SR-XX → OWASP 2025, LLM security, Python quirks, HTTP headers + `scripts/security_audit.sh` |
 | `skills/skill-creator/` | Outillage Anthropic (Apache-2.0) : valide/scaffolde/package les skills |
 | `agents/*.md` | Subagents : `security-auditor` (audit OWASP/SR-XX), `bricbudget-reviewer` (revue Django + structurelle) |

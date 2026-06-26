@@ -3,7 +3,7 @@
 budget/_rule_standalone_preview_row.html — Rangée compacte alignée (preview règle)
 
 Layout colonne stricte — une seule ligne, tout aligné :
-    [date w-9] [logo banque w-7] [icône cat w-7] [description flex-1 truncate] [montant w-20]
+    [date w-9] [logo institution w-7] [icône cat w-7] [description flex-1 truncate] [montant w-20]
 
 Identique au panel de droite (_panel_tx_row.html) mais sans boutons d'action.
 Pas d'HTMX — lecture seule.
@@ -13,8 +13,8 @@ Pas d'HTMX — lecture seule.
     <span class="text-[10px] text-text-disabled tabular-nums flex-shrink-0 w-9 leading-none">
         {{ tx.date|date:"d/m" }}
     </span>
-    {# COL 2 — Logo banque ── cercle blanc w-7, même règle que bank_logo.html #}
-    {% include "components/banks/bank_logo.html" with icon_url=tx.bank_icon_url bank=tx.account.institution size="w-7 h-7" padding="p-1" %}
+    {# COL 2 — Logo institution ── cercle blanc w-7, même règle que institution_logo.html #}
+    {% include "components/institutions/institution_logo.html" with icon_url=tx.institution_icon_url institution=tx.account.institution size="w-7 h-7" padding="p-1" %}
     {# COL 3 — Icône catégorie ── cercle coloré w-7 #}
     <div class="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center"
          style="background-color: {{ tx.category.colour_hex|default:'#2d3033' }}">
@@ -49,6 +49,8 @@ Pas d'HTMX — lecture seule.
         {% else %}
             −
         {% endif %}
-        {{ tx.amount_chf|default:tx.amount|chf_dec }}
+        {# default_if_none (pas default) : un montant CHF de 0 est valide → ne pas le #}
+        {# remplacer par le montant en devise d'origine. Fallback uniquement si None. #}
+        {{ tx.amount_chf|default_if_none:tx.amount|money_dec:"CHF" }}
     </span>
 </div>

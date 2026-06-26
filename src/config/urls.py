@@ -16,11 +16,15 @@ Including another URLconf
 """
 
 from decouple import config
+from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.shortcuts import render
 from django.urls import include, path
+
+from demo.admin_views import seed_control
 
 # URL de l'interface admin Django — lue depuis .env pour ne pas être devinable.
 # En local : ADMIN_URL=admin (défaut, pratique)
@@ -50,7 +54,16 @@ urlpatterns = [
     # /healthz/ — Railway pingue cette URL toutes les 30s pour vérifier que
     # l'app répond. Si elle ne répond plus, Railway redémarre le container.
     path("healthz/", healthz, name="healthz"),
+    # /<admin>/demo/ — page seed/reset démo (#118), staff requis + dev-guard.
+    # AVANT l'include admin pour être matchée avant que l'admin ne capture `demo/`.
+    path(
+        f"{ADMIN_URL}/demo/",
+        admin.site.admin_view(seed_control),
+        name="demo_seed_control",
+    ),
     path(f"{ADMIN_URL}/", admin.site.urls),
+    # Landing page à la racine — avant auth.urls pour prendre la priorité sur `/`.
+    path("", include("users.urls")),
     path("", include("django.contrib.auth.urls")),
     path("synthese/", synthese, name="synthese"),
     # URLs de l'app budget — vues + templates de l'interface Budget
@@ -61,3 +74,9 @@ urlpatterns = [
     # URLs de l'app patrimoine — navigation par classe d'actifs (Phase 3A)
     path("patrimoine/", include("patrimoine.urls")),
 ]
+
+# En dev (DEBUG), Django sert les fichiers MEDIA (logos réparés #128) depuis MEDIA_ROOT.
+# En prod, le storage par défaut est le bucket S3 → URLs signées servies par le bucket,
+# jamais par Django (cette route n'est donc pas montée en prod).
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

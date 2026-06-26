@@ -1,0 +1,43 @@
+{% comment %}
+patrimoine/partials/_institution_picker.html — picker institutions (panel droit).
+
+Injecté dans #panel-content au clic sur « Compléter mon patrimoine » (base_app.html).
+La recherche ne re-swappe QUE #institution-list (hx-select) → l'input garde le focus.
+Step 1 du wizard #73 : cliquer une ligne ouvre le formulaire (_account_form.html).
+inst.icon_url est pré-résolu par la vue (map batch), pas via un tag par ligne.
+{% endcomment %}
+<div class="flex h-full flex-col p-5">
+    <div class="mb-4 flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-text-base">Compléter mon patrimoine</h2>
+        <button type="button"
+                onclick="closePanel()"
+                class="text-text-muted transition-colors hover:text-text-base">
+            <svg class="h-5 w-5"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="2"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+            </svg>
+        </button>
+    </div>
+    <p class="mb-3 text-xs text-text-muted">Choisis l'établissement où tu as un compte.</p>
+    <input type="search"
+           name="q"
+           value="{{ q }}"
+           autocomplete="off"
+           placeholder="Rechercher une institution, un courtier…"
+           hx-get="{% url 'patrimoine:institution_picker' %}"
+           hx-target="#institution-list"
+           hx-select="#institution-list"
+           hx-swap="outerHTML"
+           hx-trigger="input changed delay:200ms, search"
+           class="mb-3 w-full rounded-xl border border-edge/60 bg-surface-3 px-3 py-2 text-sm text-text-base placeholder:text-text-disabled focus:border-gold/50 focus:outline-none">
+    <div id="institution-list" class="flex-1 space-y-1 overflow-y-auto">
+        {% for row in rows %}
+            {% include "patrimoine/partials/_institution_picker_row.html" with institution=row.institution icon_url=row.icon_url %}
+        {% empty %}
+            <p class="py-8 text-center text-xs text-text-disabled">Aucune institution pour « {{ q }} »</p>
+        {% endfor %}
+    </div>
+</div>

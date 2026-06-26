@@ -13,19 +13,17 @@ Stockage temporaire :
     La session Django stocke le chemin temp + métadonnées (pas le fichier lui-même).
 """
 
-import hashlib
 import logging
 import os
 import tempfile
 from collections import defaultdict
 from datetime import date, timedelta
-from decimal import Decimal
 from pathlib import Path
 from typing import Any, cast
 
 from django.contrib.auth.decorators import login_required
 from django.db import transaction as db_transaction
-from django.db.models import Count, Max, Min
+from django.db.models import Count
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -40,7 +38,12 @@ from connectors.resolver import (
     detect_connector,
     resolve_accounts,
 )
-from imports.storage import build_import_filename, save_import_file
+from imports.orchestrator import (
+    account_file_hash,
+    persist_import_file,
+    prepare_import,
+    run_import,
+)
 from transactions.models import ImportLog, Transaction
 from transactions.services import ImportService, compute_file_hash
 
@@ -71,21 +74,6 @@ def _activity_window(period_mode: str, period_offset: int):
     )
     can_go_next = period_offset > 0
     return start_date, end_date, period_display, can_go_next
-
-
-def _account_file_hash(file_hash: str, sheet_name: str | None) -> str:
-    """
-    Retourne un hash unique par (fichier, compte).
-
-    Pour Yuh/UBS : sheet_name=None → file_hash inchangé (1 compte par fichier).
-    Pour CIC     : sheet_name="Compte courant" etc. → hash dérivé = sha256(file_hash:sheet_name).
-
-    Pourquoi ? ImportLog.file_hash est UNIQUE en DB. Un fichier CIC génère N ImportLogs
-    (1 par feuille), chacun a besoin d'un hash distinct pour éviter l'IntegrityError.
-    """
-    if sheet_name is None:
-        return file_hash
-    return hashlib.sha256(f"{file_hash}:{sheet_name}".encode()).hexdigest()
 
 
 @login_required
@@ -390,9 +378,9 @@ def _handle_dry_run(request):
             from accounts.institutions_config import KNOWN_INSTITUTIONS
             from accounts.models import Institution
 
-            bank_config = KNOWN_INSTITUTIONS.get(e.bank_slug, {})
+            bank_config = KNOWN_INSTITUTIONS.get(e.institution_slug, {})
             try:
-                bank = Institution.objects.get(slug=e.bank_slug)
+                bank = Institution.objects.get(slug=e.institution_slug)
             except Institution.DoesNotExist:
                 bank = None
             # Meilleure suggestion de nom : sheet_name pour CIC, account_name_hint pour UBS
@@ -402,10 +390,10 @@ def _handle_dry_run(request):
                 "imports/partials/_steps_create_account.html",
                 {
                     "bank": bank,
-                    "bank_slug": e.bank_slug,
-                    "bank_name": bank_config.get("name", e.bank_slug.upper()),
+                    "institution_slug": e.institution_slug,
+                    "bank_name": bank_config.get("name", e.institution_slug.upper()),
                     "bank_bic": bank_config.get("bic", ""),
-                    "iban": e.contract_number if e.bank_slug == "ubs" else "",
+                    "iban": e.contract_number if e.institution_slug == "ubs" else "",
                     "contract_number": e.contract_number,
                     "contract_number_raw": e.contract_number_raw,
                     "sheet_name": e.sheet_name,
@@ -421,14 +409,14 @@ def _handle_dry_run(request):
                 "filepath": str(tmp_path),
                 "filename": uploaded.name,
                 "file_hash": file_hash,
-                "bank_slug": e.bank_slug,
+                "institution_slug": e.institution_slug,
             }
             return render(
                 request,
                 "imports/partials/_steps_account_picker.html",
                 {
                     "accounts": e.accounts,
-                    "bank_slug": e.bank_slug,
+                    "institution_slug": e.institution_slug,
                     "filename": uploaded.name,
                 },
             )
@@ -472,7 +460,7 @@ def _handle_dry_run(request):
                 account=match.account,
                 imported_by=request.user,
                 filename=uploaded.name,
-                file_hash=_account_file_hash(file_hash, match.sheet_name),
+                file_hash=account_file_hash(file_hash, match.sheet_name),
                 balance=balance,
                 dry_run=True,
             )
@@ -537,81 +525,52 @@ def import_confirm(request):
 
     tmp_path = Path(pending["filepath"])
     filename = pending["filename"]
-    file_hash = pending["file_hash"]
 
     if not tmp_path.exists():
         del request.session["pending_import"]
         return _error(request, "Fichier temporaire introuvable. Recommencez l'import.")
 
     try:
-        connector = detect_connector(tmp_path)
-        if connector is None:
-            raise ValueError("Connecteur non détecté (fichier corrompu ?)")
-
-        matches = resolve_accounts(connector, tmp_path, user=request.user)
-
-        if isinstance(connector, CICConnector):
-            sheets_info = {
-                s["sheet_name"]: s for s in connector.get_account_sheets(tmp_path)
-            }
-            balances = {
-                match.sheet_name: sheets_info.get(match.sheet_name, {}).get("balance")
-                for match in matches
-            }
-        else:
-            raw_balance = connector.extract_balance(tmp_path)
-            balances = {None: raw_balance}
-
-        service = ImportService()
-
-        # Accumuler les résultats pour récupérer les log_pk après la boucle.
-        # On en a besoin pour retrouver les transactions insérées (date_min/max)
-        # et déclencher le stockage permanent du fichier source.
-        service_results = []
-
-        for match in matches:
-            if match.sheet_name is not None:
-                transactions = connector.parse_sheet(tmp_path, match.sheet_name)
-            else:
-                transactions = connector.parse(tmp_path)
-            balance = balances.get(match.sheet_name)
-            result = service.run(
-                transactions=transactions,
-                account=match.account,
-                imported_by=request.user,
-                filename=filename,
-                file_hash=_account_file_hash(file_hash, match.sheet_name),
-                balance=balance,
-                dry_run=False,
-            )
-            service_results.append(result)
+        # Même chemin que le seed de dev (#118) : prepare → run → persist.
+        # forced_account_id : compte choisi via le picker (Yuh multi-comptes) ;
+        # None pour UBS/CIC (résolus par IBAN/RIB). Sans ça, confirm re-résout sans
+        # forçage → AccountAmbiguous → import perdu.
+        prepared = prepare_import(
+            tmp_path,
+            user=request.user,
+            forced_account_id=pending.get("forced_account_id"),
+        )
+        results = run_import(
+            prepared,
+            tmp_path,
+            filename=filename,
+            imported_by=request.user,
+            dry_run=False,
+        )
 
         # Audit log : import réussi — événement métier critique pour traçabilité prod.
-        total_created = sum(r.count_created for r in service_results)
-        total_skipped = sum(r.count_skipped for r in service_results)
+        total_created = sum(r.count_created for r in results)
+        total_skipped = sum(r.count_skipped for r in results)
         logger.info(
-            "import_confirm: filename=%s connector=%s accounts=%d "
-            "created=%d skipped=%d by user=%s",
+            "import_confirm ok filename=%s connector=%s accounts=%d "
+            "created=%d skipped=%d user=%s",
             filename,
-            type(connector).__name__,
-            len(matches),
+            type(prepared.connector).__name__,
+            len(prepared.matches),
             total_created,
             total_skipped,
             request.user.id,
         )
 
-        # ── Stockage permanent du fichier source ─────────────────────────────
-        # On stocke le fichier AVANT le finally (qui supprime tmp_path) et
-        # uniquement si au moins un ImportLog a été créé (log_pk non None).
-        # Pour les imports "0 nouvelles transactions" (all skipped), on stocke
-        # quand même : l'utilisateur a confirmé la synchronisation.
-        _persist_import_file(
-            tmp_path=tmp_path,
+        # Stockage permanent du fichier source (chiffré), AVANT le finally qui
+        # supprime tmp_path. Pour un import "0 nouvelle transaction" (all skipped),
+        # persist_import_file court-circuite proprement (aucun log_pk).
+        persist_import_file(
+            path=tmp_path,
             filename=filename,
-            matches=matches,
-            balances=balances,
-            connector=connector,
-            service_results=service_results,
+            matches=prepared.matches,
+            balances=prepared.balances,
+            results=results,
         )
 
     except Exception as e:
@@ -620,8 +579,6 @@ def import_confirm(request):
 
     finally:
         # Nettoyage : supprimer le fichier temp et la clé session dans tous les cas.
-        # Si _persist_import_file a déjà lu le fichier (copy+encrypt), il existe
-        # toujours ici — on le supprime. Si une exception a eu lieu avant, pareil.
         if tmp_path.exists():
             os.unlink(tmp_path)
         request.session.pop("pending_import", None)
@@ -632,94 +589,6 @@ def import_confirm(request):
     response = HttpResponse()
     response["HX-Redirect"] = reverse("imports:upload")
     return response
-
-
-def _persist_import_file(
-    tmp_path, filename, matches, balances, connector, service_results
-):
-    """
-    Chiffre et stocke le fichier d'import dans IMPORT_STORAGE_ROOT, puis
-    met à jour les ImportLog avec le chemin et le nom canonique.
-
-    Appelé uniquement depuis import_confirm, après l'écriture en DB.
-
-    On l'extrait dans une fonction séparée pour :
-        - garder import_confirm lisible
-        - permettre de l'appeler silencieusement (les erreurs de stockage ne
-          doivent pas faire échouer un import déjà committé en DB)
-
-    Si le stockage échoue (ex: clé absente, disque plein), on logge l'erreur
-    mais on ne lève pas d'exception — l'import est déjà en DB, l'utilisateur
-    ne doit pas perdre ses données pour un problème de fichier.
-    """
-    log_pks = [r.log_pk for r in service_results if r.log_pk]
-    if not log_pks:
-        # Aucun ImportLog créé (toutes les runs ont échoué tôt) → pas de stockage
-        logger.warning(
-            "[import_storage] No log_pk found after confirm — skipping file storage."
-        )
-        return
-
-    try:
-        # Récupérer date_min / date_max des transactions insérées dans ces logs.
-        # Si 0 nouvelles transactions (all skipped), date_min/date_max seront None
-        # → build_import_filename utilisera "nodate" dans le nom.
-        agg = Transaction.objects.filter(import_log_id__in=log_pks).aggregate(
-            date_min=Min("date"), date_max=Max("date"), n=Count("id")
-        )
-
-        bank_slug = matches[0].account.institution.slug
-
-        # Noms de comptes normalisés : espaces → underscores, minuscules
-        account_names = [
-            m.account.name.lower().replace(" ", "_").replace("/", "_") for m in matches
-        ]
-
-        # Première balance disponible (None si aucun connecteur ne l'extrait)
-        raw_balance = next(iter(balances.values()), None)
-        balance_dec = Decimal(str(raw_balance)) if raw_balance is not None else None
-
-        year = agg["date_max"].year if agg["date_max"] else timezone.now().year
-
-        stored_filename = build_import_filename(
-            bank_slug=bank_slug,
-            account_names=account_names,
-            date_min=agg["date_min"],
-            date_max=agg["date_max"],
-            balance=balance_dec,
-            n_transactions=agg["n"] or 0,
-            original_ext=Path(filename).suffix,
-        )
-
-        stored_rel, is_enc = save_import_file(
-            tmp_path, bank_slug, stored_filename, year
-        )
-
-        # Mettre à jour tous les ImportLogs de cet import (CIC → plusieurs logs,
-        # même fichier physique → même stored_path dans chaque row).
-        ImportLog.objects.filter(pk__in=log_pks).update(
-            stored_filename=stored_filename,
-            stored_path=str(stored_rel),
-            is_encrypted=is_enc,
-        )
-
-        logger.info(
-            "[import_storage] Saved %s → %s (encrypted=%s)",
-            filename,
-            stored_rel,
-            is_enc,
-        )
-
-    except Exception as exc:
-        # Le stockage a échoué APRÈS que l'import a été committé en DB.
-        # On logge sans crasher : l'utilisateur a ses transactions, le fichier
-        # source n'est juste pas archivé. Il peut réimporter depuis l'original.
-        logger.error(
-            "[import_storage] Failed to persist %s: %s",
-            filename,
-            exc,
-            exc_info=True,
-        )
 
 
 @login_required
@@ -759,7 +628,7 @@ def import_log_delete(request, pk):
     log.transactions.all().delete()
     log.delete()
     logger.info(
-        "import_log_delete: log_pk=%s filename=%s tx_deleted=%d by user=%s",
+        "import_log_delete ok log_pk=%s filename=%s tx_deleted=%d user=%s",
         pk,
         log.filename,
         tx_count,
@@ -783,7 +652,7 @@ def import_create_account(request):
     Après création, relance le dry-run automatiquement (le fichier temp est
     toujours en session) et retourne _steps_result.html comme si de rien n'était.
     """
-    bank_slug = request.POST.get("bank_slug", "")
+    institution_slug = request.POST.get("institution_slug", "")
     account_name = request.POST.get("account_name", "").strip()
     account_type = request.POST.get("account_type", "")
     iban = request.POST.get("iban", "").replace(" ", "").upper()
@@ -803,14 +672,14 @@ def import_create_account(request):
     if account_type not in dict(Account.AccountType.choices):
         return _error(request, "Type de compte invalide.")
 
-    # La banque doit exister en DB (créée via seed_banks)
+    # L'institution doit exister en DB (créée via seed_institutions)
     try:
-        bank = Institution.objects.get(slug=bank_slug)
+        bank = Institution.objects.get(slug=institution_slug)
     except Institution.DoesNotExist:
         return _error(
             request,
-            f"Banque « {bank_slug} » introuvable.",
-            hint="Lancez d'abord : python manage.py seed_banks",
+            f"Institution « {institution_slug} » introuvable.",
+            hint="Lancez d'abord : python manage.py seed_institutions",
         )
 
     # Créer l'Account + spécialisation dans une transaction atomique
@@ -821,17 +690,20 @@ def import_create_account(request):
                 name=account_name,
                 account_type=account_type,
                 currency=currency,
+                # IBAN canonique sur Account (source unique #82) — c'est ce que
+                # le resolver d'import matche. "" → None (unique=True, NULL != NULL).
+                iban=iban or None,
                 contract_number=contract_number,
                 is_active=True,
             )
             account.members.add(request.user)  # for_user() sinon invisible
             if account_type == Account.AccountType.CHECKING:
-                CheckingAccount.objects.create(account=account, iban=iban, bic=bic)
+                CheckingAccount.objects.create(account=account, bic=bic)
             else:
                 SavingsAccount.objects.create(account=account, interest_rate=0)
         # Audit log : compte créé pendant l'import (mutation métier critique).
         logger.info(
-            "import_create_account: id=%s bank=%s type=%s by user=%s",
+            "import_create_account ok id=%s institution=%s type=%s user=%s",
             account.id,
             bank.slug,
             account_type,
@@ -922,9 +794,9 @@ def import_create_account(request):
         # Un autre compte est encore manquant (CIC multi-feuilles)
         from accounts.institutions_config import KNOWN_INSTITUTIONS
 
-        bank_config = KNOWN_INSTITUTIONS.get(e.bank_slug, {})
+        bank_config = KNOWN_INSTITUTIONS.get(e.institution_slug, {})
         try:
-            bank_obj = Institution.objects.get(slug=e.bank_slug)
+            bank_obj = Institution.objects.get(slug=e.institution_slug)
         except Institution.DoesNotExist:
             bank_obj = None
         return render(
@@ -932,10 +804,10 @@ def import_create_account(request):
             "imports/partials/_steps_create_account.html",
             {
                 "bank": bank_obj,
-                "bank_slug": e.bank_slug,
-                "bank_name": bank_config.get("name", e.bank_slug.upper()),
+                "institution_slug": e.institution_slug,
+                "bank_name": bank_config.get("name", e.institution_slug.upper()),
                 "bank_bic": bank_config.get("bic", ""),
-                "iban": e.contract_number if e.bank_slug == "ubs" else "",
+                "iban": e.contract_number if e.institution_slug == "ubs" else "",
                 "contract_number": e.contract_number,
                 "contract_number_raw": e.contract_number_raw,
                 "sheet_name": e.sheet_name,
@@ -957,9 +829,9 @@ def import_select_account(request):
     Contexte : levée par AccountAmbiguous (Yuh avec plusieurs comptes actifs).
     L'utilisateur a cliqué sur un compte → POST avec account_id.
 
-    Sécurité : on vérifie que l'account_id correspond bien à la banque en session
-    (bank_slug stocké lors du catch AccountAmbiguous dans _handle_dry_run).
-    Cela empêche de "forcer" un compte d'une autre banque via un POST forgé.
+    Sécurité : on vérifie que l'account_id correspond bien à l'institution en session
+    (institution_slug stocké lors du catch AccountAmbiguous dans _handle_dry_run).
+    Cela empêche de "forcer" un compte d'une autre institution via un POST forgé.
 
     Après sélection : relance le dry-run complet avec forced_account_id.
     """
@@ -971,7 +843,7 @@ def import_select_account(request):
     if not account_id:
         return _error(request, "Aucun compte sélectionné.")
 
-    bank_slug = pending.get("bank_slug", "")
+    institution_slug = pending.get("institution_slug", "")
     tmp_path = Path(pending["filepath"])
     filename = pending["filename"]
     file_hash = pending["file_hash"]
@@ -980,16 +852,16 @@ def import_select_account(request):
         del request.session["pending_import"]
         return _error(request, "Fichier temporaire introuvable. Recommencez l'import.")
 
-    # Vérification : le compte doit appartenir à la banque attendue ET à l'user.
+    # Vérification : le compte doit appartenir à l'institution attendue ET à l'user.
     # members=request.user empêche un user de forger un POST avec l'account_id
-    # d'un autre user (IDOR). institution__slug en session empêche de changer de banque.
+    # d'un autre user (IDOR). institution__slug en session empêche de changer d'institution.
     try:
         account = (
             Account.objects.for_user(request.user)
             .select_related("institution")
             .get(
                 pk=account_id,
-                institution__slug=bank_slug,
+                institution__slug=institution_slug,
                 is_active=True,
             )
         )
@@ -999,6 +871,13 @@ def import_select_account(request):
             "Compte invalide ou inactif.",
             hint="Sélectionnez un compte de la liste.",
         )
+
+    # Mémoriser le compte choisi : import_confirm DOIT cibler CE compte. Sans ça,
+    # confirm re-résout sans forçage → AccountAmbiguous (Yuh multi-comptes) →
+    # import perdu (« part dans le vide »). Bug réel (#118).
+    pending["forced_account_id"] = account.pk
+    request.session["pending_import"] = pending
+    request.session.modified = True
 
     # Relancer le dry-run avec le compte forcé
     try:
@@ -1025,7 +904,7 @@ def import_select_account(request):
                 account=match.account,
                 imported_by=request.user,
                 filename=filename,
-                file_hash=_account_file_hash(file_hash, match.sheet_name),
+                file_hash=account_file_hash(file_hash, match.sheet_name),
                 balance=balance,
                 dry_run=True,
             )

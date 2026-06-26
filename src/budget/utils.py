@@ -8,14 +8,11 @@ Aucune vue ici — uniquement des fonctions pures ou quasi-pures.
 """
 
 import calendar
-import functools
+import logging
 import re
 from datetime import date
-from pathlib import Path
 
-from django.conf import settings
-from django.db.models import Q
-from django.templatetags.static import static
+from django.db.models import F, Prefetch, Q
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.text import slugify
 
@@ -58,23 +55,33 @@ def _period_from_session(session):
     )
 
 
-def _generate_unique_slug(name: str, model_class) -> str:
+def _generate_unique_slug(name: str, model_class, owner=None) -> str:
     """
     Génère un slug unique pour une catégorie ou sous-catégorie.
 
     Processus :
     1. slugify(name) → minuscules + ASCII + hyphens (ex: "Alimentation et Boissons" → "alimentation-et-boissons")
     2. Remplace les hyphens par underscores pour cohérence avec les slugs système existants
-    3. Si le slug existe déjà en DB, ajoute un suffixe numérique (_1, _2, …)
+    3. Si le slug existe déjà DANS LE SCOPE de l'owner, ajoute un suffixe numérique (_1, _2, …)
 
     Paramètres :
         name        : nom saisi par l'utilisateur
-        model_class : Category ou SubCategory (les deux ont un champ slug unique)
+        model_class : Category ou SubCategory (les deux ont un champ slug owner-scopé)
+        owner       : propriétaire de la nouvelle catégorie (#137).
+            - owner=None  → catégorie système : slug unique GLOBAL (parmi owner NULL).
+            - owner set   → catégorie perso : slug unique PAR USER seulement, donc
+              deux users peuvent garder le slug "restaurants" sans suffixe parasite.
+              On filtre sur owner pour ne PAS suffixer à cause du slug d'un autre user.
     """
     base_slug = slugify(name, allow_unicode=False).replace("-", "_")
+    # Scope d'unicité aligné sur les UniqueConstraint partielles du modèle (#137).
+    # unscoped() (#213) : la vérif d'unicité doit voir TOUTE la partition owner=owner
+    # (y compris owner=None système) telle que la contrainte DB la voit, pas le scope
+    # fail-closed. Le filtre owner=owner restreint déjà à la bonne partition.
+    scope = model_class.objects.unscoped().filter(owner=owner)
     slug = base_slug
     counter = 1
-    while model_class.objects.filter(slug=slug).exists():
+    while scope.filter(slug=slug).exists():
         slug = f"{base_slug}_{counter}"
         counter += 1
     return slug
@@ -140,73 +147,6 @@ def _period_end_from_start(start, mode):
     return end_month_start.replace(day=last_day)
 
 
-# =============================================================================
-# _resolve_bank_icon_map — dict { icon_slug → URL statique }
-# =============================================================================
-
-
-@functools.lru_cache(maxsize=None)
-def _resolve_bank_icon_map():
-    """
-    Construit un dict { icon_slug → URL statique de l'icône banque }.
-    lru_cache : les fichiers static ne changent pas entre les requêtes en prod.
-    En dev : redémarrer le server si un logo est ajouté.
-
-    Scanne le dossier static/icons/banks/svg/ — SVGs sans fond, avec fill="currentColor".
-    Le SVG currentColor permet d'adapter la couleur de l'icône via CSS (dark theme natif).
-
-    Retourne {} si le dossier n'existe pas (ex: tests sans static).
-
-    Pourquoi svg/ et pas miniature/ ?
-        Les PNG dans miniature/ ont un fond blanc intégré dans le fichier → carré blanc
-        moche sur dark theme. Les SVG dans svg/ sont des paths purs sans fond — ils
-        prennent la couleur CSS de leur conteneur via currentColor.
-
-    ⚠️  AJOUTER UN NOUVEAU LOGO BANQUE
-        → Déposer le SVG dans static/icons/banks/svg/<slug>.svg
-        → Le nom du fichier doit correspondre à Bank.icon_slug en base
-        → Le SVG doit utiliser fill="currentColor" (pas de fill="#xxx" hardcodé)
-        → Si le SVG a un fond blanc/coloré intégré : l'enlever dans Inkscape/Figma avant
-    """
-    base = Path(settings.BASE_DIR) / "static" / "icons" / "banks"
-    svg_dir = base / "svg"
-    miniature_dir = base / "miniature"
-
-    # Collecte tous les slugs disponibles dans miniature/ (PNG/JPG = fallback)
-    result = {}
-    if miniature_dir.exists():
-        EXTENSION_PRIORITY = {"svg": 0, "png": 1, "jpg": 2, "jpeg": 3}
-        _best: dict[str, tuple[int, str]] = {}
-        for f in miniature_dir.iterdir():
-            if not f.is_file() or f.name.startswith("."):
-                continue
-            ext = f.suffix.lstrip(".").lower()
-            priority = EXTENSION_PRIORITY.get(ext, 99)
-            if f.stem not in _best or priority < _best[f.stem][0]:
-                _best[f.stem] = (priority, f.name)
-        result = {
-            slug: static(f"icons/banks/miniature/{fname}")
-            for slug, (_, fname) in _best.items()
-        }
-
-    # Écrase avec les SVG quand disponibles (priorité absolue — pas de fond, currentColor)
-    # ⚠️  AJOUTER UN NOUVEAU LOGO BANQUE :
-    #   → Déposer le SVG dans static/icons/banks/svg/<slug>.svg
-    #   → Le nom = Bank.icon_slug en base
-    #   → Le SVG doit utiliser fill="currentColor" (pas de fill="#xxx" hardcodé)
-    #   → Pas de rect/fond blanc intégré dans le SVG (à supprimer dans Inkscape si besoin)
-    if svg_dir.exists():
-        for f in svg_dir.iterdir():
-            if (
-                f.is_file()
-                and not f.name.startswith(".")
-                and f.suffix.lower() == ".svg"
-            ):
-                result[f.stem] = static(f"icons/banks/svg/{f.name}")
-
-    return result
-
-
 def _rgba(hex_color: str, alpha: float) -> str:
     """Convertit #rrggbb en rgba(r,g,b,alpha) pour ECharts colorStops."""
     h = hex_color.lstrip("#")
@@ -249,26 +189,114 @@ def _vary_color(hex_color, factor):
     return f"#{round(r * factor):02x}{round(g * factor):02x}{round(b * factor):02x}"
 
 
-def _cats_with_subcats():
+def _cats_with_subcats(user=None):
     """
     Retourne une liste de tuples (Category, [SubCategory, ...]) pour peupler
     le <select> de sous-catégories groupé par catégorie dans les formulaires d'édition.
 
+    `user` (issue #137) : si fourni, scope les catégories/sous-catégories via
+    .for_user(user) — l'utilisateur ne voit que les catégories système et SES
+    perso, jamais celles d'un autre user. À TOUJOURS passer depuis une vue
+    (request.user). None = pas de scoping (chemins internes/tests uniquement).
+
     Construit en deux passes Python (pas de N+1) :
-        1. charger toutes les sous-catégories actives avec leur catégorie
+        1. charger toutes les sous-catégories visibles avec leur catégorie
         2. grouper par category_id dans un dict, puis zipper avec les catégories
     """
-    all_categories = list(
-        Category.objects.filter(is_active=True).order_by("order", "name")
-    )
+    # #213 fail-closed : on part de unscoped() (queryset non borné) puis on scope
+    # explicitement via for_user(user). user=None = chemin interne/test → on garde
+    # le contrat « pas de scoping » via unscoped(), sinon le manager renverrait .none().
+    cat_qs = Category.objects.unscoped().filter(is_active=True)
+    sub_qs = SubCategory.objects.unscoped().filter(is_active=True)
+    if user is not None:
+        cat_qs = cat_qs.for_user(user)
+        sub_qs = sub_qs.for_user(user)
+
+    # SR-001 — fuite inter-user : les templates picker font `cat.subcategories.all`
+    # (reverse-FK NON scopée) → une sous-cat perso d'un AUTRE user rattachée à une
+    # catégorie système était exposée. On préfetch la reverse-FK avec sub_qs (déjà
+    # for_user) → `cat.subcategories.all` ne renvoie plus que système + les miennes.
+    cat_qs = cat_qs.prefetch_related(Prefetch("subcategories", queryset=sub_qs))
+
+    all_categories = list(cat_qs.order_by("order", "name"))
     subcat_by_cat: dict[int, list] = {}
-    for sub in (
-        SubCategory.objects.filter(is_active=True)
-        .select_related("category")
-        .order_by("name")
-    ):
+    for sub in sub_qs.select_related("category").order_by("name"):
         subcat_by_cat.setdefault(sub.category_id, []).append(sub)
 
     return all_categories, [
         (cat, subcat_by_cat.get(cat.id, [])) for cat in all_categories
     ]
+
+
+logger = logging.getLogger(__name__)
+
+
+def seed_perso_categories(user, defs) -> tuple[int, int]:
+    """Crée (idempotent) les catégories/sous-catégories PERSO de `defs` pour `user`.
+
+    `defs` : itérable d'objets (name, slug, icon, parent_slug, colour_hex) — cf.
+    demo.profiles.PersoCat. Les top-level (parent_slug=None) sont créées d'abord, puis
+    les sous-cats dont le parent est résolu PAR SLUG : catégorie SYSTÈME (owner NULL)
+    OU la perso top-level de CE user — jamais celle d'un autre (SR-001/SR-013).
+
+    owner=user + is_system=False → perso scopées (for_user). Clé naturelle
+    (slug, owner) → re-run idempotent. Retourne (n_categories, n_sous_categories).
+    Réutilisable hors démo (seed prod de l'admin via une commande, incrément 2).
+    """
+    from transactions.models import Category, SubCategory
+
+    n_cat = n_sub = 0
+    for d in defs:
+        if d.parent_slug is not None:
+            continue
+        # #213 fail-closed : update_or_create fait son lookup via get_queryset (→ .none()),
+        # d'où le queryset scopé for_user pour l'idempotence (sinon re-create → collision).
+        Category.objects.for_user(user).update_or_create(
+            slug=d.slug,
+            owner=user,
+            defaults={
+                "name": d.name,
+                "icon": d.icon,
+                "colour_hex": d.colour_hex,
+                "is_system": False,
+                "is_active": True,
+            },
+        )
+        n_cat += 1
+
+    for d in defs:
+        if d.parent_slug is None:
+            continue
+        # Préférer le parent PERSO du user (owner=user) au parent SYSTÈME de même slug :
+        # sans tri, .first() peut rattacher la sous-cat au mauvais arbre (parent système)
+        # alors qu'un parent perso homonyme existe. nulls_last → perso (non-null) d'abord.
+        # #213 : for_user(user) = système (owner NULL) OU perso de ce user — repart
+        # d'un queryset non borné (le manager seul renverrait .none()).
+        parent = (
+            Category.objects.for_user(user)
+            .filter(slug=d.parent_slug)
+            .order_by(F("owner").asc(nulls_last=True))
+            .first()
+        )
+        if parent is None:
+            logger.warning(
+                "seed_perso_categories: parent slug=%s introuvable pour sous-cat=%s",
+                d.parent_slug,
+                d.slug,
+            )
+            continue
+        # #213 : cf. Category ci-dessus — for_user scopé pour l'idempotence.
+        SubCategory.objects.for_user(user).update_or_create(
+            slug=d.slug,
+            owner=user,
+            defaults={
+                "name": d.name,
+                "icon": d.icon,
+                "category": parent,
+                "is_system": False,
+                "is_active": True,
+            },
+        )
+        n_sub += 1
+
+    return n_cat, n_sub

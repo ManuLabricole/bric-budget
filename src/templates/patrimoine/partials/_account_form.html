@@ -1,0 +1,162 @@
+{% comment %}
+patrimoine/partials/_account_form.html — wizard #73 step 2 (panel droit).
+
+Injecté dans #panel-content après le clic sur une ligne du picker. Institution
+préremplie (logo + nom, comme Finary). Le select « Type de compte » re-rend le
+bloc #form-dynamic (devise + champs spécifiques) via hx-select — le reste du
+formulaire (nom saisi) n'est pas touché. POST account_create : succès = 204 +
+HX-Redirect bilan ; erreur = re-render de ce partial avec error + values.
+
+Patterns repris de imports/_steps_create_account.html : step-card animée,
+labels 10px uppercase, inputs bg-surface-3/border-edge, CTA doré gold/15.
+Crypto exchange = SOON (clé API → niveau de sécurité à part, future issue).
+{% endcomment %}
+<style>
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0);    }
+  }
+  .step-card { animation: slide-up 0.3s ease-out both; }
+</style>
+<div class="flex h-full flex-col p-5">
+    <div class="mb-4 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+            <button type="button"
+                    hx-get="{% url 'patrimoine:institution_picker' %}"
+                    hx-target="#panel-content"
+                    hx-swap="innerHTML"
+                    aria-label="Retour au choix de l'établissement"
+                    class="text-text-muted transition-colors hover:text-text-base">
+                <svg class="h-5 w-5"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="2"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+                </svg>
+            </button>
+            <h2 class="text-sm font-semibold text-text-base">Ajouter un compte</h2>
+        </div>
+        <button type="button"
+                onclick="closePanel()"
+                class="text-text-muted transition-colors hover:text-text-base">
+            <svg class="h-5 w-5"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="2"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+            </svg>
+        </button>
+    </div>
+    <div class="flex-1 space-y-3 overflow-y-auto">
+        {# ── Établissement choisi au step 1 ── #}
+        <div class="step-card flex items-center gap-3 bg-surface-hover rounded-xl px-4 py-3"
+             style="animation-delay: 0ms">
+            {% include "components/institutions/institution_logo.html" with icon_url=icon_url institution=institution size="w-9 h-9" padding="p-1.5" %}
+            <div class="flex-1 min-w-0">
+                <p class="text-xs font-semibold text-text-base truncate">{{ institution.name }}</p>
+                <p class="text-[10px] text-text-muted">{{ institution.country }} · {{ institution.default_currency }}</p>
+            </div>
+        </div>
+        {% if institution.category == "crypto" %}
+            <div class="step-card flex items-center gap-2 rounded-xl border border-gold/20 bg-surface-3 px-3 py-2"
+                 style="animation-delay: 75ms">
+                {% include "components/badges/soon.html" %}
+                <p class="text-[10px] text-text-muted">
+                    Connexion exchange (clé API) bientôt — en attendant, crée l'enveloppe en compte titres.
+                </p>
+            </div>
+        {% endif %}
+        {% if error %}
+            <p class="step-card rounded-xl border border-expense/30 bg-expense/10 px-3 py-2 text-xs text-expense"
+               style="animation-delay: 0ms">{{ error }}</p>
+        {% endif %}
+        {# ── Formulaire ── #}
+        <form class="step-card flex flex-col gap-3 bg-surface-hover rounded-xl px-4 py-4"
+              style="animation-delay: 150ms"
+              hx-post="{% url 'patrimoine:account_create' %}"
+              hx-target="#panel-content"
+              hx-swap="innerHTML"
+              hx-disabled-elt="find button[type=submit]">
+            {% csrf_token %}
+            <input type="hidden" name="institution" value="{{ institution.slug }}">
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Nom du compte</label>
+                <input type="text"
+                       name="name"
+                       value="{{ values.name|default:'' }}"
+                       maxlength="200"
+                       required
+                       placeholder="ex: Compte courant, 3e pilier…"
+                       class="w-full bg-surface-3 border border-edge rounded-lg px-3 py-2 text-xs text-text-base placeholder:text-text-disabled focus:outline-none focus:border-gold/50 transition-colors">
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Type de compte</label>
+                <select name="account_type"
+                        hx-get="{% url 'patrimoine:account_form' %}?institution={{ institution.slug }}"
+                        hx-include="this"
+                        hx-target="#form-dynamic"
+                        hx-select="#form-dynamic"
+                        hx-swap="outerHTML"
+                        class="w-full bg-surface-3 border border-edge rounded-lg px-3 py-2 text-xs text-text-base focus:outline-none focus:border-gold/50 transition-colors">
+                    {% for value, label, soon in type_choices %}
+                        <option value="{{ value }}"
+                                {% if value == account_type %}selected{% endif %}
+                                {% if soon %}disabled{% endif %}>
+                            {{ label }}
+                            {% if soon %}— bientôt (clé API){% endif %}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div id="form-dynamic" class="flex flex-col gap-3">
+                {% if chf_only %}
+                    {# Devise verrouillée (prévoyance) — affichage seul, le serveur force CHF. #}
+                    <div class="flex items-center justify-between px-1">
+                        <span class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Devise</span>
+                        <span class="text-xs font-semibold text-text-base">CHF</span>
+                    </div>
+                    <p class="text-[10px] text-text-muted -mt-2">CHF uniquement — réglementation suisse (prévoyance).</p>
+                {% else %}
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Devise</label>
+                        <select name="currency"
+                                class="w-full bg-surface-3 border border-edge rounded-lg px-3 py-2 text-xs text-text-base focus:outline-none focus:border-gold/50 transition-colors">
+                            {% for value, label in currencies %}
+                                <option value="{{ value }}"
+                                        {% if values.currency %} {% if value == values.currency %}selected{% endif %}
+                                        {% elif value == institution.default_currency %}
+                                        selected
+                                        {% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                {% endif %}
+                {% include "patrimoine/partials/_account_form_fields.html" %}
+            </div>
+            {% comment %}
+            Commun à tous les types : avec l'IBAN, c'est l'identité qui rattache
+            les imports de fichiers à ce compte (Account.contract_number).
+            {% endcomment %}
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+                    N° de contrat <span class="text-text-disabled">(optionnel)</span>
+                </label>
+                <input type="text"
+                       name="contract_number"
+                       value="{{ values.contract_number|default:'' }}"
+                       maxlength="100"
+                       placeholder="ex: 1234567890"
+                       class="w-full bg-surface-3 border border-edge rounded-lg px-3 py-2 text-xs text-text-base placeholder:text-text-disabled focus:outline-none focus:border-gold/50 transition-colors font-mono">
+            </div>
+            <p class="text-[10px] text-text-muted -mt-2">
+                IBAN ou n° de contrat : <span class="text-text-base">au moins l'un des deux</span> — c'est ce qui rattache tes imports de relevés à ce compte.
+            </p>
+            <button type="submit"
+                    class="w-full mt-1 px-4 py-2.5 text-xs font-semibold rounded-xl bg-gold text-surface-3 hover:bg-gold-hover transition-colors">
+                Créer le compte →
+            </button>
+        </form>
+    </div>
+</div>

@@ -5,7 +5,7 @@ Pattern commun : OneToOne → Account, primary_key=True, CASCADE.
 Chaque sous-modèle porte les champs propres à un type d'enveloppe.
 Montants en Decimal — jamais float (SR-002).
 
-  CheckingAccount      — compte courant (IBAN, BIC)
+  CheckingAccount      — compte courant (BIC ; IBAN sur Account.iban)
   SavingsAccount       — livret / épargne (taux, référence)
   LifeInsuranceDetails — assurance vie (fonds euro, frais)
   PensionDetails       — pilier 3a / LPP (plafond, versements, frais)
@@ -40,11 +40,10 @@ class CheckingAccount(models.Model):
         related_name="checking_account",
     )
 
-    # IBAN: International Bank Account Number — e.g. CH56 0483 5012 3456 7800 9
-    # null=True + unique=True : plusieurs comptes sans IBAN sont autorisés (NULL != NULL en SQL).
-    iban = models.CharField(
-        max_length=34, unique=True, null=True, blank=True, default=None
-    )
+    # IBAN : l'IBAN canonique vit sur Account.iban (champ universel, source de
+    # vérité du resolver d'import + identité 2026-06-10). CheckingAccount ne porte
+    # PLUS d'IBAN — le champ legacy a été supprimé (consolidation #82) pour éliminer
+    # la double-écriture. Lire/écrire l'IBAN d'un compte courant via account.iban.
 
     # BIC/SWIFT — optionnel, souvent absent des exports.
     bic = models.CharField(max_length=11, blank=True, default="")
@@ -58,8 +57,12 @@ class CheckingAccount(models.Model):
 
     @property
     def is_complete(self) -> bool:
-        """True si les champs bancaires essentiels sont renseignés (IBAN + BIC)."""
-        return bool(self.iban and self.bic)
+        """True si les champs bancaires essentiels sont renseignés (IBAN + BIC).
+
+        L'IBAN est lu sur Account.iban (source unique) ; CheckingAccount ne porte
+        plus que le BIC.
+        """
+        return bool(self.account.iban and self.bic)
 
 
 # =============================================================================

@@ -1,0 +1,24 @@
+{% comment %}
+patrimoine/partials/_account_detail_tx_rows.html — lignes scroll infini (page 2+).
+
+Retourné par account_transactions() quand ?page > 1.
+Le sentinel (hx-swap="outerHTML") est remplacé par ces lignes + un nouveau sentinel.
+
+Requiert : txs, page_obj, account, account_tx_url.
+{% endcomment %}
+{% for tx in txs %}
+    {% ifchanged tx.date %}
+        <div class="px-4 py-1.5 sticky top-0 z-10 bg-surface-2/90 backdrop-blur-sm border-b border-edge/20">
+            <span class="text-[10px] font-medium text-text-muted">{{ tx.date|date:"j F Y" }}</span>
+        </div>
+    {% endifchanged %}
+    {% include "budget/_panel_tx_row.html" with institution_icon_url=tx.institution_icon_url panel_source="patrimoine" panel_target="#ac-tx-detail" %}
+{% endfor %}
+{% if page_obj.has_next %}
+    <div hx-get="{{ account_tx_url }}?page={{ page_obj.next_page_number }}"
+         hx-trigger="intersect root:#account-tx-scroll once"
+         hx-swap="outerHTML"
+         class="py-4 flex justify-center">
+        <span class="text-[10px] text-text-disabled">Chargement…</span>
+    </div>
+{% endif %}

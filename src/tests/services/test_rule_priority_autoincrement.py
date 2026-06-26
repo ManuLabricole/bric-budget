@@ -4,7 +4,8 @@ tests/services/test_rule_priority_autoincrement.py
 Ce qu'on teste : la priorité auto-incrémentée à la création d'une règle.
 
 Dans budget/views.py, les deux vues de création de règle utilisent le pattern :
-    next_priority = (CategorizationRule.objects.aggregate(m=Max("priority"))["m"] or 0) + 1
+    next_priority = (CategorizationRule.objects.for_user(user).aggregate(m=Max("priority"))["m"] or 0) + 1
+(ici on simule au niveau ORM avec unscoped() — #213 fail-closed — sur des règles système.)
 
 On teste ce pattern au niveau ORM — pas besoin de passer par la vue HTTP.
 L'invariant qu'on veut garantir :
@@ -50,9 +51,10 @@ def create_rule_with_autoincrement(keyword: str, cat) -> CategorizationRule:
     Si on change le pattern dans la vue, ce test échouera et signalera la divergence.
     """
     next_priority = (
-        CategorizationRule.objects.aggregate(m=Max("priority"))["m"] or 0
+        CategorizationRule.objects.unscoped().aggregate(m=Max("priority"))["m"] or 0
     ) + 1
-    rule, _ = CategorizationRule.objects.get_or_create(
+    rule: CategorizationRule
+    rule, _ = CategorizationRule.objects.unscoped().get_or_create(
         keyword=keyword,
         category=cat,
         defaults={
@@ -75,7 +77,7 @@ def test_first_rule_gets_priority_1(cat):
     Quand la table CategorizationRule est vide, Max("priority") retourne None.
     Le pattern (None or 0) + 1 doit donner priorité 1.
     """
-    assert CategorizationRule.objects.count() == 0
+    assert CategorizationRule.objects.unscoped().count() == 0
 
     rule = create_rule_with_autoincrement("MIGROS", cat)
 

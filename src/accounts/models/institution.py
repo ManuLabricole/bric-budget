@@ -24,7 +24,15 @@ class Institution(models.Model):
     default_currency: the bank's native currency.
     Yuh → CHF, CIC → EUR, Monzo → GBP.
     Used as the default value when creating new accounts under this bank.
+
+    category: coarse type for the UI badge (banque / investissement / crypto).
+    Source de vérité = institutions_config.py, posé par seed_institutions.
     """
+
+    class Category(models.TextChoices):
+        BANK = "bank", "Banque"
+        INVESTMENT = "investment", "Investissement"
+        CRYPTO = "crypto", "Crypto"
 
     name = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(max_length=100, unique=True)
@@ -35,18 +43,33 @@ class Institution(models.Model):
     # ISO 4217 currency code: CHF, EUR, GBP...
     default_currency = models.CharField(max_length=3)
 
-    # Icon identifier mapped to a file in static/icons/banks/miniature/<icon_slug>.png
+    # Badge UI grossier : banque / investissement / crypto (assurance vie et
+    # prévoyance rangées en "investment" — leur spécificité fiscale vit au niveau
+    # du compte, pas de l'institution). Rempli par seed_institutions depuis la config.
+    category = models.CharField(
+        max_length=20,
+        choices=Category.choices,
+        default=Category.BANK,
+    )
+
+    # Icon identifier mapped to a file in static/icons/institutions/miniature/<icon_slug>.png
     # Example: "yuh", "cic", "ubs". Kept separate from slug so icon can differ from URL slug.
     # blank=True: optional — falls back to initiale in templates.
     icon_slug = models.CharField(max_length=50, blank=True, default="")
 
     # Domain used to fetch the logo via Google Favicons API.
     # Example: "yuh.ch", "ubs.com", "cic.fr"
-    # Used by the update_bank_logos management command.
+    # Used by the backfill_logos management command (services/logos.py).
     # blank=True: optional — logo won't be fetched if empty.
     domain = models.CharField(max_length=100, blank=True, default="")
 
     is_active = models.BooleanField(default=True)
+
+    # Couleur stable d'affichage (#134). Les institutions sont globales/seedées, donc
+    # le domaine d'allocation = "toutes les institutions" (pas par user). Allouée puis
+    # FIGÉE comme Account.colour_hex. Sert aux seeds (#149/#118) et à un futur
+    # découpage des charts patrimoine par institution. blank = backfillé (migration 0020).
+    colour_hex = models.CharField(max_length=7, blank=True, default="")
 
     class Meta:
         verbose_name = "institution"

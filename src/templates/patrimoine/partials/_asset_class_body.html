@@ -9,7 +9,7 @@ Requiert : asset_class, institution_groups, chart_json, dist_json, stacked, peri
            period_choices, htmx_target, tab.
 Requiert si tab="transactions" : txs, page_obj, asset_class_tx_url.
 {% endcomment %}
-{% load budget_filters bank_icons %}
+{% load budget_filters institution_icons %}
 <div id="asset-class-body" class="space-y-4">
     {# ── Graphe évolution ────────────────────────────────────────────── #}
     <section class="pb-2">
@@ -134,8 +134,8 @@ Requiert si tab="transactions" : txs, page_obj, asset_class_tx_url.
                 {% for group in institution_groups %}
                     <details class="group bg-surface-3/70 border border-edge/30 rounded-xl overflow-hidden">
                         <summary class="flex items-center gap-3 px-5 py-3 cursor-pointer select-none hover:bg-surface-hover transition-colors list-none">
-                            {% bank_icon_url group.institution as bicon %}
-                            {% include "components/banks/bank_logo.html" with icon_url=bicon bank=group.institution size="w-7 h-7" padding="p-1" %}
+                            {% institution_icon_url group.institution as bicon %}
+                            {% include "components/institutions/institution_logo.html" with icon_url=bicon institution=group.institution size="w-7 h-7" padding="p-1" %}
                             <span class="flex-1 text-sm font-medium text-text-base">{{ group.institution.name }}</span>
                             <span class="text-sm font-medium tabular-nums text-text-base mr-4">
                                 {% if group.total %}
@@ -154,15 +154,26 @@ Requiert si tab="transactions" : txs, page_obj, asset_class_tx_url.
                         </summary>
                         <ul class="border-t border-edge/30">
                             {% for item in group.accounts %}
-                                <li class="flex items-center gap-3 pl-16 pr-5 py-2.5 hover:bg-surface-hover transition-colors">
-                                    <span class="flex-1 text-sm text-text-base truncate">{{ item.account.name }}</span>
-                                    <span class="text-sm tabular-nums flex-shrink-0 {% if item.value %}text-text-base{% else %}text-text-disabled{% endif %}">
-                                        {% if item.value %}
-                                            {{ item.value|chf }} CHF
-                                        {% else %}
-                                            —
-                                        {% endif %}
-                                    </span>
+                                {% comment %}
+                                Ligne compte → page zoom (#82 PR C). Le clic ouvre
+                                patrimoine/compte/<id>/ (graphe mono-compte + détails éditables).
+                                Pastille = couleur de la série du compte dans la courbe et le treemap
+                                (item.color = _STACK_PALETTE[index], cf. _account_colors).
+                                {% endcomment %}
+                                <li>
+                                    <a href="{% url 'patrimoine:account_detail' item.account.pk %}"
+                                       class="flex items-center gap-3 pl-16 pr-5 py-2.5 hover:bg-surface-hover transition-colors">
+                                        <span class="w-2 h-2 rounded-full flex-shrink-0"
+                                              style="background-color: {{ item.color }}"></span>
+                                        <span class="flex-1 text-sm text-text-base truncate">{{ item.account.name }}</span>
+                                        <span class="text-sm tabular-nums flex-shrink-0 {% if item.value %}text-text-base{% else %}text-text-disabled{% endif %}">
+                                            {% if item.value %}
+                                                {{ item.value|chf }} CHF
+                                            {% else %}
+                                                —
+                                            {% endif %}
+                                        </span>
+                                    </a>
                                 </li>
                             {% endfor %}
                         </ul>
@@ -184,7 +195,7 @@ Requiert si tab="transactions" : txs, page_obj, asset_class_tx_url.
                                 <span class="text-[10px] font-medium text-text-muted">{{ tx.date|date:"j F Y" }}</span>
                             </div>
                         {% endifchanged %}
-                        {% include "budget/_panel_tx_row.html" with bank_icon_url=tx.bank_icon_url panel_source="patrimoine" %}
+                        {% include "budget/_panel_tx_row.html" with institution_icon_url=tx.institution_icon_url panel_source="patrimoine" panel_target="#ac-tx-detail" %}
                     {% endfor %}
                     {% if page_obj.has_next %}
                         <div hx-get="{{ asset_class_tx_url }}?page={{ page_obj.next_page_number }}"

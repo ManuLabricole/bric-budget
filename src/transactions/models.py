@@ -15,6 +15,10 @@ Model dependency order:
 from django.conf import settings
 from django.db import models
 
+# OwnedManager / OwnedQuerySet (manager fail-closed #213) vivent désormais dans
+# transactions/managers.py — source de vérité unique du scoping par owner.
+from .managers import OwnedBaseManager, OwnedManager
+
 # =============================================================================
 # Category — Top-level spending category
 # =============================================================================
@@ -37,8 +41,15 @@ class Category(models.Model):
     with SubCategory.default_nature as a suggestion at categorization time.
     """
 
-    name = models.CharField(max_length=100, unique=True)
-    slug = models.SlugField(max_length=100, unique=True)
+    # name / slug — unicité SCOPÉE par owner (issue #137).
+    #   Système (owner IS NULL) : unique GLOBAL — un seul "inconnu", un seul "revenus".
+    #   Perso   (owner set)     : unique PAR USER — chaque user peut avoir sa propre
+    #                             catégorie "Restaurants" sans collision.
+    # unique=True (global) retiré ici → remplacé par les UniqueConstraint partielles
+    # de Meta.constraints (cf. migration 0018). Garder unique=True ici rendrait
+    # impossible le multi-user (deux "Restaurants" → IntegrityError).
+    name = models.CharField(max_length=100)
+    slug = models.SlugField(max_length=100)
 
     # Icon identifier — maps to static/icons/categories/<icon>.svg
     # Example: "auto-transport", "food-drinks", "housing"
@@ -55,12 +66,67 @@ class Category(models.Model):
     # is_system=True: seeded at setup, cannot be deleted/renamed by the user
     is_system = models.BooleanField(default=False)
 
+    # owner — propriétaire de la catégorie (issue #137, isolation multi-user).
+    #   NULL  : catégorie SYSTÈME, partagée entre tous les users (is_system=True).
+    #   sinon : catégorie PERSO d'un user (is_system=False) — jamais visible par
+    #           un autre user (filtrée via .for_user()).
+    # CASCADE (issue #203, sécu) : supprimer un user supprime ses catégories perso.
+    #   SET_NULL était une FUITE : owner→NULL transformait la catégorie perso en
+    #   catégorie « système » (partagée, is_system traité comme tel) → collision de
+    #   contrainte et exposition des données de l'ex-user. Les transactions liées ne
+    #   sont PAS perdues : Transaction.category=SET_NULL → elles passent à category=NULL.
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="categories",
+    )
+
     is_active = models.BooleanField(default=True)
 
+    # Manager fail-closed (#213) : .objects.all() → .none() ; scope explicite requis
+    # via .for_user(user) ou .unscoped(). Voir transactions/managers.py.
+    objects = OwnedManager()
+    # Base manager NON borné pour les internes Django (FK/reverse-FK, dumpdata).
+    _base = OwnedBaseManager()
+
     class Meta:
+        # Les internes Django (related lookups) passent par _base, PAS par le
+        # fail-closed `objects` → tx.category, category.subcategories.all() OK.
+        base_manager_name = "_base"
         verbose_name = "category"
         verbose_name_plural = "categories"
         ordering = ["order", "name"]
+        constraints = [
+            # Système (owner NULL) : slug/name uniques GLOBALEMENT.
+            # Pourquoi une contrainte partielle dédiée plutôt que (owner, slug) ?
+            # En Postgres les NULL sont distincts dans un UNIQUE → (owner, slug)
+            # n'empêcherait PAS deux système "inconnu". On force donc l'unicité
+            # globale uniquement sur les lignes owner IS NULL.
+            models.UniqueConstraint(
+                fields=["slug"],
+                condition=models.Q(owner__isnull=True),
+                name="category_system_slug_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["name"],
+                condition=models.Q(owner__isnull=True),
+                name="category_system_name_uniq",
+            ),
+            # Perso (owner set) : slug/name uniques PAR USER. Deux users peuvent
+            # chacun avoir "Restaurants" ; un même user ne peut pas le dupliquer.
+            models.UniqueConstraint(
+                fields=["owner", "slug"],
+                condition=models.Q(owner__isnull=False),
+                name="category_owner_slug_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["owner", "name"],
+                condition=models.Q(owner__isnull=False),
+                name="category_owner_name_uniq",
+            ),
+        ]
 
     def __str__(self):
         return self.name
@@ -101,7 +167,10 @@ class SubCategory(models.Model):
     )
 
     name = models.CharField(max_length=100)
-    slug = models.SlugField(max_length=100, unique=True)
+    # slug — unicité scopée par owner (issue #137), comme Category.
+    #   Système (owner NULL) : unique global ; Perso : unique par user.
+    # unique=True (global) retiré → UniqueConstraint partielles en Meta.
+    slug = models.SlugField(max_length=100)
 
     # Icon identifier — maps to static/icons/categories/<icon>.svg
     # Example: "auto-transport", "food-drinks", "housing"
@@ -124,12 +193,59 @@ class SubCategory(models.Model):
     # Mirrors Category.is_system but at the sub-category level.
     is_system = models.BooleanField(default=False)
 
+    # owner — même sémantique que Category.owner (issue #137) :
+    #   NULL = système partagé ; sinon = perso d'un user, jamais visible par un autre.
+    # CASCADE (issue #203, sécu) : supprimer un user supprime ses sous-cat perso —
+    #   y compris une sous-cat perso accrochée à une catégorie SYSTÈME (cas-fuite #118
+    #   « Concert » sous catégorie système : SET_NULL l'aurait laissée survivre orpheline,
+    #   traitée comme système). Transaction.subcategory=SET_NULL → tx non perdues.
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="subcategories",
+    )
+
+    # Manager fail-closed (#213) : .objects.all() → .none() ; scope via .for_user/.unscoped.
+    objects = OwnedManager()
+    _base = OwnedBaseManager()  # internes Django (FK/reverse-FK)
+
     class Meta:
+        base_manager_name = "_base"
         verbose_name = "sub-category"
         verbose_name_plural = "sub-categories"
         ordering = ["category__order", "name"]
-        # Two sub-categories in the same category cannot share a name
-        unique_together = [("category", "name")]
+        constraints = [
+            # Nom unique par sous-catégorie d'une catégorie — SCOPÉ owner (#137).
+            # ⚠️ L'ancienne contrainte plate (category, name) supposait à tort qu'une
+            # perso a toujours un parent distinct par user : FAUX, une perso peut vivre
+            # sous une catégorie SYSTÈME (partagée, ex. « Concert » sous « Loisirs »).
+            # On scinde donc comme Category : système global, perso par user.
+            models.UniqueConstraint(
+                fields=["category", "name"],
+                condition=models.Q(owner__isnull=True),
+                name="subcategory_system_category_name_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["category", "name", "owner"],
+                condition=models.Q(owner__isnull=False),
+                name="subcategory_owner_category_name_uniq",
+            ),
+            # slug — système (owner NULL) unique global ; perso unique par user.
+            # Même raisonnement que Category : contrainte partielle dédiée au
+            # système car les NULL sont distincts dans un UNIQUE Postgres.
+            models.UniqueConstraint(
+                fields=["slug"],
+                condition=models.Q(owner__isnull=True),
+                name="subcategory_system_slug_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["owner", "slug"],
+                condition=models.Q(owner__isnull=False),
+                name="subcategory_owner_slug_uniq",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.category.name} › {self.name}"
@@ -196,7 +312,28 @@ class CategorizationRule(models.Model):
 
     is_active = models.BooleanField(default=True)
 
+    # owner — propriétaire de la règle (issue #145, isolation multi-user / IDOR SR-001).
+    #   NULL  : règle SYSTÈME, partagée entre tous les users (seed de référence).
+    #   sinon : règle PERSO d'un user — jamais visible/modifiable par un autre
+    #           (filtrée via .for_user()).
+    # CASCADE (≠ Category.owner=SET_NULL) : une règle est une préférence pure de
+    #   catégorisation. Supprimer un user n'a aucune raison de garder ses règles
+    #   perso orphelines (elles ne portent aucune donnée historique, contrairement
+    #   aux catégories pointées par des transactions). On les efface avec lui.
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="categorization_rules",
+    )
+
+    # Manager fail-closed (#213) : .objects.all() → .none() ; scope via .for_user/.unscoped.
+    objects = OwnedManager()
+    _base = OwnedBaseManager()  # internes Django (FK/reverse-FK)
+
     class Meta:
+        base_manager_name = "_base"
         verbose_name = "categorization rule"
         verbose_name_plural = "categorization rules"
         ordering = ["-priority", "keyword"]
@@ -566,20 +703,49 @@ class BudgetTarget(models.Model):
     amount is always in CHF.
     """
 
-    # unique=True: one target per category, period-independent
-    category = models.OneToOneField(
+    # category — un objectif vise UNE catégorie. ⚠️ Avant #201 c'était un OneToOneField
+    # → un seul objectif GLOBAL par catégorie. Sur une catégorie SYSTÈME (partagée), ça
+    # voulait dire un objectif unique partagé/écrasable entre TOUS les users (write
+    # cross-user). On passe en ForeignKey + unicité scopée (owner, category) ci-dessous.
+    category = models.ForeignKey(
         Category,
         on_delete=models.CASCADE,
-        related_name="budget_target",
+        related_name="budget_targets",
+    )
+
+    # owner — propriétaire de l'objectif (issue #201). Un objectif est TOUJOURS perso :
+    # il n'existe pas d'objectif « système » partagé (contrairement à Category/SubCategory).
+    # owner non-null + UniqueConstraint(owner, category) = chaque user a SON objectif sur
+    # une catégorie donnée, y compris sur une catégorie système, sans collision ni fuite.
+    # CASCADE : supprimer un user efface ses objectifs (pure préférence, aucune donnée
+    # historique pointée).
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="budget_targets",
     )
 
     # Target monthly spend in CHF
     amount = models.DecimalField(max_digits=10, decimal_places=2)
 
+    # Manager fail-closed (#213) : .objects.all() → .none() ; scope via .for_user/.unscoped.
+    # owner étant non-null, for_user se réduit à owner=user (branche owner__isnull=True
+    # morte ici, mais on réutilise le même point de vérité pour rester cohérent).
+    objects = OwnedManager()
+    _base = OwnedBaseManager()  # internes Django (FK/reverse-FK)
+
     class Meta:
+        base_manager_name = "_base"
         verbose_name = "budget target"
         verbose_name_plural = "budget targets"
         ordering = ["category__order"]
+        constraints = [
+            # Un objectif par (user, catégorie) — remplace l'unique implicite du OneToOne.
+            models.UniqueConstraint(
+                fields=["owner", "category"],
+                name="budgettarget_owner_category_uniq",
+            ),
+        ]
 
     def __str__(self):
-        return f"{self.category} → {self.amount} CHF/month"
+        return f"{self.category} → {self.amount} CHF/month (owner={self.owner_id})"

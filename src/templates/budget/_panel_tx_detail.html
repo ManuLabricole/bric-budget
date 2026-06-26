@@ -4,7 +4,7 @@ budget/_panel_tx_detail.html — Fragment HTMX : détail d'une transaction (éta
 
 Contexte attendu :
     tx              — Transaction (select_related category/subcategory/account/bank)
-    bank_icon_url   — str URL statique résolue par _resolve_bank_icon_map()
+    institution_icon_url   — str URL statique résolue par services.logos.get_institution_icon_map()
 
 Chargé dans #panel-content par :
     - hx-get depuis _panel_tx_row.html (clic sur une ligne)
@@ -160,12 +160,12 @@ Pas de fond de fond — la row se distingue via le hover uniquement.
 <div class="border-t border-edge mx-4 mb-4 flex-shrink-0"></div>
 {% comment %} ── Metadata : Compte · Montant natif · Date ── {% endcomment %}
 <div class="px-5 space-y-3 mb-4 flex-shrink-0">
-    {% comment %} Compte + icône banque {% endcomment %}
+    {% comment %} Compte + icône institution {% endcomment %}
     <div class="flex items-center justify-between">
         <span class="text-sm text-text-muted">Compte</span>
         <div class="flex items-center gap-1.5">
-            {% if bank_icon_url %}
-                <img src="{{ bank_icon_url }}"
+            {% if institution_icon_url %}
+                <img src="{{ institution_icon_url }}"
                      width="16"
                      height="16"
                      class="w-4 h-4 rounded-full bg-white p-[1px] flex-shrink-0"

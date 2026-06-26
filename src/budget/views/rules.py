@@ -17,7 +17,8 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from budget.constants import RULE_NOISE_TOKENS
-from budget.utils import _cats_with_subcats, _keyword_q, _resolve_bank_icon_map
+from budget.utils import _cats_with_subcats, _keyword_q
+from services.logos import get_institution_icon_map
 from transactions.models import CategorizationRule, Category, SubCategory, Transaction
 
 logger = logging.getLogger(__name__)
@@ -100,10 +101,17 @@ def budget_panel_rule_create(request):
     )
 
     # Catégorie cible : passée explicitement depuis l'étape intro, ou fallback sur tx.category.
-    category = get_object_or_404(Category, pk=cat_id) if cat_id else tx.category
+    # SR-001 IDOR : ne pointer que vers une catégorie visible par le user (système OU à moi).
+    category = (
+        get_object_or_404(Category.objects.for_user(request.user), pk=cat_id)
+        if cat_id
+        else tx.category
+    )
     subcategory = None
     if subcat_id:
-        subcategory = SubCategory.objects.filter(pk=subcat_id).first()
+        subcategory = (
+            SubCategory.objects.for_user(request.user).filter(pk=subcat_id).first()
+        )
     elif tx.subcategory:
         subcategory = tx.subcategory
 
@@ -184,7 +192,7 @@ def budget_panel_rule_create_standalone(request):
         - Picker catégorie identique à _rule_row_edit.html (réutilise ruleEditSelect)
         - Submit → budget_rule_create_submit (même vue, même payload)
     """
-    _, cats_with_subcats = _cats_with_subcats()
+    _, cats_with_subcats = _cats_with_subcats(request.user)
     return render(
         request,
         "budget/_panel_rule_create_standalone.html",
@@ -216,7 +224,7 @@ def budget_rule_standalone_preview(request):
     un espace et chacun est matché comme word boundary (\y) dans description_raw.
     Même règle que la catégorisation automatique à l'import — cohérence garantie.
 
-    La vue résout les icônes banque (bank_icon_map) pour la rangée compacte,
+    La vue résout les icônes institution (institution_icon_map) pour la rangée compacte,
     charge les 25 premières transactions pour la preview scrollable.
     """
     kw_list = [kw.strip().upper() for kw in request.GET.getlist("kw") if kw.strip()]
@@ -228,10 +236,14 @@ def budget_rule_standalone_preview(request):
 
     cat_display_name = ""
     if cat_id:
-        cat = Category.objects.filter(pk=cat_id).first()
+        # SR-001 : cat_id/subcat_id viennent de GET params arbitraires et leur NOM
+        # est rendu → scoper for_user, sinon fuite du nom d'une perso d'un autre user.
+        cat = Category.objects.for_user(request.user).filter(pk=cat_id).first()
         if cat:
             sub = (
-                SubCategory.objects.filter(pk=subcat_id).first() if subcat_id else None
+                SubCategory.objects.for_user(request.user).filter(pk=subcat_id).first()
+                if subcat_id
+                else None
             )
             cat_display_name = sub.name if sub else cat.name
 
@@ -250,14 +262,14 @@ def budget_rule_standalone_preview(request):
         total_count = qs.count()
         # On charge toutes les tx pour la zone scrollable (limit visuelle = template)
         txs = list(qs)
-        bank_icon_map = _resolve_bank_icon_map()
+        institution_icon_map = get_institution_icon_map()
         for tx in txs:
             slug = (
                 tx.account.institution.icon_slug
                 if tx.account and tx.account.institution
                 else ""
             )
-            tx.bank_icon_url = bank_icon_map.get(slug, "")
+            tx.institution_icon_url = institution_icon_map.get(slug, "")
 
     return render(
         request,
@@ -315,16 +327,24 @@ def budget_rule_create_standalone_submit(request):
     sub_id = request.POST.get("subcategory_id") or None
     force = request.POST.get("force") == "1"
 
-    category = get_object_or_404(Category, pk=cat_id)
-    subcategory = SubCategory.objects.filter(pk=sub_id).first() if sub_id else None
+    # SR-001 IDOR : la catégorie cible doit être visible par le user (système OU à moi).
+    category = get_object_or_404(Category.objects.for_user(request.user), pk=cat_id)
+    subcategory = (
+        SubCategory.objects.for_user(request.user).filter(pk=sub_id).first()
+        if sub_id
+        else None
+    )
 
     if not force:
         # Étape 1 — chercher les transactions qui seront écrasées AVANT de créer la règle.
         # On vérifie les tx avec source="rule" et une règle différente de celle qu'on va créer.
         # existing_rule peut être None si la règle n'existe pas encore.
-        existing_rule = CategorizationRule.objects.filter(
-            keyword=keyword, category=category
-        ).first()
+        # Scopé par owner : le check doublon ne regarde que MES règles.
+        existing_rule = (
+            CategorizationRule.objects.for_user(request.user)
+            .filter(keyword=keyword, category=category)
+            .first()
+        )
         overwrite_qs = Transaction.objects.for_user(request.user).filter(
             _keyword_q(keyword), categorization_source="rule"
         )
@@ -337,14 +357,14 @@ def budget_rule_create_standalone_submit(request):
                     "account", "account__institution", "category", "subcategory"
                 ).order_by("-date")
             )
-            bank_icon_map = _resolve_bank_icon_map()
+            institution_icon_map = get_institution_icon_map()
             for tx in txs:
                 slug = (
                     tx.account.institution.icon_slug
                     if tx.account and tx.account.institution
                     else ""
                 )
-                tx.bank_icon_url = bank_icon_map.get(slug, "")
+                tx.institution_icon_url = institution_icon_map.get(slug, "")
 
             return render(
                 request,
@@ -360,13 +380,22 @@ def budget_rule_create_standalone_submit(request):
             )
 
     # Étape 2 — créer la règle + bulk apply
-    # Priorité = max existant + 1 → la dernière règle créée gagne toujours en cas de conflit
+    # Priorité = max sur MES règles + 1 → ma dernière règle gagne toujours en cas de conflit.
     next_priority = (
-        CategorizationRule.objects.aggregate(m=Max("priority"))["m"] or 0
+        CategorizationRule.objects.for_user(request.user).aggregate(m=Max("priority"))[
+            "m"
+        ]
+        or 0
     ) + 1
-    rule, created = CategorizationRule.objects.get_or_create(
+    # owner=request.user DANS LE LOOKUP (cf. budget_rule_create_submit) : la règle
+    # appartient au créateur, pas de collision possible avec celle d'un autre user.
+    # #213 fail-closed : get_or_create fait son lookup via get_queryset (→ .none()),
+    # on doit donc partir d'un queryset scopé for_user, sinon il recrée toujours et
+    # se heurte à la contrainte d'unicité (IntegrityError).
+    rule, created = CategorizationRule.objects.for_user(request.user).get_or_create(
         keyword=keyword,
         category=category,
+        owner=request.user,
         defaults={
             "subcategory": subcategory,
             "target_field": "display_name",
@@ -432,12 +461,18 @@ def budget_rule_live_preview(request):
 
     cat_display_name = ""
     if cat_id:
-        cat = Category.objects.filter(pk=cat_id).first()
+        # SR-001 : cat_id/subcat_id = GET params arbitraires, leur NOM est rendu →
+        # scoper for_user, sinon fuite du nom d'une perso d'un autre user.
+        cat = Category.objects.for_user(request.user).filter(pk=cat_id).first()
         if cat:
             # Si une sous-catégorie est passée, on l'affiche en priorité
             subcat_id = request.GET.get("subcategory_id")
             if subcat_id:
-                sub = SubCategory.objects.filter(pk=subcat_id).first()
+                sub = (
+                    SubCategory.objects.for_user(request.user)
+                    .filter(pk=subcat_id)
+                    .first()
+                )
                 cat_display_name = sub.name if sub else cat.name
             else:
                 cat_display_name = cat.name
@@ -497,8 +532,13 @@ def budget_rule_preview(request):
     if tx_id:
         get_object_or_404(Transaction.objects.for_user(request.user), pk=tx_id)
 
-    category = get_object_or_404(Category, pk=cat_id)
-    subcategory = SubCategory.objects.filter(pk=sub_id).first() if sub_id else None
+    # SR-001 IDOR : ne prévisualiser que vers une catégorie visible par le user.
+    category = get_object_or_404(Category.objects.for_user(request.user), pk=cat_id)
+    subcategory = (
+        SubCategory.objects.for_user(request.user).filter(pk=sub_id).first()
+        if sub_id
+        else None
+    )
 
     # Compter les transactions affectées SANS les modifier.
     # Toutes les transactions matchant le keyword sont comptées — sans exclusion.
@@ -558,14 +598,22 @@ def budget_rule_create_submit(request):
     if not keyword:
         return HttpResponseBadRequest("keyword requis")
 
-    category = get_object_or_404(Category, pk=cat_id)
-    subcategory = SubCategory.objects.filter(pk=sub_id).first() if sub_id else None
+    # SR-001 IDOR : la catégorie cible doit être visible par le user (système OU à moi).
+    category = get_object_or_404(Category.objects.for_user(request.user), pk=cat_id)
+    subcategory = (
+        SubCategory.objects.for_user(request.user).filter(pk=sub_id).first()
+        if sub_id
+        else None
+    )
 
     if not force:
         # Étape 1 — vérifier les transactions déjà catégorisées par UNE AUTRE règle.
-        existing_rule = CategorizationRule.objects.filter(
-            keyword=keyword, category=category
-        ).first()
+        # Scopé par owner : le check doublon ne regarde que MES règles.
+        existing_rule = (
+            CategorizationRule.objects.for_user(request.user)
+            .filter(keyword=keyword, category=category)
+            .first()
+        )
         overwrite_qs = Transaction.objects.for_user(request.user).filter(
             _keyword_q(keyword), categorization_source="rule"
         )
@@ -578,14 +626,14 @@ def budget_rule_create_submit(request):
                     "account", "account__institution", "category", "subcategory"
                 ).order_by("-date")
             )
-            bank_icon_map = _resolve_bank_icon_map()
+            institution_icon_map = get_institution_icon_map()
             for tx in txs:
                 slug = (
                     tx.account.institution.icon_slug
                     if tx.account and tx.account.institution
                     else ""
                 )
-                tx.bank_icon_url = bank_icon_map.get(slug, "")
+                tx.institution_icon_url = institution_icon_map.get(slug, "")
 
             return render(
                 request,
@@ -602,12 +650,21 @@ def budget_rule_create_submit(request):
             )
 
     # Étape 2 — créer la règle + bulk apply
+    # Priorité auto : max sur MES règles (système OU à moi) + 1.
     next_priority = (
-        CategorizationRule.objects.aggregate(m=Max("priority"))["m"] or 0
+        CategorizationRule.objects.for_user(request.user).aggregate(m=Max("priority"))[
+            "m"
+        ]
+        or 0
     ) + 1
-    rule, created = CategorizationRule.objects.get_or_create(
+    # owner=request.user DANS LE LOOKUP (pas seulement defaults) : sans ça, un user
+    # pourrait "récupérer" la règle d'un autre par collision keyword+category. La
+    # règle créée appartient toujours au créateur (IDOR, SR-001).
+    # #213 fail-closed : get_or_create via queryset scopé for_user (cf. rule_create).
+    rule, created = CategorizationRule.objects.for_user(request.user).get_or_create(
         keyword=keyword,
         category=category,
+        owner=request.user,
         defaults={
             "subcategory": subcategory,
             "target_field": "display_name",
@@ -671,8 +728,9 @@ def budget_export_rules_download(request):
         - Accessible depuis l'UI sans ouvrir un terminal.
         - Utile avant la session de classification manuelle pour faire un backup rapide.
     """
+    # SR-001 IDOR : .for_user() → ne jamais exporter les règles d'autrui.
     rules = list(
-        CategorizationRule.objects.all()
+        CategorizationRule.objects.for_user(request.user)
         .values(
             "keyword",
             "category__slug",
@@ -726,11 +784,14 @@ def budget_panel_rules_list(request):
 
     Affiche toutes les règles triées : actives d'abord, puis par priorité desc, puis keyword.
     """
-    rules = CategorizationRule.objects.select_related(
-        "category", "subcategory__category"
-    ).order_by("-is_active", "-priority", "keyword")
+    # SR-001 IDOR : .for_user() → ne lister que les règles du user (ou système).
+    rules = (
+        CategorizationRule.objects.for_user(request.user)
+        .select_related("category", "subcategory__category")
+        .order_by("-is_active", "-priority", "keyword")
+    )
 
-    all_categories, cats_with_subcats = _cats_with_subcats()
+    all_categories, cats_with_subcats = _cats_with_subcats(request.user)
 
     return render(
         request,
@@ -757,9 +818,19 @@ def budget_rule_toggle_active(request, rule_id):
     URL : POST /budget/rules/<rule_id>/toggle/
     HTMX : hx-target="#rule-<id>" hx-swap="outerHTML"
     """
-    rule = get_object_or_404(CategorizationRule, id=rule_id)
+    # SR-001 IDOR : .for_user() → un user ne peut toggle que ses règles (ou système).
+    rule = get_object_or_404(
+        CategorizationRule.objects.for_user(request.user), id=rule_id
+    )
     rule.is_active = not rule.is_active
     rule.save(update_fields=["is_active"])
+    # Mutation DB (le comportement de catégorisation change) → INFO, pas DEBUG.
+    logger.info(
+        "rule_toggle ok id=%s active=%s user=%s",
+        rule.id,
+        rule.is_active,
+        request.user.id,
+    )
     return render(request, "budget/_rule_row.html", {"rule": rule})
 
 
@@ -778,9 +849,12 @@ def budget_rule_delete(request, rule_id):
     HTMX : hx-target="#rule-<id>" hx-swap="outerHTML"
            hx-confirm="Supprimer ?" (confirmation navigateur native)
     """
-    rule = get_object_or_404(CategorizationRule, id=rule_id)
+    # SR-001 IDOR : .for_user() → un user ne peut supprimer que ses règles (ou système).
+    rule = get_object_or_404(
+        CategorizationRule.objects.for_user(request.user), id=rule_id
+    )
     logger.info(
-        "CategorizationRule deleted: id=%s keyword=%r by user=%s",
+        "rule_delete ok id=%s keyword=%r user=%s",
         rule.id,
         rule.keyword,
         request.user.id,
@@ -804,10 +878,13 @@ def budget_rule_row_edit(request, rule_id):
 
     ?cancel=1 → retourne la ligne en mode lecture (bouton Annuler du formulaire).
     """
-    rule = get_object_or_404(CategorizationRule, id=rule_id)
+    # SR-001 IDOR : .for_user() → un user n'édite que ses règles (ou système).
+    rule = get_object_or_404(
+        CategorizationRule.objects.for_user(request.user), id=rule_id
+    )
     if request.GET.get("cancel"):
         return render(request, "budget/_rule_row.html", {"rule": rule})
-    all_categories, cats_with_subcats = _cats_with_subcats()
+    all_categories, cats_with_subcats = _cats_with_subcats(request.user)
     return render(
         request,
         "budget/_rule_row_edit.html",
@@ -837,7 +914,10 @@ def budget_rule_edit_submit(request, rule_id):
     keyword est normalisé en UPPERCASE (cohérence avec le wizard de création).
     Si keyword ou category_id manquent, la règle est retournée inchangée.
     """
-    rule = get_object_or_404(CategorizationRule, id=rule_id)
+    # SR-001 IDOR : .for_user() → un user ne sauvegarde que ses règles (ou système).
+    rule = get_object_or_404(
+        CategorizationRule.objects.for_user(request.user), id=rule_id
+    )
     keyword = request.POST.get("keyword", "").strip().upper()
     category_id = request.POST.get("category_id", "").strip()
     subcategory_id = request.POST.get("subcategory_id", "").strip() or None
@@ -847,11 +927,53 @@ def budget_rule_edit_submit(request, rule_id):
             cat_id = int(category_id)
             subcat_id = int(subcategory_id) if subcategory_id else None
         except (ValueError, TypeError):
-            # category_id non numérique → ignorer silencieusement, retourner la règle inchangée
+            # category_id non numérique → règle inchangée (rejet volontaire, mais tracé).
+            logger.debug(
+                "rule_update rejected id=%s reason=invalid_ids category_id=%r subcategory_id=%r",
+                rule.id,
+                category_id,
+                subcategory_id,
+            )
+            return render(request, "budget/_rule_row.html", {"rule": rule})
+        # SR-001 IDOR (F1) : valider que catégorie/sous-catégorie appartiennent au user
+        # (système OU à moi) AVANT de les poser sur la règle. Sinon un user pointe sa règle
+        # vers la catégorie PERSO d'un autre (write IDOR + fuite). La règle elle-même est déjà
+        # scopée for_user ; il manquait le scope sur les FK posées depuis le POST. Même pattern
+        # que les autres vues règles (create/preview). Échec → règle inchangée.
+        category = Category.objects.for_user(request.user).filter(pk=cat_id).first()
+        subcategory = (
+            SubCategory.objects.for_user(request.user).filter(pk=subcat_id).first()
+            if subcat_id is not None
+            else None
+        )
+        if category is None or (subcat_id is not None and subcategory is None):
+            logger.warning(
+                "rule_update rejected id=%s reason=idor_fk cat_id=%s subcat_id=%s user=%s",
+                rule.id,
+                cat_id,
+                subcat_id,
+                request.user.id,
+            )
             return render(request, "budget/_rule_row.html", {"rule": rule})
         rule.keyword = keyword
-        rule.category_id = cat_id
-        rule.subcategory_id = subcat_id
+        rule.category_id = category.id
+        rule.subcategory_id = subcategory.id if subcategory else None
         rule.save(update_fields=["keyword", "category_id", "subcategory_id"])
+        logger.info(
+            "rule_update ok id=%s keyword=%r category=%s subcategory=%s user=%s",
+            rule.id,
+            keyword,
+            cat_id,
+            subcat_id,
+            request.user.id,
+        )
+    else:
+        # Champs requis manquants → règle inchangée (rejet volontaire, mais tracé).
+        logger.debug(
+            "rule_update rejected id=%s reason=missing_fields keyword=%r category_id=%r",
+            rule.id,
+            keyword,
+            category_id,
+        )
 
     return render(request, "budget/_rule_row.html", {"rule": rule})

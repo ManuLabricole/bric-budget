@@ -47,6 +47,57 @@ urlpatterns = [
         views.asset_class_transactions,
         name="asset_class_transactions",
     ),
+    # /patrimoine/institutions/picker/ → catalogue institutions (panel droit, recherche live).
+    # 2 segments → ne clashe pas avec <slug> (1 segment), mais déclaré AVANT par prudence.
+    path(
+        "institutions/picker/",
+        views.institution_picker,
+        name="institution_picker",
+    ),
+    # /patrimoine/institutions/<slug>/logo/form/ → formulaire de réparation logo (GET, HTMX #128)
+    path(
+        "institutions/<slug:slug>/logo/form/",
+        views.institution_logo_form,
+        name="institution_logo_form",
+    ),
+    # /patrimoine/institutions/<slug>/logo/ → installe le logo collé à la main (POST, HTMX #128)
+    path(
+        "institutions/<slug:slug>/logo/",
+        views.institution_logo_repair,
+        name="institution_logo_repair",
+    ),
+    # /patrimoine/comptes/nouveau/ → wizard #73 step 2 (formulaire, panel droit, GET)
+    path("comptes/nouveau/", views.account_form, name="account_form"),
+    # /patrimoine/comptes/creer/ → wizard #73 création (POST → 204 + HX-Redirect)
+    path("comptes/creer/", views.account_create, name="account_create"),
+    # ── Page zoom compte (#82 PR C) ─────────────────────────────────────────
+    # Préfixe "compte/" (2+ segments) → ne clashe pas avec <slug> (1 segment).
+    # /patrimoine/compte/<id>/ → page zoom d'un compte (graphe + tx + détails)
+    path("compte/<int:account_id>/", views.account_detail, name="account_detail"),
+    # /patrimoine/compte/<id>/period/<period>/ → change la période de la courbe (POST)
+    path(
+        "compte/<int:account_id>/period/<str:period>/",
+        views.set_account_period,
+        name="set_account_period",
+    ),
+    # /patrimoine/compte/<id>/transactions/ → scroll infini page 2+ (GET, HTMX)
+    path(
+        "compte/<int:account_id>/transactions/",
+        views.account_transactions,
+        name="account_transactions",
+    ),
+    # /patrimoine/compte/<id>/champ/<field>/edit/ → passe un champ en édition (GET, HTMX)
+    path(
+        "compte/<int:account_id>/champ/<str:field>/edit/",
+        views.account_field_form,
+        name="account_field_form",
+    ),
+    # /patrimoine/compte/<id>/champ/<field>/ → valide + persiste le champ (POST, HTMX)
+    path(
+        "compte/<int:account_id>/champ/<str:field>/",
+        views.account_field_save,
+        name="account_field_save",
+    ),
     # /patrimoine/<slug>/ → page d'une classe d'actifs (listing ou SOON)
     path("<slug:slug>/", views.asset_class_page, name="asset_class"),
 ]

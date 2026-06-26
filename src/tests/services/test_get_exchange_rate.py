@@ -30,7 +30,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from accounts.models import ExchangeRate
-from transactions.services import get_exchange_rate
+from services.exchange_rates import get_exchange_rate
 
 TEST_DATE = date(2026, 3, 17)
 
@@ -111,7 +111,7 @@ def test_db_cache_hit_does_not_call_api(db):
         date=TEST_DATE, from_currency="EUR", to_currency="CHF", rate=Decimal("0.93")
     )
 
-    with patch("transactions.services.urllib.request.urlopen") as mock_urlopen:
+    with patch("services.exchange_rates.urllib.request.urlopen") as mock_urlopen:
         get_exchange_rate(TEST_DATE, "EUR", "CHF")
         mock_urlopen.assert_not_called()
 
@@ -129,7 +129,7 @@ def test_api_called_when_rate_not_in_db(db):
     On vérifie que le résultat est bien le taux venu de l'API (0.9321).
     """
     with patch(
-        "transactions.services.urllib.request.urlopen",
+        "services.exchange_rates.urllib.request.urlopen",
         return_value=mock_api_response("CHF", 0.9321),
     ):
         result = get_exchange_rate(TEST_DATE, "EUR", "CHF")
@@ -148,7 +148,7 @@ def test_rate_stored_in_db_after_api_call(db):
     assert ExchangeRate.objects.count() == 0
 
     with patch(
-        "transactions.services.urllib.request.urlopen",
+        "services.exchange_rates.urllib.request.urlopen",
         return_value=mock_api_response("CHF", 0.9321),
     ):
         get_exchange_rate(TEST_DATE, "EUR", "CHF")
@@ -170,7 +170,7 @@ def test_second_call_uses_db_cache_not_api(db):
     L'objectif : N transactions le même jour = 1 seul appel API, pas N.
     """
     with patch(
-        "transactions.services.urllib.request.urlopen",
+        "services.exchange_rates.urllib.request.urlopen",
         return_value=mock_api_response("CHF", 0.9321),
     ) as mock_urlopen:
         get_exchange_rate(TEST_DATE, "EUR", "CHF")  # appel 1 : API
@@ -196,7 +196,7 @@ def test_api_error_returns_none_without_crash(db):
     import urllib.error
 
     with patch(
-        "transactions.services.urllib.request.urlopen",
+        "services.exchange_rates.urllib.request.urlopen",
         side_effect=urllib.error.URLError("Connection refused"),
     ):
         result = get_exchange_rate(TEST_DATE, "EUR", "CHF")
@@ -216,7 +216,9 @@ def test_api_unexpected_json_format_returns_none(db):
     mock_resp.__enter__ = lambda self: mock_resp
     mock_resp.__exit__ = MagicMock(return_value=False)
 
-    with patch("transactions.services.urllib.request.urlopen", return_value=mock_resp):
+    with patch(
+        "services.exchange_rates.urllib.request.urlopen", return_value=mock_resp
+    ):
         result = get_exchange_rate(TEST_DATE, "EUR", "CHF")
 
     assert result is None

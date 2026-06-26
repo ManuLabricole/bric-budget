@@ -1,5 +1,5 @@
 """
-accounts/banks_config.py — Source de vérité pour les banques supportées.
+accounts/institutions_config.py — Source de vérité pour les institutions supportées.
 
 Pourquoi un fichier de config plutôt qu'un fixture Django ?
 ------------------------------------------------------------
@@ -7,47 +7,1011 @@ Un fixture est un snapshot de la DB à un instant T — il peut désynchroniser
 si la DB évolue. Ce fichier est du code Python : on le lit, on fait get_or_create,
 et la DB reste toujours en phase avec la config.
 
-Ajouter une nouvelle banque
----------------------------
+Ajouter une nouvelle institution
+--------------------------------
 1. Ajouter une entrée dans KNOWN_INSTITUTIONS (slug = clé du dict)
-2. Déposer l'icône dans static/icons/banks/miniature/<slug>.png
-3. Lancer : python manage.py seed_banks
-4. Ajouter le connecteur dans connectors/resolver.py si un export existe
+2. Lancer : python manage.py seed_institutions
+   → le logo est récupéré automatiquement via `domain` (post_save Institution,
+     service services/logos.py). Rattrapage : python manage.py backfill_logos.
+   → si le logo Google Favicons est moche/générique : déposer un SVG manuel dans
+     static/icons/institutions/svg/<slug>.svg (prioritaire sur le PNG).
+3. Ajouter le connecteur dans connectors/resolver.py si un export existe
 
 Structure de chaque entrée
 --------------------------
   name     : nom affiché dans l'UI
-  currency : devise principale (ISO 4217) — utilisée comme défaut à la création de compte
+  currency : devise principale (ISO 4217) — défaut à la création de compte
   country  : code pays ISO 3166-1 alpha-2
+  domain   : domaine web nu (minuscules, sans scheme) — récupération du logo
+  category : type d'institution (l'une des valeurs de CATEGORIES) — pilote le
+             badge / regroupement dans l'UI.
+             Valeurs autorisées :
+               "bank"       — banques de détail, néobanques, banques en ligne
+               "investment" — courtiers, bourse, robo-advisors, assurance vie,
+                              prévoyance (3a/LPP) — tout ce qui investit
+               "crypto"     — exchanges et plateformes crypto
 
-Note : pas de BIC ici — le BIC est propre à chaque compte (CheckingAccount.bic),
-pas à la banque. Il est saisi manuellement via seed_accounts ou l'admin Django.
+Pourquoi seulement 3 catégories (et pas assurance / prévoyance séparées) ?
+-------------------------------------------------------------------------
+La catégorie tague l'INSTITUTION (un badge grossier « où as-tu un compte »).
+Assurance vie et prévoyance ne sont pas des natures d'institution mais des
+ENVELOPPES FISCALES → leur spécificité (AV 8 ans, 3a déductible, PEA 5 ans) se
+joue au niveau du COMPTE et du moteur fiscal, pas du badge. On les range donc
+en "investment". Décision 2026-06-11.
+
+Notes
+-----
+- Pas de BIC ici — le BIC est propre à chaque compte (CheckingAccount.bic),
+  pas à l'institution.
+- Courtiers/distributeurs AV (Boursorama, Meilleurtaux, Linxea) ET assureurs
+  (Generali, Spirica…) sont DEUX types d'entrées distincts : pour une assurance
+  vie, Account.institution = le courtier (là où l'user se connecte) ; l'assureur
+  sous-jacent sera un champ séparé (futur LifeInsuranceDetails.insurer).
 """
 
+# Catégories autorisées pour le champ `category`. Source de vérité — toute valeur
+# hors de cet ensemble doit être rejetée (seed_institutions, tests).
+CATEGORIES = {"bank", "investment", "crypto"}
+
 KNOWN_INSTITUTIONS = {
-    "yuh": {
-        "name": "Yuh",
-        "currency": "CHF",
-        "country": "CH",
-    },
+    # ── Banques de détail — Suisse ────────────────────────────────────────────
     "ubs": {
         "name": "UBS",
         "currency": "CHF",
         "country": "CH",
+        "domain": "ubs.com",
+        "category": "bank",
+    },
+    "postfinance": {
+        "name": "PostFinance",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "postfinance.ch",
+        "category": "bank",
+    },
+    "raiffeisen": {
+        "name": "Raiffeisen",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "raiffeisen.ch",
+        "category": "bank",
+    },
+    "migros-bank": {
+        "name": "Migros Bank",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "migrosbank.ch",
+        "category": "bank",
+    },
+    "bcv": {
+        "name": "Banque Cantonale Vaudoise",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "bcv.ch",
+        "category": "bank",
+    },
+    "bcge": {
+        "name": "Banque Cantonale de Genève",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "bcge.ch",
+        "category": "bank",
+    },
+    "zkb": {
+        "name": "Zürcher Kantonalbank",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "zkb.ch",
+        "category": "bank",
+    },
+    "valiant": {
+        "name": "Valiant",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "valiant.ch",
+        "category": "bank",
+    },
+    "bank-cler": {
+        "name": "Bank Cler",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "cler.ch",
+        "category": "bank",
+    },
+    "luzerner-kantonalbank": {
+        "name": "Luzerner Kantonalbank",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "lukb.ch",
+        "category": "bank",
+    },
+    "berner-kantonalbank": {
+        "name": "Berner Kantonalbank",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "bekb.ch",
+        "category": "bank",
+    },
+    "banque-cantonale-fribourg": {
+        "name": "Banque Cantonale de Fribourg",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "bcf.ch",
+        "category": "bank",
+    },
+    "banque-cantonale-jura": {
+        "name": "Banque Cantonale du Jura",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "bcj.ch",
+        "category": "bank",
+    },
+    "banque-cantonale-neuchatel": {
+        "name": "Banque Cantonale Neuchâteloise",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "bcn.ch",
+        "category": "bank",
+    },
+    "banque-cantonale-valais": {
+        "name": "Banque Cantonale du Valais",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "bcvs.ch",
+        "category": "bank",
+    },
+    "cembra": {
+        "name": "Cembra",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "cembra.ch",
+        "category": "bank",
+    },
+    # ── Néobanques — Suisse ───────────────────────────────────────────────────
+    "yuh": {
+        "name": "Yuh",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "yuh.ch",
+        "category": "bank",
+    },
+    "neon": {
+        "name": "Neon",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "neon-free.ch",
+        "category": "bank",
+    },
+    "alpian": {
+        "name": "Alpian",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "alpian.com",
+        "category": "bank",
+    },
+    "radicant": {
+        "name": "Radicant",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "radicant.com",
+        "category": "bank",
+    },
+    "zak": {
+        "name": "Zak (Bank Cler)",
+        "currency": "CHF",
+        "country": "CH",
+        # Néobanque de Bank Cler → partage le domaine cler.ch (même logo que bank-cler).
+        # Pour distinguer visuellement Zak : déposer un SVG manuel dans svg/zak.svg.
+        "domain": "cler.ch",
+        "category": "bank",
+    },
+    # ── Banques de détail — France ────────────────────────────────────────────
+    "bnp-paribas": {
+        "name": "BNP Paribas",
+        "currency": "EUR",
+        "country": "FR",
+        # group.bnpparibas : seul domaine BNP avec un favicon 128px dans l'index
+        # Google (mabanque.bnpparibas → 16px seulement).
+        "domain": "group.bnpparibas",
+        "category": "bank",
+    },
+    "credit-agricole": {
+        "name": "Crédit Agricole",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "credit-agricole.fr",
+        "category": "bank",
+    },
+    "societe-generale": {
+        "name": "Société Générale",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "societegenerale.fr",
+        "category": "bank",
+    },
+    "caisse-epargne": {
+        "name": "Caisse d'Épargne",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "caisse-epargne.fr",
+        "category": "bank",
+    },
+    "banque-populaire": {
+        "name": "Banque Populaire",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "banquepopulaire.fr",
+        "category": "bank",
+    },
+    "lcl": {
+        "name": "LCL",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "lcl.fr",
+        "category": "bank",
     },
     "cic": {
         "name": "CIC",
         "currency": "EUR",
         "country": "FR",
+        "domain": "cic.fr",
+        "category": "bank",
     },
-    "boursorama": {
-        "name": "Boursorama",
+    "credit-mutuel": {
+        "name": "Crédit Mutuel",
         "currency": "EUR",
         "country": "FR",
+        "domain": "creditmutuel.fr",
+        "category": "bank",
     },
+    "la-banque-postale": {
+        "name": "La Banque Postale",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "labanquepostale.fr",
+        "category": "bank",
+    },
+    "ccf": {
+        "name": "CCF",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "ccf.fr",
+        "category": "bank",
+    },
+    "axa-banque": {
+        "name": "AXA Banque",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "axabanque.fr",
+        "category": "bank",
+    },
+    "bred": {
+        "name": "BRED",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "bred.fr",
+        "category": "bank",
+    },
+    "credit-cooperatif": {
+        "name": "Crédit Coopératif",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "credit-cooperatif.coop",
+        "category": "bank",
+    },
+    "credit-du-nord": {
+        "name": "Crédit du Nord",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "credit-du-nord.fr",
+        "category": "bank",
+    },
+    "ing-france": {
+        "name": "ING France",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "ing.fr",
+        "category": "bank",
+    },
+    # ── Néobanques / banques en ligne — France & Europe ──────────────────────
+    "boursorama": {
+        "name": "BoursoBank",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "boursobank.com",
+        "category": "bank",
+    },
+    "fortuneo": {
+        "name": "Fortuneo",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "fortuneo.fr",
+        "category": "bank",
+    },
+    "monabanq": {
+        "name": "Monabanq",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "monabanq.com",
+        "category": "bank",
+    },
+    "hello-bank": {
+        "name": "Hello bank!",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "hellobank.fr",
+        "category": "bank",
+    },
+    "bforbank": {
+        "name": "BforBank",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "bforbank.com",
+        "category": "bank",
+    },
+    "nickel": {
+        "name": "Nickel",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "nickel.eu",
+        "category": "bank",
+    },
+    "n26": {
+        "name": "N26",
+        "currency": "EUR",
+        "country": "DE",
+        "domain": "n26.com",
+        "category": "bank",
+    },
+    "revolut": {
+        "name": "Revolut",
+        "currency": "EUR",
+        "country": "GB",
+        "domain": "revolut.com",
+        "category": "bank",
+    },
+    "lydia": {
+        "name": "Lydia",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "lydia-app.com",
+        "category": "bank",
+    },
+    "wise": {
+        "name": "Wise",
+        "currency": "EUR",
+        "country": "GB",
+        "domain": "wise.com",
+        "category": "bank",
+    },
+    "ma-french-bank": {
+        "name": "Ma French Bank",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "mafrenchbank.fr",
+        "category": "bank",
+    },
+    "helios": {
+        "name": "Helios",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "helios.do",
+        "category": "bank",
+    },
+    "green-got": {
+        "name": "Green-Got",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "green-got.com",
+        "category": "bank",
+    },
+    "onlyone": {
+        "name": "OnlyOne",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "onlyonecard.eu",
+        "category": "bank",
+    },
+    "bunq": {
+        "name": "bunq",
+        "currency": "EUR",
+        "country": "NL",
+        "domain": "bunq.com",
+        "category": "bank",
+    },
+    "qonto": {
+        "name": "Qonto",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "qonto.com",
+        "category": "bank",
+    },
+    "shine": {
+        "name": "Shine",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "shine.fr",
+        "category": "bank",
+    },
+    # ── Banques — Royaume-Uni ─────────────────────────────────────────────────
+    "monzo": {
+        "name": "Monzo",
+        "currency": "GBP",
+        "country": "GB",
+        "domain": "monzo.com",
+        "category": "bank",
+    },
+    "starling": {
+        "name": "Starling Bank",
+        "currency": "GBP",
+        "country": "GB",
+        "domain": "starlingbank.com",
+        "category": "bank",
+    },
+    "tsb": {
+        "name": "TSB",
+        "currency": "GBP",
+        "country": "GB",
+        "domain": "tsb.co.uk",
+        "category": "bank",
+    },
+    "chase-uk": {
+        "name": "Chase UK",
+        "currency": "GBP",
+        "country": "GB",
+        "domain": "chase.co.uk",
+        "category": "bank",
+    },
+    "barclays": {
+        "name": "Barclays",
+        "currency": "GBP",
+        "country": "GB",
+        "domain": "barclays.co.uk",
+        "category": "bank",
+    },
+    "lloyds": {
+        "name": "Lloyds Bank",
+        "currency": "GBP",
+        "country": "GB",
+        "domain": "lloydsbank.com",
+        "category": "bank",
+    },
+    "natwest": {
+        "name": "NatWest",
+        "currency": "GBP",
+        "country": "GB",
+        "domain": "natwest.com",
+        "category": "bank",
+    },
+    "hsbc-uk": {
+        "name": "HSBC UK",
+        "currency": "GBP",
+        "country": "GB",
+        "domain": "hsbc.co.uk",
+        "category": "bank",
+    },
+    "nationwide": {
+        "name": "Nationwide",
+        "currency": "GBP",
+        "country": "GB",
+        "domain": "nationwide.co.uk",
+        "category": "bank",
+    },
+    "santander-uk": {
+        "name": "Santander UK",
+        "currency": "GBP",
+        "country": "GB",
+        "domain": "santander.co.uk",
+        "category": "bank",
+    },
+    "monese": {
+        "name": "Monese",
+        "currency": "GBP",
+        "country": "GB",
+        "domain": "monese.com",
+        "category": "bank",
+    },
+    "halifax": {
+        "name": "Halifax",
+        "currency": "GBP",
+        "country": "GB",
+        "domain": "halifax.co.uk",
+        "category": "bank",
+    },
+    # ── Courtiers / investissement ────────────────────────────────────────────
+    "swissquote": {
+        "name": "Swissquote",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "swissquote.ch",
+        "category": "investment",
+    },
+    "saxo": {
+        "name": "Saxo Bank",
+        "currency": "EUR",
+        "country": "DK",
+        "domain": "home.saxo",
+        "category": "investment",
+    },
+    "interactive-brokers": {
+        "name": "Interactive Brokers",
+        "currency": "USD",
+        "country": "US",
+        "domain": "interactivebrokers.com",
+        "category": "investment",
+    },
+    "degiro": {
+        "name": "DEGIRO",
+        "currency": "EUR",
+        "country": "NL",
+        "domain": "degiro.com",
+        "category": "investment",
+    },
+    "trade-republic": {
+        "name": "Trade Republic",
+        "currency": "EUR",
+        "country": "DE",
+        "domain": "traderepublic.com",
+        "category": "investment",
+    },
+    "scalable-capital": {
+        "name": "Scalable Capital",
+        "currency": "EUR",
+        "country": "DE",
+        "domain": "scalable.capital",
+        "category": "investment",
+    },
+    "etoro": {
+        "name": "eToro",
+        "currency": "USD",
+        "country": "IL",
+        "domain": "etoro.com",
+        "category": "investment",
+    },
+    "bourse-direct": {
+        "name": "Bourse Direct",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "boursedirect.fr",
+        "category": "investment",
+    },
+    "trading-212": {
+        "name": "Trading 212",
+        "currency": "GBP",
+        "country": "GB",
+        "domain": "trading212.com",
+        "category": "investment",
+    },
+    "vanguard": {
+        "name": "Vanguard",
+        "currency": "USD",
+        "country": "US",
+        "domain": "vanguard.com",
+        "category": "investment",
+    },
+    "yomoni": {
+        "name": "Yomoni",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "yomoni.fr",
+        "category": "investment",
+    },
+    "nalo": {
+        "name": "Nalo",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "nalo.fr",
+        "category": "investment",
+    },
+    "goodvest": {
+        "name": "Goodvest",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "goodvest.fr",
+        "category": "investment",
+    },
+    "ramify": {
+        "name": "Ramify",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "ramify.fr",
+        "category": "investment",
+    },
+    "shares": {
+        "name": "Shares",
+        "currency": "EUR",
+        "country": "GB",
+        "domain": "shares.io",
+        "category": "investment",
+    },
+    "freetrade": {
+        "name": "Freetrade",
+        "currency": "GBP",
+        "country": "GB",
+        "domain": "freetrade.io",
+        "category": "investment",
+    },
+    "lightyear": {
+        "name": "Lightyear",
+        "currency": "EUR",
+        "country": "GB",
+        "domain": "lightyear.com",
+        "category": "investment",
+    },
+    "bux": {
+        "name": "BUX",
+        "currency": "EUR",
+        "country": "NL",
+        "domain": "getbux.com",
+        "category": "investment",
+    },
+    "macsf": {
+        "name": "MACSF",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "macsf.fr",
+        "category": "investment",
+    },
+    "bitvavo": {
+        "name": "Bitvavo",
+        "currency": "EUR",
+        "country": "NL",
+        "domain": "bitvavo.com",
+        "category": "crypto",  # exchange crypto (comme Binance/Kraken), pas un courtier
+    },
+    "finary": {
+        "name": "Finary",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "finary.com",
+        "category": "investment",
+    },
+    # ── Robo-advisors / gestion pilotée — Suisse ──────────────────────────────
+    "inyova": {
+        "name": "Inyova",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "inyova.ch",
+        "category": "investment",
+    },
+    "truewealth": {
+        "name": "True Wealth",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "truewealth.ch",
+        "category": "investment",
+    },
+    "descartes-finance": {
+        "name": "Descartes Finance",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "descartesfinance.com",
+        "category": "investment",
+    },
+    "splint-invest": {
+        "name": "Splint Invest",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "splintinvest.com",
+        "category": "investment",
+    },
+    "findependent": {
+        "name": "Findependent",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "findependent.ch",
+        "category": "investment",
+    },
+    # ── Prévoyance 3a / LPP — Suisse ──────────────────────────────────────────
     "finpension": {
         "name": "Finpension",
         "currency": "CHF",
         "country": "CH",
+        "domain": "finpension.ch",
+        "category": "investment",
+    },
+    "viac": {
+        "name": "VIAC",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "viac.ch",
+        "category": "investment",
+    },
+    "frankly": {
+        "name": "frankly",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "frankly.ch",
+        "category": "investment",
+    },
+    "selma": {
+        "name": "Selma",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "selma.com",
+        "category": "investment",
+    },
+    "liberty": {
+        "name": "Liberty Vorsorge",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "liberty.ch",
+        "category": "investment",
+    },
+    "vzvermoegenszentrum": {
+        "name": "VZ VermögensZentrum",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "vermoegenszentrum.ch",
+        "category": "investment",
+    },
+    "swisscanto": {
+        "name": "Swisscanto Vorsorge",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "swisscanto.com",
+        "category": "investment",
+    },
+    "sparbatze": {
+        "name": "Sparbatze",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "sparbatze.ch",
+        "category": "investment",
+    },
+    # ── Crypto (exchanges) ────────────────────────────────────────────────────
+    "binance": {
+        "name": "Binance",
+        "currency": "EUR",
+        "country": "MT",
+        "domain": "binance.com",
+        "category": "crypto",
+    },
+    "kraken": {
+        "name": "Kraken",
+        "currency": "USD",
+        "country": "US",
+        "domain": "kraken.com",
+        "category": "crypto",
+    },
+    "coinbase": {
+        "name": "Coinbase",
+        "currency": "USD",
+        "country": "US",
+        "domain": "coinbase.com",
+        "category": "crypto",
+    },
+    "relai": {
+        "name": "Relai",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "relai.app",
+        "category": "crypto",
+    },
+    "bitpanda": {
+        "name": "Bitpanda",
+        "currency": "EUR",
+        "country": "AT",
+        "domain": "bitpanda.com",
+        "category": "crypto",
+    },
+    "crypto-com": {
+        "name": "Crypto.com",
+        "currency": "USD",
+        "country": "SG",
+        "domain": "crypto.com",
+        "category": "crypto",
+    },
+    "bybit": {
+        "name": "Bybit",
+        "currency": "USD",
+        "country": "AE",
+        "domain": "bybit.com",
+        "category": "crypto",
+    },
+    "okx": {
+        "name": "OKX",
+        "currency": "USD",
+        "country": "SC",
+        "domain": "okx.com",
+        "category": "crypto",
+    },
+    "bitstamp": {
+        "name": "Bitstamp",
+        "currency": "EUR",
+        "country": "LU",
+        "domain": "bitstamp.net",
+        "category": "crypto",
+    },
+    "gemini": {
+        "name": "Gemini",
+        "currency": "USD",
+        "country": "US",
+        "domain": "gemini.com",
+        "category": "crypto",
+    },
+    "swissborg": {
+        "name": "SwissBorg",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "swissborg.com",
+        "category": "crypto",
+    },
+    "ledger": {
+        "name": "Ledger",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "ledger.com",
+        "category": "crypto",
+    },
+    "young-platform": {
+        "name": "Young Platform",
+        "currency": "EUR",
+        "country": "IT",
+        "domain": "youngplatform.com",
+        "category": "crypto",
+    },
+    "coinhouse": {
+        "name": "Coinhouse",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "coinhouse.com",
+        "category": "crypto",
+    },
+    "paymium": {
+        "name": "Paymium",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "paymium.com",
+        "category": "crypto",
+    },
+    "stackinsat": {
+        "name": "StackinSat",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "stackinsat.com",
+        "category": "crypto",
+    },
+    "bitstack": {
+        "name": "Bitstack",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "bitstack-app.com",
+        "category": "crypto",
+    },
+    "mt-pelerin": {
+        "name": "Mt Pelerin",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "mtpelerin.com",
+        "category": "crypto",
+    },
+    # ── Assurance vie — assureurs ─────────────────────────────────────────────
+    "spirica": {
+        "name": "Spirica",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "spirica.fr",
+        "category": "investment",
+    },
+    "swiss-life": {
+        "name": "Swiss Life",
+        "currency": "CHF",
+        "country": "CH",
+        "domain": "swisslife.ch",
+        "category": "investment",
+    },
+    "generali": {
+        "name": "Generali",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "generali.fr",
+        "category": "investment",
+    },
+    "axa": {
+        "name": "AXA",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "axa.fr",
+        "category": "investment",
+    },
+    "suravenir": {
+        "name": "Suravenir",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "suravenir.fr",
+        "category": "investment",
+    },
+    "apicil": {
+        "name": "Apicil",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "apicil.com",
+        "category": "investment",
+    },
+    "abeille-assurances": {
+        "name": "Abeille Assurances",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "abeille-assurances.fr",
+        "category": "investment",
+    },
+    "cardif": {
+        "name": "BNP Paribas Cardif",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "cardif.fr",
+        "category": "investment",
+    },
+    "cnp-assurances": {
+        "name": "CNP Assurances",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "cnp.fr",
+        "category": "investment",
+    },
+    "mif": {
+        "name": "MIF",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "lamif.fr",
+        "category": "investment",
+    },
+    "carac": {
+        "name": "Carac",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "carac.fr",
+        "category": "investment",
+    },
+    "afer": {
+        "name": "Afer",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "afer.fr",
+        "category": "investment",
+    },
+    "gaipare": {
+        "name": "Gaipare",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "gaipare.com",
+        "category": "investment",
+    },
+    "corum": {
+        "name": "Corum L'Épargne",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "corum.fr",
+        "category": "investment",
+    },
+    # ── Assurance vie — distributeurs / courtiers ─────────────────────────────
+    "linxea": {
+        "name": "Linxea",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "linxea.com",
+        "category": "investment",
+    },
+    "meilleurtaux": {
+        "name": "Meilleurtaux Placement",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "meilleurtaux.com",
+        "category": "investment",
+    },
+    "placement-direct": {
+        "name": "Placement-direct",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "placement-direct.fr",
+        "category": "investment",
+    },
+    "assurancevie-com": {
+        "name": "Assurancevie.com",
+        "currency": "EUR",
+        "country": "FR",
+        "domain": "assurancevie.com",
+        "category": "investment",
     },
 }

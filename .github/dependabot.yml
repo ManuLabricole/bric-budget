@@ -1,0 +1,71 @@
+# .github/dependabot.yml — BricBudget supply-chain hardening (#163, part of #160)
+#
+# Dependabot ouvre automatiquement des PR de bump sur les dépendances, sur 3
+# écosystèmes : Python (Poetry), npm (Tailwind) et les GitHub Actions du CI.
+# Objectif : ne plus subir les CVE réactivement (cf. CVE cryptography) — les bumps
+# arrivent en PR, passent la CI, et c'est Emmanuel qui merge (1 issue = 1 branche).
+#
+# Note SHA-pin : le pin par SHA des actions GitHub (actions/checkout@v4 → @<sha>) est
+# DÉLÉGUÉ à Dependabot — avec `package-ecosystem: github-actions`, il propose lui-même
+# le passage aux SHA et maintient le commentaire `# vX.Y.Z` à jour. On ne pin donc PAS
+# à la main ici (évite la collision avec les PR CI #165/#197).
+
+version: 2
+
+updates:
+  # ── Python (Poetry) ──────────────────────────────────────────────────────────
+  # Dependabot lit pyproject.toml + poetry.lock à la racine. Il groupe les bumps
+  # de dev (ruff, pytest…) pour limiter le bruit de PR ; les deps applicatives
+  # (django, cryptography…) restent en PR individuelles pour une revue ciblée.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "infra"
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    groups:
+      python-dev-dependencies:
+        dependency-type: "development"
+
+  # ── npm (Tailwind build) ─────────────────────────────────────────────────────
+  # package.json + package-lock.json à la racine. Pas de JS runtime, uniquement
+  # la chaîne de build CSS (tailwindcss) → on groupe tout pour 1 PR de bump propre.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "infra"
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    groups:
+      npm-dependencies:
+        patterns:
+          - "*"
+
+  # ── GitHub Actions (CI) ──────────────────────────────────────────────────────
+  # Scanne les `uses:` de .github/workflows/. C'est lui qui proposera le pin SHA
+  # des actions (actions/checkout, setup-python, cache, upload-artifact…) → on ne
+  # touche PAS ci.yml à la main pour ça (anti-collision #165/#197).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "infra"
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      github-actions:
+        patterns:
+          - "*"

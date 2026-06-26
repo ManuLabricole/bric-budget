@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+{% load static %}
+<html lang="fr" class="h-full">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="description" content="BricBudget — Suivi budgétaire personnel" />
+        <meta name="keywords" content="budget, finance, BricBudget" />
+        <title>
+            {% block title %}BricBudget{% endblock %}
+        </title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+              rel="stylesheet" />
+        <link rel="stylesheet" href="{% static 'css/tailwind.css' %}" />
+        <style>
+      /* Styles d'input globaux pour les pages publiques (login, etc.).
+         Les widgets Django génèrent des <input> sans attribut class — on les
+         stylise ici plutôt que d'ajouter une dépendance (django-widget-tweaks). */
+      input[type="text"],
+      input[type="email"],
+      input[type="password"] {
+        display: block;
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        background: #0e0e14;
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 0.5rem;
+        color: #edf0f5;
+        font-size: 0.875rem;
+        font-family: inherit;
+        outline: none;
+        transition: border-color 0.15s;
+        box-sizing: border-box;
+      }
+      input[type="text"]:focus,
+      input[type="email"]:focus,
+      input[type="password"]:focus {
+        border-color: rgba(255,255,255,0.25);
+      }
+        </style>
+    </head>
+    <body class="h-full bb-background font-sans text-text-primary antialiased">
+        {% block content %}{% endblock %}
+    </body>
+</html>

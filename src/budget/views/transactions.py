@@ -18,6 +18,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import EmptyPage, InvalidPage, Paginator
+from django.db.models import Prefetch
 from django.db.models.functions import Abs
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, render
@@ -31,13 +32,161 @@ from budget.utils import (
     _add_months,
     _period_end_from_start,
     _period_from_session,
-    _resolve_bank_icon_map,
     safe_referer,
 )
+from services.logos import get_institution_icon_map
 from transactions.models import BudgetTarget, Category, SubCategory, Transaction
 from transactions.services import sync_internal_transfer
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Carte détail transaction INLINE — composant réutilisable (budget + patrimoine)
+# =============================================================================
+#
+# Une page affiche le détail d'une transaction dans une div fixe du panel droit
+# (≠ overlay glissant). Pattern partagé via budget/_panel_tx_detail_inline.html.
+#
+# Ajouter une 3ᵉ page = 1 entrée dans _INLINE_TX + le conteneur <div id="<detail_id>">
+# dans la page + l'include de la ligne avec panel_source="<clé>" panel_target="#<detail_id>".
+# Aucune vue à modifier.
+#
+# Deux sources distinctes par contexte (évite la collision avec le bouton œil de la
+# ligne, qui poste source=panel_source et cible #tx-id) :
+#   - "<clé>"         (liste/ligne) → re-rend juste la ligne en gardant son contexte.
+#   - "<clé>_detail"  (toggles de la carte) → carte + ligne centrale OOB.
+_INLINE_TX = {
+    "patrimoine": {
+        "detail_id": "ac-tx-detail",
+        # Chevron → picker INLINE dans la carte (#ac-tx-detail). Recatégoriser ne
+        # sort pas la tx de la liste (liste par compte) → on renvoie la carte mise à
+        # jour + la ligne centrale en OOB (pas de reload).
+        "picker_source": "patrimoine",
+        "picker_target": "#ac-tx-detail",
+        "picker_overlay": False,
+        "reload_on_recategorize": False,
+        # Pas de Sankey/donut à rafraîchir sur la page asset_class.
+        "cashflow": False,
+    },
+    "category": {
+        "detail_id": "cat-tx-detail",
+        # Chevron → picker INLINE dans la carte (#cat-tx-detail). Recatégoriser peut
+        # faire SORTIR la tx de la catégorie → reload complet (liste + Sankey + donut).
+        "picker_source": "category",
+        "picker_target": "#cat-tx-detail",
+        "picker_overlay": False,
+        "reload_on_recategorize": True,
+        # Toggle_ignore change les totaux → signal de refresh du cashflow card.
+        "cashflow": True,
+    },
+}
+
+
+def _inline_cashflow_url(tx):
+    """URL fragment cashflow de la catégorie de la transaction (None si non catégorisée)."""
+    slug = tx.category.slug if tx.category else None
+    return reverse("budget:category_cashflow_fragment", args=[slug]) if slug else None
+
+
+def _inline_card_ctx(tx, institution_icon_url, key, *, cashflow_refresh_url=None):
+    cfg = _INLINE_TX[key]
+    return {
+        "tx": tx,
+        "institution_icon_url": institution_icon_url,
+        "detail_id": cfg["detail_id"],
+        "toggle_source": f"{key}_detail",
+        "picker_source": cfg["picker_source"],
+        "picker_target": cfg["picker_target"],
+        "picker_overlay": cfg["picker_overlay"],
+        "cashflow_refresh_url": cashflow_refresh_url,
+    }
+
+
+def _inline_card(request, tx, institution_icon_url, key, *, cashflow_refresh_url=None):
+    """GET détail (clic ligne) → la carte inline seule (cible #<detail_id>)."""
+    return render(
+        request,
+        "budget/_panel_tx_detail_inline.html",
+        _inline_card_ctx(
+            tx, institution_icon_url, key, cashflow_refresh_url=cashflow_refresh_url
+        ),
+    )
+
+
+def _inline_card_response(
+    request, tx, institution_icon_url, key, *, cashflow_refresh_url=None
+):
+    """
+    Toggle depuis la carte (source="<clé>_detail") → carte (#<detail_id>) re-rendue
+    + ligne centrale #tx-id en OOB, pour refléter is_ignored/is_reconciled dans la liste.
+
+    `tx` doit être chargé en select_related (category/subcategory/account/institution).
+    """
+    cfg = _INLINE_TX[key]
+    card_html = render_to_string(
+        "budget/_panel_tx_detail_inline.html",
+        _inline_card_ctx(
+            tx, institution_icon_url, key, cashflow_refresh_url=cashflow_refresh_url
+        ),
+        request=request,
+    )
+    row_html = render_to_string(
+        "budget/_panel_tx_row.html",
+        {
+            "tx": tx,
+            "institution_icon_url": institution_icon_url,
+            "panel_source": key,
+            "panel_target": f"#{cfg['detail_id']}",
+            "oob": True,
+        },
+        request=request,
+    )
+    return HttpResponse(card_html + row_html)
+
+
+def _inline_row(request, tx, institution_icon_url, key):
+    """
+    Bouton œil/pointer de la ligne (source="<clé>") → la ligne seule (#tx-id, outerHTML),
+    en préservant panel_source/panel_target → les clics suivants rouvrent bien la carte.
+    """
+    return render(
+        request,
+        "budget/_panel_tx_row.html",
+        {
+            "tx": tx,
+            "institution_icon_url": institution_icon_url,
+            "panel_source": key,
+            "panel_target": f"#{_INLINE_TX[key]['detail_id']}",
+        },
+    )
+
+
+def _inline_dispatch(request, tx, institution_icon_url, *, with_cashflow=True):
+    """
+    Route un POST toggle vers la bonne réponse inline selon `source`, ou None si
+    le contexte n'est pas inline (l'appelant poursuit avec sa logique overlay/liste).
+
+    - source="<clé>_detail" → carte + ligne OOB (+ cashflow si configuré ET with_cashflow).
+    - source="<clé>"        → la ligne seule, contexte préservé.
+
+    with_cashflow=False pour toggle_reconcile : pointer ne change pas les totaux,
+    inutile de recharger le Sankey/donut.
+    """
+    src = request.POST.get("source", "")
+    base = src[: -len("_detail")] if src.endswith("_detail") else ""
+    if base in _INLINE_TX:
+        cashflow_url = (
+            _inline_cashflow_url(tx)
+            if with_cashflow and _INLINE_TX[base]["cashflow"]
+            else None
+        )
+        return _inline_card_response(
+            request, tx, institution_icon_url, base, cashflow_refresh_url=cashflow_url
+        )
+    if src in _INLINE_TX:
+        return _inline_row(request, tx, institution_icon_url, src)
+    return None
 
 
 @login_required
@@ -56,14 +205,22 @@ def budget_modal_target_create(request):
     category_id = request.POST.get("category_id") or request.GET.get("category_id")
 
     if request.method == "POST":
-        category = get_object_or_404(Category, id=category_id)
+        # for_user : la catégorie ciblée doit être visible (système OU à moi).
+        category = get_object_or_404(
+            Category.objects.for_user(request.user), id=category_id
+        )
         amount_str = request.POST.get("amount", "").replace(",", ".")
         try:
             amount = Decimal(str(amount_str))
         except (InvalidOperation, ValueError):
             return HttpResponse("Montant invalide", status=400)
-        _, created = BudgetTarget.objects.update_or_create(
+        # #201 : l'objectif est scopé owner=request.user → chacun a SON objectif sur une
+        # catégorie (y compris système), plus de write partagé/écrasé entre users.
+        # #213 fail-closed : update_or_create fait son lookup via get_queryset (→ .none()),
+        # d'où le queryset scopé for_user pour retrouver l'objectif existant.
+        _, created = BudgetTarget.objects.for_user(request.user).update_or_create(
             category=category,
+            owner=request.user,
             defaults={"amount": amount},
         )
         log = logger.info if created else logger.debug
@@ -80,8 +237,15 @@ def budget_modal_target_create(request):
 
     # GET sans category_id → liste de toutes les catégories avec leur objectif actuel
     if not category_id:
-        cats = Category.objects.filter(is_active=True).order_by("name")
-        targets_by_cat = {t.category_id: t for t in BudgetTarget.objects.all()}
+        cats = (
+            Category.objects.for_user(request.user)
+            .filter(is_active=True)
+            .order_by("name")
+        )
+        # #201 : objectifs scopés owner via for_user → uniquement les miens.
+        targets_by_cat = {
+            t.category_id: t for t in BudgetTarget.objects.for_user(request.user)
+        }
         categories_with_targets = [
             {"category": cat, "target": targets_by_cat.get(cat.id)} for cat in cats
         ]
@@ -92,9 +256,16 @@ def budget_modal_target_create(request):
         )
 
     # GET avec category_id → formulaire pour cette catégorie (création ou modification)
-    category = get_object_or_404(Category, id=category_id)
+    # SR-001 : sans for_user, user B pourrait passer l'id d'une catégorie PERSO de
+    # user A et lire son objectif (IDOR). On scope système OU à moi.
+    category = get_object_or_404(
+        Category.objects.for_user(request.user), id=category_id
+    )
     existing_amount = None
-    target = BudgetTarget.objects.filter(category=category).first()
+    # #201 : mon objectif sur cette catégorie (scopé owner), pas celui d'un autre user.
+    target = (
+        BudgetTarget.objects.for_user(request.user).filter(category=category).first()
+    )
     if target:
         existing_amount = target.amount
 
@@ -138,9 +309,9 @@ def budget_panel_transactions(request):
     period_start, period_end = _period_from_session(request.session)
     today = date.today()
 
-    # ── Icônes banque ─────────────────────────────────────────────────────────
-    # Délégué au helper privé _resolve_bank_icon_map() — voir définition plus haut.
-    bank_icon_map = _resolve_bank_icon_map()
+    # ── Icônes institution ────────────────────────────────────────────────────
+    # Map batch O(1) caché — source unique services.logos.get_institution_icon_map (#139).
+    institution_icon_map = get_institution_icon_map()
 
     # ── Recherche texte libre (filtre live) ──────────────────────────────────
     #
@@ -175,7 +346,11 @@ def budget_panel_transactions(request):
         .select_related("institution")
         .order_by("institution__name", "name")
     )
-    all_categories = Category.objects.filter(is_active=True).order_by("order", "name")
+    all_categories = (
+        Category.objects.for_user(request.user)
+        .filter(is_active=True)
+        .order_by("order", "name")
+    )
 
     # ── Queryset transactions ─────────────────────────────────────────────────
     #
@@ -228,15 +403,15 @@ def budget_panel_transactions(request):
 
     tx_list = list(page_obj.object_list)
 
-    # Annoter chaque transaction avec l'URL résolue de l'icône banque.
-    # tx.bank_icon_url est ensuite accessible directement dans le template.
+    # Annoter chaque transaction avec l'URL résolue de l'icône institution.
+    # tx.institution_icon_url est ensuite accessible directement dans le template.
     for tx in tx_list:
         slug = (
             tx.account.institution.icon_slug
             if tx.account and tx.account.institution
             else ""
         )
-        tx.bank_icon_url = bank_icon_map.get(slug, "")
+        tx.institution_icon_url = institution_icon_map.get(slug, "")
 
     # ── Page > 1 = réponse "append-only" pour le scroll infini ─────────────────
     # Le sentinel HTMX en bas de liste fait un GET ?page=N.
@@ -249,7 +424,7 @@ def budget_panel_transactions(request):
             {
                 "transactions": tx_list,
                 "page_obj": page_obj,
-                "bank_icon_map": bank_icon_map,
+                "institution_icon_map": institution_icon_map,
                 "q": q,
                 "amount_min": amount_min,
                 "amount_max": amount_max,
@@ -406,13 +581,18 @@ def budget_toggle_ignore(request, tx_id):
         request.user.id,
     )
 
-    bank_icon_map = _resolve_bank_icon_map()
+    institution_icon_map = get_institution_icon_map()
     slug = (
         tx.account.institution.icon_slug
         if tx.account and tx.account.institution
         else ""
     )
-    bank_icon_url = bank_icon_map.get(slug, "")
+    institution_icon_url = institution_icon_map.get(slug, "")
+
+    # Contextes carte détail inline (patrimoine, category) — cf. _INLINE_TX.
+    inline = _inline_dispatch(request, tx, institution_icon_url)
+    if inline is not None:
+        return inline
 
     # source=detail → appelé depuis les toggles du panneau détail.
     # close_on_back est passé comme champ hidden dans le formulaire pour préserver
@@ -437,7 +617,7 @@ def budget_toggle_ignore(request, tx_id):
                 "budget/_panel_tx_detail.html",
                 {
                     "tx": tx,
-                    "bank_icon_url": bank_icon_url,
+                    "institution_icon_url": institution_icon_url,
                     "detail_target": "#panel-content",
                     "close_on_back": True,
                     "source": "category",
@@ -447,7 +627,7 @@ def budget_toggle_ignore(request, tx_id):
             )
             row_html = render_to_string(
                 "budget/_panel_tx_row.html",
-                {"tx": tx, "bank_icon_url": bank_icon_url, "oob": True},
+                {"tx": tx, "institution_icon_url": institution_icon_url, "oob": True},
                 request=request,
             )
             return HttpResponse(panel_html + row_html)
@@ -456,7 +636,7 @@ def budget_toggle_ignore(request, tx_id):
             "budget/_panel_tx_detail.html",
             {
                 "tx": tx,
-                "bank_icon_url": bank_icon_url,
+                "institution_icon_url": institution_icon_url,
                 "detail_target": "#panel-content",
                 "close_on_back": False,
                 "source": "",
@@ -465,20 +645,11 @@ def budget_toggle_ignore(request, tx_id):
         )
         return HttpResponse(panel_html)
 
-    # source=category → appelé depuis category_detail.html.
-    # On ne peut pas mettre à jour KPIs + Sankey + donut en partiel —
-    # on recharge la page complète via HX-Redirect vers la même URL.
-    # HTMX suit la redirection → category_detail recalcule tout avec les données fraîches.
-    if request.POST.get("source") == "category":
-        response = HttpResponse()
-        response["HX-Redirect"] = safe_referer(request, "/budget/")
-        return response
-
     # source=list (défaut) → appelé depuis la liste panel → retourner juste la ligne
     return render(
         request,
         "budget/_panel_tx_row.html",
-        {"tx": tx, "bank_icon_url": bank_icon_url},
+        {"tx": tx, "institution_icon_url": institution_icon_url},
     )
 
 
@@ -510,17 +681,38 @@ def budget_panel_category_picker(request):
         ),
         pk=tx_id,
     )
-    # Catégories système = seedées à l'init, non supprimables (ex: Alimentation, Transport...)
-    system_cats = Category.objects.filter(is_active=True, is_system=True).order_by(
-        "order"
+    # SR-001 — fuite inter-user : le template fait `cat.subcategories.all` (reverse-FK
+    # NON scopée). Sans ce prefetch, une sous-cat perso d'un AUTRE user rattachée à une
+    # catégorie système apparaît dans le picker (et son delete → 404). On préfetch scopé.
+    scoped_subs = Prefetch(
+        "subcategories",
+        queryset=SubCategory.objects.for_user(request.user).filter(is_active=True),
     )
-    # Catégories personnalisées = créées par l'utilisateur (aucune pour l'instant en Phase 1C)
-    custom_cats = Category.objects.filter(is_active=True, is_system=False).order_by(
-        "order"
+    # Catégories système = seedées à l'init, non supprimables (ex: Alimentation, Transport...)
+    # is_system=True ⇒ owner NULL. #213 fail-closed : on passe par for_user (qui inclut
+    # owner IS NULL) pour exiger un scope explicite — sinon le manager renvoie .none().
+    system_cats = (
+        Category.objects.for_user(request.user)
+        .filter(is_active=True, is_system=True)
+        .order_by("order")
+        .prefetch_related(scoped_subs)
+    )
+    # Catégories personnalisées = créées par l'utilisateur → scopées for_user (#137) :
+    # un user ne voit QUE ses propres perso dans le picker, jamais celles d'un autre.
+    custom_cats = (
+        Category.objects.for_user(request.user)
+        .filter(is_active=True, is_system=False)
+        .order_by("order")
+        .prefetch_related(scoped_subs)
     )
 
+    # Contexte inline (patrimoine, category) → le picker vit dans la carte #<detail_id>
+    # et son × / retour reviennent à cette carte. Sinon (overlay budget) → #panel-content.
     source = request.GET.get("source", "")
-    detail_target = "#cat-tx-detail" if source == "category" else "#panel-content"
+    is_inline = source in _INLINE_TX
+    detail_target = (
+        f"#{_INLINE_TX[source]['detail_id']}" if is_inline else "#panel-content"
+    )
 
     return render(
         request,
@@ -531,6 +723,7 @@ def budget_panel_category_picker(request):
             "custom_cats": custom_cats,
             "source": source,
             "detail_target": detail_target,
+            "is_inline": is_inline,
         },
     )
 
@@ -568,8 +761,14 @@ def budget_categorize_transaction(request):
     source = request.POST.get("source", "")
 
     tx = get_object_or_404(Transaction.objects.for_user(request.user), pk=tx_id)
-    tx.category = get_object_or_404(Category, pk=cat_id)
-    tx.subcategory = SubCategory.objects.filter(pk=sub_id).first() if sub_id else None
+    # for_user sur la catégorie : on ne peut catégoriser sa tx qu'avec une catégorie
+    # système ou SA propre perso (#137 — sinon référence à la perso d'un autre user).
+    tx.category = get_object_or_404(Category.objects.for_user(request.user), pk=cat_id)
+    tx.subcategory = (
+        SubCategory.objects.for_user(request.user).filter(pk=sub_id).first()
+        if sub_id
+        else None
+    )
     tx.categorization_source = "manual"
 
     # Sync is_internal_transfer + is_ignored selon la catégorie choisie.
@@ -615,29 +814,28 @@ def budget_categorize_transaction(request):
         }
     )
 
-    # source="category" → le picker était ouvert dans l'overlay #panel-content
-    # depuis category_detail.html. On retourne le détail mis à jour dans ce même
-    # overlay (close_on_back=True = bouton ← ferme, pas revenir à la liste).
-    if source == "category":
+    # Contexte carte détail inline (patrimoine, category) : le picker était ouvert
+    # dans la carte #<detail_id>.
+    if source in _INLINE_TX:
+        # category : recatégoriser peut faire SORTIR la tx de la catégorie → reload
+        # complet (liste + Sankey + donut + KPIs) via HX-Redirect.
+        if _INLINE_TX[source]["reload_on_recategorize"]:
+            response = HttpResponse()
+            response["HX-Redirect"] = safe_referer(request, "/budget/")
+            return response
+        # patrimoine : la tx reste dans la liste (par compte) → on renvoie la carte
+        # mise à jour (#<detail_id>) + la ligne centrale en OOB (catégorie à jour).
         tx_full = Transaction.objects.select_related(
             "category", "subcategory", "account", "account__institution"
         ).get(pk=tx.pk)
-        bank_icon_map = _resolve_bank_icon_map()
-        slug = (
+        institution_icon_map = get_institution_icon_map()
+        islug = (
             tx_full.account.institution.icon_slug
             if tx_full.account and tx_full.account.institution
             else ""
         )
-        response = render(
-            request,
-            "budget/_panel_tx_detail.html",
-            {
-                "tx": tx_full,
-                "bank_icon_url": bank_icon_map.get(slug, ""),
-                "close_on_back": True,
-                "source": "category",
-                "detail_target": "#panel-content",
-            },
+        response = _inline_card_response(
+            request, tx_full, institution_icon_map.get(islug, ""), source
         )
         response["HX-Trigger"] = hx_trigger
         return response
@@ -666,7 +864,7 @@ def budget_panel_tx_detail(request):
     Remplace l'ancien comportement qui ouvrait directement le picker catégorie.
 
     Pourquoi select_related avec "account__institution" ?
-        On affiche le nom du compte et l'icône banque dans le panneau.
+        On affiche le nom du compte et l'icône institution dans le panneau.
         Sans select_related, Django ferait 2 requêtes supplémentaires
         (tx → account, account → bank) au lieu d'un seul JOIN.
     """
@@ -678,29 +876,30 @@ def budget_panel_tx_detail(request):
         pk=tx_id,
     )
 
-    # Résolution icône banque — même helper que les autres vues panel
-    bank_icon_map = _resolve_bank_icon_map()
+    # Résolution icône institution — même helper que les autres vues panel
+    institution_icon_map = get_institution_icon_map()
     slug = (
         tx.account.institution.icon_slug
         if tx.account and tx.account.institution
         else ""
     )
-    bank_icon_url = bank_icon_map.get(slug, "")
+    institution_icon_url = institution_icon_map.get(slug, "")
 
-    # source="category" → ouvert depuis category_detail.html.
-    # close_on_back=True : bouton retour = fermer l'overlay (pas revenir à la liste,
-    # qui est déjà visible dans la page principale).
-    # detail_target est toujours #panel-content : l'overlay droit est utilisé partout,
-    # y compris depuis category_detail. Le div #cat-tx-detail est supprimé.
     source = request.GET.get("source", "")
 
+    # Contexte carte détail INLINE (patrimoine → #ac-tx-detail, category → #cat-tx-detail)
+    # : la carte vit dans une div fixe du panel droit, pas l'overlay glissant.
+    if source in _INLINE_TX:
+        return _inline_card(request, tx, institution_icon_url, source)
+
+    # Sinon (source="" / "list") → détail dans l'overlay glissant #panel-content.
     return render(
         request,
         "budget/_panel_tx_detail.html",
         {
             "tx": tx,
-            "bank_icon_url": bank_icon_url,
-            "close_on_back": source == "category",
+            "institution_icon_url": institution_icon_url,
+            "close_on_back": False,
             "source": source,
             "detail_target": "#panel-content",
         },
@@ -743,20 +942,26 @@ def budget_toggle_reconcile(request, tx_id):
         request.user.id,
     )
 
-    bank_icon_map = _resolve_bank_icon_map()
+    institution_icon_map = get_institution_icon_map()
     slug = (
         tx.account.institution.icon_slug
         if tx.account and tx.account.institution
         else ""
     )
-    bank_icon_url = bank_icon_map.get(slug, "")
+    institution_icon_url = institution_icon_map.get(slug, "")
+
+    # Contextes carte détail inline — voir _INLINE_TX. with_cashflow=False : pointer
+    # ne change pas les totaux. Doit précéder le défaut `!= "detail"`.
+    inline = _inline_dispatch(request, tx, institution_icon_url, with_cashflow=False)
+    if inline is not None:
+        return inline
 
     # source=list → appelé depuis la ligne liste → retourner juste la ligne
     if request.POST.get("source") != "detail":
         return render(
             request,
             "budget/_panel_tx_row.html",
-            {"tx": tx, "bank_icon_url": bank_icon_url},
+            {"tx": tx, "institution_icon_url": institution_icon_url},
         )
 
     # source=detail → retourner le panneau entier mis à jour.
@@ -768,7 +973,7 @@ def budget_toggle_reconcile(request, tx_id):
             "budget/_panel_tx_detail.html",
             {
                 "tx": tx,
-                "bank_icon_url": bank_icon_url,
+                "institution_icon_url": institution_icon_url,
                 "detail_target": "#panel-content",
                 "close_on_back": True,
                 "source": "category",
@@ -777,7 +982,7 @@ def budget_toggle_reconcile(request, tx_id):
         )
         row_html = render_to_string(
             "budget/_panel_tx_row.html",
-            {"tx": tx, "bank_icon_url": bank_icon_url, "oob": True},
+            {"tx": tx, "institution_icon_url": institution_icon_url, "oob": True},
             request=request,
         )
         return HttpResponse(panel_html + row_html)
@@ -786,7 +991,7 @@ def budget_toggle_reconcile(request, tx_id):
         "budget/_panel_tx_detail.html",
         {
             "tx": tx,
-            "bank_icon_url": bank_icon_url,
+            "institution_icon_url": institution_icon_url,
             "detail_target": "#panel-content",
             "close_on_back": False,
             "source": "",

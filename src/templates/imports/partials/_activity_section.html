@@ -4,7 +4,7 @@ imports/partials/_activity_section.html — Section graphique d'activité.
 Rendu complet à chaque swap HTMX (period_nav ou filtre compte).
 Le <script> inline ré-initialise ECharts après chaque swap.
 {% endcomment %}
-{% load static bank_icons %}
+{% load static institution_icons %}
 <div id="activity-chart-section">
 {# 1. Navigation période — full width, même layout que budget/index.html #}
 {% include "components/period/period_nav.html" with period_mode=period_mode period_display=period_display can_go_next=can_go_next nav_url_name="imports:set_period" htmx_target="#activity-chart-section" %}

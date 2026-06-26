@@ -31,7 +31,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         if not Institution.objects.filter(slug__in=["yuh", "ubs", "cic"]).exists():
             raise CommandError(
-                "Banques introuvables. Lancez d'abord : python manage.py seed_banks"
+                "Institutions introuvables. Lancez d'abord : python manage.py seed_institutions"
             )
 
         self.stdout.write("\n╔══════════════════════════════════════════════════╗")
@@ -48,7 +48,7 @@ class Command(BaseCommand):
         self.stdout.write("🏦  Yuh (CHF — compte courant)")
         self.stdout.write("    Pas d'identifiant dans le fichier CSV — IBAN saisi ici.")
         n_c, n_u = self._wizard_checking(
-            bank_slug="yuh",
+            institution_slug="yuh",
             default_name="Compte Yuh",
             contract_number="",
             iban_label="IBAN Yuh",
@@ -63,7 +63,7 @@ class Command(BaseCommand):
         self.stdout.write("🏦  UBS (CHF — compte courant)")
         self.stdout.write("    L'IBAN est aussi extrait du fichier CSV à l'import.")
         n_c, n_u = self._wizard_checking(
-            bank_slug="ubs",
+            institution_slug="ubs",
             default_name="UBS Compte courant",
             contract_number=None,  # sera défini par l'IBAN saisi
             iban_label="IBAN UBS",
@@ -118,7 +118,7 @@ class Command(BaseCommand):
                     default=acc["default_name"],
                 )
                 n_c, n_u = self._save_checking(
-                    bank_slug="cic",
+                    institution_slug="cic",
                     name=name,
                     currency=Account.Currency.EUR,
                     contract_number=rib,
@@ -131,7 +131,7 @@ class Command(BaseCommand):
                     default=acc["default_name"],
                 )
                 n_c, n_u = self._save_savings(
-                    bank_slug="cic",
+                    institution_slug="cic",
                     name=name,
                     currency=Account.Currency.EUR,
                     contract_number=rib,
@@ -162,7 +162,7 @@ class Command(BaseCommand):
 
     def _wizard_checking(
         self,
-        bank_slug,
+        institution_slug,
         default_name,
         contract_number,
         iban_label,
@@ -184,7 +184,7 @@ class Command(BaseCommand):
             contract_number = iban or ""
 
         return self._save_checking(
-            bank_slug=bank_slug,
+            institution_slug=institution_slug,
             name=name,
             currency=Account.Currency.CHF,
             contract_number=contract_number,
@@ -192,8 +192,10 @@ class Command(BaseCommand):
             bic=bic,
         )
 
-    def _save_checking(self, bank_slug, name, currency, contract_number, iban, bic):
-        bank = Institution.objects.get(slug=bank_slug)
+    def _save_checking(
+        self, institution_slug, name, currency, contract_number, iban, bic
+    ):
+        bank = Institution.objects.get(slug=institution_slug)
 
         if contract_number:
             existing = Account.objects.filter(
@@ -208,9 +210,10 @@ class Command(BaseCommand):
 
         if existing:
             existing.name = name
+            # IBAN canonique sur Account (source unique #82) ; "" → None.
+            existing.iban = iban or None
             existing.save()
             ca, _ = CheckingAccount.objects.get_or_create(account=existing)
-            ca.iban = iban
             ca.bic = bic or ""
             ca.save()
             self.stdout.write(f"    · Mis à jour : {name}{status}")
@@ -221,15 +224,17 @@ class Command(BaseCommand):
                 name=name,
                 account_type=Account.AccountType.CHECKING,
                 currency=currency,
+                # IBAN canonique sur Account (source unique #82) ; "" → None.
+                iban=iban or None,
                 contract_number=contract_number,
                 is_active=True,
             )
-            CheckingAccount.objects.create(account=account, iban=iban, bic=bic or "")
+            CheckingAccount.objects.create(account=account, bic=bic or "")
             self.stdout.write(self.style.SUCCESS(f"    ✓ Créé : {name}{status}"))
             return 1, 0
 
-    def _save_savings(self, bank_slug, name, currency, contract_number):
-        bank = Institution.objects.get(slug=bank_slug)
+    def _save_savings(self, institution_slug, name, currency, contract_number):
+        bank = Institution.objects.get(slug=institution_slug)
         existing = Account.objects.filter(
             institution=bank, contract_number=contract_number
         ).first()
@@ -259,7 +264,7 @@ class Command(BaseCommand):
         for ca in CheckingAccount.objects.select_related("account__institution"):
             if not ca.is_complete:
                 missing = []
-                if not ca.iban:
+                if not ca.account.iban:  # IBAN canonique sur Account (#82)
                     missing.append("IBAN")
                 if not ca.bic:
                     missing.append("BIC")

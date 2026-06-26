@@ -72,6 +72,27 @@ def chf_pref(value, show_decimals):
     return _format_amount(value, decimal_places=0)
 
 
+@register.filter
+def money(value, currency="CHF"):
+    """Montant formaté (0 décimale) SUIVI de sa devise — « la devise de partout ».
+
+    Usage : {{ value|money:"CHF" }} → "1 234 CHF" · {{ tx.amount|money:tx.currency }}.
+    Le site d'appel fournit la devise de la valeur affichée : CHF pour une valeur
+    consolidée (amount_chf, solde patrimoine), devise native sinon. C'est LE point
+    unique à faire évoluer le jour du toggle EUR/CHF (lire alors display_currency).
+
+    Valeur absolue comme |chf — le signe (+/−) reste géré dans le template.
+    Espace insécable (U+00A0) entre nombre et devise → ils ne se séparent jamais en fin de ligne.
+    """
+    return f"{_format_amount(value, 0)} {currency}"
+
+
+@register.filter
+def money_dec(value, currency="CHF"):
+    """Comme `money` mais 2 décimales : {{ tx.amount|money_dec:"EUR" }} → "1 234,50 EUR"."""
+    return f"{_format_amount(value, 2)} {currency}"
+
+
 # ── Gauge demi-cercle SVG ──────────────────────────────────────────────────────
 # Demi-périmètre = π × r = π × 40 = 125.66 (r=40 dans le viewBox 100×52).
 

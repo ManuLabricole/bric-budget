@@ -5,18 +5,25 @@
 # Avec ce fichier, tu contrôles exactement chaque étape.
 #
 # Les phases s'enchaînent dans cet ordre :
-#   setup → install → build → start
+#   setup → install → build → [pre-deploy] → start
 #
 # "setup"   : choisit les outils système (Python, Node, etc.)
 # "install" : installe les dépendances (poetry install)
 # "build"   : commandes à lancer une seule fois après l'install
 # "start"   : commande de démarrage (on utilise le Procfile à la place)
+#
+# Le [pre-deploy] entre build et start n'est PAS une phase nixpacks : c'est une étape
+# Railway (migrate && sync_reference_data) définie dans railway.json (#135), pas ici.
 
 # ── Phase setup ───────────────────────────────────────────────────────────────
 # On déclare explicitement Python 3.13 pour ne pas dépendre de la détection auto.
 # nixpacks utilise Nix en dessous — "python313" est le nom du package Nix.
 [phases.setup]
-nixPkgs = ["python313"]
+# python313 : runtime. postgresql_16 : fournit `pg_dump` au RUNTIME pour la commande
+# de backup (dump_db_to_s3, #257), lancée en pre-deploy + cron. ⚠️ Doit être >= à la
+# version du serveur Postgres Railway (pg_dump refuse un serveur plus récent) → si
+# Railway passe en PG 17, bumper ici. Sans ce paquet : « pg_dump: command not found ».
+nixPkgs = ["python313", "postgresql_16"]
 
 # ── Phase install ─────────────────────────────────────────────────────────────
 # Nixpacks détecte pyproject.toml et lance poetry install automatiquement.
@@ -35,8 +42,8 @@ nixPkgs = ["python313"]
 # On ne lance PAS migrate ici.
 # Pourquoi : migrate modifie la base de données. La DB n'est pas disponible
 # pendant le build (le container n'a pas encore accès aux variables d'env Railway
-# comme DATABASE_URL). Les migrations se lancent séparément, via Railway Console
-# ou manuellement après le premier déploiement.
+# comme DATABASE_URL). Les migrations + le seed des référentiels tournent en
+# pre-deploy (DB accessible) : voir railway.json (deploy.preDeployCommand, #135).
 [phases.build]
 cmds = [
   # SECRET_KEY inline : Railway n'injecte pas toujours les variables pendant le build.

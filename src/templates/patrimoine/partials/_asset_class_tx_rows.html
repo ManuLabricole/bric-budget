@@ -12,7 +12,7 @@ Requiert : txs, page_obj, asset_class, asset_class_tx_url.
             <span class="text-[10px] font-medium text-text-muted">{{ tx.date|date:"j F Y" }}</span>
         </div>
     {% endifchanged %}
-    {% include "budget/_panel_tx_row.html" with bank_icon_url=tx.bank_icon_url panel_source="patrimoine" %}
+    {% include "budget/_panel_tx_row.html" with institution_icon_url=tx.institution_icon_url panel_source="patrimoine" %}
 {% endfor %}
 {% if page_obj.has_next %}
     <div hx-get="{{ asset_class_tx_url }}?page={{ page_obj.next_page_number }}"

@@ -12,6 +12,10 @@ paths:
 - **IDOR (SR-001)** : accès toujours scopé utilisateur — `Transaction.objects.for_user(request.user)`,
   `Account.objects.filter(is_active=True, members=request.user)`,
   `ImportLog.objects.filter(file_hash=h, account__members=request.user)`. Jamais `.all()` / `.get(pk=)` nu.
+- **IDOR reverse-FK / PK (SR-013)** : une reverse-FK en template — `cat.subcategories.all`,
+  `cat.rules.all` — NE passe PAS par `.for_user()` (manager court-circuité) → **`Prefetch` scopé dans la
+  vue** (`Prefetch("subcategories", queryset=SubCategory.objects.for_user(u))`). Et `Model.objects.filter(pk=<input>)`
+  dont on rend un champ → `.for_user().filter(pk=…)`. Owned = Category / SubCategory / CategorizationRule.
 - **Argent (SR-002)** : `Decimal(str(x))`, JAMAIS `Decimal(float)`.
 - **Écritures multiples (SR-003)** : `with transaction.atomic():`.
 - **Logs (SR-005)** : `logger.{debug,info,exception}`, jamais `print()`.
@@ -28,6 +32,16 @@ paths:
 - N+1 : `select_related` (FK) / `prefetch_related` (M2M, reverse FK) dès qu'on accède aux relations.
 - `.exists()` / `.count()` plutôt que `if qs:` / `len(qs)`.
 - Pattern PRG : POST/HTMX → maj **session** → redirect/re-render en GET (état UI en session, pas d'URL params).
+
+## Constantes & référentiels (acté 2026-06-12, #126 — best practice Two Scoops)
+- Constantes/data d'app → **dans l'app propriétaire** (`<app>/constants.py`, `<app>/reference/*.json`),
+  comme les `fixtures/` natives Django. ⛔ Pas de package data racine, pas de data métier dans
+  `config/` (= settings de déploiement uniquement). Racine réservée à l'infra transverse (`services/`).
+- Référentiel = données **committées** app-locales + seed **idempotent** (`update_or_create`)
+  + enregistré dans `sync_reference_data` (release deploy). Échec de seed = `CommandError` (exit ≠ 0),
+  jamais de return silencieux. Pas de `loaddata`/fixtures ni de data migrations pour les catalogues vivants.
+- SR-008 garanti par test : `tests/test_reference_data.py` scanne tous les `*/reference/` +
+  `institutions_config.py` (aucun IBAN/contrat/donnée perso).
 
 ## Structure & style
 - Un module qui grossit → **package** (`views/` package + `__init__.py`, pas de `views_xxx.py` à plat).

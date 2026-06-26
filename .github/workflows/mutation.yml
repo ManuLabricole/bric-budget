@@ -1,0 +1,90 @@
+# .github/workflows/mutation.yml — Mutation testing nightly (#198)
+#
+# mutmut mute le code des modules critiques (services/, transactions/, connectors/)
+# et rejoue les tests : un mutant SURVIVANT = du code qu'aucun test ne discrimine
+# (couverture sans détection). C'est la VRAIE mesure de qualité des tests.
+#
+# Nightly UNIQUEMENT (cron) + workflow_dispatch pour la baseline — JAMAIS par-PR :
+# muter + rejouer la suite par mutant est trop lent pour gater une PR. Le signal est
+# le RAPPORT des survivants (artefact), pas un statut rouge/vert. Périmètre + config
+# dans setup.cfg [mutmut].
+name: Mutation testing (mutmut)
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # 03:00 UTC chaque nuit (hors heures)
+  workflow_dispatch: # déclenchable à la main → établit/rafraîchit la baseline
+
+# Moindre privilège : lit le repo + upload un artefact (pas d'écriture repo).
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutmut:
+    name: Mutation testing (mutmut, scoppé)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120 # borne le run (muter + rejouer par mutant est lent)
+
+    # mutmut lance pytest par mutant → même DB de test que le job `test` de ci.yml.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: bricbudget
+          POSTGRES_USER: bricbudget
+          POSTGRES_PASSWORD: bricbudget
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DEBUG: "True"
+      DATABASE_URL: postgresql://bricbudget:bricbudget@localhost:5432/bricbudget
+      IMPORT_ENCRYPTION_KEY: ""
+      ADMIN_URL: admin
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Install dependencies
+        run: poetry install --no-root
+
+      - name: Generate CI secret key
+        run: python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(50))" >> "$GITHUB_ENV"
+
+      # Informatif : || true → un mutant survivant (exit ≠ 0) ne casse pas le nightly.
+      # Le rapport (étape suivante) est le livrable, pas le statut du job.
+      - name: Run mutation testing (mutmut)
+        run: poetry run mutmut run || true
+
+      # Liste les mutants survivants à couvrir → consommée par l'agent test-auditor (#195).
+      - name: Collect mutmut results
+        if: always()
+        run: poetry run mutmut results > mutmut-report.txt || true
+
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: mutmut-report.txt
+          retention-days: 30

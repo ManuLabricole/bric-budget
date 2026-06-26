@@ -37,9 +37,10 @@
 #     → sans ça, les logs sont perdus dans le container
 #
 # Note sur les migrations :
-#   On ne lance PAS migrate ici. Les migrations sont gérées manuellement via
-#   Railway Console ou un Release Command séparé (voir nixpacks.toml).
-#   Lancer migrate au démarrage de chaque worker serait dangereux en multi-workers.
+#   On ne lance PAS migrate ici (le lancer au démarrage de chaque worker serait
+#   dangereux en multi-workers). Les migrations + le seed des référentiels tournent
+#   en pre-deploy, une seule fois, AVANT le start : voir railway.json
+#   (deploy.preDeployCommand = migrate && sync_reference_data, #135).
 
 # On lance Gunicorn depuis src/ pour que Python trouve le module "config.wsgi".
 # Sans le "cd src &&", Python cherche "src.config.wsgi" depuis la racine et échoue

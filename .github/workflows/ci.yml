@@ -15,7 +15,6 @@ name: CI
 on:
   push:
     branches:
-      - development
       - main
   pull_request:
     branches:
@@ -26,6 +25,11 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+# Moindre privilège : aucun job de cette CI n'écrit dans le repo (lint/test/smoke/e2e/
+# release-commands sont read-only). Le GITHUB_TOKEN est restreint en lecture.
+permissions:
+  contents: read
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -40,15 +44,26 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
       - name: Install Poetry
         run: pip install poetry
+
+      # Cache du virtualenv Poetry, clé = hash de poetry.lock + version Python.
+      # Aujourd'hui chaque job réinstalle tout de zéro (×4). Le cache rend
+      # `poetry install` quasi instantané sur les runs où le lock n'a pas bougé (#156).
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: poetry-venv-${{ runner.os }}-py3.13-${{ hashFiles('poetry.lock') }}
+          restore-keys: |
+            poetry-venv-${{ runner.os }}-py3.13-
 
       # --no-root : on installe les dépendances mais pas le projet lui-même
       # (il n'y a pas de package Python à installer, juste une app Django)
@@ -63,6 +78,52 @@ jobs:
 
       - name: djlint — lint templates
         run: poetry run djlint src/templates/ --profile=django --lint
+
+      # vulture — détection de code mort. INFORMATIF (continue-on-error) : il
+      # remonte des faux positifs connus (args schema_editor des migrations RunPython,
+      # params queryset des actions admin) → on exclut migrations/tests et on ne bloque
+      # PAS la CI tant que le backlog n'est pas nettoyé (#156). Résumé sur la PR.
+      - name: vulture — dead code (informatif)
+        id: vulture
+        continue-on-error: true
+        run: |
+          poetry run vulture src/ \
+            --min-confidence 80 \
+            --exclude "*/migrations/*,*/tests/*" \
+            | tee vulture-report.txt
+
+      - name: vulture — résumé PR
+        if: always()
+        run: |
+          {
+            echo "### 🦅 vulture — code mort potentiel (informatif)";
+            if [ -s vulture-report.txt ]; then
+              echo '```';
+              cat vulture-report.txt;
+              echo '```';
+            else
+              echo "Aucun code mort détecté.";
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # djhtml — formatage des templates Django. INFORMATIF : 23 templates ne sont
+      # pas encore au format djhtml ; on liste les écarts sans bloquer (#156). À
+      # passer en bloquant une fois le backlog templates reformaté (issue dédiée).
+      - name: djhtml — format templates (informatif)
+        id: djhtml
+        continue-on-error: true
+        run: |
+          poetry run djhtml --check src/templates/ | tee djhtml-report.txt
+
+      - name: djhtml — résumé PR
+        if: always()
+        run: |
+          {
+            echo "### 🧱 djhtml — formatage templates (informatif)";
+            echo '```';
+            cat djhtml-report.txt 2>/dev/null || echo "(rien à signaler)";
+            echo '```';
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # bandit — linter sécurité Python (PyCQA). Seuil médium+ : on ignore les Low
       # (essentiellement les `assert` de pytest = B101, non pertinents).
@@ -126,15 +187,23 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
       - name: Install Poetry
         run: pip install poetry
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: poetry-venv-${{ runner.os }}-py3.13-${{ hashFiles('poetry.lock') }}
+          restore-keys: |
+            poetry-venv-${{ runner.os }}-py3.13-
 
       - name: Install dependencies
         run: poetry install --no-root
@@ -148,8 +217,51 @@ jobs:
       - name: Run migrations
         run: cd src && poetry run python manage.py migrate
 
-      - name: Run tests
-        run: cd src && poetry run pytest --color=yes -q
+      # Conformité modèle↔migration (#197, recoupe #165) : échoue si un champ ou une
+      # contrainte a changé sur un modèle sans migration générée. --check => exit
+      # non-zéro en cas de dérive ; --dry-run => n'écrit aucun fichier. Un modèle
+      # modifié sans `makemigrations` ⇒ CI rouge (critère d'acceptation #197).
+      - name: makemigrations --check (dérive modèle↔migration)
+        run: cd src && poetry run python manage.py makemigrations --check --dry-run
+
+      # pytest, lancé depuis la RACINE (pas `cd src`) pour que [tool.coverage]
+      # de pyproject.toml s'applique (source=["src"], omit migrations/tests) :
+      #   -n auto      → pytest-xdist : ~950 tests répartis sur tous les cœurs (#156).
+      #   --reuse-db   → réutilise la test_db migrée ci-dessus, skip la recréation.
+      #   --cov ...    → mesure la couverture (#154). --cov-fail-under=78 : seuil
+      #                  ancré 2 pts sous la baseline réelle (80%) → bloque toute
+      #                  régression nette sans casser sur du bruit. term-missing
+      #                  + le résumé ci-dessous rendent le % visible sur la PR.
+      # -p no:randomly : pytest-randomly est déjà installé (dep historique) et
+      # randomiserait l'ordre → risque de flaky en semaine de release. On fige
+      # l'ordre en CI (désactivation explicite du plugin), sans toucher la dep (#156).
+      - name: Run tests + coverage
+        run: |
+          poetry run pytest --color=yes -q \
+            -p no:randomly \
+            -n auto --reuse-db \
+            --cov --cov-report=term-missing --cov-report=xml \
+            --cov-fail-under=78
+
+      # Publie le % de couverture + le total directement sur la page de la PR
+      # ($GITHUB_STEP_SUMMARY) → visible sans ouvrir les logs (#154).
+      - name: Coverage — résumé PR
+        if: always()
+        run: |
+          {
+            echo "### 🧪 Couverture de test";
+            echo "Seuil bloquant : **78 %** (baseline réelle 80 %).";
+            echo "";
+            if [ -f coverage.xml ]; then
+              echo "<details><summary>Détail par fichier (term-missing)</summary>";
+              echo "";
+              poetry run coverage report --format=markdown;
+              echo "";
+              echo "</details>";
+            else
+              echo "⚠️ Pas de rapport de couverture (les tests ont échoué avant la mesure).";
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Checklist sécu natif Django, en mode PROD (DEBUG=False) : vérifie HSTS,
       # SSL redirect, cookies sécurisés, SECRET_KEY… --fail-level WARNING => toute
@@ -159,6 +271,261 @@ jobs:
           DEBUG: "False"
           ALLOWED_HOSTS: "example.com"
         run: cd src && poetry run python manage.py check --deploy --fail-level WARNING
+
+  # ── Release commands (référentiels) ─────────────────────────────────────────
+  # Rejoue le scénario du release deploy (#126) sur un Postgres réel :
+  # migrate → sync_reference_data à froid → 2e run (idempotence) → dry-run.
+  # C'est la PREUVE à chaque PR que `migrate && sync_reference_data` (la future
+  # Release Command Railway, #135) passera en prod. Un seed cassé = CI rouge.
+  reference-data:
+    name: Release commands (migrate + sync_reference_data)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: bricbudget
+          POSTGRES_USER: bricbudget
+          POSTGRES_PASSWORD: bricbudget
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DEBUG: "True"
+      DATABASE_URL: postgresql://bricbudget:bricbudget@localhost:5432/bricbudget
+      IMPORT_ENCRYPTION_KEY: ""
+      ADMIN_URL: admin
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: poetry-venv-${{ runner.os }}-py3.13-${{ hashFiles('poetry.lock') }}
+          restore-keys: |
+            poetry-venv-${{ runner.os }}-py3.13-
+
+      - name: Install dependencies
+        run: poetry install --no-root
+
+      - name: Generate CI secret key
+        run: python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(50))" >> "$GITHUB_ENV"
+
+      - name: Scénario release — froid, idempotence, dry-run
+        run: |
+          cd src
+          poetry run python manage.py migrate --noinput
+          poetry run python manage.py sync_reference_data
+          poetry run python manage.py sync_reference_data
+          poetry run python manage.py sync_reference_data --dry-run
+
+  # ── Deploy guards (collectstatic prod + smoke /healthz/) ─────────────────────
+  # Garde-fous contre les régressions « deploy-breaking » qui passent la CI au vert
+  # et ne pètent qu'au déploiement Railway (#165, part of #160). Job DÉDIÉ, séparé
+  # des jobs existants — ne touche aucun autre step.
+  #
+  #   1. collectstatic en config PROD (DEBUG=False → CompressedManifestStaticFilesStorage,
+  #      settings.py:377) : reproduit EXACTEMENT la phase build de nixpacks.toml:49. En
+  #      DEBUG=True le storage est permissif ; un {% static %} cassé n'échoue qu'avec le
+  #      manifest → build Railway rouge alors que la CI était verte. Ici → CI rouge.
+  #   2. smoke /healthz/ : démarre l'app comme en prod (gunicorn, DEBUG=False) et vérifie
+  #      que la route de liveness pinguée par Railway répond 200 en ANONYME. Un middleware
+  #      auth global ou un boot cassé la casserait → reboot en boucle. Ici → CI rouge.
+  #
+  # Note : makemigrations --check n'est PAS ici — il est porté par #197 (PR #223).
+  deploy-guard:
+    name: Deploy guards (collectstatic + smoke healthz)
+    runs-on: ubuntu-latest
+
+    # Postgres requis : settings.py lit DATABASE_URL au boot, et gunicorn initialise
+    # axes/middleware au démarrage. /healthz/ ne touche pas la DB, mais le boot oui.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: bricbudget
+          POSTGRES_USER: bricbudget
+          POSTGRES_PASSWORD: bricbudget
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://bricbudget:bricbudget@localhost:5432/bricbudget
+      IMPORT_ENCRYPTION_KEY: ""
+      ADMIN_URL: admin
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: poetry-venv-${{ runner.os }}-py3.13-${{ hashFiles('poetry.lock') }}
+          restore-keys: |
+            poetry-venv-${{ runner.os }}-py3.13-
+
+      - name: Install dependencies
+        run: poetry install --no-root
+
+      - name: Generate CI secret key
+        run: python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(50))" >> "$GITHUB_ENV"
+
+      # collectstatic en config PROD : reproduit nixpacks.toml:49. DEBUG=False active le
+      # manifest storage → un {% static %} cassé fait échouer ce step (donc la CI).
+      - name: collectstatic (prod manifest storage)
+        env:
+          DEBUG: "False"
+          ALLOWED_HOSTS: localhost
+        run: cd src && poetry run python manage.py collectstatic --noinput
+
+      # axes (middleware actif en DEBUG=False) initialise ses tables au boot gunicorn :
+      # sans migrate préalable, le boot crashe → le guard deviendrait rouge pour une
+      # mauvaise raison (échec parasite non lié à /healthz/), ou vert par accident si
+      # le Postgres du service est recyclé. On migre pour un boot prod fidèle.
+      - name: Apply migrations (requis par axes au boot gunicorn)
+        env:
+          DEBUG: "False"
+          ALLOWED_HOSTS: localhost
+        run: cd src && poetry run python manage.py migrate --noinput
+
+      # smoke : gunicorn (prod) + curl /healthz/ anonyme → 200. Le manifest généré
+      # ci-dessus est requis (CompressedManifest exige staticfiles.json en DEBUG=False).
+      - name: Smoke /healthz/ (gunicorn prod boot)
+        run: ./scripts/smoke_healthz.sh
+
+  # ── E2E navigateur (Playwright + live_server) ────────────────────────────────
+  # Job SÉPARÉ du job `test` (#159) : lance les smokes end-to-end navigateur dans un
+  # vrai chromium headless contre un vrai serveur Django (live_server). Ne touche PAS
+  # le step `test` principal — ces tests sont opt-in via le marker `e2e` (la suite par
+  # défaut les exclut, cf. pyproject `addopts = -m "not e2e"`). Navigateur en cache,
+  # artefacts (traces + screenshots) uploadés uniquement en cas d'échec pour debug.
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: bricbudget
+          POSTGRES_USER: bricbudget
+          POSTGRES_PASSWORD: bricbudget
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DEBUG: "True"
+      DATABASE_URL: postgresql://bricbudget:bricbudget@localhost:5432/bricbudget
+      IMPORT_ENCRYPTION_KEY: ""
+      ADMIN_URL: admin
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: poetry-venv-${{ runner.os }}-py3.13-${{ hashFiles('poetry.lock') }}
+          restore-keys: |
+            poetry-venv-${{ runner.os }}-py3.13-
+
+      - name: Install dependencies
+        run: poetry install --no-root
+
+      # Cache du navigateur Playwright : ~/.cache/ms-playwright. Clé indexée sur la
+      # version de playwright (poetry.lock) → re-télécharge seulement quand elle bouge.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('poetry.lock') }}
+
+      # Binaire navigateur (caché sous ~/.cache/ms-playwright) → re-téléchargé UNIQUEMENT
+      # sur cache-miss. Les libs système (fonts, libnss…) ne sont PAS dans ce cache →
+      # install-deps tourne toujours. On limite à chromium (1 navigateur = suite stable).
+      - name: Install Playwright chromium (binaire — sauté si cache-hit)
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: poetry run playwright install chromium
+      - name: Install Playwright system deps (libs OS, non cachées)
+        run: poetry run playwright install-deps chromium
+
+      - name: Generate CI secret key
+        run: python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(50))" >> "$GITHUB_ENV"
+
+      - name: Run migrations
+        run: cd src && poetry run python manage.py migrate --noinput
+
+      # -m e2e : opt-in explicite (la suite par défaut exclut ce marker).
+      # --reuse-db : réutilise la base migrée ci-dessus. -p no:randomly : ordre figé.
+      # --screenshot/--tracing only-on-failure : artefacts de debug seulement si rouge.
+      - name: Run E2E tests (headless)
+        run: |
+          poetry run pytest -m e2e -q \
+            -p no:randomly --reuse-db \
+            --screenshot=only-on-failure \
+            --tracing=retain-on-failure \
+            --output=e2e-artifacts
+
+      # En cas d'échec, on remonte traces Playwright + screenshots → ouvrables dans
+      # trace.playwright.dev pour rejouer le parcours pas à pas (critère d'acceptation).
+      - name: Upload E2E artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-artifacts
+          path: e2e-artifacts/
+          retention-days: 7
+          if-no-files-found: ignore
 
   # ── Security (semgrep SAST) ──────────────────────────────────────────────────
   # Analyse statique de sécurité avec les rulesets registry semgrep (Django / OWASP
@@ -173,10 +540,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
@@ -197,7 +564,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 

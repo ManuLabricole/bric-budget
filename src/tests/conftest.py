@@ -22,6 +22,76 @@ from pathlib import Path
 
 import openpyxl
 import pytest
+from pytest_factoryboy import register
+
+from services import logos as _logos_service
+from tests.factories import (
+    AccountFactory,
+    BalanceSnapshotFactory,
+    CategorizationRuleFactory,
+    CategoryFactory,
+    CheckingAccountFactory,
+    InstitutionFactory,
+    SavingsAccountFactory,
+    SubCategoryFactory,
+    SystemCategoryFactory,
+    TransactionFactory,
+    UserFactory,
+)
+
+# pytest-factoryboy : expose chaque factory comme fixture pytest (#194).
+#   - `<model>_factory`  → la CLASSE factory (ex. `account_factory`) pour fabriquer
+#     plusieurs objets dans un test : `account_factory(currency="EUR")`.
+#   - `<prefix>`          → UNE instance prête à l'emploi (ex. `factory_account`).
+# On PRÉFIXE les fixtures-instance par `factory_` pour NE PAS shadower les fixtures
+# historiques `user`/`account`/`category`/`bank` définies dans les conftests locaux
+# (qui portent des valeurs précises et restent la source des tests existants).
+# Un NOUVEAU test crée ses données en 1 ligne via `account_factory(...)` / `factory_account`.
+register(UserFactory, "factory_user")
+register(InstitutionFactory, "factory_institution")
+register(AccountFactory, "factory_account")
+register(CheckingAccountFactory, "factory_checking_account")
+register(SavingsAccountFactory, "factory_savings_account")
+register(BalanceSnapshotFactory, "factory_balance_snapshot")
+register(CategoryFactory, "factory_category")
+register(SystemCategoryFactory, "factory_system_category")
+register(SubCategoryFactory, "factory_sub_category")
+register(CategorizationRuleFactory, "factory_categorization_rule")
+register(TransactionFactory, "factory_transaction")
+
+
+@pytest.fixture(autouse=True)
+def _no_network_logo_fetch(monkeypatch):
+    """
+    Garde réseau global : aucun test ne doit télécharger un logo pour de vrai
+    (le post_save Institution déclenche fetch_logo dès qu'un domain est posé).
+    fetch_logo attrape l'exception par contrat → comportement « échec réseau »,
+    silencieux et sans effet. Les tests du service re-patchent _download eux-mêmes.
+    """
+
+    def _blocked(url: str, dest: Path) -> None:
+        raise OSError("réseau désactivé dans les tests (garde conftest)")
+
+    monkeypatch.setattr(_logos_service, "_download", _blocked)
+
+
+@pytest.fixture(autouse=True)
+def _reset_icon_map_cache():
+    """
+    Isolation des tests — vide le cache d'icônes entre chaque test (issue #192).
+
+    `get_institution_icon_map()` mémoïse son résultat dans un lru_cache
+    PROCESS-GLOBAL (`services.logos._icon_map_cached`) qui survit à toute la
+    session pytest. Sans reset, un test qui peuple/invalide ce cache (logos,
+    logo_repair, backfill_logos) contamine l'état lu par les tests suivants :
+    source de non-déterminisme (flake d'un test IDOR observé ~1 run sur 14).
+
+    On vide AVANT (pas de fuite entrante d'un test précédent) ET APRÈS (les
+    chemins de fichiers tmp_path de ce test ne fuient pas vers les suivants).
+    """
+    _logos_service.clear_institution_icon_cache()
+    yield
+    _logos_service.clear_institution_icon_cache()
 
 
 @pytest.fixture

@@ -250,6 +250,41 @@ system = f"Compte {account.iban} de {user}"     # leak
 
 ---
 
+## SR-013 — IDOR par reverse-FK ou résolution-par-PK non scopée (modèles Owned) (2026-06-23)
+
+**Règle :** Pour tout modèle « Owned » (`Category`, `SubCategory`, `CategorizationRule` :
+`owner` nullable + manager `.for_user()`), DEUX angles morts contournent le manager et
+DOIVENT être scopés à la main :
+
+1. **Reverse-FK en template** — `parent.children.all` (`cat.subcategories.all`, `cat.rules.all`)
+   renvoie TOUT, sans `.for_user()` (le manager est court-circuité). → **préfetch scopé dans la VUE**.
+2. **Résolution par PK depuis un input** (`Model.objects.filter(pk=request.GET/POST...)`) dont on
+   REND un champ (nom…) → `.for_user().filter(pk=…)`.
+
+```python
+# ✅ reverse-FK scopée par prefetch → cat.subcategories.all devient sûr dans le template
+Category.objects.for_user(u).prefetch_related(
+    Prefetch("subcategories", queryset=SubCategory.objects.for_user(u)))
+# ✅ résolution par PK scopée
+sub = SubCategory.objects.for_user(request.user).filter(pk=subcat_id).first()
+
+# ⛔ INTERDIT (fuite inter-user)
+# {% for sub in cat.subcategories.all %}                 → reverse-FK NON scopée en template
+# sub = SubCategory.objects.filter(pk=subcat_id).first() → nom rendu = énumérable par GET
+```
+
+**Exploit :** une sous-cat PERSO de user A rattachée à une catégorie SYSTÈME (partagée) apparaît
+dans le picker de user B (`cat.subcategories.all`) ; OU user B incrémente `subcategory_id` en GET et
+lit le NOM des perso de A (previews de règle). Incident réel 2026-06-23 : `demo` voyait
+« Frais administratif » d'un autre user, et son bouton supprimer renvoyait 404.
+
+**Origine :** security-auditor — fix pickers + previews budget (2026-06-23).
+
+**Check :** `grep -rn "subcategories.all\|\.rules\.all" src/templates/` → chaque hit DOIT avoir un
+`Prefetch(… for_user …)` dans la vue qui le rend. + `grep -rn "SubCategory.objects.filter(pk=\|Category.objects.filter(pk=" src/budget/ | grep -v for_user` → 0 sur les vues qui rendent un champ.
+
+---
+
 ## Template ajout règle
 
 ```markdown

@@ -1,5 +1,13 @@
 """patrimoine/views/ — package de vues (cf. feedback_python_packages : pas de views.py à plat)."""
 
+from .account_detail import (
+    account_detail,
+    account_field_form,
+    account_field_save,
+    account_transactions,
+    set_account_period,
+)
+from .account_wizard import account_create, account_form
 from .asset_class import (
     asset_class_page,
     asset_class_transactions,
@@ -7,13 +15,28 @@ from .asset_class import (
     set_asset_class_stacked,
     set_asset_class_tab,
 )
+from .institutions import (
+    institution_logo_form,
+    institution_logo_repair,
+    institution_picker,
+)
 from .navigation import sidebar_toggle
 from .overview import overview, set_period, toggle_class
 
 __all__ = [
+    "account_create",
+    "account_detail",
+    "account_field_form",
+    "account_field_save",
+    "account_form",
+    "account_transactions",
     "asset_class_page",
     "asset_class_transactions",
+    "institution_logo_form",
+    "institution_logo_repair",
+    "institution_picker",
     "overview",
+    "set_account_period",
     "set_asset_class_period",
     "set_asset_class_stacked",
     "set_asset_class_tab",

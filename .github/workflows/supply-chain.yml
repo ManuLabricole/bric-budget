@@ -1,0 +1,122 @@
+# .github/workflows/supply-chain.yml — BricBudget supply-chain (#163, part of #160)
+#
+# Complète ci.yml (qu'on ne touche PAS ici) avec le volet supply-chain :
+#   1. npm-audit — audit des deps JS (package-lock.json), jamais audité jusqu'ici.
+#   2. sbom      — génère un SBOM CycloneDX (Python + npm) en artefact CI.
+#
+# Dependabot (.github/dependabot.yml) fait les bumps ; ce workflow fait l'audit
+# en continu et matérialise l'inventaire (SBOM) à chaque run.
+
+name: Supply Chain
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - development
+      - main
+
+# Un seul run par branche/PR — annule le précédent si un nouveau push arrive.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Moindre privilège : les 2 jobs ne font que lire le repo + uploader un artefact
+# (upload-artifact ne requiert pas contents: write). Cœur d'une PR supply-chain.
+permissions:
+  contents: read
+
+jobs:
+  # ── npm audit (deps JS) ──────────────────────────────────────────────────────
+  # Audite package-lock.json contre l'advisory DB npm.
+  # --audit-level=high : on BLOQUE sur high/critical uniquement. Les vulns low/moderate
+  # (souvent transitives, dans la chaîne de build Tailwind, jamais servies au runtime)
+  # ne doivent pas rendre la CI rouge en permanence — sinon le signal devient du bruit
+  # et on finit par l'ignorer. Critère d'acceptation #163 : « une CVE high npm fait
+  # rougir la CI » → c'est exactement ce seuil. Les low/moderate restent suivies par
+  # Dependabot (bumps auto) et visibles dans le SBOM.
+  npm-audit:
+    name: npm audit (high+)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          # Jobs read-only → ne pas laisser le token dans le git config (zizmor artipacked).
+          persist-credentials: false
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+
+      # --omit=dev exclu volontairement : on AUDITE aussi les devDependencies
+      # (tailwindcss est la seule dep et vit en devDependencies). Sans lockfile à
+      # jour npm ci échouerait → on audite directement le lockfile existant.
+      - name: npm audit (fail on high+)
+        run: npm audit --audit-level=high
+
+  # ── SBOM (CycloneDX Python + npm) ────────────────────────────────────────────
+  # Génère un Software Bill of Materials des deux écosystèmes et l'uploade en
+  # artefact (traçabilité de l'inventaire des deps à chaque run). Informatif :
+  # ne bloque pas la CI, sert d'inventaire auditable.
+  sbom:
+    name: SBOM (CycloneDX)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          # Jobs read-only → ne pas laisser le token dans le git config (zizmor artipacked).
+          persist-credentials: false
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      # Cache du virtualenv Poetry — même clé que ci.yml (hash de poetry.lock).
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: poetry-venv-${{ runner.os }}-py3.13-${{ hashFiles('poetry.lock') }}
+          restore-keys: |
+            poetry-venv-${{ runner.os }}-py3.13-
+
+      - name: Install dependencies
+        run: poetry install --no-root
+
+      # SBOM Python : cyclonedx-py lit l'environnement Poetry et produit un
+      # CycloneDX JSON de toutes les deps résolues (transitives incluses).
+      - name: Generate Python SBOM (CycloneDX)
+        run: |
+          poetry run pip install cyclonedx-bom
+          poetry run cyclonedx-py environment --output-format JSON --output-file sbom-python.json
+
+      # SBOM npm : @cyclonedx/cyclonedx-npm lit package-lock.json (pas d'install
+      # requise, le lockfile suffit) et produit un CycloneDX JSON.
+      - name: Generate npm SBOM (CycloneDX)
+        run: npx --yes @cyclonedx/cyclonedx-npm@latest --package-lock-only --output-format JSON --output-file sbom-npm.json
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: sbom-cyclonedx
+          path: |
+            sbom-python.json
+            sbom-npm.json
+          retention-days: 30
+          if-no-files-found: warn

@@ -1,0 +1,27 @@
+{% comment %}
+components/institutions/account_badge.html — Badge compte réutilisable
+
+Affiche : [cercle blanc avec logo institution] [nom du compte]
+Le cercle logo est délégué à institution_logo.html — toujours fond blanc, même règle partout.
+
+Variables requises :
+  institution_icon_url  — URL résolue de l'icône (string, peut être vide)
+  account        — objet Account Django (account.name, account.institution.name)
+
+Variables optionnelles :
+  icon_size   — taille du cercle Tailwind (défaut : "w-6 h-6")
+  icon_pad    — padding interne du cercle   (défaut : "p-1")
+  text_size   — taille du texte Tailwind    (défaut : "text-[11px]")
+  text_color  — couleur du texte Tailwind   (défaut : "text-text-base")
+
+Usage :
+  {% include "components/institutions/account_badge.html" with institution_icon_url=tx.institution_icon_url account=tx.account %}
+
+  {% include "components/institutions/account_badge.html" with institution_icon_url=tx.institution_icon_url account=tx.account icon_size="w-8 h-8" %}
+{% endcomment %}
+<div class="flex items-center gap-1.5 flex-shrink-0">
+    {% include "components/institutions/institution_logo.html" with icon_url=institution_icon_url institution=account.institution size=icon_size padding=icon_pad %}
+    <span class="{{ text_size|default:'text-[11px]' }} {{ text_color|default:'text-text-base' }} whitespace-nowrap">
+        {{ account.name }}
+    </span>
+</div>

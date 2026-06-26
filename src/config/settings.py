@@ -79,6 +79,36 @@ if not DEBUG:
 
 
 # =============================================================================
+# 1b. Error tracking — Sentry (#259)
+# =============================================================================
+#
+# Sentry est un service CLOUD : l'app ENVOIE ses exceptions non gérées via une DSN.
+# Découplage par variable d'env : SENTRY_DSN absente (dev/CI) → init sautée, zéro
+# effet ; présente (var Railway, prod) → tracking actif. La DSN n'est JAMAIS
+# committée ni mise dans le .env de dev.
+SENTRY_DSN = config("SENTRY_DSN", default="")
+if SENTRY_DSN:
+    import sentry_sdk
+
+    from config.sentry import scrub_sensitive  # before_send testable (#259)
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        # Tag d'environnement (Railway injecte RAILWAY_ENVIRONMENT_NAME) → un futur
+        # staging aura ses erreurs étiquetées à part.
+        environment=config("RAILWAY_ENVIRONMENT_NAME", default="production"),
+        send_default_pii=False,  # pas de cookies/IP
+        # ⛔ App bancaire : couper les VECTEURS de fuite à la source (audit #260).
+        # include_local_variables=False : ne PAS envoyer les variables locales des
+        # stack traces (sinon un IBAN/montant/ligne CSV d'une frame partirait).
+        include_local_variables=False,
+        max_request_body_size="never",  # jamais le corps de requête
+        traces_sample_rate=0.0,  # erreurs only au départ — pas de perf tracing
+        before_send=scrub_sensitive,  # 2e couche : masque IBAN par clé ET par valeur
+    )
+
+
+# =============================================================================
 # 2. Apps & middleware
 # =============================================================================
 
@@ -104,6 +134,9 @@ INSTALLED_APPS = [
     "imports",
     # patrimoine/ lit accounts + transactions au runtime (pas de modèle propre en 3A)
     "patrimoine",
+    # demo/ : seed/démo dev. Toujours installée (testable en DEBUG=False), inerte en
+    # prod — points d'entrée gardés par assert_dev_environment, admin si DEBUG (cf. demo/apps.py).
+    "demo.apps.DemoConfig",
     "axes",  # brute-force protection — doit être après contrib.auth
 ]
 
@@ -168,11 +201,16 @@ AUTH_USER_MODEL = "users.CustomUser"
 LOGIN_URL = "/login/"
 
 # LOGIN_REDIRECT_URL: where to go after a successful login when no ?next= is set.
-# Phase 1B: patrimoine est la page d'accueil principale.
-LOGIN_REDIRECT_URL = "/synthese/"
+LOGIN_REDIRECT_URL = "/budget/"
 
 # LOGOUT_REDIRECT_URL: where to go after logout.
 LOGOUT_REDIRECT_URL = "/login/"
+
+# SESSION_COOKIE_AGE: durée de vie du cookie de session (30 jours).
+# SESSION_EXPIRE_AT_BROWSER_CLOSE=False : la session persiste entre fermetures —
+# comportement attendu pour une app perso sur machine de confiance.
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 30
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 
 
 # =============================================================================
@@ -207,6 +245,9 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "budget.context_processors.design_tokens",
+                # Objectifs budget (jauges) dans la topbar — présents sur TOUTES les
+                # pages car la topbar vit dans base_app.html (#24).
+                "budget.context_processors.budget_objectives",
                 # Sidebar Patrimoine ▼ (registre classes d'actifs + état déplié en session).
                 # Présent sur toutes les pages car la sidebar vit dans base_app.html.
                 "patrimoine.context_processors.sidebar",
@@ -295,14 +336,14 @@ USE_TZ = True
 # =============================================================================
 
 # STATIC_URL: the URL *prefix* the browser uses to request static files.
-# Example: {% static 'icons/banks/yuh.svg' %} → /static/icons/banks/yuh.svg
+# Example: {% static 'icons/institutions/yuh.svg' %} → /static/icons/institutions/yuh.svg
 # This is the public-facing address — the browser never sees the disk path.
 STATIC_URL = "static/"
 
 # STATICFILES_DIRS: directories on disk where Django looks for static files
 # when a browser requests /static/<path>.
-# Django maps:  /static/icons/banks/yuh.svg
-#           →   src/static/icons/banks/yuh.svg
+# Django maps:  /static/icons/institutions/yuh.svg
+#           →   src/static/icons/institutions/yuh.svg
 #
 # Only used in development (DEBUG=True). In production, run collectstatic instead:
 #   python manage.py collectstatic
@@ -317,17 +358,62 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 # STATICFILES_DIRS : sources en développement (ignoré après collectstatic).
 STATICFILES_DIRS = [BASE_DIR / "static"]
 
-# En production uniquement : manifest + compression Whitenoise.
-# CompressedManifestStaticFilesStorage exige un staticfiles.json généré par
-# collectstatic. En dev/CI (DEBUG=True), on utilise le storage par défaut de
-# Django qui résout {% static %} directement sans manifest → pas de ValueError.
-if not DEBUG:
-    STORAGES = {
-        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
-        "staticfiles": {
-            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
+# =============================================================================
+# MEDIA — fichiers ÉCRITS À CHAUD par l'app (logos réparés #128, logos marchands #124)
+# =============================================================================
+# ⚠️ static/ ≠ media/. static = assets committés en git, livrés par le build et servis
+# par WhiteNoise (immuables par release). media = contenu créé par l'app en marche, qui
+# DOIT survivre aux redeploys. Sur Railway le FS du container est éphémère (reset à chaque
+# deploy) → le media va dans un bucket S3 persistant. En dev : dossier local mediafiles/.
+MEDIA_URL = "media/"
+MEDIA_ROOT = (
+    BASE_DIR / "mediafiles"
+)  # dev/CI uniquement (gitignoré) ; prod = S3 (cf. infra)
+
+# Backend du storage MEDIA par défaut, choisi par PRÉSENCE du bucket Railway :
+#   - bucket Railway (S3-compatible) si AWS_S3_BUCKET_NAME est défini (prod, et
+#     "répétition générale" possible en dev en collant les vars dans .env)
+#   - filesystem local (mediafiles/) sinon — dev / CI / tests.
+# Aucun flag USE_S3 à maintenir : impossible d'oublier de basculer. Le code applicatif
+# passe toujours par default_storage → identique dev (FS) / prod (bucket). Split settings → #144.
+#
+# ⚠️ Noms de variables = ceux du preset Railway "Connect Service to Bucket → AWS SDK
+#    (Generic)" qui mappe les vars natives du bucket vers les noms AWS standard :
+#      AWS_S3_BUCKET_NAME ← BUCKET · AWS_ENDPOINT_URL ← ENDPOINT · AWS_DEFAULT_REGION ← REGION
+#      AWS_ACCESS_KEY_ID ← ACCESS_KEY_ID · AWS_SECRET_ACCESS_KEY ← SECRET_ACCESS_KEY
+#    → 1 clic "Add Variables" avec ce preset suffit (cf. ops.md). Buckets = virtual-hosted URLs.
+_bucket = config("AWS_S3_BUCKET_NAME", default="")
+if _bucket:
+    _media_storage: dict = {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": {
+            "bucket_name": _bucket,
+            "endpoint_url": config(
+                "AWS_ENDPOINT_URL", default="https://storage.railway.app"
+            ),
+            "access_key": config("AWS_ACCESS_KEY_ID"),
+            "secret_key": config("AWS_SECRET_ACCESS_KEY"),
+            "region_name": config("AWS_DEFAULT_REGION", default="auto"),
+            "addressing_style": "virtual",  # Railway Buckets = bucket en sous-domaine
+            "querystring_auth": True,  # bucket privé → URLs présignées, pas d'accès public
         },
     }
+else:
+    _media_storage = {"BACKEND": "django.core.files.storage.FileSystemStorage"}
+
+# staticfiles : manifest + compression WhiteNoise en prod ; en dev/CI (DEBUG=True) le
+# storage Django par défaut résout {% static %} sans manifest (CompressedManifest exige
+# un staticfiles.json généré par collectstatic → ValueError sinon).
+_staticfiles_storage = (
+    {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}
+    if DEBUG
+    else {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"}
+)
+
+STORAGES = {
+    "default": _media_storage,
+    "staticfiles": _staticfiles_storage,
+}
 
 
 # =============================================================================
@@ -412,6 +498,13 @@ LOGGING = {
         "connectors": {"level": _log_level},
         "imports": {"level": _log_level},
         "transactions": {"level": _log_level},
+        # Clients S3 (django-storages → boto3) : très bavards en DEBUG (chaque requête
+        # bucket = des centaines de lignes). On les fixe à WARNING même en dev — leur
+        # DEBUG noie nos propres logs sans valeur de debug métier.
+        "botocore": {"level": "WARNING"},
+        "boto3": {"level": "WARNING"},
+        "s3transfer": {"level": "WARNING"},
+        "urllib3": {"level": "WARNING"},
     },
 }
 
@@ -444,3 +537,21 @@ IMPORT_STORAGE_ROOT = Path(config("IMPORT_STORAGE_ROOT", default=_default_storag
 # si elle est vide quand on tente de chiffrer ou déchiffrer un fichier.
 # Générer :  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 IMPORT_ENCRYPTION_KEY = config("IMPORT_ENCRYPTION_KEY", default="")
+
+
+# ── Démo / seed dev (#118) ────────────────────────────────────────────────────
+# Identifiants du user de démo créé par `manage.py dev_seed` (app demo/). Vivent
+# dans .env — jamais committés. Le user est loginable avec ces identifiants en local.
+# Le seed refuse de tourner si le mot de passe est vide (pas de user démo sans mdp).
+DEMO_USER_EMAIL = config("DEMO_USER_EMAIL", default="demo@bricbudget.local")
+DEMO_USER_PASSWORD = config("DEMO_USER_PASSWORD", default="")
+
+
+# ── Seed perso de l'admin (#146) ──────────────────────────────────────────────
+# User cible par défaut de `manage.py seed_perso` (catégories perso + règles Finary,
+# owner=user) et de l'action admin associée. Surchargeable via --user. C'est un EMAIL
+# de compte applicatif (pas un identifiant bancaire), donc committable en défaut —
+# overridable en .env pour une autre instance/propriétaire.
+PERSO_SEED_USER_EMAIL = config(
+    "PERSO_SEED_USER_EMAIL", default="emmanuel.barriol@gmail.com"
+)

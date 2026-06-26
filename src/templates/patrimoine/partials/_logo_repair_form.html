@@ -1,0 +1,43 @@
+{% comment %}
+patrimoine/partials/_logo_repair_form.html — formulaire inline de réparation de logo (#128).
+
+Remplace la ligne picker (#inst-row-<slug>) au clic sur 🔧. Variables :
+  institution (Institution), error (str optionnel — message de rejet 422).
+Submit → POST institution_logo_repair : succès = la ligne réapparaît avec le logo,
+échec = ce formulaire re-rendu en 422 avec {{ error }}.
+Annuler → recharge le picker complet (#panel-content) — pas d'endpoint « ligne » dédié.
+{% endcomment %}
+<div id="inst-row-{{ institution.slug }}"
+     class="rounded-xl border border-gold/30 bg-surface-3 p-3">
+    <form hx-post="{% url 'patrimoine:institution_logo_repair' institution.slug %}"
+          hx-target="#inst-row-{{ institution.slug }}"
+          hx-swap="outerHTML"
+          hx-disabled-elt="this">
+        {% csrf_token %}
+        <p class="mb-2 text-xs text-text-muted">
+            Logo manquant pour <span class="font-semibold text-text-base">{{ institution.name }}</span>.
+            Colle l'URL directe d'une image (PNG, JPG, WebP ou SVG).
+        </p>
+        <input type="url"
+               name="logo_url"
+               required
+               placeholder="https://…/logo.png"
+               class="mb-2 w-full rounded-lg border border-edge/60 bg-surface px-2.5 py-1.5 text-xs text-text-base placeholder:text-text-disabled focus:border-gold/50 focus:outline-none">
+        {% if error %}
+            <p class="mb-2 rounded-lg border border-expense/30 bg-expense/10 px-2 py-1 text-[11px] text-expense">{{ error }}</p>
+        {% endif %}
+        <div class="flex gap-2">
+            <button type="submit"
+                    class="rounded-lg bg-gold/15 px-3 py-1.5 text-xs font-semibold text-gold transition-colors hover:bg-gold/25">
+                Installer
+            </button>
+            <button type="button"
+                    hx-get="{% url 'patrimoine:institution_picker' %}"
+                    hx-target="#panel-content"
+                    hx-swap="innerHTML"
+                    class="rounded-lg px-3 py-1.5 text-xs text-text-muted transition-colors hover:text-text-base">
+                Annuler
+            </button>
+        </div>
+    </form>
+</div>

@@ -1,0 +1,20 @@
+{% extends "admin/base.html" %}
+{% block title %}
+    {% if subtitle %}{{ subtitle }} |{% endif %}
+    {{ title }} | {{ site_title|default:_("Django site admin") }}
+{% endblock %}
+{% block branding %}
+    <div id="site-name">
+        <a href="{% url 'admin:index' %}">{{ site_header|default:_("Django administration") }}</a>
+    </div>
+    {% if user.is_anonymous %}
+        {% include "admin/color_theme_toggle.html" %}
+    {% endif %}
+{% endblock %}
+{% comment %}
+nav-global : lien « Démo » vers la page seed/reset (#118), accès facile depuis
+n'importe quelle page de l'admin. La page elle-même est dev-guardée.
+{% endcomment %}
+{% block nav-global %}
+    <a href="{% url 'demo_seed_control' %}">🌱 Démo</a>
+{% endblock %}

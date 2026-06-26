@@ -27,7 +27,8 @@ Usage :
   python manage.py apply_rules --reset
 """
 
-from django.core.management.base import BaseCommand
+from django.contrib.auth import get_user_model
+from django.core.management.base import BaseCommand, CommandError
 
 from transactions.models import CategorizationRule, Transaction
 from transactions.services import ImportService, sync_internal_transfer
@@ -53,16 +54,50 @@ class Command(BaseCommand):
             action="store_true",
             help="Clear category/subcategory on non-manual transactions before applying",
         )
+        parser.add_argument(
+            "--user",
+            type=str,
+            default=None,
+            help=(
+                "Email de l'utilisateur : ne traite QUE ses règles (système + perso) et "
+                "SES transactions. Sans --user : application GLOBALE (maintenance mono-tenant)."
+            ),
+        )
 
     def handle(self, *args, **options):
         dry_run = options["dry_run"]
         limit = options["limit"]
         reset = options["reset"]
 
-        # ── 1. Charger toutes les règles actives, triées par priorité décroissante ──
+        # ── 0. Résolution du scope user (SR-001 / #205) ──────────────────────────
+        # Avec --user : règles for_user(owner) + transactions for_user(owner) → aucune
+        # catégorisation croisée. Sans --user : global, donc les règles perso de chaque
+        # user pourraient toucher les transactions d'un autre → réservé au mono-tenant.
+        owner = None
+        user_email = options.get("user")
+        if user_email:
+            try:
+                owner = get_user_model().objects.get(email=user_email)
+            except get_user_model().DoesNotExist:
+                raise CommandError(f"Utilisateur introuvable : {user_email}")
+        else:
+            self.stdout.write(
+                self.style.WARNING(
+                    "⚠️  Aucun --user : application GLOBALE (toutes les règles → toutes les "
+                    "transactions). À n'utiliser qu'en maintenance mono-tenant."
+                )
+            )
+
+        # ── 1. Charger les règles actives (scopées owner si fourni), par priorité ──
         # Même ordre que dans ImportService.run() — la règle la plus haute gagne.
+        # #213 : sans owner = commande CLI globale (admin) → unscoped() (auditable).
+        rules_qs = (
+            CategorizationRule.objects.for_user(owner)
+            if owner is not None
+            else CategorizationRule.objects.unscoped()
+        )
         rules = list(
-            CategorizationRule.objects.filter(is_active=True)
+            rules_qs.filter(is_active=True)
             .select_related("category", "subcategory")
             .order_by("-priority")
         )
@@ -79,8 +114,15 @@ class Command(BaseCommand):
         # On exclut "manual" : l'utilisateur a choisi explicitement, on ne touche pas.
         # "default" = pas de règle matchée à l'import → on retente
         # "rule"    = une règle avait matché → on réapplique (une meilleure règle peut exister)
+        # SR-001 / #205 : transactions scopées au même owner que les règles (sinon une
+        # règle perso de A pourrait catégoriser une transaction de B en mode global).
+        base_tx = (
+            Transaction.objects.for_user(owner)
+            if owner is not None
+            else Transaction.objects.all()
+        )
         qs = (
-            Transaction.objects.exclude(categorization_source="manual")
+            base_tx.exclude(categorization_source="manual")
             .select_related("category", "subcategory")
             .order_by("id")
         )
@@ -103,9 +145,9 @@ class Command(BaseCommand):
         if reset and not dry_run:
             qs.update(category=None, subcategory=None, categorization_source="default")
             self.stdout.write("Catégories réinitialisées.")
-            # Recharger le qs après update (les objets en mémoire sont périmés)
+            # Recharger le qs après update (les objets en mémoire sont périmés) — même scope.
             qs = (
-                Transaction.objects.exclude(categorization_source="manual")
+                base_tx.exclude(categorization_source="manual")
                 .select_related("category", "subcategory")
                 .order_by("id")
             )

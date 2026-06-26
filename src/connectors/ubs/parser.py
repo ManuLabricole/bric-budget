@@ -34,7 +34,7 @@ Quirks
 
 Account detection
 -----------------
-IBAN is on line 2 — extract it, normalise (strip spaces), query CheckingAccount.iban in DB.
+IBAN is on line 2 — extract it, normalise (strip spaces), query Account.iban in DB.
 This is deterministic: one file = one IBAN = one account.
 
 Balance extraction

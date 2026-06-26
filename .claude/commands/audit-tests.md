@@ -7,25 +7,41 @@
 > Référence qualité : Zulip backend tests + cookiecutter-django + Django docs testing tools.
 > Chaque finding doit produire du code pytest prêt à coller dans un fichier de test.
 
+> **Deux outils complémentaires — ne pas confondre :**
+> - Cette commande `/challenge-tests` = **couverture** (quels comportements ne sont PAS testés)
+>   → tu écris les tests manquants.
+> - L'agent **`test-auditor`** (`.claude/agents/test-auditor.md`) = **qualité** des tests existants
+>   (théâtre status-200, sur-mock, flaky, factories absentes, score de mutation) → il rapporte, ne code pas.
+>
+> Lance `test-auditor` AVANT cette commande : inutile d'écrire de nouveaux tests si ceux qui existent
+> font déjà du théâtre. Toute la couverture que tu ajoutes DOIT respecter `.claude/rules/testing.md`
+> (factories `src/tests/factories/`, `assertContains` + `assertTemplateUsed` sur les vues, vérif DB
+> après POST, AAA, marker `@pytest.mark.django_db`).
+
 ---
 
 ## 0. Lire l'état des tests existants
 
 ```bash
-# Structure des tests
-find src/tests -name "*.py" | sort
+# Structure des tests (package par app : tests/budget/, tests/imports/, tests/patrimoine/…)
+find src/tests -name "test_*.py" | sort
 # Nombre de tests par fichier
-grep -rc "^def test_" src/tests/ | sort -t: -k2 -rn
-# Tests qui passent
-make test 2>&1 | tail -5
+grep -rc "^def test_\|^    def test_" src/tests/ | sort -t: -k2 -rn
 ```
+> ⛔ NE PAS lancer `make test` / `make check` à la main pour juger l'état de la suite —
+> pre-push (pytest) + CI couvrent ça (cf. CLAUDE.md, cohérent avec la Phase 3 ci-dessous).
+> Pour l'état réel : lire le dernier run CI (`gh run list`) ou le rapport de couverture.
 
-Lire en parallèle :
-- `src/tests/conftest.py` — fixtures disponibles
-- `src/tests/test_idor_protection.py` — IDOR existants
-- `src/tests/test_internal_transfer.py` — toggle tests existants
-- `src/budget/urls.py` — toutes les URLs déclarées
-- `src/budget/views.py` — toutes les vues (signatures, decorators, logique POST/GET)
+Lire en parallèle (chemins RÉELS — la suite est structurée en packages par app) :
+- `src/tests/conftest.py` + le `conftest.py` du sous-dossier visé (`src/tests/budget/conftest.py`,
+  `src/tests/patrimoine/conftest.py`, `src/tests/connectors/conftest.py`, `src/tests/services/conftest.py`)
+  — fixtures disponibles.
+- `src/tests/factories/` — factories partagées (#194) à réutiliser pour tout nouvel objet de test.
+- `src/tests/budget/test_idor.py` + `src/tests/imports/test_idor.py` — patterns IDOR existants.
+- `src/tests/budget/test_views.py` — toggles, mouvements internes, états (`is_ignored`, `is_reconciled`).
+- `src/budget/urls.py` (+ `imports/`, `patrimoine/`, `transactions/`, `users/urls.py`) — URLs déclarées.
+- `src/budget/views/` — **package** de vues : `core.py`, `categories.py`, `transactions.py`, `rules.py`
+  (signatures, decorators, logique POST/GET). ⛔ Il n'y a PLUS de `src/budget/views.py` à plat.
 
 ---
 
@@ -60,8 +76,8 @@ def test_<vue>_requires_login(client):
 
 **Chercher les vues sans ce test :**
 ```bash
-grep -n "@login_required" src/budget/views.py | wc -l
-grep -c "requires_login" src/tests/test_idor_protection.py
+grep -rn "@login_required" src/budget/views/ | wc -l        # views/ = package, pas un .py à plat
+grep -rc "requires_login" src/tests/budget/ | grep -v ':0'  # tests login existants (test_idor.py, test_views.py)
 ```
 Si le nombre de vues > nombre de tests login → écrire les manquants.
 
@@ -212,45 +228,39 @@ def test_toggle_ignore_double_flip_restores_state(client, user, tx):
 Chaque helper ou fonction pure doit avoir un test unitaire. Chercher les fonctions non testées :
 
 ```bash
-# Fonctions dans views.py non importées dans les tests
-grep "^def _" src/budget/views.py
-# Fonctions dans services.py
-grep "^def " src/transactions/services.py
+# Fonctions privées dans le package de vues (views/ n'est PAS un .py à plat)
+grep -rn "^def _" src/budget/views/
+# Helpers purs hors vues (couleurs, périodes, etc.)
+grep -n "^def _" src/budget/utils.py
+# Fonctions de service (services/ = package : file_hash.py, import_service.py, internal_transfer.py)
+grep -rn "^def " src/transactions/services/
 ```
 
-**Helpers prioritaires à tester :**
+> ⚠️ Les helpers de cet exemple existent ET sont déjà testés (`_vary_color`/`_seg_factor` dans
+> `src/budget/utils.py` → `src/tests/budget/test_utils.py` ; `_compute_category_cashflow_context`
+> dans `src/budget/views/categories.py` → `src/tests/budget/test_helpers.py`). Patterns donnés à
+> titre illustratif — **vérifie d'abord** ce qui manque réellement avec les greps ci-dessus.
+> Les imports pointent vers le module réel (chemins corrigés).
+
+**Patterns de test de helper pur (imports réels) :**
 
 ```python
-# _vary_color — assombrit une couleur hex
+# _vary_color / _seg_factor vivent dans budget.utils (PAS budget.views)
 def test_vary_color_full_factor_returns_original():
-    from budget.views import _vary_color
+    from budget.utils import _vary_color
     assert _vary_color("#4ade80", 1.0) == "#4ade80"
 
-def test_vary_color_zero_factor_returns_black():
-    from budget.views import _vary_color
-    result = _vary_color("#4ade80", 0.0)
-    assert result == "#000000"
-
 def test_vary_color_invalid_hex_returns_fallback():
-    from budget.views import _vary_color
+    from budget.utils import _vary_color
     assert _vary_color("not-a-color", 0.5) == "#4ade80"
 
-# _seg_factor — distribue n segments
-def test_seg_factor_single_segment_returns_max():
-    from budget.views import _seg_factor
-    assert _seg_factor(0, 1) == 0.70
-
 def test_seg_factor_first_segment_is_brightest():
-    from budget.views import _seg_factor
+    from budget.utils import _seg_factor
     assert _seg_factor(0, 5) > _seg_factor(4, 5)
 
-def test_seg_factor_last_segment_is_darkest():
-    from budget.views import _seg_factor
-    assert _seg_factor(4, 5) >= 0.35  # jamais en dessous du min lisible
-
-# _compute_category_cashflow_context
+# _compute_category_cashflow_context vit dans budget.views.categories
 def test_compute_category_cashflow_context_returns_expected_keys(rf, user, category):
-    from budget.views import _compute_category_cashflow_context
+    from budget.views.categories import _compute_category_cashflow_context
     request = rf.get("/")
     request.user = user
     request.session = {}
@@ -266,27 +276,17 @@ def test_compute_category_cashflow_context_returns_expected_keys(rf, user, categ
     for key in required_keys:
         assert key in ctx, f"Missing key: {key}"
 
-def test_compute_category_cashflow_context_no_budget_target(rf, user, category):
-    """Sans BudgetTarget → target_amount, target_pct, on_track, arc_fill_px = None."""
-    from budget.views import _compute_category_cashflow_context
-    request = rf.get("/")
-    request.user = user
-    request.session = {}
-    ctx = _compute_category_cashflow_context(request, category)
-    assert ctx["budget_target"] is None
-    assert ctx["target_amount"] is None
-    assert ctx["target_pct"] is None
-
 def test_compute_category_cashflow_context_ignored_txs_excluded_from_total(
     rf, user, account, category
 ):
     """Les transactions is_ignored=True ne rentrent pas dans total_amount."""
-    from budget.views import _compute_category_cashflow_context
+    from budget.views.categories import _compute_category_cashflow_context
     from decimal import Decimal
-    Transaction.objects.create(account=account, category=category,
-        amount=Decimal("-100"), is_ignored=False, ...)
-    Transaction.objects.create(account=account, category=category,
-        amount=Decimal("-50"), is_ignored=True, ...)  # doit être exclu
+    # Via factory (rules/testing.md) plutôt que objects.create inline :
+    TransactionFactory(account=account, category=category,
+        amount=Decimal("-100"), is_ignored=False)
+    TransactionFactory(account=account, category=category,
+        amount=Decimal("-50"), is_ignored=True)  # doit être exclu
     request = rf.get("/")
     request.user = user
     request.session = {}
@@ -395,9 +395,12 @@ def test_category_detail_query_count(client, user, account, category,
 ### Phase 1 — Audit (ne pas coder encore)
 
 1. Lire tous les fichiers de tests existants
-2. Lire `src/budget/urls.py` + `src/budget/views.py` (signatures uniquement)
-3. Produire le tableau des gaps (section 1 ci-dessus)
-4. Présenter à Emmanuel : "Voici les X gaps identifiés, dans cet ordre de priorité"
+2. Lire `src/budget/urls.py` + le package `src/budget/views/` (`core.py`, `categories.py`,
+   `transactions.py`, `rules.py` — signatures uniquement)
+3. (Recommandé) Lancer l'agent `test-auditor` sur le module visé → trier d'abord la dette de
+   QUALITÉ avant d'ajouter de la couverture.
+4. Produire le tableau des gaps (section 1 ci-dessus)
+5. Présenter à Emmanuel : "Voici les X gaps identifiés, dans cet ordre de priorité"
 
 ### Phase 2 — Écriture des tests (après validation)
 
@@ -413,23 +416,26 @@ Pour chaque gap, dans cet ordre de priorité :
 7. Query count         → performance
 ```
 
-**Règle d'écriture :**
-- Un test = un comportement. Jamais deux assertions métier dans un test.
+**Règle d'écriture** (étalon complet : `.claude/rules/testing.md`) :
+- Un test = un comportement. Jamais deux assertions métier dans un test. AAA (Arrange-Act-Assert).
 - Nom du test = phrase en anglais qui décrit le comportement attendu.
   - ✅ `test_toggle_ignore_sets_is_ignored_to_true`
   - ❌ `test_toggle_ignore`
-- Fixtures dans `conftest.py` si réutilisées dans 2+ fichiers, sinon locales.
+- **Factories** (`src/tests/factories/`, #194) pour créer les objets, pas de `objects.create()` inline répété.
+- **Tout test de vue** : `assertContains` + `assertTemplateUsed` — jamais `status_code == 200` seul.
+- Fixtures dans le `conftest.py` du sous-dossier si réutilisées dans 2+ fichiers, sinon locales.
 - Toujours vérifier l'état DB après un POST (`.refresh_from_db()`).
-- Toujours tester le cas "autre utilisateur" pour les vues avec pk.
+- Toujours tester le cas "autre utilisateur" pour les vues avec pk/slug (IDOR).
+- `@pytest.mark.django_db` sur tout test qui touche la DB.
 
 ### Phase 3 — Validation
 
-```bash
-make test
-# Doit rester vert avec le nouveau score (ex: 245 passed / 0 failed)
-make check
-# 0 erreurs ruff + djlint
-```
+- ⛔ NE PAS lancer `make check` / `make test` à la main : pre-commit (ruff/djlint) + pre-push (pytest) +
+  CI (mypy/semgrep) couvrent tout (cf. CLAUDE.md). On commit/push et on laisse les hooks tourner.
+- La **vérif live GET + POST** (via `manage.py shell` ou l'app réelle) reste DUE — elle n'est PAS
+  couverte par la CI.
+- Repasser l'agent `test-auditor` sur les fichiers ajoutés : zéro nouveau finding 🔴 (pas de théâtre
+  réintroduit) avant de proposer la PR.
 
 ---
 
@@ -467,7 +473,9 @@ def tx_ignored(account, cat_alim):
 
 ## 5. Anti-patterns à rejeter
 
-Si tu trouves ces patterns dans les tests existants, les noter comme dette :
+Si tu trouves ces patterns dans les tests existants, les noter comme dette. **L'agent
+`test-auditor` automatise cette détection** (théâtre status-200, sur-mock, flaky, factories
+absentes, score de mutation) — lance-le pour une matrice complète plutôt que de greper à la main.
 
 | Anti-pattern | Problème | Fix |
 |-------------|----------|-----|
@@ -512,6 +520,6 @@ Si tu trouves ces patterns dans les tests existants, les noter comme dette :
 - Ne jamais modifier un test existant qui passe sans raison explicite
 - Ne jamais supprimer un test (même si il semble redondant — discuter d'abord)
 - Si un test révèle un vrai bug → signaler immédiatement, ne pas contourner
-- `make test` doit rester vert à chaque ajout de fichier
+- La suite doit rester verte (pre-push pytest) — ne PAS la lancer à la main avant commit (cf. CLAUDE.md)
 - Jamais de `--no-verify` ni de `pytest -k` pour skipper des tests gênants
 - Les tests de query count sont des maximums, pas des cibles exactes (éviter la fragilité)
