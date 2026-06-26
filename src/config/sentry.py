@@ -28,7 +28,9 @@ SCRUBBED = "[scrubbed]"
 # IBAN : 2 lettres pays + 2 chiffres clé + 10–30 alphanum (CH=21, FR=27…).
 # Masqué PARTOUT (message d'exception, vars de frame, breadcrumb), même sous une
 # clé neutre — le matching par nom de clé seul ne voit pas ces cas.
-_IBAN_RE = re.compile(r"\b[A-Z]{2}\d{2}[A-Z0-9]{10,30}\b")
+# Tolère la casse ET les espaces de regroupement (« CH93 0076 2011 … », audit #260) ;
+# délibérément large : sur une app bancaire, sur-masquer > laisser fuir.
+_IBAN_RE = re.compile(r"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]){10,30}\b", re.IGNORECASE)
 
 
 def _scrub_str(value: str) -> str:

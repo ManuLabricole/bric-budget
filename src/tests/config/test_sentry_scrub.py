@@ -103,3 +103,12 @@ def test_iban_under_neutral_key_is_scrubbed_by_value_pattern():
 
     assert out["extra"]["arg0"] == SCRUBBED  # masqué par PATTERN, pas par clé
     assert out["extra"]["count"] == "42"  # nombre court non touché
+
+
+def test_iban_with_spaces_and_lowercase_is_scrubbed():
+    """IBAN écrit avec espaces de regroupement / en minuscules (audit #260)."""
+    spaced = {"extra": {"msg": "compte CH93 0076 2011 6238 5295 7 débité"}}
+    lower = {"extra": {"msg": "iban fr7630006000011234567890189"}}
+
+    assert "CH93 0076 2011 6238 5295 7" not in _send(spaced)["extra"]["msg"]
+    assert "fr7630006000011234567890189" not in _send(lower)["extra"]["msg"]
