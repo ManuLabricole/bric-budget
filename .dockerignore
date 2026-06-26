@@ -1,0 +1,38 @@
+# .dockerignore — ce qui NE doit PAS entrer dans l'image Docker.
+# Sécurité d'abord : secrets + dumps de prod ne doivent JAMAIS être copiés dans l'image.
+
+# ⛔ Données sensibles
+.env
+.env.*
+!.env.example
+backups/
+*.sql
+*.sql.gz
+
+# Git & CI
+.git
+.github
+.gitignore
+
+# Dépendances / artefacts (réinstallés/régénérés dans le build)
+.venv
+node_modules
+**/__pycache__
+*.pyc
+src/staticfiles/
+
+# Outils & caches
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.testmondata
+htmlcov
+.coverage
+.claude
+.mcp.json
+
+# Docs & dev local
+documentation
+*.md
+!README.md
+docker-compose*.yml
