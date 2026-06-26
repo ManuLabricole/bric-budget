@@ -1,3 +1,9 @@
+## v1.0.4 (2026-06-26)
+
+### Fix
+
+- **infra**: migrate + seed au RUNTIME (start command), pas en pre-deploy
+
 ## v1.0.3 (2026-06-26)
 
 ### Fix
