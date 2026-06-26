@@ -12,7 +12,6 @@ name: Supply Chain
 on:
   push:
     branches:
-      - development
       - main
   pull_request:
     branches:
