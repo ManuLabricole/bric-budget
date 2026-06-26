@@ -15,8 +15,32 @@ from decimal import Decimal
 
 import pytest
 from django.utils import timezone
+from playwright.sync_api import expect
 
 from tests.e2e.conftest import login
+
+
+def _is_really_on_top(locator):
+    """True si `locator` est RÉELLEMENT le pixel du dessus à son centre (hit-test).
+
+    `is_visible()` ne teste que le CSS (visibility/opacity) — PAS le clipping par
+    l'overflow d'un ancêtre NI l'occlusion par un autre élément (z-index). On fait
+    donc un vrai `document.elementFromPoint` au centre. Subtilité : elementFromPoint
+    IGNORE les éléments `pointer-events:none` (notre tooltip l'est) → on neutralise
+    temporairement pointer-events le temps du test (ça ne change ni le layout ni le
+    paint, donc le résultat reflète fidèlement clipping + ordre d'empilement).
+    Renvoie False si le tooltip est coupé ou caché derrière le contenu.
+    """
+    return locator.evaluate(
+        """(el) => {
+            const prev = el.style.pointerEvents;
+            el.style.pointerEvents = 'auto';
+            const r = el.getBoundingClientRect();
+            const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+            el.style.pointerEvents = prev;
+            return !!top && (el === top || el.contains(top) || top.contains(el));
+        }"""
+    )
 
 
 @pytest.fixture
@@ -73,21 +97,28 @@ def e2e_objectives(transactional_db, e2e_user):
     return current, other
 
 
-def test_topbar_objective_badge_shows_name_on_hover(page, live_server, e2e_objectives):
-    """Badge objectif visible dans la topbar ; survol → nom de la catégorie affiché."""
+def test_topbar_objective_badge_shows_name_and_pct_on_hover(
+    page, live_server, e2e_objectives
+):
+    """Survol d'un badge → tooltip avec NOM de la catégorie + POURCENTAGE, RÉELLEMENT
+    rendu à l'écran (hit-test pixel, pas juste le CSS visibility)."""
     login(page, live_server)
 
-    # Cibler LE badge de cette catégorie (aria-label) — le nom « Alimentation E2E »
-    # apparaît aussi dans la liste catégories, donc on scope le tooltip AU badge.
     badge = page.locator('a[aria-label^="Objectif Alimentation E2E"]')
-    assert badge.is_visible()
+    expect(badge).to_be_visible()
 
-    tooltip_name = badge.get_by_text("Alimentation E2E")
-    assert not tooltip_name.is_visible()  # caché tant qu'on ne survole pas
+    name = badge.get_by_text("Alimentation E2E")
+    pct = badge.get_by_text("% de l'objectif")  # 200/500 = 40 %
+    assert not name.is_visible()  # caché avant survol
 
     badge.hover()
-    tooltip_name.wait_for(state="visible", timeout=3000)
-    assert tooltip_name.is_visible()
+    expect(name).to_be_visible()
+    expect(pct).to_be_visible()
+
+    # PREUVE anti-clipping / anti-occlusion : le tooltip est bien le pixel du dessus
+    # (sinon clippé par overflow ou caché derrière le contenu → False).
+    assert _is_really_on_top(name), "tooltip nom coupé/caché derrière le contenu"
+    assert _is_really_on_top(pct), "tooltip % coupé/caché derrière le contenu"
 
 
 def test_category_switch_dropdown_navigates(page, live_server, e2e_objectives):
