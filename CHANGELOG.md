@@ -1,3 +1,9 @@
+## v1.0.1 (2026-06-26)
+
+### Fix
+
+- **infra**: pre-deploy — migrate AVANT le backup S3 (ne plus gater la 1ʳᵉ migration)
+
 ## v1.0.0 (2026-06-26)
 
 ### BREAKING CHANGE
