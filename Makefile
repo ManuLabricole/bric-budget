@@ -260,5 +260,10 @@ restore:
 		< $(FILE)
 	@printf "  ✅ $(GREEN)Restauration terminée$(RESET)\n"
 
+# Dump de la PROD (Railway) — #257. PROD_DATABASE_URL en ligne (jamais committée).
+# Usage : PROD_DATABASE_URL='postgresql://…@….proxy.rlwy.net:PORT/railway' make prod-backup
+prod-backup:
+	@bash scripts/db_prod_backup.sh
+
 # =============================================================================
-.PHONY: help status up down logs run migrate makemigrations shell create-superuser seed import-all import-yuh import-ubs import-cic backup restore demo-seed demo-reset lint type check test coverage
+.PHONY: help status up down logs run migrate makemigrations shell create-superuser seed import-all import-yuh import-ubs import-cic backup restore prod-backup demo-seed demo-reset lint type check test coverage
