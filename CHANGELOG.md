@@ -1,3 +1,18 @@
+## v1.0.0 (2026-06-26)
+
+### BREAKING CHANGE
+
+- première version stable 1.0.0 — fin de la phase 0.x pré-release.
+
+### Feat
+
+- **infra**: durcir le Dockerfile — user non-root + PYTHONDONTWRITEBYTECODE
+- **infra**: Dockerfile (pg_dump 18) → contrôle du build, remplace Railpack/nixpacks
+
+### Fix
+
+- **infra**: gunicorn en PID 1 via exec (retour CodeRabbit #265)
+
 ## v0.2.0 (2026-06-26)
 
 ### Feat
