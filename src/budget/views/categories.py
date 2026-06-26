@@ -517,6 +517,10 @@ def budget_category_detail(request, slug):
             # Filtres compte — partagés avec budget_index via la session
             "accounts": accounts,
             "filter_account_ids": cc["filter_account_ids"],
+            # Dropdown de changement de catégorie (titre, style Finary) — #24.
+            "switch_categories": Category.objects.for_user(request.user)
+            .filter(is_active=True)
+            .order_by("order", "name"),
         },
     )
 

@@ -35,68 +35,103 @@ Layout :
    PANEL GAUCHE
    ══════════════════════════════════════════════════════════════════════════════ #}
 {% block panel_left %}
-    {# ── Ligne 1 : navigation période (comme budget index) ───────────────────── #}
-    {% include "components/period/period_nav.html" with period_mode=period_mode period_display=period_display can_go_next=can_go_next nav_url_name="budget:set_period" %}
-    <div class="border-t border-edge my-3"></div>
-    {# ── Ligne 2 : breadcrumb + titre à gauche, filtres à droite ─────────────── #}
-    <div class="flex items-center gap-3 mb-4">
-        {# Breadcrumb ← Budget / icône + nom #}
+    {# ── Titre catégorie AU-DESSUS de tout (fond page, style Finary) ──────────── #}
+    {# Petit chevron retour + icône + nom (gros) + dropdown de changement de cat.   #}
+    <div class="flex items-center gap-3 mb-5">
         <a href="{% url 'budget:index' %}"
-           class="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-base transition-colors flex-shrink-0">
-            <svg class="w-4 h-4"
+           title="Retour au budget"
+           class="flex items-center justify-center w-7 h-7 rounded-full text-text-muted hover:text-text-base hover:bg-surface-hover transition-colors flex-shrink-0">
+            <svg class="w-5 h-5"
                  fill="none"
                  viewBox="0 0 24 24"
                  stroke-width="2"
                  stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
             </svg>
         </a>
-        <span class="text-text-disabled text-xs">/</span>
-        <div class="flex items-center gap-2 flex-shrink-0">
-            <div class="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center"
-                 style="background-color: {{ category.colour_hex|default:'#2d3033' }}">
-                {% if category.icon %}
-                    {% with icon_path="icons/categories/"|add:category.icon|add:".svg" %}
-                        <img src="{% static icon_path %}"
-                             width="16"
-                             height="16"
-                             class="w-4 h-4 brightness-0 invert"
-                             alt="">
-                    {% endwith %}
-                {% endif %}
+        {# Titre catégorie + dropdown changement de catégorie (Finary « Virements ▾ ») #}
+        <details class="relative group/catdd flex-shrink-0">
+            <summary class="list-none flex items-center gap-2.5 cursor-pointer select-none">
+                <div class="w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center"
+                     style="background-color: {{ category.colour_hex|default:'#2d3033' }}">
+                    {% if category.icon %}
+                        {% with icon_path="icons/categories/"|add:category.icon|add:".svg" %}
+                            <img src="{% static icon_path %}"
+                                 width="18"
+                                 height="18"
+                                 class="w-4 h-4 brightness-0 invert"
+                                 alt="">
+                        {% endwith %}
+                    {% endif %}
+                </div>
+                <h1 class="text-2xl font-semibold text-text-base tracking-tight">{{ category.name }}</h1>
+                <svg class="w-5 h-5 text-text-muted transition-transform group-open/catdd:rotate-180"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="2"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                </svg>
+            </summary>
+            <div class="absolute left-0 top-full mt-2 w-64 max-h-80 overflow-y-auto bg-surface-3 border border-edge/70 rounded-2xl shadow-2xl z-50 py-1.5"
+                 style="scrollbar-width:thin">
+                {% for c in switch_categories %}
+                    <a href="{% url 'budget:category_detail' c.slug %}"
+                       class="flex items-center gap-2.5 px-3 py-2 hover:bg-surface-hover transition-colors {% if c.slug == category.slug %}bg-surface-hover{% endif %}">
+                        <div class="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center"
+                             style="background-color: {{ c.colour_hex|default:'#2d3033' }}">
+                            {% if c.icon %}
+                                {% with icon_path="icons/categories/"|add:c.icon|add:".svg" %}
+                                    <img src="{% static icon_path %}"
+                                         width="13"
+                                         height="13"
+                                         class="w-3.5 h-3.5 brightness-0 invert"
+                                         alt="">
+                                {% endwith %}
+                            {% endif %}
+                        </div>
+                        <span class="text-sm truncate {% if c.slug == category.slug %}text-text-base font-medium{% else %}text-text-muted{% endif %}">{{ c.name }}</span>
+                    </a>
+                {% endfor %}
             </div>
-            <h1 class="text-sm font-semibold text-text-base">{{ category.name }}</h1>
-        </div>
-        {# Bouton supprimer — uniquement pour les catégories créées par l'utilisateur #}
+        </details>
+        {# Bouton supprimer — perso uniquement, discret à droite (titre reste épuré) #}
         {% if not category.is_system %}
             <button type="button"
                     hx-get="{% url 'budget:category_delete_confirm' 'category' category.slug %}"
                     hx-target="#modal-content"
                     hx-swap="innerHTML"
                     title="Supprimer cette catégorie"
-                    class="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-expense/60 hover:text-expense border border-expense/15 hover:border-expense/40 rounded-full transition-colors flex-shrink-0">
-                <svg class="w-3 h-3"
+                    class="ml-2 flex items-center justify-center w-7 h-7 rounded-full text-expense/50 hover:text-expense hover:bg-expense/10 transition-colors flex-shrink-0">
+                <svg class="w-4 h-4"
                      fill="none"
                      viewBox="0 0 24 24"
                      stroke-width="2"
                      stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
                 </svg>
-                Supprimer
             </button>
         {% endif %}
-        {# Filtre compte — aligné à droite #}
-        <div class="ml-auto flex items-center gap-2">
-            {% include "components/filters/filter_accounts.html" with accounts=accounts hidden_account_ids=filter_account_ids toggle_url_name="budget:toggle_filter_account" %}
-        </div>
     </div>
-    {# ── Carte Cashflow — Sankey + KPI strip ─────────────────────────────────── #}
-    {# overflow-hidden : clippe le border-b du tab strip aux coins arrondis de la card. #}
-    {# L'inner HTML est extrait dans _category_cashflow_card_inner.html pour être     #}
-    {# rechargé en partiel (HTMX GET) après un toggle is_ignored depuis le panneau.   #}
-    <div id="cashflow-card"
-         class="bg-surface-3/70 backdrop-blur-xl border border-edge/60 rounded-xl mb-4 overflow-hidden">
-        {% include "budget/_category_cashflow_card_inner.html" %}
+    {# ── Carte Cashflow — nav période + header (statiques) + corps swappé ──────── #}
+    {# La nav période et le filtre comptes sont STATIQUES (hors #cashflow-card) →   #}
+    {# le reload HTMX partiel (toggle is_ignored) ne swappe QUE le corps (Sankey +  #}
+    {# KPI strip) → ils ne disparaissent pas. overflow-hidden : clippe le tab strip.#}
+    <div class="bg-surface-3/70 backdrop-blur-xl border border-edge/60 rounded-xl mb-4 overflow-hidden">
+        {# Ligne 1 — navigation période, DANS la carte (style Finary) #}
+        <div class="px-5 pt-4 pb-3">
+            {% include "components/period/period_nav.html" with period_mode=period_mode period_display=period_display can_go_next=can_go_next nav_url_name="budget:set_period" %}
+        </div>
+        <div class="border-t border-edge"></div>
+        {# Ligne 2 — header « Cashflow » + filtre comptes (statique) #}
+        <div class="flex items-center justify-between px-5 pt-4 pb-1">
+            <h2 class="text-sm font-semibold text-text-base">Cashflow</h2>
+            <div class="flex items-center gap-2">
+                {% include "components/filters/filter_accounts.html" with accounts=accounts hidden_account_ids=filter_account_ids toggle_url_name="budget:toggle_filter_account" %}
+            </div>
+        </div>
+        {# Corps swappé en HTMX (Sankey + KPI strip) — rechargé après toggle is_ignored. #}
+        <div id="cashflow-card">{% include "budget/_category_cashflow_card_inner.html" %}</div>
     </div>
     {# ── Contenu principal — conditionnel selon cat_tab ────────────────────────── #}
     {# Tab "subcategories" → liste des sous-catégories avec leurs montants.        #}

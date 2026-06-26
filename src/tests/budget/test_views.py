@@ -239,11 +239,17 @@ def test_category_cashflow_fragment_returns_inner_html_only(auth_client, cf_cate
 
 
 @pytest.mark.django_db
-def test_category_cashflow_fragment_contains_cashflow_header(auth_client, cf_category):
+def test_category_cashflow_fragment_contains_kpi_strip(auth_client, cf_category):
+    # Le header « Cashflow » + le filtre comptes sont désormais STATIQUES (hors zone
+    # swappée, #24). Le fragment = le CORPS (Sankey + KPI strip) → il porte les
+    # onglets KPI (Transactions / Objectif), pas le titre « Cashflow ».
     response = auth_client.get(
         reverse("budget:category_cashflow_fragment", args=[cf_category.slug])
     )
-    assert "Cashflow" in response.content.decode()
+    content = response.content.decode()
+    assert "Transactions" in content
+    assert "Objectif" in content
+    assert "<!DOCTYPE html>" not in content  # inner HTML only
 
 
 @pytest.mark.django_db

@@ -1,0 +1,35 @@
+{% load budget_filters %}
+{% comment %}
+budget/partials/_objective_history_card.html — Historique 12 mois des objectifs (#24).
+
+Bar chart des dépenses sur les catégories budgétées (12 mois glissants) + ligne
+objectif horizontale. Réutilise BricCharts.initBar (bar.js) tel quel — même data
+shape que la page catégorie. Clic sur une barre → budget:set_period_month (session)
+→ la page se re-render sur ce mois.
+
+Contexte (budget_index) : has_objective, objective_history (dict|None).
+{% endcomment %}
+<div class="bg-surface-3/70 backdrop-blur-xl border border-edge/60 rounded-xl p-5 flex flex-col gap-3">
+    <h2 class="text-sm font-semibold text-text-base">Objectif mensuel</h2>
+    {% if objective_history %}
+        <div class="bg-surface-2 border border-edge rounded-xl overflow-visible">
+            <div class="flex items-center justify-between px-4 py-3 border-b border-edge">
+                <p class="text-xs text-text-base uppercase tracking-wider">Historique 12 mois</p>
+                <span class="text-xs text-text-muted">Objectif {{ objective_history.target|chf }} CHF / mois</span>
+            </div>
+            {# bar.js lit objective_history + colore les barres ; clic → set_period_month. #}
+            <div id="objective-bar-chart"
+                 class="w-full px-2"
+                 style="height: 180px"
+                 data-chart="bar"
+                 data-chart-data="objective-history-data"></div>
+            {{ objective_history|json_script:"objective-history-data" }}
+        </div>
+    {% elif has_objective %}
+        <p class="text-xs text-text-disabled text-center py-6">Aucune dépense sur les 12 derniers mois.</p>
+    {% else %}
+        <p class="text-xs text-text-disabled text-center py-6">
+            Aucun objectif défini. Ouvre une catégorie pour fixer un objectif mensuel.
+        </p>
+    {% endif %}
+</div>

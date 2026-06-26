@@ -215,6 +215,9 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "budget.context_processors.design_tokens",
+                # Objectifs budget (jauges) dans la topbar — présents sur TOUTES les
+                # pages car la topbar vit dans base_app.html (#24).
+                "budget.context_processors.budget_objectives",
                 # Sidebar Patrimoine ▼ (registre classes d'actifs + état déplié en session).
                 # Présent sur toutes les pages car la sidebar vit dans base_app.html.
                 "patrimoine.context_processors.sidebar",

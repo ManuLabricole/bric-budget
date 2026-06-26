@@ -27,8 +27,9 @@ from datetime import date
 
 from django.contrib.auth.decorators import login_required
 from django.db.models import Sum
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, TruncMonth
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from accounts.models import Account
@@ -44,6 +45,7 @@ from budget.utils import (
     safe_referer,
 )
 from budget.views.transactions import budget_panel_transactions
+from services.palette import PRIMARY
 from transactions.models import (
     BudgetTarget,
     Category,
@@ -531,6 +533,51 @@ def budget_index(request):
                 _cat["target_raw_pct"] = None
                 _cat["target_overspend_chf"] = None
 
+    # ── 11b. Historique 12 mois AGRÉGÉ (bar chart panel droit) ────────────────
+    #
+    # Les jauges par objectif vivent dans la topbar (context processor
+    # budget_objectives, présent sur toutes les pages). Ici on ne garde que le bar
+    # chart agrégé : 12 mois glissants des dépenses sur les catégories budgétées,
+    # indépendant de la période active (faits fixes), + ligne objectif (Σ objectifs
+    # mensuels). Même structure que le chart catégorie → réutilise BricCharts.initBar.
+    # Clic sur une barre → budget:set_period_month (session) → la page se re-render.
+    has_objective = bool(_targets_map)
+    objective_target_monthly = sum(_targets_map.values())  # Σ objectifs mensuels
+    objective_history = None
+    if has_objective:
+        _twelve_ago = _add_months(today.replace(day=1), -11)
+        _monthly_qs = (
+            Transaction.objects.for_user(request.user)
+            .filter(
+                category_id__in=list(_targets_map.keys()),
+                date__gte=_twelve_ago,
+                date__lte=today,
+                is_ignored=False,
+                is_internal_transfer=False,
+            )
+            .annotate(month=TruncMonth("date"))
+            .values("month")
+            .annotate(total=Sum(Coalesce("amount_chf", "amount")))
+            .order_by("month")
+        )
+        _months, _values, _urls = [], [], []
+        for _row in _monthly_qs:
+            _m = _row["month"]
+            _months.append(MOIS_FR[_m.month][:3])
+            _values.append(round(float(abs(_row["total"] or 0)), 2))
+            _urls.append(reverse("budget:set_period_month", args=[_m.year, _m.month]))
+        if _months:
+            objective_history = {
+                "months": _months,
+                "values": _values,
+                "urls": _urls,
+                # Ligne de référence — objectif mensuel BRUT (pas ×period_months).
+                "target": round(float(objective_target_monthly), 2),
+                "current_month": period_start.strftime("%Y-%m"),
+                # Couleur agrégat depuis la source de tokens Python (pas de hex en dur).
+                "cat_color": PRIMARY[0],
+            }
+
     # ── 12. Contexte → template ───────────────────────────────────────────────
     # total_available calculé en section 8 (avant le Sankey JSON)
 
@@ -550,6 +597,10 @@ def budget_index(request):
         "total_expenses_abs": total_expenses_abs,
         "total_recurring": abs(total_recurring),
         "total_available": total_available,
+        # Objectif — bar chart historique 12 mois agrégé (panel droit). Les jauges
+        # par objectif sont dans la topbar via le context processor (#24).
+        "has_objective": has_objective,
+        "objective_history": objective_history,
         # Catégories — active_categories = la liste à afficher selon l'onglet
         "active_categories": active_categories,
         "tab_label_suffix": tab_label_suffix,

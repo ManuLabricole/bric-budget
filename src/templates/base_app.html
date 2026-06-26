@@ -17,7 +17,9 @@ Les "cartes" visuelles sont définies par chaque page dans panel_left / panel_ri
         <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
             {# ── TOPBAR — transparent, contenu fixe sur toutes les pages ─────── #}
             <div class="relative flex items-center justify-between h-[72px] px-5 flex-shrink-0 bg-transparent">
-                <div class="flex items-center gap-4">{# TODO Phase 2C : jauges circulaires objectifs budget du mois #}</div>
+                {% comment %}Badges objectifs budget — présents sur TOUTES les pages
+                (alimentés par le context processor budget_objectives, #24).{% endcomment %}
+                <div class="flex items-center gap-4">{% include "budget/partials/_objectives_topbar.html" %}</div>
                 <button type="button"
                         hx-get="{% url 'patrimoine:institution_picker' %}"
                         hx-target="#panel-content"
