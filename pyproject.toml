@@ -34,6 +34,7 @@ djlint = "^1.39.4"
 commitizen = "^4.16.4"
 pytest = "^9.1"
 pytest-django = "^4.12"
+mutmut = "^3.6.0"  # mutation testing (#198), tourne en nightly scoppé — voir [tool.mutmut]
 
 
 # =============================================================================
