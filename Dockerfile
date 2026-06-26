@@ -68,6 +68,9 @@ RUN useradd --create-home --uid 10001 appuser && chown -R appuser:appuser /app
 USER appuser
 
 # ── Start ─────────────────────────────────────────────────────────────────────
-# Ex-Procfile. Forme shell (string) → $PORT injecté par Railway est expansé.
+# Ex-Procfile. `sh -c` pour expanser $PORT (injecté par Railway), puis `exec` pour que
+# gunicorn REMPLACE le shell et devienne PID 1 → il reçoit SIGTERM directement (arrêt
+# gracieux au redeploy/restart, pas de shell zombie). Pas de `poetry run` : avec
+# virtualenvs.create=false, gunicorn est dans le PATH système.
 # Les migrations NE tournent PAS ici (multi-workers) → pre-deploy (railway.json).
-CMD ["sh", "-c", "cd src && poetry run gunicorn config.wsgi --workers 3 --bind 0.0.0.0:$PORT --timeout 30 --access-logfile -"]
+CMD ["sh", "-c", "cd src && exec gunicorn config.wsgi --workers 3 --bind 0.0.0.0:$PORT --timeout 30 --access-logfile -"]
