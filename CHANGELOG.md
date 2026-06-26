@@ -1,3 +1,9 @@
+## v1.0.3 (2026-06-26)
+
+### Fix
+
+- **infra**: retirer le preDeployCommand (deploy bloqué, DB déjà migrée)
+
 ## v1.0.2 (2026-06-26)
 
 ### Fix
