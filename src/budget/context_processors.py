@@ -14,6 +14,11 @@ from django.db.models.functions import Coalesce
 from budget.constants import CATEGORY_COLOR_PALETTE
 from services.colors import palette_dict as derived_palette_dict
 
+# Anneau du badge objectif quand l'objectif est DÉPASSÉ (> 100 %) : rouge.
+# = valeur du token Tailwind "expense" (cf. tailwind.config.js) — gardé synchro
+# comme GAUGE_COLOR_WARNING dans budget_filters.
+OVERSPEND_RING_COLOR = "#e5494a"
+
 
 def budget_objectives(request):
     """Objectifs budget de l'utilisateur → badges jauge dans la topbar (#24).
@@ -62,17 +67,22 @@ def budget_objectives(request):
         amount = float(target.amount)
         consumed = spent.get(target.category_id, 0.0)
         raw_pct = round(consumed / amount * 100) if amount > 0 else 0
+        over = raw_pct > 100
         objectives.append(
             {
                 "name": target.category.name,
                 "slug": target.category.slug,
                 "icon": target.category.icon,
                 "colour_hex": target.category.colour_hex,
+                # Anneau rouge si dépassement, sinon couleur de la catégorie.
+                "ring_color": OVERSPEND_RING_COLOR
+                if over
+                else target.category.colour_hex,
                 "spent": round(consumed),
                 "target": round(amount),
                 "raw_pct": raw_pct,  # non cappé (texte / couleur)
                 "pct": min(raw_pct, 100),  # cappé pour l'arc SVG
-                "overspend": round(consumed - amount) if raw_pct > 100 else None,
+                "overspend": round(consumed - amount) if over else None,
             }
         )
     return {"topbar_objectives": objectives}

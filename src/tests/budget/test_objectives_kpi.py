@@ -52,6 +52,9 @@ def test_context_processor_lists_one_objective_per_target(client_a, account_a, u
     assert by_pct[100]["overspend"] is None
     assert by_pct[300]["pct"] == 100  # cappé pour l'arc
     assert by_pct[300]["overspend"] == 200  # 300 - 100
+    # Anneau ROUGE (token expense) si dépassement ; couleur catégorie sinon.
+    assert by_pct[300]["ring_color"] == "#e5494a"
+    assert by_pct[40]["ring_color"] != "#e5494a"
 
 
 @pytest.mark.django_db
@@ -118,8 +121,8 @@ def test_category_detail_has_large_title_and_switch_dropdown(
     resp = client_a.get(reverse("budget:category_detail", args=[current.slug]))
 
     assert resp.status_code == 200
-    # Titre Finary : gros h1 (text-xl) avec le nom de la catégorie courante.
-    assert b"text-xl font-semibold" in resp.content
+    # Titre Finary : gros h1 (text-2xl) avec le nom de la catégorie courante.
+    assert b"text-2xl font-semibold" in resp.content
     assert b"Courante" in resp.content
     # Dropdown : lien vers l'AUTRE catégorie.
     assert reverse("budget:category_detail", args=[other.slug]).encode() in resp.content
