@@ -51,6 +51,13 @@ _railway_domain = config("RAILWAY_PUBLIC_DOMAIN", default="").strip()
 if _railway_domain and _railway_domain not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(_railway_domain)
 
+# Railway effectue son healthcheck depuis le host `healthcheck.railway.app` (doc
+# Healthchecks). Avec DEBUG=False, Django renvoie 400 si ce host n'est pas autorisé
+# → le healthcheck échoue (« failed with status 400 ») et le deploy est marqué KO.
+# On l'ajoute uniquement quand on tourne sur Railway (domaine public présent).
+if _railway_domain and "healthcheck.railway.app" not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append("healthcheck.railway.app")
+
 # CSRF_TRUSTED_ORIGINS : obligatoire pour les POST en HTTPS (Django 4+).
 # Toujours préfixer avec https:// — les cookies SameSite exigent l'origine complète.
 # On exclut localhost/127.0.0.1 (HTTP local) et "*" (wildcard invalide comme origin).
