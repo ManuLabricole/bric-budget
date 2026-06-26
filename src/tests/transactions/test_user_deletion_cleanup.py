@@ -15,6 +15,7 @@ CategorizationRule, BudgetTarget — étaient déjà en CASCADE). Invariant prou
 """
 
 from decimal import Decimal
+from typing import cast
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -35,6 +36,29 @@ from transactions.models import (
 )
 
 
+# factory_boy : `XFactory(...)` est typé comme la classe factory, pas le modèle
+# (mypy ne suit pas le `_create`). Wrappers castés pour récupérer le bon type —
+# même pattern que tests/integration/test_crossmodule_integration.py (#228).
+def _cat(**kwargs: object) -> Category:
+    return cast(Category, CategoryFactory(**kwargs))
+
+
+def _sys_cat(**kwargs: object) -> Category:
+    return cast(Category, SystemCategoryFactory(**kwargs))
+
+
+def _subcat(**kwargs: object) -> SubCategory:
+    return cast(SubCategory, SubCategoryFactory(**kwargs))
+
+
+def _rule(**kwargs: object) -> CategorizationRule:
+    return cast(CategorizationRule, CategorizationRuleFactory(**kwargs))
+
+
+def _tx(**kwargs: object) -> Transaction:
+    return cast(Transaction, TransactionFactory(**kwargs))
+
+
 @pytest.fixture
 def user_a(db):
     return get_user_model().objects.create_user(email="ua203@budget.ch", password="x")
@@ -49,9 +73,9 @@ def user_b(db):
 def test_deleting_user_removes_all_owned_perso_rows(user_a):
     """Les 4 modèles owned (Category/SubCategory/CategorizationRule/BudgetTarget)
     perso de l'user sont supprimés à sa suppression — aucun orphelin owner=NULL."""
-    cat = CategoryFactory(owner=user_a)
-    sub = SubCategoryFactory(category=cat)  # owner suit la catégorie → user_a
-    rule = CategorizationRuleFactory(category=cat)  # owner → user_a
+    cat = _cat(owner=user_a)
+    sub = _subcat(category=cat)  # owner suit la catégorie → user_a
+    rule = _rule(category=cat)  # owner → user_a
     target = BudgetTarget.objects.create(
         category=cat, owner=user_a, amount=Decimal("500.00")
     )
@@ -74,8 +98,8 @@ def test_deleting_user_removes_perso_subcategory_under_system_category(user_a):
     """Cas-fuite #118 : une sous-cat PERSO accrochée à une catégorie SYSTÈME.
     SET_NULL l'aurait laissée survivre orpheline (owner=NULL, sous une cat système)
     = traitée comme système. CASCADE la supprime ; la catégorie système survit."""
-    system_cat = SystemCategoryFactory()
-    perso_sub = SubCategoryFactory(category=system_cat, owner=user_a, is_system=False)
+    system_cat = _sys_cat()
+    perso_sub = _subcat(category=system_cat, owner=user_a, is_system=False)
     sub_pk, sys_pk = perso_sub.pk, system_cat.pk
 
     user_a.delete()
@@ -88,9 +112,9 @@ def test_deleting_user_removes_perso_subcategory_under_system_category(user_a):
 def test_deleting_user_preserves_transactions_as_uncategorized(user_a):
     """CASCADE sur owner n'est PAS une perte de données : Transaction.category et
     .subcategory sont en SET_NULL → les tx survivent, recatégorisables."""
-    cat = CategoryFactory(owner=user_a)
-    sub = SubCategoryFactory(category=cat)
-    tx = TransactionFactory(category=cat, subcategory=sub)
+    cat = _cat(owner=user_a)
+    sub = _subcat(category=cat)
+    tx = _tx(category=cat, subcategory=sub)
     tx_pk = tx.pk
 
     user_a.delete()
@@ -105,12 +129,12 @@ def test_deleting_user_preserves_transactions_as_uncategorized(user_a):
 def test_deleting_user_does_not_touch_system_or_other_user_data(user_a, user_b):
     """Supprimer user_a laisse intactes les catégories système ET les lignes perso
     de user_b — la cascade est strictement scopée à l'owner supprimé."""
-    SystemCategoryFactory(slug="system-keep", name="System Keep")
-    b_cat = CategoryFactory(owner=user_b, slug="b-cat")
+    _sys_cat(slug="system-keep", name="System Keep")
+    b_cat = _cat(owner=user_b, slug="b-cat")
     b_target = BudgetTarget.objects.create(
         category=b_cat, owner=user_b, amount=Decimal("300.00")
     )
-    CategoryFactory(owner=user_a, slug="a-cat")
+    _cat(owner=user_a, slug="a-cat")
 
     user_a.delete()
 
