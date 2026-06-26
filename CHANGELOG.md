@@ -1,3 +1,9 @@
+## v1.0.2 (2026-06-26)
+
+### Fix
+
+- **infra**: pre-deploy — dump_db_to_s3 non-bloquant (ne bloque plus le déploiement)
+
 ## v1.0.1 (2026-06-26)
 
 ### Fix
