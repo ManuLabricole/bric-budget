@@ -14,10 +14,12 @@ Utilise les deux blocs définis dans base_app.html :
     {% include "budget/partials/_budget_left_section.html" %}
 {% endblock %}
 {# ══════════════════════════════════════════════════════════════════════════════
-   PANEL DROIT — Distribution (sans border)
+   PANEL DROIT — Objectif mensuel (bar chart 12 mois) + Distribution (donut)
+   Empilés dans UN SEUL conteneur flex-[1] (le parent est un flex items-start).
    ══════════════════════════════════════════════════════════════════════════════ #}
 {% block panel_right %}
-    <aside class="flex-[1] min-w-0">
+    <aside class="flex-[1] min-w-0 flex flex-col gap-4">
+        {% include "budget/partials/_objective_history_card.html" %}
         <div class="bg-surface-3/70 backdrop-blur-xl border border-edge/60 rounded-xl p-5 flex flex-col gap-5">
             <h2 class="text-sm font-semibold text-text-base flex-shrink-0">Distribution</h2>
             {# Donut ECharts — synchronisé avec le KPI actif                           #}
@@ -52,6 +54,8 @@ Utilise les deux blocs définis dans base_app.html :
     <script src="{% static 'js/charts/utils.js' %}"></script>
     <script src="{% static 'js/charts/sankey.js' %}"></script>
     <script src="{% static 'js/charts/donut.js' %}"></script>
+    {# bar.js — historique 12 mois objectif (#24), même module que la page catégorie #}
+    <script src="{% static 'js/charts/bar.js' %}"></script>
     <script src="{% static 'js/charts/auto-init.js' %}"></script>
     {# ── Close-on-outside-click pour les dropdowns Créer / Paramètres / Filtres ── #}
     {# Ces handlers sont enregistrés une seule fois ici (hors de la zone HTMX-swappable). #}

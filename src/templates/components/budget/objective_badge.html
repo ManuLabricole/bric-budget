@@ -1,0 +1,51 @@
+{% load static %}
+{% comment %}
+components/budget/objective_badge.html — Badge jauge d'un objectif budget (#24).
+
+Jauge circulaire (anneau couleur catégorie + icône au centre) compacte pour la
+topbar. Le NOM de la catégorie + dépensé/objectif + % apparaissent au HOVER
+(tooltip blur, pattern group-hover). Clic → page détail de la catégorie.
+
+Réutilisable partout (topbar, etc.). Paramètre :
+  obj — dict {name, slug, icon, colour_hex, spent, target, raw_pct, pct, overspend}
+        (cf. context processor budget_objectives).
+{% endcomment %}
+<a href="{% url 'budget:category_detail' obj.slug %}"
+   class="group/obj relative flex-shrink-0 block"
+   aria-label="Objectif {{ obj.name }} : {{ obj.spent }} / {{ obj.target }} CHF">
+    {# Jauge circulaire — anneau couleur catégorie (fond 20 %) + arc consommé. #}
+    <div class="relative w-9 h-9 flex items-center justify-center">
+        <svg class="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 36 36">
+            <circle cx="18" cy="18" r="16" fill="none" stroke="{{ obj.colour_hex|default:'#4ade80' }}" stroke-opacity="0.2" stroke-width="3.5" stroke-dasharray="100 100" />
+            <circle cx="18" cy="18" r="16" fill="none" stroke="{{ obj.colour_hex|default:'#4ade80' }}" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="{{ obj.pct }} 100" />
+        </svg>
+        <div class="w-6 h-6 rounded-full flex items-center justify-center"
+             style="background-color: {{ obj.colour_hex|default:'#2d3033' }}">
+            {% if obj.icon %}
+                {% with icon_path="icons/categories/"|add:obj.icon|add:".svg" %}
+                    <img src="{% static icon_path %}"
+                         width="14"
+                         height="14"
+                         class="w-3.5 h-3.5 brightness-0 invert"
+                         alt="">
+                {% endwith %}
+            {% else %}
+                <span class="text-white text-[10px] font-bold">{{ obj.name|slice:":1" }}</span>
+            {% endif %}
+        </div>
+    </div>
+    {# Tooltip au survol — nom + chiffres. Pattern group-hover blur (cf. _kpi_info_icon). #}
+    <div class="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-44 z-50 invisible group-hover/obj:visible opacity-0 group-hover/obj:opacity-100 transition-all duration-200 pointer-events-none">
+        <div class="bg-surface-3/95 backdrop-blur-xl border border-edge/60 rounded-xl px-3 py-2 shadow-2xl">
+            <p class="text-xs font-semibold text-text-base truncate">{{ obj.name }}</p>
+            <p class="text-[11px] text-text-muted tabular-nums mt-0.5">{{ obj.spent }} / {{ obj.target }} CHF</p>
+            {% if obj.overspend %}
+                <p class="text-[11px] font-medium text-warning tabular-nums">
+                    +{{ obj.overspend }} CHF au-dessus ({{ obj.raw_pct }} %)
+                </p>
+            {% else %}
+                <p class="text-[11px] font-medium text-income tabular-nums">{{ obj.raw_pct }} % de l'objectif</p>
+            {% endif %}
+        </div>
+    </div>
+</a>

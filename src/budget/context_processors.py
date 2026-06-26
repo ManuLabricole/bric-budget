@@ -6,9 +6,76 @@ Ajouté à TEMPLATES.OPTIONS.context_processors dans config/settings.py.
 """
 
 import json
+from datetime import date
+
+from django.db.models import Sum
+from django.db.models.functions import Coalesce
 
 from budget.constants import CATEGORY_COLOR_PALETTE
 from services.colors import palette_dict as derived_palette_dict
+
+
+def budget_objectives(request):
+    """Objectifs budget de l'utilisateur → badges jauge dans la topbar (#24).
+
+    Présent sur TOUTES les pages (topbar = base_app.html). Une entrée par
+    BudgetTarget : on calcule le dépensé du MOIS COURANT sur la catégorie et le %
+    consommé (même filtre que budget_index). Anonyme / aucun objectif → liste vide.
+
+    Coût : 2 requêtes légères par requête authentifiée (objectifs + dépensé groupé).
+    """
+    user = getattr(request, "user", None)
+    if user is None or not user.is_authenticated:
+        return {"topbar_objectives": []}
+
+    # Imports locaux : éviter un import circulaire au chargement des settings
+    # (ce module est importé tôt via TEMPLATES.context_processors).
+    from transactions.models import BudgetTarget, Transaction
+
+    targets = list(
+        BudgetTarget.objects.for_user(user)
+        .select_related("category")
+        .order_by("category__order", "category__name")
+    )
+    if not targets:
+        return {"topbar_objectives": []}
+
+    today = date.today()
+    month_start = today.replace(day=1)
+    spent = {
+        row["category_id"]: abs(float(row["total"] or 0))
+        for row in Transaction.objects.for_user(user)
+        .filter(
+            date__gte=month_start,
+            date__lte=today,
+            amount__lt=0,
+            is_ignored=False,
+            is_internal_transfer=False,
+            category__isnull=False,
+        )
+        .values("category_id")
+        .annotate(total=Sum(Coalesce("amount_chf", "amount")))
+    }
+
+    objectives = []
+    for target in targets:
+        amount = float(target.amount)
+        consumed = spent.get(target.category_id, 0.0)
+        raw_pct = round(consumed / amount * 100) if amount > 0 else 0
+        objectives.append(
+            {
+                "name": target.category.name,
+                "slug": target.category.slug,
+                "icon": target.category.icon,
+                "colour_hex": target.category.colour_hex,
+                "spent": round(consumed),
+                "target": round(amount),
+                "raw_pct": raw_pct,  # non cappé (texte / couleur)
+                "pct": min(raw_pct, 100),  # cappé pour l'arc SVG
+                "overspend": round(consumed - amount) if raw_pct > 100 else None,
+            }
+        )
+    return {"topbar_objectives": objectives}
 
 
 def design_tokens(request):

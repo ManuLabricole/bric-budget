@@ -24,6 +24,8 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.db import transaction as db_transaction
+from django.db.models import Sum
+from django.db.models.functions import Coalesce
 
 from accounts.models import (
     Account,
@@ -39,6 +41,7 @@ from demo import generators, profiles
 from imports.orchestrator import persist_import_file, prepare_import, run_import
 from services.exchange_rates import to_chf
 from transactions.models import (
+    BudgetTarget,
     CategorizationRule,
     Category,
     ImportLog,
@@ -220,6 +223,11 @@ def seed_demo(
     # jamais le mode global (qui appliquerait les règles de tous les users).
     call_command("apply_rules", user=user.email)
 
+    # Objectifs budget calibrés sur le dépensé réel → montre tous les états de jauge
+    # (non commencé / 40 % / 85 % / 100 % / dépassement) sur la page Budget (#24).
+    n_targets = _ensure_budget_targets(user)
+    logger.info("seed_demo objectifs: %d BudgetTarget", n_targets)
+
     summary = SeedSummary(
         user_email=user.email,
         accounts=len(accounts),
@@ -386,6 +394,72 @@ def _ensure_rules(user) -> int:
         if was_created:
             created += 1
     return created
+
+
+# États de jauge à exposer sur la page Budget, du moins au plus dépensé. Chaque
+# ratio = dépensé_mois / objectif → l'objectif est calé sur le dépensé RÉEL :
+#   0.40 → 40 %   |  0.85 → 85 % (sous, vert)  |  1.00 → 100 %  |  1.50 → 150 % (dépassé).
+# Calibré à chaque seed sur le mois courant → les % restent justes même si les
+# montants générés changent. Un 5ᵉ objectif « non commencé » (0 %) est ajouté
+# ensuite sur une catégorie sans dépense ce mois.
+_TARGET_RATIOS = (0.40, 0.85, 1.00, 1.50)
+
+
+def _ensure_budget_targets(user) -> int:
+    """Seed des BudgetTarget démo calibrés sur le dépensé du MOIS COURANT pour
+    montrer tous les états de la jauge objectif (#24). Idempotent : update_or_create
+    sur (owner, category) → re-seed recalibre au lieu de dupliquer."""
+    today = date.today()
+    month_start = today.replace(day=1)
+
+    # Dépensé du mois courant par catégorie — MÊME filtre que budget_index
+    # (for_user, sorties, hors ignorées / virements internes, catégorie non nulle).
+    spent = list(
+        Transaction.objects.for_user(user)
+        .filter(
+            date__gte=month_start,
+            date__lte=today,
+            amount__lt=0,
+            is_ignored=False,
+            is_internal_transfer=False,
+            category__isnull=False,
+        )
+        .values("category_id")
+        .annotate(total=Sum(Coalesce("amount_chf", "amount")))
+        .order_by("total")  # total négatif → la plus grosse dépense en premier
+    )
+
+    n = 0
+    used: set[int] = set()
+    for row, ratio in zip(spent, _TARGET_RATIOS):
+        amount_spent = abs(float(row["total"] or 0))
+        if amount_spent <= 0:
+            continue
+        # objectif = dépensé / ratio. SR-002 : Decimal(str(float)), jamais Decimal(float).
+        amount = Decimal(str(round(amount_spent / ratio, 2)))
+        # #213 fail-closed : update_or_create via le manager nu fait son lookup en
+        # .none() → INSERT en doublon. On scope for_user pour l'idempotence (cf. _ensure_rules).
+        BudgetTarget.objects.for_user(user).update_or_create(
+            owner=user, category_id=row["category_id"], defaults={"amount": amount}
+        )
+        used.add(row["category_id"])
+        n += 1
+
+    # « Non commencé » (0 %) : une catégorie visible SANS dépense ce mois.
+    spent_ids = {row["category_id"] for row in spent}
+    zero_cat = (
+        Category.objects.for_user(user)
+        .filter(is_active=True)
+        .exclude(id__in=spent_ids | used)
+        .order_by("order", "name")
+        .first()
+    )
+    if zero_cat is not None:
+        BudgetTarget.objects.for_user(user).update_or_create(
+            owner=user, category_id=zero_cat.id, defaults={"amount": Decimal("200")}
+        )
+        n += 1
+    return n
 
 
 def _resolve_file(

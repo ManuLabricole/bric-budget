@@ -1,0 +1,15 @@
+{% comment %}
+budget/partials/_objectives_topbar.html — Rangée de badges objectifs dans la topbar (#24).
+
+Alimenté par le context processor budget_objectives (présent sur toutes les pages).
+Un badge jauge par objectif (composant réutilisable objective_badge.html), nom au
+hover. Vide (aucun objectif / anonyme) → rien ne s'affiche.
+{% endcomment %}
+{% if topbar_objectives %}
+    <div class="flex items-center gap-2 overflow-x-auto max-w-[60vw]"
+         style="scrollbar-width:none">
+        {% for obj in topbar_objectives %}
+            {% include "components/budget/objective_badge.html" with obj=obj %}
+        {% endfor %}
+    </div>
+{% endif %}
