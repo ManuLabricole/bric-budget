@@ -79,6 +79,36 @@ if not DEBUG:
 
 
 # =============================================================================
+# 1b. Error tracking — Sentry (#259)
+# =============================================================================
+#
+# Sentry est un service CLOUD : l'app ENVOIE ses exceptions non gérées via une DSN.
+# Découplage par variable d'env : SENTRY_DSN absente (dev/CI) → init sautée, zéro
+# effet ; présente (var Railway, prod) → tracking actif. La DSN n'est JAMAIS
+# committée ni mise dans le .env de dev.
+SENTRY_DSN = config("SENTRY_DSN", default="")
+if SENTRY_DSN:
+    import sentry_sdk
+
+    from config.sentry import scrub_sensitive  # before_send testable (#259)
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        # Tag d'environnement (Railway injecte RAILWAY_ENVIRONMENT_NAME) → un futur
+        # staging aura ses erreurs étiquetées à part.
+        environment=config("RAILWAY_ENVIRONMENT_NAME", default="production"),
+        send_default_pii=False,  # pas de cookies/IP
+        # ⛔ App bancaire : couper les VECTEURS de fuite à la source (audit #260).
+        # include_local_variables=False : ne PAS envoyer les variables locales des
+        # stack traces (sinon un IBAN/montant/ligne CSV d'une frame partirait).
+        include_local_variables=False,
+        max_request_body_size="never",  # jamais le corps de requête
+        traces_sample_rate=0.0,  # erreurs only au départ — pas de perf tracing
+        before_send=scrub_sensitive,  # 2e couche : masque IBAN par clé ET par valeur
+    )
+
+
+# =============================================================================
 # 2. Apps & middleware
 # =============================================================================
 

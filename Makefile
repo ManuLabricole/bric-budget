@@ -247,21 +247,25 @@ backup:
 		> $(BACKUP_FILE)
 	@printf "  ✅ $(GREEN)Sauvegarde créée :$(RESET) $(BACKUP_FILE)\n"
 
-# Usage : make restore FILE=backups/bricbudget_20260405_103000.sql
+# Usage : make restore FILE=backups/bricbudget_20260405_103000.sql[.gz]
+# Gère les .sql ET les .sql.gz (les dumps prod sont gzippés) → décompression à la volée.
 restore:
 	@if [ -z "$(FILE)" ]; then \
-		printf "  ❌ $(RED)Précise le fichier : make restore FILE=backups/nom_du_fichier.sql$(RESET)\n"; \
+		printf "  ❌ $(RED)Précise le fichier : make restore FILE=backups/nom_du_fichier.sql[.gz]$(RESET)\n"; \
 		exit 1; \
 	fi
 	@printf "  ⚠️  $(YELLOW)Restauration depuis $(FILE)... (la DB actuelle sera écrasée)$(RESET)\n"
-	@docker exec -i bricbudget-db psql \
+	@case "$(FILE)" in \
+		*.gz) gunzip -c "$(FILE)" ;; \
+		*)    cat "$(FILE)" ;; \
+	esac | docker exec -i bricbudget-db psql \
 		--username=$(shell grep DB_USER .env | cut -d= -f2) \
-		--dbname=$(shell grep DB_NAME .env | cut -d= -f2) \
-		< $(FILE)
+		--dbname=$(shell grep DB_NAME .env | cut -d= -f2)
 	@printf "  ✅ $(GREEN)Restauration terminée$(RESET)\n"
 
-# Dump de la PROD (Railway) — #257. PROD_DATABASE_URL en ligne (jamais committée).
-# Usage : PROD_DATABASE_URL='postgresql://…@….proxy.rlwy.net:PORT/railway' make prod-backup
+# Dump de la PROD (Railway) — #257. Le script DEMANDE l'URL en saisie masquée si
+# PROD_DATABASE_URL n'est pas déjà dans l'env → le secret ne passe pas par la ligne
+# de commande / l'historique shell. Récupérer l'URL : Railway → Postgres → Connect.
 prod-backup:
 	@bash scripts/db_prod_backup.sh
 
