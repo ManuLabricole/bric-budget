@@ -97,9 +97,14 @@ if SENTRY_DSN:
         # Tag d'environnement (Railway injecte RAILWAY_ENVIRONMENT_NAME) → un futur
         # staging aura ses erreurs étiquetées à part.
         environment=config("RAILWAY_ENVIRONMENT_NAME", default="production"),
-        send_default_pii=False,  # pas de PII auto (app bancaire)
+        send_default_pii=False,  # pas de cookies/IP
+        # ⛔ App bancaire : couper les VECTEURS de fuite à la source (audit #260).
+        # include_local_variables=False : ne PAS envoyer les variables locales des
+        # stack traces (sinon un IBAN/montant/ligne CSV d'une frame partirait).
+        include_local_variables=False,
+        max_request_body_size="never",  # jamais le corps de requête
         traces_sample_rate=0.0,  # erreurs only au départ — pas de perf tracing
-        before_send=scrub_sensitive,  # masque IBAN/RIB/contract_number
+        before_send=scrub_sensitive,  # 2e couche : masque IBAN par clé ET par valeur
     )
 
 

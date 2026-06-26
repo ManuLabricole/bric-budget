@@ -50,3 +50,56 @@ def test_case_insensitive_and_substring_match():
 def test_no_request_or_extra_is_safe():
     # Un événement sans request/extra ne doit pas planter.
     assert _send({}) == {}
+
+
+# --- Vecteurs trouvés par l'audit sécu #260 (au-delà de request/extra) ---------
+
+
+def test_scrubs_iban_in_stacktrace_frame_locals():
+    """Le vrai vecteur : un IBAN dans les variables locales d'une frame (clé neutre)."""
+    event = {
+        "exception": {
+            "values": [
+                {
+                    "value": "boom",
+                    "stacktrace": {
+                        "frames": [{"vars": {"account": "CH9300762011623852957"}}]
+                    },
+                }
+            ]
+        }
+    }
+
+    out = _send(event)
+
+    frame = out["exception"]["values"][0]["stacktrace"]["frames"][0]
+    assert frame["vars"]["account"] == SCRUBBED  # IBAN masqué malgré la clé neutre
+
+
+def test_scrubs_iban_in_exception_message():
+    """Un IBAN injecté dans le message d'exception (clé neutre `value`)."""
+    event = {
+        "exception": {"values": [{"value": "IBAN FR7630006000011234567890189 KO"}]}
+    }
+
+    out = _send(event)
+
+    assert "FR7630006000011234567890189" not in out["exception"]["values"][0]["value"]
+    assert SCRUBBED in out["exception"]["values"][0]["value"]
+
+
+def test_scrubs_iban_in_breadcrumbs():
+    event = {"breadcrumbs": {"values": [{"message": "SELECT … CH9300762011623852957"}]}}
+
+    out = _send(event)
+
+    assert "CH9300762011623852957" not in out["breadcrumbs"]["values"][0]["message"]
+
+
+def test_iban_under_neutral_key_is_scrubbed_by_value_pattern():
+    event = {"extra": {"arg0": "CH9300762011623852957", "count": "42"}}
+
+    out = _send(event)
+
+    assert out["extra"]["arg0"] == SCRUBBED  # masqué par PATTERN, pas par clé
+    assert out["extra"]["count"] == "42"  # nombre court non touché
