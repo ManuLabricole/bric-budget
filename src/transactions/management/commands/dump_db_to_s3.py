@@ -6,14 +6,18 @@ deploy) : `pg_dump` → gzip → bucket Railway (clé `db-backups/prod_<ts>.sql.
 puis purge des dumps plus vieux que la rétention.
 
 Déclenchée :
-  - en PRE-DEPLOY (railway.json) AVANT migrate → un backup existe avant toute
-    migration ; ordre fail-closed `dump && migrate` = pas de migration sans backup ;
-  - par un CRON nightly (service Railway dédié, schedule `0 3 * * *`).
+  - en PRE-DEPLOY (railway.json), APRÈS migrate + sync_reference_data → le backup
+    capture l'état POST-migration (cohérent avec le code déployé), et surtout il ne
+    GATE pas la migration : un échec de dump ne bloque pas l'application des
+    migrations (l'inverse — `dump && migrate` — empêchait toute migration tant que
+    le dump ratait, fatal pour la 1ʳᵉ migration d'un service vierge) ;
+  - par un CRON nightly (service Railway dédié, schedule `0 3 * * *`) = la vraie
+    régularité des sauvegardes, découplée du déploiement.
 
-Réutilise l'existant : DATABASE_URL + les vars bucket AWS_* (mêmes noms que le
-storage MEDIA). pg_dump doit être présent dans le conteneur → `nixpacks.toml`
-(paquet postgresql). Aucun secret en clair : on passe le mot de passe via PGPASSWORD
-(env), jamais dans argv.
+Réutilise l'existant : DATABASE_URL + les vars bucket AWS_BACKUP_* (sinon fallback
+AWS_* du storage MEDIA). pg_dump doit être présent dans le conteneur → fourni par le
+`Dockerfile` (postgresql-client-18). Aucun secret en clair : mot de passe via
+PGPASSWORD (env), jamais dans argv.
 """
 
 from __future__ import annotations
