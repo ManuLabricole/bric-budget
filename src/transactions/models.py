@@ -70,12 +70,14 @@ class Category(models.Model):
     #   NULL  : catégorie SYSTÈME, partagée entre tous les users (is_system=True).
     #   sinon : catégorie PERSO d'un user (is_system=False) — jamais visible par
     #           un autre user (filtrée via .for_user()).
-    # SET_NULL : supprimer un user ne doit pas effacer ses catégories perso ni les
-    #   transactions qui y pointent ; elles deviennent orphelines (owner NULL) plutôt
-    #   que d'être détruites en cascade. on_delete=CASCADE serait une perte de données.
+    # CASCADE (issue #203, sécu) : supprimer un user supprime ses catégories perso.
+    #   SET_NULL était une FUITE : owner→NULL transformait la catégorie perso en
+    #   catégorie « système » (partagée, is_system traité comme tel) → collision de
+    #   contrainte et exposition des données de l'ex-user. Les transactions liées ne
+    #   sont PAS perdues : Transaction.category=SET_NULL → elles passent à category=NULL.
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
+        on_delete=models.CASCADE,
         null=True,
         blank=True,
         related_name="categories",
@@ -193,10 +195,13 @@ class SubCategory(models.Model):
 
     # owner — même sémantique que Category.owner (issue #137) :
     #   NULL = système partagé ; sinon = perso d'un user, jamais visible par un autre.
-    # SET_NULL : ne pas casser les transactions liées si le user est supprimé.
+    # CASCADE (issue #203, sécu) : supprimer un user supprime ses sous-cat perso —
+    #   y compris une sous-cat perso accrochée à une catégorie SYSTÈME (cas-fuite #118
+    #   « Concert » sous catégorie système : SET_NULL l'aurait laissée survivre orpheline,
+    #   traitée comme système). Transaction.subcategory=SET_NULL → tx non perdues.
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
+        on_delete=models.CASCADE,
         null=True,
         blank=True,
         related_name="subcategories",

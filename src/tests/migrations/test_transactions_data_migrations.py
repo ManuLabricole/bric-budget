@@ -313,3 +313,53 @@ class TestTransactions0022BackfillBudgetTargetOwner:
         back = migrator.apply_tested_migration(self.reverse)
         BudgetTarget = back.apps.get_model("transactions", "BudgetTarget")
         assert "owner" not in [f.name for f in BudgetTarget._meta.get_fields()]
+
+
+# =========================================================================== #
+# 0024 — backfill des lignes fuitées par l'ancien SET_NULL (#203)              #
+# --------------------------------------------------------------------------- #
+# La RunPython supprime les Category/SubCategory orphelines perso (is_system=  #
+# False, owner IS NULL) — l'état produit par un user.delete() sous l'ancien    #
+# on_delete=SET_NULL. Les vraies catégories système (is_system=True, owner     #
+# NULL) et les perso rattachées à un user (owner NOT NULL) sont épargnées.     #
+# =========================================================================== #
+class TestTransactions0024RemediateLeakedRows:
+    initial = [("transactions", "0023_alter_budgettarget_options_and_more")]
+    target = ("transactions", "0024_alter_category_owner_alter_subcategory_owner")
+
+    def _make_user(self, state, *, email):
+        User = state.apps.get_model("users", "CustomUser")
+        return User.objects.create(email=email)
+
+    def test_deletes_leaked_perso_keeps_system_and_owned(self, migrator):
+        old = migrator.apply_initial_migration(self.initial)
+        Category = old.apps.get_model("transactions", "Category")
+        user = self._make_user(old, email="u@test.dev")
+        # Fuite : perso orpheline (owner NULL, is_system=False).
+        leaked = Category.objects.create(slug="leaked", name="Leaked", is_system=False)
+        # Vraie système (owner NULL, is_system=True) → épargnée.
+        system = Category.objects.create(slug="sys", name="Sys", is_system=True)
+        # Perso rattachée à un user (owner set) → épargnée.
+        owned = Category.objects.create(
+            slug="perso", name="Perso", is_system=False, owner=user
+        )
+
+        new = migrator.apply_tested_migration(self.target)
+        Cat = new.apps.get_model("transactions", "Category")
+        assert not Cat.objects.filter(pk=leaked.pk).exists()  # fuite purgée
+        assert Cat.objects.filter(pk=system.pk).exists()  # système épargnée
+        assert Cat.objects.filter(pk=owned.pk).exists()  # perso owned épargnée
+
+    def test_deletes_leaked_subcategory(self, migrator):
+        old = migrator.apply_initial_migration(self.initial)
+        Category = old.apps.get_model("transactions", "Category")
+        SubCategory = old.apps.get_model("transactions", "SubCategory")
+        system = Category.objects.create(slug="sys", name="Sys", is_system=True)
+        # Sous-cat perso orpheline sous une catégorie système (cas-fuite #118).
+        leaked_sub = SubCategory.objects.create(
+            category=system, slug="leaked-sub", name="Leaked", is_system=False
+        )
+
+        new = migrator.apply_tested_migration(self.target)
+        Sub = new.apps.get_model("transactions", "SubCategory")
+        assert not Sub.objects.filter(pk=leaked_sub.pk).exists()
