@@ -2,7 +2,7 @@
   "$schema": "https://railway.com/railway.schema.json",
   "deploy": {
     "preDeployCommand": [
-      "cd src && poetry run python manage.py dump_db_to_s3 && poetry run python manage.py migrate && poetry run python manage.py sync_reference_data"
+      "cd src && poetry run python manage.py migrate && poetry run python manage.py sync_reference_data && poetry run python manage.py dump_db_to_s3"
     ],
     "healthcheckPath": "/healthz/",
     "healthcheckTimeout": 120
