@@ -15,8 +15,8 @@ from budget.constants import CATEGORY_COLOR_PALETTE
 from services.colors import palette_dict as derived_palette_dict
 
 # Anneau du badge objectif quand l'objectif est DÉPASSÉ (> 100 %) : rouge.
-# = valeur du token Tailwind "expense" (cf. tailwind.config.js) — gardé synchro
-# comme GAUGE_COLOR_WARNING dans budget_filters.
+# = valeur EXACTE du token Tailwind "expense" (tailwind.config.js) — à garder
+# synchro avec lui si le token change (≠ GAUGE_COLOR_WARNING qui est l'orange #f97316).
 OVERSPEND_RING_COLOR = "#e5494a"
 
 
@@ -31,6 +31,12 @@ def budget_objectives(request):
     """
     user = getattr(request, "user", None)
     if user is None or not user.is_authenticated:
+        return {"topbar_objectives": []}
+
+    # Court-circuit : une requête HTMX rend un partial/fragment, JAMAIS la topbar
+    # (qui vit dans base_app.html). On évite 2 requêtes DB inutiles par interaction
+    # HTMX (filtres, toggles, pagination…). Header brut, cf. rules/htmx.md.
+    if request.headers.get("HX-Request"):
         return {"topbar_objectives": []}
 
     # Imports locaux : éviter un import circulaire au chargement des settings

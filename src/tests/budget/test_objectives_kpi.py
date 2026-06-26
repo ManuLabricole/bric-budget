@@ -58,6 +58,25 @@ def test_context_processor_lists_one_objective_per_target(client_a, account_a, u
 
 
 @pytest.mark.django_db
+def test_context_processor_isolates_objectives_between_users(
+    client_a, account_a, user_a, user_b
+):
+    """IDOR (SR-001) : les objectifs de user_b n'apparaissent JAMAIS dans la topbar
+    de user_a (le context processor scope for_user)."""
+    cat_b = _cat(owner=user_b, slug="b-obj", name="Objectif de B")
+    BudgetTarget.objects.create(category=cat_b, owner=user_b, amount=Decimal("300"))
+    cat_a = _cat(owner=user_a, slug="a-obj", name="Objectif de A")
+    BudgetTarget.objects.create(category=cat_a, owner=user_a, amount=Decimal("500"))
+
+    resp = client_a.get(reverse("budget:index"))
+
+    slugs = [o["slug"] for o in resp.context["topbar_objectives"]]
+    assert "a-obj" in slugs  # le sien
+    assert "b-obj" not in slugs  # PAS celui de B
+    assert b"Objectif de B" not in resp.content
+
+
+@pytest.mark.django_db
 def test_topbar_badges_render_with_category_name(client_a, account_a, user_a):
     """Le badge rend la jauge + le nom de la catégorie (visible au hover)."""
     cat = _cat(owner=user_a, slug="sante-obj", name="Santé Objectif")
