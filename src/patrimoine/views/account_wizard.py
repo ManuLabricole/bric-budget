@@ -168,9 +168,13 @@ def account_form(request: HttpRequest) -> HttpResponse:
     # fichier (iban UBS / contract_number CIC) est injectée et verrouillée (read-only)
     # pour que l'user ne saisisse que le NOM. account_create re-valide côté serveur
     # (un readonly est falsifiable — on ne fait jamais confiance au champ verrouillé).
+    # Bornes alignées sur les contraintes modèle (IBAN ≤ 34, contract_number ≤ 100) —
+    # on borne dès la lecture du GET, avant injection dans le template (defense in depth ;
+    # account_create re-valide de toute façon côté serveur).
+    prefill_max = {"iban": 34, "contract_number": 100}
     prefill: dict[str, str] = {}
-    for field in ("iban", "contract_number"):
-        value = request.GET.get(field, "").replace(" ", "").upper()
+    for field, max_len in prefill_max.items():
+        value = request.GET.get(field, "").replace(" ", "").upper()[:max_len]
         if value:
             prefill[field] = value
 

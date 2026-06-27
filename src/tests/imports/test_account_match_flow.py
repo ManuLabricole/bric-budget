@@ -186,3 +186,39 @@ def test_manual_picker_available_after_match(auth_client, user, storage):
     body = response.content.decode()
     assert "Yuh A" in body
     assert "Yuh B" in body
+
+
+# =============================================================================
+# IDOR — forcer le compte d'un autre user est fermé par for_user (SR-001)
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_select_account_rejects_other_users_account(auth_client, user, storage):
+    """User A ne peut PAS forcer l'import sur un compte appartenant à user B."""
+    yuh = Institution.objects.create(
+        name="Yuh", slug="yuh", country="CH", default_currency="CHF"
+    )
+    _make_account(user, yuh, "Yuh A user", currency="CHF")
+
+    # Compte d'un AUTRE user — jamais résoluble par A.
+    other = get_user_model().objects.create_user(email="other@t.ch", password="p")
+    victim = _make_account(other, yuh, "Yuh victime", currency="CHF")
+
+    upload = SimpleUploadedFile(
+        "yuh.csv", YUH_FIXTURE.read_bytes(), content_type="text/csv"
+    )
+    auth_client.post(reverse("imports:upload"), {"file": upload}, HTTP_HOST="localhost")
+
+    # A forge un POST avec l'account_id de B.
+    response = auth_client.post(
+        reverse("imports:select_account"),
+        {"account_id": victim.pk},
+        HTTP_HOST="localhost",
+    )
+
+    # Rejeté (compte invalide) et rien n'atterrit sur le compte de la victime.
+    assert "Compte invalide" in response.content.decode()
+    from transactions.models import Transaction
+
+    assert Transaction.objects.filter(account=victim).count() == 0
