@@ -380,6 +380,10 @@ def _handle_dry_run(request):
             # Data-driven : on lit la stratégie déclarée par le connecteur plutôt que
             # de re-coder la règle par slug (UBS → iban, CIC → contract_number…).
             id_field = connector.IDENTITY_FIELD or "contract_number"
+            # Fichier multi-comptes (CIC, N feuilles) : NE PAS proposer le picker — forcer
+            # un compte unique fusionnerait toutes les feuilles sur un seul compte. Le seul
+            # chemin correct est de créer le compte manquant (CTA). Mono-compte (UBS) : picker OK.
+            is_multi_account = len(connector.list_account_identities(tmp_path)) > 1
             return render(
                 request,
                 "imports/partials/_steps_account_unknown.html",
@@ -389,7 +393,9 @@ def _handle_dry_run(request):
                     "identifier": e.contract_number,
                     "id_field": id_field,
                     "filename": uploaded.name,
-                    "groups": _accounts_grouped(request.user),
+                    "groups": []
+                    if is_multi_account
+                    else _accounts_grouped(request.user),
                 },
             )
         except AccountAmbiguous as e:
@@ -675,7 +681,9 @@ def import_select_account(request):
                 is_active=True,
             )
         )
-    except Account.DoesNotExist:
+    except (Account.DoesNotExist, ValueError, TypeError):
+        # ValueError/TypeError : account_id non numérique (POST forgé) → la coercion
+        # du pk échoue avant la requête. Même réponse qu'un compte introuvable.
         return _error(
             request,
             "Compte invalide ou inactif.",

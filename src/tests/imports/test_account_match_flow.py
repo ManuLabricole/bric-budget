@@ -83,10 +83,10 @@ def test_cic_unknown_account_renders_block_and_cta(auth_client, cic_file, storag
 
 
 @pytest.mark.django_db
-def test_cic_unknown_account_lists_existing_accounts_in_picker(
+def test_cic_multisheet_unknown_hides_picker_only_cta(
     auth_client, user, cic_file, storage
 ):
-    """Si l'user a déjà des comptes, le no-match propose AUSSI de les rattacher (picker)."""
+    """CIC multi-feuilles inconnu → CTA seul, PAS de picker (forcer fusionnerait les feuilles)."""
     Institution.objects.create(name="CIC", slug="cic", country="FR")
     bourso = Institution.objects.create(
         name="BoursoBank", slug="boursobank", country="FR"
@@ -101,10 +101,35 @@ def test_cic_unknown_account_lists_existing_accounts_in_picker(
     response = auth_client.post(
         reverse("imports:upload"), {"file": upload}, HTTP_HOST="localhost"
     )
+    body = response.content.decode()
 
-    # Picker scopé aux institutions de l'user (ici BoursoBank, où il a un compte).
-    assert "Mon Bourso" in response.content.decode()
-    assert "BoursoBank" in response.content.decode()
+    # CTA présent, mais picker masqué (fichier multi-comptes) → pas de compte existant listé.
+    assert "Compléter mon patrimoine" in body
+    assert "Mon Bourso" not in body
+
+
+@pytest.mark.django_db
+def test_unknown_single_account_file_shows_picker(auth_client, user, storage):
+    """Fichier mono-compte inconnu (Yuh sans compte Yuh) → picker des autres comptes de l'user."""
+    Institution.objects.create(
+        name="Yuh", slug="yuh", country="CH", default_currency="CHF"
+    )
+    bourso = Institution.objects.create(
+        name="BoursoBank", slug="boursobank", country="FR"
+    )
+    _make_account(user, bourso, "Mon Bourso")
+
+    upload = SimpleUploadedFile(
+        "yuh.csv", YUH_FIXTURE.read_bytes(), content_type="text/csv"
+    )
+    response = auth_client.post(
+        reverse("imports:upload"), {"file": upload}, HTTP_HOST="localhost"
+    )
+    body = response.content.decode()
+
+    # Mono-compte → picker proposé, listant les comptes existants de l'user.
+    assert "Mon Bourso" in body
+    assert "BoursoBank" in body
 
 
 # =============================================================================
@@ -222,3 +247,26 @@ def test_select_account_rejects_other_users_account(auth_client, user, storage):
     from transactions.models import Transaction
 
     assert Transaction.objects.filter(account=victim).count() == 0
+
+
+@pytest.mark.django_db
+def test_select_account_rejects_non_numeric_account_id(auth_client, user, storage):
+    """account_id non numérique (POST forgé) → erreur propre, pas de 500 (coercion pk)."""
+    yuh = Institution.objects.create(
+        name="Yuh", slug="yuh", country="CH", default_currency="CHF"
+    )
+    _make_account(user, yuh, "Yuh A", currency="CHF")
+
+    upload = SimpleUploadedFile(
+        "yuh.csv", YUH_FIXTURE.read_bytes(), content_type="text/csv"
+    )
+    auth_client.post(reverse("imports:upload"), {"file": upload}, HTTP_HOST="localhost")
+
+    response = auth_client.post(
+        reverse("imports:select_account"),
+        {"account_id": "not-a-number"},
+        HTTP_HOST="localhost",
+    )
+
+    assert response.status_code == 200
+    assert "Compte invalide" in response.content.decode()

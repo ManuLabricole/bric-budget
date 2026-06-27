@@ -11,6 +11,8 @@ IDENTITY_FIELD. Ce contrat est la fondation de la scalabilité (ajouter une banq
     CIC  → IDENTITY_FIELD=contract_number → N identités (1 par feuille)
 """
 
+from unittest.mock import patch
+
 import pytest
 
 from connectors.cic.parser import CICConnector
@@ -47,10 +49,9 @@ def test_ubs_returns_single_normalized_identity(ubs_csv_path):
 def test_ubs_raises_when_identifier_missing(ubs_csv_path):
     """IDENTITY_FIELD défini mais identifiant introuvable = fichier corrompu → ValueError."""
     connector = UBSConnector()
-    with pytest.raises(ValueError, match="corrompu"):
-        # extract_account_identifier patché à None via une sous-classe minimale
-        connector.extract_account_identifier = lambda _p: None  # type: ignore[method-assign]
-        connector.list_account_identities(ubs_csv_path)
+    with patch.object(connector, "extract_account_identifier", return_value=None):
+        with pytest.raises(ValueError, match="corrompu"):
+            connector.list_account_identities(ubs_csv_path)
 
 
 def test_cic_declares_contract_number_identity_field():
