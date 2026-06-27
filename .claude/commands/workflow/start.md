@@ -21,7 +21,7 @@ Exécute le screening de démarrage (équivalent enrichi de `/hello`) :
 4. **Roadmap** : issues ouvertes (snapshot) + milestone courant. (repo solo → on liste l'ensemble, pas un filtre `--assignee` qui renverrait du vide.)
    ```bash
    unset GITHUB_TOKEN
-   gh issue list --repo ManuLabricole/bric-budget --state open --limit 15 \
+   gh issue list --repo ManuLabricole/bric-budget --state open --limit 100 \
      --json number,title,labels,milestone --jq '.[] | "\(.number) [\(.milestone.title // "—")] \(.title)"'
    ```
 5. **Rappels actifs** : 1 issue = 1 branche = 1 PR (⛔ jamais de stacking) ; PR toujours `--base development` ; Claude ne merge jamais ; vérif live GET/POST due (pas couverte par la CI).
