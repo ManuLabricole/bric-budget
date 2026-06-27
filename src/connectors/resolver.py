@@ -246,7 +246,13 @@ def resolve_accounts(
     # ── Identité(s) dans le fichier → match exact sur Account.<field>.
     # Une seule identité inconnue bloque TOUT le fichier (CIC multi-feuilles).
     # Des identités non vides impliquent un IDENTITY_FIELD défini (contrat connecteur).
-    assert field is not None
+    # Garde explicite (pas un assert : strippé sous -O en prod) contre un connecteur
+    # mal déclaré (IDENTITY_FIELD=None mais list_account_identities() non vide).
+    if field is None:
+        raise ValueError(
+            f"Connecteur {type(connector).__name__} : identités présentes mais "
+            "IDENTITY_FIELD non défini (incohérence de déclaration)."
+        )
     matches = []
     for ident in identities:
         account = (

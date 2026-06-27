@@ -120,30 +120,6 @@ def import_upload(request):
         period_mode, period_offset
     )
 
-    # ── Période du graphique d'activité ──────────────────────────────────────
-    # Lue depuis la session — modifiée par set_period().
-    period_mode = request.session.get("import_period_mode", "1y")
-    period_offset = request.session.get("import_period_offset", 0)
-    filter_account_ids = list(request.session.get("import_filter_account_ids", []))
-
-    window_days = {"1m": 30, "3m": 91, "1y": 365}[period_mode]
-    end_date = today - timedelta(days=period_offset * window_days)
-    start_date = end_date - timedelta(days=window_days)
-
-    # Label affiché dans la pill centrale de period_nav
-    # Exemple : "23 mars – 22 avr. 2026"
-    def _month_label(d):
-        return str(d.day) + " " + d.strftime("%b")
-
-    period_display = (
-        _month_label(start_date)
-        + " – "
-        + _month_label(end_date)
-        + " "
-        + str(end_date.year)
-    )
-    can_go_next = period_offset > 0
-
     # ── Sync status groupé par banque ────────────────────────────────────────
     # Règles couleur :
     #   today (days==0)  → badge "ok"     → vert  (text-income)
@@ -400,9 +376,10 @@ def _handle_dry_run(request):
                 "file_hash": file_hash,
                 "institution_slug": e.institution_slug,
             }
-            # Champ Account à pré-remplir dans le formulaire de création (read-only) :
-            # UBS → iban ; CIC/Finpension/assurances → contract_number.
-            id_field = "iban" if e.institution_slug == "ubs" else "contract_number"
+            # Champ Account à pré-remplir dans le formulaire de création (read-only).
+            # Data-driven : on lit la stratégie déclarée par le connecteur plutôt que
+            # de re-coder la règle par slug (UBS → iban, CIC → contract_number…).
+            id_field = connector.IDENTITY_FIELD or "contract_number"
             return render(
                 request,
                 "imports/partials/_steps_account_unknown.html",
@@ -730,7 +707,14 @@ def import_select_account(request):
         connector_label = type(connector).__name__.replace("Connector", "")
 
         for match in matches:
-            transactions = connector.parse(tmp_path)
+            # Sheet-aware, cohérent avec _handle_dry_run : un connecteur multi-feuilles
+            # (CIC) parse la feuille ciblée, pas tout le fichier (évite de fusionner les
+            # comptes). En pratique forced_account_id → sheet_name=None (mono-compte),
+            # mais on garde la symétrie pour éviter toute divergence des deux chemins.
+            if match.sheet_name is not None:
+                transactions = connector.parse_sheet(tmp_path, match.sheet_name)
+            else:
+                transactions = connector.parse(tmp_path)
             balance = balances.get(match.sheet_name)
             result = service.run(
                 transactions=transactions,
