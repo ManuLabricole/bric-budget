@@ -62,15 +62,22 @@ RUN cd src \
 
 # ── Sécurité : user non-root ──────────────────────────────────────────────────
 # On crée l'image en root (apt, install) puis on bascule sur un user sans privilège
-# pour le runtime ET le pre-deploy. dump_db_to_s3 écrit dans /tmp (world-writable),
-# migrate ne touche que la DB → aucun besoin de root au runtime.
+# pour le runtime. migrate/sync ne touchent que la DB, gunicorn n'a besoin que du PORT
+# → aucun besoin de root au runtime.
 RUN useradd --create-home --uid 10001 appuser && chown -R appuser:appuser /app
 USER appuser
 
-# ── Start ─────────────────────────────────────────────────────────────────────
-# Ex-Procfile. `sh -c` pour expanser $PORT (injecté par Railway), puis `exec` pour que
-# gunicorn REMPLACE le shell et devienne PID 1 → il reçoit SIGTERM directement (arrêt
-# gracieux au redeploy/restart, pas de shell zombie). Pas de `poetry run` : avec
-# virtualenvs.create=false, gunicorn est dans le PATH système.
-# Les migrations NE tournent PAS ici (multi-workers) → pre-deploy (railway.json).
-CMD ["sh", "-c", "cd src && exec gunicorn config.wsgi --workers 3 --bind 0.0.0.0:$PORT --timeout 30 --access-logfile -"]
+# ── Start (migrate + seed + serveur) ──────────────────────────────────────────
+# migrate + sync_reference_data tournent ICI, au démarrage du conteneur (RUNTIME),
+# car le réseau privé Railway (`*.railway.internal` → DB) n'existe QU'au runtime, pas
+# pendant le build ni le pre-deploy. Doc Railway (Private Networking → How It Works) :
+# « Database migrations that require internal connectivity should run as part of the
+# start command, not the build. » → un preDeployCommand qui migre échoue (DB injoignable)
+# en ~4 s sans log : c'est la cause des deploys ratés. Ici, au runtime, ça marche.
+#
+# `sh -c` pour expanser $PORT + chaîner les commandes. `exec gunicorn` en dernier → il
+# REMPLACE le shell et devient PID 1 (reçoit SIGTERM → arrêt gracieux). Un seul replica
+# Railway → migrate tourne UNE fois par deploy, avant que gunicorn ne fork ses workers
+# (pas de race). Si migrate/sync échouent, le conteneur ne démarre pas → le deploy
+# échoue AVEC des logs visibles (logs runtime), au lieu d'un pre-deploy aveugle.
+CMD ["sh", "-c", "cd src && poetry run python manage.py migrate --noinput && poetry run python manage.py sync_reference_data && exec gunicorn config.wsgi --workers 3 --bind 0.0.0.0:$PORT --timeout 30 --access-logfile -"]
