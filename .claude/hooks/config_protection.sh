@@ -3,8 +3,11 @@
 # PreToolUse Edit|Write|MultiEdit, exit 2 = bloquant. Échappatoire : ECC_ALLOW_CONFIG_EDIT=1.
 input=$(cat)
 path=$(printf '%s' "$input" | python3 -c "import sys,json;print(json.load(sys.stdin).get('tool_input',{}).get('file_path',''))" 2>/dev/null)
+# pyproject.toml volontairement EXCLU : il porte aussi deps/version/build-system
+# (les bumps de version l'éditent) → un blocage total casserait le flux release.
+# On protège les fichiers de config dédiés au linting/formatting + le wiring des hooks.
 case "$path" in
-  *pyproject.toml|*ruff.toml|*.ruff.toml|*setup.cfg|*.pre-commit-config.yaml|*.flake8|*mypy.ini|*.claude/settings.json)
+  *ruff.toml|*setup.cfg|*.pre-commit-config.yaml|*.flake8|*mypy.ini|*.claude/settings.json)
     if [ "$ECC_ALLOW_CONFIG_EDIT" = "1" ]; then
       exit 0
     fi

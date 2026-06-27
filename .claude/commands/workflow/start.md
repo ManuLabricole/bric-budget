@@ -18,7 +18,7 @@ Exécute le screening de démarrage (équivalent enrichi de `/hello`) :
    ```bash
    git worktree list
    ```
-4. **Roadmap** : issues ouvertes assignées + milestone courant.
+4. **Roadmap** : issues ouvertes (snapshot) + milestone courant. (repo solo → on liste l'ensemble, pas un filtre `--assignee` qui renverrait du vide.)
    ```bash
    unset GITHUB_TOKEN
    gh issue list --repo ManuLabricole/bric-budget --state open --limit 15 \

@@ -25,7 +25,7 @@ git diff origin/development...HEAD
    gh api repos/ManuLabricole/bric-budget/pulls/<PR>/comments
    ```
 3. **Juger chaque suggestion** : pertinente → implémenter (commit + push) ; hors scope / déjà couverte → écarter **avec raison brève**. Jamais en masse aveugle.
-4. Vérifier `git rev-list --count origin/<branch>..HEAD ≥ 1` après chaque commit (le formateur pre-commit peut l'avaler).
+4. Vérifier `[ "$(git rev-list --count origin/<branch>..HEAD)" -ge 1 ]` après chaque commit (le formateur pre-commit peut l'avaler).
 5. Récap à Emmanuel : finding → action.
 
 ## 3. Gate final

@@ -59,9 +59,15 @@ def main():
             "session": data.get("session_id", ""),
         }
     )
+    line = (json.dumps(rec, ensure_ascii=False) + "\n").encode("utf-8")
     os.makedirs(os.path.dirname(LOG), exist_ok=True)
-    with open(LOG, "a", encoding="utf-8") as f:
-        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    # Append atomique (O_APPEND POSIX : écriture unique non entrelacée entre
+    # invocations concurrentes — plusieurs agents/hooks peuvent logger en parallèle).
+    fd = os.open(LOG, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+    try:
+        os.write(fd, line)
+    finally:
+        os.close(fd)
 
 
 if __name__ == "__main__":
