@@ -15,7 +15,7 @@ Lance plusieurs issues **en parallèle**, chacune totalement isolée. Issues vis
 ## Pour CHAQUE issue
 1. Créer le worktree : `/wt <issue#> <slug>` (branche, base `bric_wt_<N>`, port `8<N>`).
 2. Déléguer à **un sous-agent `general-purpose` en background** (PAS `isolation:worktree` — le worktree existe déjà), briefé **uniquement** sur son issue :
-   > Tu es dans le worktree de l'issue #N (`../.bric-worktrees/N-slug`). Reste dans ce dossier. `/research` → `/plan` (⛔ gate) → code → vérif live GET/POST → `gh pr create --base development` + `bricbudget-reviewer`. Ne touche à aucune autre issue.
+   > Tu es dans le worktree de l'issue #N (`../.bric-worktrees/N-slug`). Reste dans ce dossier. `/research` → `/plan` → **⛔ STOP : attendre le "go" explicite d'Emmanuel avant de coder, ne pas continuer sans réponse** → code → vérif live GET/POST → `gh pr create --base development` + `bricbudget-reviewer`. Ne touche à aucune autre issue.
 3. Ne pas mélanger les contextes : 1 sous-agent = 1 issue.
 
 ## Suivi

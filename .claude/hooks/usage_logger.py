@@ -45,7 +45,10 @@ def build_record(data):
 
 def main():
     raw = sys.stdin.read()
-    data = json.loads(raw) if raw.strip() else {}
+    try:
+        data = json.loads(raw) if raw.strip() else {}
+    except json.JSONDecodeError:
+        data = {}  # stdin malformé (variation de version) → on n'en fait rien
     rec = build_record(data)
     if not rec:
         return

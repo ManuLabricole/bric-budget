@@ -17,11 +17,12 @@ if not os.path.exists(p):
 else:
     c = collections.Counter()
     total = 0
-    for line in open(p, encoding="utf-8"):
-        try:
-            r = json.loads(line); c[(r["kind"], r["name"])] += 1; total += 1
-        except Exception:
-            pass
+    with open(p, encoding="utf-8") as fh:
+        for line in fh:
+            try:
+                r = json.loads(line); c[(r["kind"], r["name"])] += 1; total += 1
+            except Exception:
+                pass
     print(f"{total} invocations loguées\n")
     for (kind, name), n in c.most_common():
         print(f"{n:4}  {kind:8}  {name}")
