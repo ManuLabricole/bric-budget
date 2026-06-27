@@ -59,6 +59,11 @@ logger = logging.getLogger(__name__)
 class YuhConnector(BaseConnector):
     """Parses Yuh CSV exports into normalized TransactionDicts."""
 
+    # Résolution de compte : Yuh n'expose aucun identifiant dans ses exports
+    # → IDENTITY_FIELD=None → picker manuel obligatoire (voir resolver.py).
+    INSTITUTION_SLUG = "yuh"
+    IDENTITY_FIELD: str | None = None
+
     # Yuh CSV column header signature — used for format detection
     # These 16 columns in this exact order = definitely a Yuh file
     COLUMN_SIGNATURE = [

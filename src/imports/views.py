@@ -22,7 +22,6 @@ from pathlib import Path
 from typing import Any, cast
 
 from django.contrib.auth.decorators import login_required
-from django.db import transaction as db_transaction
 from django.db.models import Count
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -30,7 +29,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from accounts.models import Account, CheckingAccount, Institution, SavingsAccount
+from accounts.models import Account
 from connectors.cic.parser import CICConnector
 from connectors.resolver import (
     AccountAmbiguous,
@@ -74,6 +73,30 @@ def _activity_window(period_mode: str, period_offset: int):
     )
     can_go_next = period_offset > 0
     return start_date, end_date, period_display, can_go_next
+
+
+def _accounts_grouped(user) -> list[dict]:
+    """
+    Comptes actifs de l'user, groupés par institution — pour le picker accordéon.
+
+    Scopé par for_user (SR-001) : ne liste QUE les institutions où l'user a des
+    comptes (jamais le catalogue global). Vide si l'user n'a aucun compte → l'appelant
+    renvoie alors vers « Compléter mon patrimoine » plutôt qu'un picker vide.
+    """
+    accounts = (
+        Account.objects.for_user(user)
+        .filter(is_active=True)
+        .select_related("institution")
+        .order_by("institution__name", "name")
+    )
+    groups: dict[int, dict] = {}
+    for acc in accounts:
+        group = groups.setdefault(
+            acc.institution_id,
+            {"institution": acc.institution, "accounts": []},
+        )
+        group["accounts"].append(acc)
+    return list(groups.values())
 
 
 @login_required
@@ -368,38 +391,28 @@ def _handle_dry_run(request):
         try:
             matches = resolve_accounts(connector, tmp_path, user=request.user)
         except AccountNotFound as e:
-            # Compte introuvable → on garde le fichier temp en session et on
-            # propose un formulaire de création inline (fragment HTMX).
+            # Identité du fichier inconnue en base (ou Yuh sans compte). On garde le
+            # fichier temp : l'user peut soit CRÉER le compte (CTA → flux Patrimoine),
+            # soit RATTACHER ce fichier à un compte existant via le picker (#274).
             request.session["pending_import"] = {
                 "filepath": str(tmp_path),
                 "filename": uploaded.name,
                 "file_hash": file_hash,
+                "institution_slug": e.institution_slug,
             }
-            from accounts.institutions_config import KNOWN_INSTITUTIONS
-            from accounts.models import Institution
-
-            bank_config = KNOWN_INSTITUTIONS.get(e.institution_slug, {})
-            try:
-                bank = Institution.objects.get(slug=e.institution_slug)
-            except Institution.DoesNotExist:
-                bank = None
-            # Meilleure suggestion de nom : sheet_name pour CIC, account_name_hint pour UBS
-            account_name_hint = e.sheet_name or e.account_name_hint or ""
+            # Champ Account à pré-remplir dans le formulaire de création (read-only) :
+            # UBS → iban ; CIC/Finpension/assurances → contract_number.
+            id_field = "iban" if e.institution_slug == "ubs" else "contract_number"
             return render(
                 request,
-                "imports/partials/_steps_create_account.html",
+                "imports/partials/_steps_account_unknown.html",
                 {
-                    "bank": bank,
                     "institution_slug": e.institution_slug,
-                    "bank_name": bank_config.get("name", e.institution_slug.upper()),
-                    "bank_bic": bank_config.get("bic", ""),
-                    "iban": e.contract_number if e.institution_slug == "ubs" else "",
-                    "contract_number": e.contract_number,
-                    "contract_number_raw": e.contract_number_raw,
-                    "sheet_name": e.sheet_name,
-                    "account_name_hint": account_name_hint,
-                    "currency": bank_config.get("currency", "EUR"),
-                    "account_types": Account.AccountType.choices,
+                    "identifier_raw": e.contract_number_raw,
+                    "identifier": e.contract_number,
+                    "id_field": id_field,
+                    "filename": uploaded.name,
+                    "groups": _accounts_grouped(request.user),
                 },
             )
         except AccountAmbiguous as e:
@@ -415,7 +428,7 @@ def _handle_dry_run(request):
                 request,
                 "imports/partials/_steps_account_picker.html",
                 {
-                    "accounts": e.accounts,
+                    "groups": _accounts_grouped(request.user),
                     "institution_slug": e.institution_slug,
                     "filename": uploaded.name,
                 },
@@ -480,6 +493,7 @@ def _handle_dry_run(request):
             "filepath": str(tmp_path),
             "filename": uploaded.name,
             "file_hash": file_hash,
+            "institution_slug": connector.INSTITUTION_SLUG,
         }
 
         total_created = sum(r["result"].count_created for r in dry_results)
@@ -644,194 +658,16 @@ def import_log_delete(request, pk):
 
 @login_required
 @require_POST
-def import_create_account(request):
-    """
-    Crée un Account + CheckingAccount/SavingsAccount depuis le formulaire inline
-    affiché quand resolve_accounts() ne trouve pas le compte.
-
-    Après création, relance le dry-run automatiquement (le fichier temp est
-    toujours en session) et retourne _steps_result.html comme si de rien n'était.
-    """
-    institution_slug = request.POST.get("institution_slug", "")
-    account_name = request.POST.get("account_name", "").strip()
-    account_type = request.POST.get("account_type", "")
-    iban = request.POST.get("iban", "").replace(" ", "").upper()
-    bic = request.POST.get("bic", "").replace(" ", "").upper()
-    contract_number = request.POST.get("contract_number", "")
-    currency = request.POST.get("currency", "")
-
-    # Validations minimales
-    if not account_name:
-        return _error(request, "Le nom du compte est obligatoire.")
-    if not iban and not contract_number:
-        return _error(
-            request,
-            "Un identifiant est obligatoire.",
-            hint="Renseignez l'IBAN ou le numéro de contrat (RIB pour CIC).",
-        )
-    if account_type not in dict(Account.AccountType.choices):
-        return _error(request, "Type de compte invalide.")
-
-    # L'institution doit exister en DB (créée via seed_institutions)
-    try:
-        bank = Institution.objects.get(slug=institution_slug)
-    except Institution.DoesNotExist:
-        return _error(
-            request,
-            f"Institution « {institution_slug} » introuvable.",
-            hint="Lancez d'abord : python manage.py seed_institutions",
-        )
-
-    # Créer l'Account + spécialisation dans une transaction atomique
-    try:
-        with db_transaction.atomic():
-            account = Account.objects.create(
-                institution=bank,
-                name=account_name,
-                account_type=account_type,
-                currency=currency,
-                # IBAN canonique sur Account (source unique #82) — c'est ce que
-                # le resolver d'import matche. "" → None (unique=True, NULL != NULL).
-                iban=iban or None,
-                contract_number=contract_number,
-                is_active=True,
-            )
-            account.members.add(request.user)  # for_user() sinon invisible
-            if account_type == Account.AccountType.CHECKING:
-                CheckingAccount.objects.create(account=account, bic=bic)
-            else:
-                SavingsAccount.objects.create(account=account, interest_rate=0)
-        # Audit log : compte créé pendant l'import (mutation métier critique).
-        logger.info(
-            "import_create_account ok id=%s institution=%s type=%s user=%s",
-            account.id,
-            bank.slug,
-            account_type,
-            request.user.id,
-        )
-    except Exception as e:
-        logger.exception("import_create_account: account creation failed")
-        return _error(request, f"Erreur lors de la création du compte : {e}")
-
-    # Compte créé — relancer le dry-run avec le fichier toujours en session
-    # On réutilise _handle_dry_run en simulant un POST avec le fichier déjà uploadé.
-    # Mais le fichier est en session (pas re-uploadé) → on relance resolve + dry-run
-    # directement depuis ici.
-    pending = request.session.get("pending_import")
-    if not pending:
-        return _error(request, "Session expirée. Recommencez l'import.")
-
-    tmp_path = Path(pending["filepath"])
-    if not tmp_path.exists():
-        del request.session["pending_import"]
-        return _error(request, "Fichier temporaire introuvable. Recommencez l'import.")
-
-    # Relancer le dry-run complet (même logique que _handle_dry_run)
-    try:
-        connector = detect_connector(tmp_path)
-        if connector is None:
-            return _error(
-                request, "Format de fichier non reconnu. Recommencez l'import."
-            )
-        matches = resolve_accounts(connector, tmp_path, user=request.user)
-
-        if isinstance(connector, CICConnector):
-            sheets_info = {
-                s["sheet_name"]: s for s in connector.get_account_sheets(tmp_path)
-            }
-            balances = {
-                match.sheet_name: sheets_info.get(match.sheet_name, {}).get("balance")
-                for match in matches
-            }
-        else:
-            raw_balance = connector.extract_balance(tmp_path)
-            balances = {None: raw_balance}
-
-        service = ImportService()
-        dry_results: list[dict[str, Any]] = []
-        file_hash = pending["file_hash"]
-        filename = pending["filename"]
-        connector_label = type(connector).__name__.replace("Connector", "")
-
-        for match in matches:
-            if match.sheet_name is not None:
-                transactions = connector.parse_sheet(tmp_path, match.sheet_name)
-            else:
-                transactions = connector.parse(tmp_path)
-            balance = balances.get(match.sheet_name)
-            result = service.run(
-                transactions=transactions,
-                account=match.account,
-                imported_by=request.user,
-                filename=filename,
-                file_hash=file_hash,
-                balance=balance,
-                dry_run=True,
-            )
-            dry_results.append(
-                {
-                    "account": match.account,
-                    "sheet_name": match.sheet_name,
-                    "result": result,
-                }
-            )
-
-        total_created = sum(r["result"].count_created for r in dry_results)
-        total_skipped = sum(r["result"].count_skipped for r in dry_results)
-
-        return render(
-            request,
-            "imports/partials/_steps_result.html",
-            {
-                "connector_label": connector_label,
-                "dry_results": dry_results,
-                "total_created": total_created,
-                "total_skipped": total_skipped,
-                "filename": filename,
-            },
-        )
-    except AccountNotFound as e:
-        # Un autre compte est encore manquant (CIC multi-feuilles)
-        from accounts.institutions_config import KNOWN_INSTITUTIONS
-
-        bank_config = KNOWN_INSTITUTIONS.get(e.institution_slug, {})
-        try:
-            bank_obj = Institution.objects.get(slug=e.institution_slug)
-        except Institution.DoesNotExist:
-            bank_obj = None
-        return render(
-            request,
-            "imports/partials/_steps_create_account.html",
-            {
-                "bank": bank_obj,
-                "institution_slug": e.institution_slug,
-                "bank_name": bank_config.get("name", e.institution_slug.upper()),
-                "bank_bic": bank_config.get("bic", ""),
-                "iban": e.contract_number if e.institution_slug == "ubs" else "",
-                "contract_number": e.contract_number,
-                "contract_number_raw": e.contract_number_raw,
-                "sheet_name": e.sheet_name,
-                "currency": bank_config.get("currency", "EUR"),
-                "account_types": Account.AccountType.choices,
-            },
-        )
-    except Exception as e:
-        logger.exception("imports: dry-run re-trigger failed")
-        return _error(request, f"Erreur lors du dry-run : {e}")
-
-
-@login_required
-@require_POST
 def import_select_account(request):
     """
-    Reçoit le choix de l'utilisateur depuis _steps_account_picker.html.
+    Reçoit le choix de l'utilisateur depuis le picker (_account_picker.html).
 
-    Contexte : levée par AccountAmbiguous (Yuh avec plusieurs comptes actifs).
-    L'utilisateur a cliqué sur un compte → POST avec account_id.
+    Contexte : picker affiché par AccountAmbiguous (Yuh), no-match (compte inconnu),
+    ou la soupape de correction (#274). L'utilisateur a cliqué sur un compte → POST account_id.
 
-    Sécurité : on vérifie que l'account_id correspond bien à l'institution en session
-    (institution_slug stocké lors du catch AccountAmbiguous dans _handle_dry_run).
-    Cela empêche de "forcer" un compte d'une autre institution via un POST forgé.
+    Sécurité : le compte doit appartenir à l'user (for_user → IDOR fermé). On N'impose
+    PLUS la même institution que le fichier détecté : le picker est groupé sur TOUS les
+    comptes de l'user et choisir une autre banque est un choix manuel explicite (soupape).
 
     Après sélection : relance le dry-run complet avec forced_account_id.
     """
@@ -843,7 +679,6 @@ def import_select_account(request):
     if not account_id:
         return _error(request, "Aucun compte sélectionné.")
 
-    institution_slug = pending.get("institution_slug", "")
     tmp_path = Path(pending["filepath"])
     filename = pending["filename"]
     file_hash = pending["file_hash"]
@@ -852,16 +687,14 @@ def import_select_account(request):
         del request.session["pending_import"]
         return _error(request, "Fichier temporaire introuvable. Recommencez l'import.")
 
-    # Vérification : le compte doit appartenir à l'institution attendue ET à l'user.
-    # members=request.user empêche un user de forger un POST avec l'account_id
-    # d'un autre user (IDOR). institution__slug en session empêche de changer d'institution.
+    # IDOR : for_user empêche de forger un POST avec l'account_id d'un autre user.
+    # Choix cross-institution autorisé (soupape) → pas de filtre institution__slug.
     try:
         account = (
             Account.objects.for_user(request.user)
             .select_related("institution")
             .get(
                 pk=account_id,
-                institution__slug=institution_slug,
                 is_active=True,
             )
         )
@@ -933,6 +766,30 @@ def import_select_account(request):
     except Exception as e:
         logger.exception("imports: dry-run re-trigger failed")
         return _error(request, f"Erreur lors du dry-run : {e}")
+
+
+@login_required
+def account_picker_manual(request):
+    """
+    Soupape de correction : réaffiche le picker pour rattacher le fichier en cours à
+    un autre compte, même si la résolution avait trouvé un match (#274).
+
+    Déclenché par le lien « Ce n'est pas le bon compte ? » de _steps_result.html.
+    Réutilise le POST import_select_account (forced_account_id). Nécessite un import
+    en attente en session (le fichier temp).
+    """
+    pending = request.session.get("pending_import")
+    if not pending:
+        return _error(request, "Session expirée. Recommencez l'import.")
+    return render(
+        request,
+        "imports/partials/_steps_account_picker.html",
+        {
+            "groups": _accounts_grouped(request.user),
+            "institution_slug": pending.get("institution_slug", ""),
+            "filename": pending.get("filename", ""),
+        },
+    )
 
 
 @login_required
