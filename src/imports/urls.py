@@ -7,8 +7,12 @@ app_name = "imports"
 urlpatterns = [
     path("", views.import_upload, name="upload"),
     path("confirm/", views.import_confirm, name="confirm"),
-    path("create-account/", views.import_create_account, name="create_account"),
     path("select-account/", views.import_select_account, name="select_account"),
+    path(
+        "account-picker/",
+        views.account_picker_manual,
+        name="account_picker_manual",
+    ),
     path("set-period/<str:action>/", views.set_period, name="set_period"),
     path(
         "filter-account/<slug:account_ref>/",

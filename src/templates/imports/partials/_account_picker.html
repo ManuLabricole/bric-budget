@@ -1,0 +1,63 @@
+{% load static institution_icons %}
+{% comment %}
+Picker de compte réutilisable — comptes groupés par institution, repliable (accordéon).
+Réutilisé par : no-match (compte inconnu), Yuh ambigu, soupape de correction.
+
+Contexte attendu :
+  groups    : list[{institution, accounts}] — via _accounts_grouped(user) (scopé user)
+  open_slug : slug de l'institution dépliée par défaut (l'institution détectée du fichier)
+  filename  : nom du fichier en cours d'import (affiché en rappel)
+
+Chaque compte → POST select-account/ avec forced_account_id → le dry-run repart sur ce compte.
+Accordéon = CSS pur via <details> (rules/htmx.md) ; border de couleur CONSTANTE, seule la
+largeur bascule au dépliage (rules/tailwind.md : pas de flash clair avec transition-colors).
+{% endcomment %}
+<div class="mt-3 flex flex-col gap-2" id="account-picker">
+    {% if filename %}<p class="text-[11px] text-text-disabled font-mono truncate px-1">{{ filename }}</p>{% endif %}
+    {% for g in groups %}
+        <details class="group/inst border border-edge/50 rounded-xl overflow-hidden"
+                 {% if g.institution.slug == open_slug %}open{% endif %}>
+            <summary class="flex items-center gap-3 px-4 py-3 cursor-pointer bg-surface-3 hover:bg-surface-hover list-none transition-colors">
+                {% institution_icon_url g.institution as bicon %}
+                {% include "components/institutions/institution_logo.html" with icon_url=bicon institution=g.institution size="w-7 h-7" padding="p-1" %}
+                <span class="flex-1 text-sm font-semibold text-text-base truncate">{{ g.institution.name }}</span>
+                <span class="text-[11px] text-text-muted tabular-nums">{{ g.accounts|length }}</span>
+                <svg class="w-4 h-4 text-text-disabled flex-shrink-0 transition-transform group-open/inst:rotate-90"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="1.5"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                </svg>
+            </summary>
+            <div class="flex flex-col">
+                {% for account in g.accounts %}
+                    <form hx-post="{% url 'imports:select_account' %}"
+                          hx-target="#import-steps"
+                          hx-swap="innerHTML"
+                          hx-indicator="#upload-spinner">
+                        {% csrf_token %}
+                        <input type="hidden" name="account_id" value="{{ account.pk }}">
+                        <button type="submit"
+                                class="w-full flex items-center gap-3 px-4 py-2.5 bg-surface-3 hover:bg-surface-hover border-t border-edge/40 text-left transition-colors">
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm text-text-base truncate">{{ account.name }}</p>
+                                <p class="text-xs text-text-muted">{{ account.get_account_type_display }} · {{ account.currency }}</p>
+                                {% if account.iban_display %}
+                                    <p class="text-[10px] text-text-disabled font-mono mt-0.5">{{ account.iban_display }}</p>
+                                {% endif %}
+                            </div>
+                            <svg class="w-4 h-4 text-text-disabled flex-shrink-0"
+                                 fill="none"
+                                 viewBox="0 0 24 24"
+                                 stroke-width="1.5"
+                                 stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                            </svg>
+                        </button>
+                    </form>
+                {% endfor %}
+            </div>
+        </details>
+    {% endfor %}
+</div>

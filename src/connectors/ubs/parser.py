@@ -67,6 +67,11 @@ METADATA_LINE_COUNT = 9
 class UBSConnector(BaseConnector):
     """Parses UBS CSV exports into normalized TransactionDicts."""
 
+    # Résolution de compte : UBS encode l'IBAN en ligne 2 (checking + savings)
+    # → match sur Account.iban (voir resolver.py + list_account_identities par défaut).
+    INSTITUTION_SLUG = "ubs"
+    IDENTITY_FIELD: str | None = "iban"
+
     # UBS CSV column header signature — used for format detection
     # Must match exactly (order + names) to avoid false positives
     COLUMN_SIGNATURE = [

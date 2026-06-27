@@ -1,0 +1,60 @@
+{% comment %}
+Compte inconnu : l'identité du fichier ne matche aucun compte existant.
+Deux issues proposées :
+  1. Créer le compte → CTA « Compléter mon patrimoine » (flux Patrimoine, identifiant pré-rempli).
+  2. Rattacher à un compte existant → picker accordéon (si l'user a déjà des comptes).
+Injecté en innerHTML dans #import-steps. Le picker forms re-postent vers #import-steps.
+Contexte : institution_slug, identifier (normalisé), identifier_raw (affiché), id_field,
+filename, groups (list[{institution, accounts}]).
+{% endcomment %}
+<style>
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0);    }
+  }
+  .step-card { animation: slide-up 0.3s ease-out both; }
+</style>
+<div class="step-card flex flex-col gap-3">
+    {% comment %}Bandeau : compte inconnu + identifiant détecté.{% endcomment %}
+    <div class="flex items-start gap-3 bg-warning/8 border border-warning/25 rounded-xl px-4 py-3">
+        <div class="w-7 h-7 rounded-full bg-warning/15 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <svg class="w-3.5 h-3.5 text-warning"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="2.5"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+            </svg>
+        </div>
+        <div class="flex-1 min-w-0">
+            <p class="text-sm font-semibold text-warning leading-snug">Compte inconnu</p>
+            <p class="text-xs text-text-muted mt-0.5">
+                {% if identifier_raw %}
+                    Identifiant détecté : <span class="font-mono text-text-base">{{ identifier_raw }}</span>.
+                {% endif %}
+                Créez ce compte, ou rattachez ce fichier à un compte existant.
+            </p>
+        </div>
+    </div>
+    {% comment %}Issue 1 — créer le compte via le flux Patrimoine (identifiant pré-rempli read-only).{% endcomment %}
+    <button type="button"
+            hx-get="{% url 'patrimoine:account_form' %}?institution={{ institution_slug }}{% if identifier %}&{{ id_field }}={{ identifier|urlencode }}{% endif %}"
+            hx-target="#panel-content"
+            hx-swap="innerHTML"
+            hx-on::after-request="openPanel()"
+            class="w-full flex items-center justify-center gap-2 px-3 py-2.5 text-xs font-semibold bg-gold text-surface-3 rounded-full transition-colors hover:bg-gold-hover">
+        <svg class="w-3.5 h-3.5"
+             fill="none"
+             viewBox="0 0 24 24"
+             stroke-width="1.5"
+             stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+        </svg>
+        Compléter mon patrimoine
+    </button>
+    {% comment %}Issue 2 — rattacher à un compte existant (seulement si l'user en a déjà).{% endcomment %}
+    {% if groups %}
+        <p class="text-[11px] text-text-muted text-center">ou rattacher à un compte existant</p>
+        {% include "imports/partials/_account_picker.html" with groups=groups open_slug=institution_slug filename=filename %}
+    {% endif %}
+</div>
