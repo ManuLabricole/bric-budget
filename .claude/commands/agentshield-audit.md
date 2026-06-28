@@ -12,7 +12,7 @@ Scan **read-only** d'un dossier de configuration d'agent (prompt-injection, dér
 ```bash
 # La sous-commande est `scan --path <dossier>` (PAS `audit`). Défaut : .claude
 PATH_ARG="${ARGUMENTS:-.claude}"
-npx -y ecc-agentshield@latest scan --path "$PATH_ARG"
+npx -y ecc-agentshield@1.5.0 scan --path "$PATH_ARG"
 # variantes : --min-severity high | --format markdown | --deep (injection+sandbox+taint+opus)
 ```
 
