@@ -3,9 +3,9 @@ name: github
 description: >-
   Gestion de projet GitHub pour BricBudget — à utiliser DÈS qu'on crée, édite,
   ferme ou lie une issue ou une PR, ou qu'on touche aux milestones, labels ou au
-  project board. Couvre la convention 3-axes (milestone=version, priorité=label,
-  type=label), les templates issue/PR, le cycle 1 issue = 1 branche = 1 PR, le
-  déclenchement de la revue, et les checks de non-régression de la convention.
+  project board. Couvre la convention 5-axes v2 (epic=foyer, milestone=release planifiée,
+  priorité=label, type=label, statut board), les templates issue/PR, le cycle
+  1 issue = 1 branche = 1 PR, le déclenchement de la revue, et les checks de non-régression.
 ---
 
 # Gestion de projet GitHub — BricBudget
@@ -21,19 +21,30 @@ En cas de doute sur le slug : `gh repo view --json nameWithOwner --jq .nameWithO
 
 ---
 
-## ⛔ Convention 3-axes — 1 question = 1 endroit
+## ⛔ Convention 5-axes — 1 question = 1 endroit
 
-Réconciliée le 2026-06-21. **Chaque dimension est encodée à UN seul endroit. Jamais de doublon.**
+Réconciliée le 2026-06-21, **modèle v2 le 2026-06-28** (#282 : epic = foyer, fin du
+fourre-tout milestone). **Chaque dimension est encodée à UN seul endroit. Jamais de doublon.**
 
 | Axe | Question | Encodage | Règle |
 |-----|----------|----------|-------|
-| **Milestone** | *Quand ?* (release) | `vX.Y.Z — <thème>` | **1 seul axe.** Toute issue ouverte ∈ **exactement un** milestone version. Jamais de milestone groupant par priorité ou thème sécu. |
+| **Epic** | *Quel chantier ?* (foyer) | label `epic` + issue parapluie | **Foyer de toute issue.** Pas de branche. Enfants liés via sub-issues / `Part of #N`. 2 types : *release-epic* (1:1 avec un milestone feature) **ou** *epic transverse* (sécu/infra/budget/tests — **traverse** les releases, **sans** milestone). |
+| **Milestone** | *Quelle release ?* | `vX.Y.Z — <thème>` | **Releases PRODUIT uniquement.** Posé sur une issue **seulement quand elle est planifiée dans une release concrète**. Le transverse non planifié n'a **pas** de milestone (il a son epic + un statut board). Jamais de milestone « thème » fourre-tout. |
 | **Priorité** | *Urgence ?* | label `P0` / `P1` / `P2` | **Max 1** label priorité. Absence = backlog normal. Jamais la priorité dans le **nom** du milestone. |
 | **Type** | *Quoi ?* | labels `feature` `chore` `refactor` `tests` `security` `infra` `bug` `documentation` | 1+ labels type. |
-| **Epic** | *Regroupement* | label `epic` + issue parapluie | Pas de branche. Enfants liés via sub-issues / `Part of #N`. Porte le **milestone de la release** couverte. |
+| **Statut board** | *Où dans l'exécution ?* | colonne projet 7 : `Backlog` → `Ready` → `In progress` → `Done` / `On pause` | État d'avancement, **orthogonal** au reste. C'est ici (pas dans le milestone) qu'on prépare le travail « prêt à prendre » (`Ready`). |
 
-⛔ **Plus de labels `phase-*`** (le milestone EST la phase ; le label dupliquait — et contredisait — le milestone).
-⛔ **Plus de milestone « Sécurité PX »** — une issue sécu = label `security` + `P0/1/2` dans un milestone **version**.
+**Règle gravée (le cœur du modèle v2) :**
+> Une issue a **toujours un epic** (son foyer). Le **milestone version n'est posé QUE quand l'issue
+> est planifiée dans une release concrète.** Le transverse non planifié vit sous son **epic + statut
+> board**, **sans milestone**. → plus jamais de milestone « thème » fourre-tout.
+
+⛔ **« Phase » n'est PAS un axe.** Une phase = l'**ordre des milestones features** (`v0.5 → v0.6 → …`).
+Un *release-epic* EST une phase (ex. « Phase 3b » = epic #251 = `v0.5.0`). Aucun label `phase-*`.
+⛔ **Plus de milestone « thème » transverse** (l'ex-`v0.4.5 — Qualité, Tests & CI/CD` est **gelé** :
+historique conservé, ne reçoit plus rien). Le transverse va sous un **epic transverse** : sécurité
+fichiers (#250), isolation RLS (#204), production readiness (#216), deepening budget (#238).
+⛔ **Plus de milestone « Sécurité PX »** — une issue sécu = label `security` + `P0/1/2` + epic sécu.
 ⛔ **Pas de milestone version « nu »** (`v0.5.0` sans thème) — toujours `vX.Y.Z — <thème>`.
 ➕ **Release intercalaire** sans renuméroter la suite → point-release (ex. `v0.4.5`).
 
@@ -55,21 +66,26 @@ bash .claude/skills/github/scripts/check_convention.sh   # exit 0 propre, 1 si v
 
 ---
 
-## Créer une issue — milestone + type + board OBLIGATOIRES
+## Créer une issue — EPIC (foyer) + type + board OBLIGATOIRES
 
 Titre `type(scope): desc`. Corps : `## Problème` / `## Tâches` (cases `- [ ]`) /
-`## Critères d'acceptation`, `Part of #<epic>` si enfant. **+ milestone version + label type**
+`## Critères d'acceptation`, **+ `Part of #<epic>`** (foyer obligatoire). **+ label type**
 (+ priorité si pertinent), **+ ajout au board**.
+**Milestone : seulement si l'issue est planifiée dans une release concrète** (sinon aucun —
+elle vit sous son epic + statut board, et prendra un milestone le jour où on la programme).
 
 ```bash
 unset GITHUB_TOKEN
+# Corps : terminer par "Part of #<epic>" (foyer). Milestone OMIS si non planifié en release.
 url=$(gh issue create \
   --title "chore(infra): ..." \
   --body-file /tmp/issue.md \
-  --label chore --label infra --label P1 \
-  --milestone "v0.4.5 — Qualité, Tests & CI/CD")
+  --label chore --label infra --label P1)   # + --milestone "vX.Y.Z — …" SI planifié release
 gh project item-add 7 --owner ManuLabricole --url "$url"
 ```
+
+**Choisir l'epic foyer :** feature produit → le release-epic de sa version (#251→256). Transverse :
+sécurité fichiers → #250 · isolation RLS → #204 · infra/CI/DR/observabilité → #216 · refacto budget → #238.
 ⚠️ Jamais d'issue **sans milestone, sans label type, ou hors board**.
 
 ---
