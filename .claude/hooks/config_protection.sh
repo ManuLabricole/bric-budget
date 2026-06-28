@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Empêche d'affaiblir les configs linter/formatter (steer : corrige le code, pas l'outil).
+# PreToolUse Edit|Write|MultiEdit, exit 2 = bloquant. Échappatoire : ECC_ALLOW_CONFIG_EDIT=1.
+input=$(cat)
+path=$(printf '%s' "$input" | python3 -c "import sys,json;print(json.load(sys.stdin).get('tool_input',{}).get('file_path',''))" 2>/dev/null)
+# pyproject.toml volontairement EXCLU : il porte aussi deps/version/build-system
+# (les bumps de version l'éditent) → un blocage total casserait le flux release.
+# On protège les fichiers de config dédiés au linting/formatting + le wiring des hooks.
+case "$path" in
+  *ruff.toml|*setup.cfg|*.pre-commit-config.yaml|*.flake8|*mypy.ini|*.claude/settings.json)
+    if [ "$ECC_ALLOW_CONFIG_EDIT" = "1" ]; then
+      exit 0
+    fi
+    echo "⛔ Modif de config linter ($path) bloquée. Corrige le code, n'affaiblis pas l'outil. (override : ECC_ALLOW_CONFIG_EDIT=1)" >&2
+    exit 2
+    ;;
+esac
+exit 0

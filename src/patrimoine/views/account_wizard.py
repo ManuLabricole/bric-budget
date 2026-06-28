@@ -12,6 +12,7 @@ Pas de Django Forms (convention projet) → chaque champ est casté/borné ICI.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 
@@ -61,10 +62,11 @@ def _default_type(institution: Institution) -> str:
 def _form_context(
     institution: Institution,
     account_type: str,
-    values: QueryDict | None = None,
+    values: QueryDict | Mapping[str, str] | None = None,
     error: str | None = None,
 ) -> dict[str, Any]:
-    """Contexte commun GET/erreur POST. `values` = request.POST au re-render."""
+    """Contexte commun GET/erreur POST. `values` = request.POST (re-render) ou un
+    dict de pré-remplissage (import bloqué #274)."""
     icon_map = get_institution_icon_map()
     return {
         "institution": institution,
@@ -162,11 +164,23 @@ def account_form(request: HttpRequest) -> HttpResponse:
     if account_type not in WIZARD_TYPES:
         account_type = _default_type(institution)
 
-    return render(
-        request,
-        "patrimoine/partials/_account_form.html",
-        _form_context(institution, account_type),
-    )
+    # Pré-remplissage depuis un import bloqué (#274) : l'identité détectée dans le
+    # fichier (iban UBS / contract_number CIC) est injectée et verrouillée (read-only)
+    # pour que l'user ne saisisse que le NOM. account_create re-valide côté serveur
+    # (un readonly est falsifiable — on ne fait jamais confiance au champ verrouillé).
+    # Bornes alignées sur les contraintes modèle (IBAN ≤ 34, contract_number ≤ 100) —
+    # on borne dès la lecture du GET, avant injection dans le template (defense in depth ;
+    # account_create re-valide de toute façon côté serveur).
+    prefill_max = {"iban": 34, "contract_number": 100}
+    prefill: dict[str, str] = {}
+    for field, max_len in prefill_max.items():
+        value = request.GET.get(field, "").replace(" ", "").upper()[:max_len]
+        if value:
+            prefill[field] = value
+
+    ctx = _form_context(institution, account_type, values=prefill or None)
+    ctx["locked_fields"] = list(prefill)
+    return render(request, "patrimoine/partials/_account_form.html", ctx)
 
 
 @login_required

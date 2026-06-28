@@ -201,104 +201,80 @@ def resolve_accounts(
                              plusieurs comptes actifs → picker requis
         ValueError         : format inattendu (IBAN introuvable dans le fichier UBS...)
 
-    Yuh  → 1 AccountMatch (convention ou forced_account_id)
-    UBS  → 1 AccountMatch (Account.iban extrait de la ligne 2 du fichier)
-    CIC  → N AccountMatch (1 par feuille, RIB dans header de chaque sheet)
+    Résolution data-driven (plus de isinstance) — chaque connecteur déclare sa stratégie :
+    Yuh  → IDENTITY_FIELD=None  → picker manuel obligatoire (AccountAmbiguous)
+    UBS  → IDENTITY_FIELD=iban  → 1 identité → 1 AccountMatch
+    CIC  → IDENTITY_FIELD=contract_number → N identités (feuilles) → N AccountMatch
     """
     # Scope de base : comptes actifs, filtrés par user si fourni.
     # Account.objects.for_user(None) retourne tous les comptes (usage CLI).
     # Account.objects.for_user(request.user) restreint aux comptes dont l'user est membre.
     base_qs = Account.objects.for_user(user).filter(is_active=True)
+    slug = connector.INSTITUTION_SLUG
+    field = connector.IDENTITY_FIELD
 
-    if isinstance(connector, YuhConnector):
-        # Yuh n'expose aucun identifiant dans le fichier.
-        # Si forced_account_id est fourni (l'utilisateur a choisi via le picker),
-        # on retourne directement ce compte sans chercher en DB.
-        if forced_account_id is not None:
-            try:
-                account = base_qs.get(
-                    pk=forced_account_id,
-                    institution__slug="yuh",
-                )
-                return [AccountMatch(account=account)]
-            except Account.DoesNotExist:
-                raise AccountNotFound(
-                    contract_number="",
-                    contract_number_raw="",
-                    institution_slug="yuh",
-                )
+    # ── Soupape générique : compte choisi manuellement (picker Yuh, no-match, ou
+    # correction d'un match) → court-circuite la résolution. Choix cross-institution
+    # autorisé (picker groupé sur TOUS les comptes de l'user) → on ne filtre PAS par
+    # slug. IDOR fermé par for_user : l'user ne peut forcer que SES propres comptes.
+    if forced_account_id is not None:
+        account = (
+            base_qs.select_related("institution").filter(pk=forced_account_id).first()
+        )
+        if account is None:
+            raise AccountNotFound(
+                contract_number="", contract_number_raw="", institution_slug=slug
+            )
+        return [AccountMatch(account=account)]
 
-        # Sans forced_account_id : chercher les comptes Yuh actifs (scopés à l'user).
+    identities = connector.list_account_identities(filepath)
+
+    # ── Pas d'identité dans le fichier (Yuh) → choix manuel OBLIGATOIRE.
+    # Même avec un seul compte : on ne devine plus (plus d'auto-resolve à 1 compte).
+    if not identities:
         accounts = list(
-            base_qs.filter(institution__slug="yuh")
+            base_qs.filter(institution__slug=slug)
             .select_related("institution")
             .order_by("name")
         )
         if not accounts:
             raise AccountNotFound(
-                contract_number="",
-                contract_number_raw="",
-                institution_slug="yuh",
+                contract_number="", contract_number_raw="", institution_slug=slug
             )
-        if len(accounts) == 1:
-            # Convention : un seul compte Yuh actif → résolution automatique
-            return [AccountMatch(account=accounts[0])]
-        # Plusieurs comptes Yuh → l'utilisateur doit choisir
-        raise AccountAmbiguous(accounts=accounts, institution_slug="yuh")
+        raise AccountAmbiguous(accounts=accounts, institution_slug=slug)
 
-    elif isinstance(connector, UBSConnector):
-        # UBS encode l'IBAN en ligne 2 du fichier (checking ET savings).
-        # Matching direct sur Account.iban — pas besoin de connaître le sous-type.
-        # C'est pour ça que Account.iban est la source unique (#82) : il couvre
-        # aussi les comptes épargne, qui ont un IBAN dans leurs exports UBS.
-        identifier = connector.extract_account_identifier(filepath)
-        if not identifier:
-            raise ValueError(
-                "Impossible d'extraire l'IBAN du fichier UBS (attendu en ligne 2). "
-                "Le fichier est peut-être corrompu."
-            )
-        try:
-            account = base_qs.select_related("institution").get(
-                iban=identifier,
-                institution__slug="ubs",
-            )
-        except Account.DoesNotExist:
+    # ── Identité(s) dans le fichier → match exact sur Account.<field>.
+    # Une seule identité inconnue bloque TOUT le fichier (CIC multi-feuilles).
+    # Des identités non vides impliquent un IDENTITY_FIELD défini (contrat connecteur).
+    # Garde explicite (pas un assert : strippé sous -O en prod) contre un connecteur
+    # mal déclaré (IDENTITY_FIELD=None mais list_account_identities() non vide).
+    if field is None:
+        raise ValueError(
+            f"Connecteur {type(connector).__name__} : identités présentes mais "
+            "IDENTITY_FIELD non défini (incohérence de déclaration)."
+        )
+    matches = []
+    for ident in identities:
+        account = (
+            base_qs.select_related("institution")
+            .filter(institution__slug=slug, **{field: ident.identifier})
+            .first()
+        )
+        if account is None:
             raise AccountNotFound(
-                contract_number=identifier,
-                contract_number_raw=identifier,
-                institution_slug="ubs",
-                account_name_hint=connector.extract_account_name(filepath),
+                contract_number=ident.identifier,
+                contract_number_raw=ident.identifier_raw,
+                institution_slug=slug,
+                sheet_name=ident.sheet_name,
+                account_name_hint=ident.name_hint,
             )
-        return [AccountMatch(account=account)]
-
-    elif isinstance(connector, CICConnector):
-        # CIC = fichier multi-feuilles, 1 feuille par compte.
-        # get_account_sheets() retourne [{sheet_name, rib, rib_raw, balance}, ...]
-        sheets = connector.get_account_sheets(filepath)
-        matches = []
-        for sheet in sheets:
-            rib = sheet["rib"]  # RIB normalisé sans espaces
-            try:
-                account = base_qs.get(
-                    institution__slug="cic",
-                    contract_number=rib,
-                )
-            except Account.DoesNotExist:
-                raise AccountNotFound(
-                    contract_number=rib,
-                    contract_number_raw=sheet["rib_raw"],
-                    institution_slug="cic",
-                    sheet_name=sheet["sheet_name"],
-                )
-            matches.append(
-                AccountMatch(
-                    account=account,
-                    sheet_name=sheet["sheet_name"],
-                    parse_kwargs={"sheet_name": sheet["sheet_name"]},
-                )
+        matches.append(
+            AccountMatch(
+                account=account,
+                sheet_name=ident.sheet_name,
+                parse_kwargs=(
+                    {"sheet_name": ident.sheet_name} if ident.sheet_name else {}
+                ),
             )
-        return matches
-
-    raise ValueError(
-        f"Connecteur non supporté par resolve_accounts : {type(connector).__name__}"
-    )
+        )
+    return matches

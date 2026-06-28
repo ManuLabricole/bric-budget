@@ -115,5 +115,15 @@
                 Fichier vide — valider quand même
             </button>
         {% endif %}
+        {% comment %}Soupape : corriger le compte cible avant de confirmer (#274).
+        Mono-compte uniquement (un fichier CIC multi-feuilles ne se réaffecte pas
+        feuille par feuille).{% endcomment %}
+        {% if dry_results|length == 1 %}
+            <button type="button"
+                    class="mt-2 w-full text-center text-[11px] text-text-muted underline decoration-text-disabled/50 hover:text-text-base transition-colors"
+                    hx-get="{% url 'imports:account_picker_manual' %}"
+                    hx-target="#import-steps"
+                    hx-swap="innerHTML">Ce n'est pas le bon compte ? Choisir manuellement</button>
+        {% endif %}
     </div>
 </div>

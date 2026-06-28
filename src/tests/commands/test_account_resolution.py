@@ -10,12 +10,12 @@ Avant le resolver (Phase 2E), cette logique était dans _find_account() de chaqu
 commande de management. Elle est maintenant centralisée dans connectors/resolver.py
 et testée ici directement, sans passer par les commandes.
 
-Comportements testés :
+Comportements testés (#274 — rattachement explicite, plus d'auto-resolve Yuh) :
     Yuh  1. Aucun compte Yuh actif → AccountNotFound
-    Yuh  2. 1 compte Yuh actif     → AccountMatch retourné
+    Yuh  2. 1 compte Yuh actif     → AccountAmbiguous (picker manuel TOUJOURS)
     Yuh  3. 2 comptes Yuh actifs   → AccountAmbiguous (picker UI requis)
     Yuh  4. Compte inactif         → AccountNotFound (ignoré par le filtre)
-    UBS  5. IBAN absent du fichier → ValueError
+    UBS  5. IBAN absent du fichier → ValueError (fichier corrompu)
     UBS  6. IBAN présent mais pas en DB → AccountNotFound
     UBS  7. IBAN présent et compte trouvé → AccountMatch retourné
 """
@@ -92,21 +92,19 @@ def test_yuh_raises_when_no_account(yuh_bank):
 
 
 @pytest.mark.django_db
-def test_yuh_returns_single_active_account(yuh_bank):
+def test_yuh_raises_ambiguous_even_with_single_account(yuh_bank):
     """
-    1 compte Yuh actif en DB → AccountMatch avec le bon account.
+    1 seul compte Yuh actif → AccountAmbiguous (picker manuel TOUJOURS obligatoire).
 
-    C'est le cas nominal : make seed crée exactement un compte Yuh.
+    Yuh n'expose aucun identifiant dans ses exports : on ne devine plus le compte,
+    même quand il n'y en a qu'un. L'utilisateur choisit explicitement via le picker
+    (#274 — rattachement explicite, fin de l'auto-resolve « convention »).
     """
-    account = make_yuh_account(yuh_bank)
+    make_yuh_account(yuh_bank)
     connector = YuhConnector()
-    matches = resolve_accounts(connector, YUH_DUMMY)
 
-    assert len(matches) == 1
-    assert isinstance(matches[0], AccountMatch)
-    assert matches[0].account.pk == account.pk
-    assert matches[0].sheet_name is None
-    assert matches[0].parse_kwargs == {}
+    with pytest.raises(AccountAmbiguous):
+        resolve_accounts(connector, YUH_DUMMY)
 
 
 @pytest.mark.django_db
@@ -154,7 +152,7 @@ def test_ubs_raises_when_no_iban_in_file(ubs_bank):
     connector = UBSConnector()
 
     with patch.object(connector, "extract_account_identifier", return_value=None):
-        with pytest.raises(ValueError, match="IBAN"):
+        with pytest.raises(ValueError, match="corrompu"):
             resolve_accounts(connector, UBS_CSV)
 
 

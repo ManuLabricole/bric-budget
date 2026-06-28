@@ -1,8 +1,9 @@
-{% load static institution_icons %}
-{# Fragment affiché quand AccountAmbiguous est levé : plusieurs comptes actifs         #}
-{# pour une institution qui n'expose pas d'identifiant dans ses exports (ex: Yuh).          #}
-{# L'utilisateur clique sur le bon compte → POST select-account/ → dry-run repart.    #}
-{# Variables contexte : accounts (list[Account]), institution_slug, filename            #}
+{% comment %}
+Affiché quand AccountAmbiguous est levé : institution sans identifiant dans ses exports
+(Yuh) → l'utilisateur doit choisir le compte. Header + picker accordéon réutilisable.
+Contexte : groups (list[{institution, accounts}]), institution_slug, filename.
+Injecté en innerHTML dans #import-steps (le conteneur reste celui de la page).
+{% endcomment %}
 <style>
   @keyframes slide-up {
     from { opacity: 0; transform: translateY(10px); }
@@ -10,10 +11,8 @@
   }
   .step-card { animation: slide-up 0.3s ease-out both; }
 </style>
-<div class="mt-4 flex flex-col gap-3">
-    {# ── Titre ─────────────────────────────────────────────────────────────── #}
-    <div class="step-card flex items-start gap-3 bg-warning/8 border border-warning/25 rounded-xl px-4 py-3"
-         style="animation-delay: 0ms">
+<div class="step-card flex flex-col gap-3">
+    <div class="flex items-start gap-3 bg-warning/8 border border-warning/25 rounded-xl px-4 py-3">
         <div class="w-7 h-7 rounded-full bg-warning/15 flex items-center justify-center flex-shrink-0 mt-0.5">
             <svg class="w-3.5 h-3.5 text-warning"
                  fill="none"
@@ -25,56 +24,10 @@
         </div>
         <div class="flex-1 min-w-0">
             <p class="text-sm font-semibold text-warning leading-snug">Quel compte ?</p>
-            <p class="text-xs text-text-muted mt-0.5 truncate">
+            <p class="text-xs text-text-muted mt-0.5">
                 Ce format ne contient pas d'identifiant de compte. Sélectionne le compte sur lequel importer.
             </p>
         </div>
     </div>
-    {# ── Fichier ──────────────────────────────────────────────────────────── #}
-    <div class="step-card flex items-center gap-2 px-4 py-2"
-         style="animation-delay: 80ms">
-        <svg class="w-3.5 h-3.5 text-text-disabled flex-shrink-0"
-             fill="none"
-             viewBox="0 0 24 24"
-             stroke-width="1.5"
-             stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-        </svg>
-        <p class="text-[11px] text-text-disabled font-mono truncate">{{ filename }}</p>
-    </div>
-    {# ── Liste des comptes candidats ──────────────────────────────────────── #}
-    {% for account in accounts %}
-        <div class="step-card"
-             style="animation-delay: {{ forloop.counter0|add:1 }}50ms">
-            <form hx-post="{% url 'imports:select_account' %}"
-                  hx-target="#import-steps"
-                  hx-swap="innerHTML"
-                  hx-indicator="#upload-spinner">
-                {% csrf_token %}
-                <input type="hidden" name="account_id" value="{{ account.pk }}">
-                <button type="submit"
-                        class="w-full flex items-center gap-3 bg-surface-hover hover:bg-surface-3 border border-transparent hover:border-border rounded-xl px-4 py-3 transition-colors text-left">
-                    {# Logo institution #}
-                    {% institution_icon_url account.institution as bicon %}
-                    {% include "components/institutions/institution_logo.html" with icon_url=bicon institution=account.institution size="w-9 h-9" padding="p-1.5" %}
-                    {# Nom + type + devise #}
-                    <div class="flex-1 min-w-0">
-                        <p class="text-sm font-semibold text-text-base truncate">{{ account.name }}</p>
-                        <p class="text-xs text-text-muted">{{ account.get_account_type_display }} · {{ account.currency }}</p>
-                        {% if account.iban_display %}
-                            <p class="text-[10px] text-text-disabled font-mono mt-0.5">{{ account.iban_display }}</p>
-                        {% endif %}
-                    </div>
-                    {# Flèche →  #}
-                    <svg class="w-4 h-4 text-text-disabled flex-shrink-0"
-                         fill="none"
-                         viewBox="0 0 24 24"
-                         stroke-width="1.5"
-                         stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-                    </svg>
-                </button>
-            </form>
-        </div>
-    {% endfor %}
+    {% include "imports/partials/_account_picker.html" with groups=groups open_slug=institution_slug filename=filename %}
 </div>

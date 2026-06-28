@@ -73,8 +73,31 @@ Future connectors (Finpension, Swissquote...) should set this when available.
 
 import re
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict
+
+
+@dataclass
+class AccountIdentity:
+    """
+    Une identité de compte extraite d'un fichier source.
+
+    Le champ Account cible (iban / contract_number) n'est PAS porté ici — il vient
+    de Connector.IDENTITY_FIELD. Permet à resolve_accounts() de matcher sans connaître
+    la banque (résolution data-driven, plus de isinstance par connecteur).
+
+    Attributs :
+        identifier      : normalisé (sans espaces) → match exact sur Account.<IDENTITY_FIELD>
+        identifier_raw  : tel qu'affiché dans le fichier (pour l'UI)
+        sheet_name      : nom de la feuille (CIC multi-comptes), None sinon
+        name_hint       : suggestion de nom lisible si le fichier en porte une (UBS), None sinon
+    """
+
+    identifier: str
+    identifier_raw: str
+    sheet_name: str | None = None
+    name_hint: str | None = None
 
 
 class TransactionDict(TypedDict):
@@ -111,13 +134,54 @@ class BaseConnector(ABC):
 
     Subclasses implement parse() and optionally extract_balance(),
     extract_account_identifier(), and extract_account_name().
+
+    Stratégie de résolution de compte (data-driven, voir resolver.py)
+    -----------------------------------------------------------------
+    Chaque connecteur déclare :
+        INSTITUTION_SLUG : slug DB de l'institution (jamais résolu par nom).
+        IDENTITY_FIELD   : champ Account portant l'identité ("iban" | "contract_number")
+                           ou None si le fichier n'expose aucun identifiant (Yuh → picker).
+        list_account_identities() : 0 (Yuh) · 1 (UBS) · N (CIC feuilles) identités.
+    Ajouter une banque = écrire son connecteur ; resolve_accounts() reste inchangé.
     """
+
+    # Slug DB de l'institution — surchargé par chaque connecteur concret.
+    INSTITUTION_SLUG: str = ""
+    # Champ Account portant l'identité ; None = aucune identité dans le fichier (→ picker).
+    IDENTITY_FIELD: str | None = None
 
     @classmethod
     @abstractmethod
     def matches_file(cls, filepath: Path) -> bool:
         """Return True if this connector can parse the given file."""
         ...
+
+    def list_account_identities(self, filepath: Path) -> list[AccountIdentity]:
+        """
+        Identités de compte présentes dans le fichier — base de la résolution générique.
+
+        Implémentation par défaut (mono-compte) :
+            - IDENTITY_FIELD is None → [] : aucune identité (Yuh) → picker obligatoire.
+            - Sinon → 1 identité via extract_account_identifier(). None malgré un
+              IDENTITY_FIELD défini = fichier corrompu → ValueError (erreur d'import claire).
+
+        Surchargé par les connecteurs multi-comptes (CIC : 1 identité par feuille).
+        """
+        if self.IDENTITY_FIELD is None:
+            return []
+        identifier = self.extract_account_identifier(filepath)
+        if not identifier:
+            raise ValueError(
+                f"Identité de compte introuvable dans le fichier "
+                f"{self.INSTITUTION_SLUG.upper()} (fichier peut-être corrompu)."
+            )
+        return [
+            AccountIdentity(
+                identifier=identifier,
+                identifier_raw=identifier,
+                name_hint=self.extract_account_name(filepath),
+            )
+        ]
 
     @abstractmethod
     def parse(self, filepath: Path) -> list[TransactionDict]:

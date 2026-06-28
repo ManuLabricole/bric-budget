@@ -60,7 +60,7 @@ from pathlib import Path
 
 import openpyxl
 
-from connectors.base import BaseConnector, TransactionDict
+from connectors.base import AccountIdentity, BaseConnector, TransactionDict
 
 logger = logging.getLogger(__name__)
 
@@ -83,9 +83,31 @@ class CICConnector(BaseConnector):
     The inherited parse() method parses all account sheets combined.
     """
 
+    # Résolution de compte : 1 RIB par feuille → match sur Account.contract_number.
+    # list_account_identities() est surchargée (multi-comptes) — voir plus bas.
+    INSTITUTION_SLUG = "cic"
+    IDENTITY_FIELD: str | None = "contract_number"
+
     # =========================================================================
     # Public API
     # =========================================================================
+
+    def list_account_identities(self, filepath: Path) -> list[AccountIdentity]:
+        """
+        CIC : un fichier = N feuilles = N comptes → 1 identité (RIB) par feuille.
+
+        Surcharge l'implémentation mono-compte de BaseConnector. Les feuilles sans
+        RIB exploitable sont ignorées (ne peuvent pas être résolues de toute façon).
+        """
+        return [
+            AccountIdentity(
+                identifier=sheet["rib"],
+                identifier_raw=sheet["rib_raw"],
+                sheet_name=sheet["sheet_name"],
+            )
+            for sheet in self.get_account_sheets(filepath)
+            if sheet["rib"]
+        ]
 
     @classmethod
     def matches_file(cls, filepath: Path) -> bool:
