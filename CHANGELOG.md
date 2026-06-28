@@ -1,3 +1,21 @@
+## v1.1.0 (2026-06-28)
+
+### Feat
+
+- **imports**: rattachement explicite à un compte existant + résolution générique
+
+### Fix
+
+- **infra**: migrate + seed au RUNTIME (start command), pas en pre-deploy
+- **infra**: retirer le preDeployCommand (deploy bloqué, DB déjà migrée)
+- **infra**: pre-deploy — dump_db_to_s3 non-bloquant (ne bloque plus le déploiement)
+- **devtools**: roadmap snapshot --limit 100 (CodeRabbit outside-diff)
+- **devtools**: traiter les findings CodeRabbit (PR #275)
+- **devtools**: durcir les hooks suite revue (W-1, W-2, S-1, S-2)
+- **imports**: CI mypy + findings CodeRabbit (coercion account_id, collapse CIC)
+- **imports**: findings revue #276 — bloc GET dupliqué, assert guard, id_field data-driven
+- **infra**: pre-deploy — migrate AVANT le backup S3 (ne plus gater la 1ʳᵉ migration)
+
 ## v1.0.4 (2026-06-26)
 
 ### Fix
