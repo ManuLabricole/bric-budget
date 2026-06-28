@@ -114,6 +114,9 @@ ignore = [
 # Files to never lint (migrations are auto-generated, no point fixing them)
 exclude = [
     "src/*/migrations/*.py",
+    # Code tiers vendorisé depuis everything-claude-code (ne pas linter)
+    ".claude/skills/continuous-learning-v2",
+    ".claude/skills/continuous-learning",
 ]
 
 # =============================================================================
