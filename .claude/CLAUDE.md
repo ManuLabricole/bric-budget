@@ -113,6 +113,9 @@ Détails : `commands/wt.md`, `scripts/wt-new.sh`.
 - **Tester GET + POST via `manage.py shell`** avant de déclarer terminé (voir `rules/testing.md`)
 - **Jamais `{# #}` multilignes dans les partials** → `{% comment %}`
 - Tokens design : `window.BRICBUDGET_TOKENS` — jamais de hex/font hardcodé en JS
+- ⛔ **Definition of Done** (`rules/definition-of-done.md`, chargé par chemin) : avant de dire « terminé »,
+  **prouver** (pas affirmer) les 4 gates — ① tests réels non-théâtre ② diff simplifié ③ pattern d'archi cité,
+  pas de spaghetti ④ idiome Django, pas de workaround. La revue + CodeRabbit sont un **filet**, pas le QA.
 
 ---
 

@@ -1,9 +1,18 @@
 # /help — Liste des commandes disponibles
 
-## Commandes (slash-commands — déclenchées par toi)
+## 🟢 Workflows (orchestrent un cycle complet — préfère-les aux étapes manuelles)
 
 ```
-/hello        Début de session — état git, issues, prochaine action
+/workflow:start              Bootstrap de session (screening enrichi : contexte, issues, worktrees, anti-stacking)
+/workflow:feature <issue#>   Cycle complet d'une issue — research → plan → GATE → wt → code/TDD → review → PR
+/workflow:parallel <#> <#>…  Dispatch multi-worktrees — 1 worktree isolé + 1 sous-agent background par issue
+/workflow:review [PR#]       Cycle de revue — bricbudget-reviewer + security-auditor + traitement CodeRabbit
+```
+
+## Commandes unitaires (étapes ponctuelles)
+
+```
+/hello        Début de session — état git, issues, prochaine action (léger ; /workflow:start = version enrichie)
 /grill        Design concept partagé avant une feature floue
 /research     Cartographier le codebase avant d'implémenter (> 1 fichier)
 /plan         Plan exécutable post-research (snippets + tests + étapes)
@@ -20,18 +29,32 @@
 /compact      Compaction native du contexte (built-in Claude Code)
 ```
 
+## Outillage .claude (observabilité & apprentissage)
+
+```
+/usage-report       Agrège le log de traçage (top agents/skills/commands, candidats à rétrograder)
+/agentshield-audit  Scan sécurité du dossier .claude (grade /100 + findings)
+/learn /learn-eval  Extraire des patterns réutilisables de la session → skill/guidance candidate
+/evolve             Analyser les instincts appris → suggérer skills/commands/agents
+/instinct-status    Voir les instincts appris (projet + global) avec confiance
+/instinct-export /instinct-import   Échanger des instincts entre scopes/fichiers
+```
+
 ## Quand appeler quoi
 
 | Situation | Commande |
 |---|---|
-| Je démarre une session | `/hello` |
+| Je démarre une session | `/workflow:start` (ou `/hello` en version légère) |
 | Je veux savoir ce que je peux faire | `/help` |
+| **Traiter une issue de bout en bout** | **`/workflow:feature <issue#>`** (englobe research → plan → GATE → wt → code → PR) |
+| **Mener plusieurs issues de front** | **`/workflow:parallel <#> <#>`** (1 worktree + 1 sous-agent par issue) |
+| **Faire la revue d'une PR** | **`/workflow:review [PR#]`** (reviewers + CodeRabbit obligatoire) |
 | Idée floue | `/grill` |
 | Feature claire mais codebase incertain | `/research` → `/plan` |
 | Bug à investiguer | `/diagnose` |
 | Refactor archi à envisager | `/improve` |
 | Avant d'ouvrir une PR | `/audit-tests` puis `/review-pr` |
-| Mener plusieurs PR en parallèle | `/wt <issue> <slug>` → `cd` + `claude` (1 session/issue) ; `/wt-list` pour l'état, `/wt-done` après merge |
+| Worktrees à la main | `/wt <issue> <slug>` ; `/wt-list` pour l'état, `/wt-done` après merge |
 | Déployer / infra Railway | skill `use-railway` |
 
 ## Mémoire & docs — qui porte quoi (plus de `/sync`)

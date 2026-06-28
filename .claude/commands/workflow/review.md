@@ -8,11 +8,17 @@ argument-hint: [PR#]
 
 Revue complète avant merge. Cible : la PR courante (ou **#$ARGUMENTS** si fourni).
 
+> ⚠️ Cette revue est un **filet de sécurité**. Le contrôle qualité a déjà eu lieu au
+> gate **Definition of Done** (`rules/definition-of-done.md`). Si un agent ou CodeRabbit
+> trouve un test-théâtre / du spaghetti / un workaround / du code non simplifié, **le gate
+> a échoué en amont** → corriger **et** noter pourquoi il est passé au travers (auto-memory).
+
 ## 1. Revue par agents (sur le diff)
 ```bash
 git diff origin/development...HEAD
 ```
 - Agent **`bricbudget-reviewer`** : correctness, Django/HTMX, perf (N+1), tests, SR-XX.
+- Si le diff touche `src/tests/**` ou ajoute du comportement → agent **`test-auditor`** (assertions faibles, théâtre status-200, sur-mock, flaky, score de mutation).
 - Si le diff touche `views/`, `models/`, `imports/`, `services/` → agent **`security-auditor`** (IDOR, Decimal, atomicité, secrets, OWASP).
 - Findings bloquants/sécu → **corriger avant merge** (commit + push re-déclenche la CI + CodeRabbit).
 
