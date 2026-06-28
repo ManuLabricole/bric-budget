@@ -1,0 +1,38 @@
+{% comment %}
+Logo Pince (mark) — réutilisable. Source de design : temp-logo-design (intégré tel quel).
+Deux bras crème qui se croisent à un pivot et pincent une pièce pêche.
+
+Params :
+  size     : classes Tailwind w/h (défaut "w-8 h-8")
+  animated : True → les bras s'ouvrent/ferment + la pièce pop (boucle 2.4s).
+             Le dégradé #pince-peach et les keyframes pince-* sont définis UNE FOIS
+             dans base.html (donc ce partial reste léger et duplicable).
+Couleurs de marque intrinsèques au logo (crème #F4F1EC / pêche / pivot) → hex assumés.
+{% endcomment %}
+<svg class="{{ size|default:'w-8 h-8' }} flex-shrink-0 overflow-visible"
+     viewBox="0 0 100 100"
+     fill="none"
+     role="img"
+     aria-label="Pince">
+    {% comment %}bras gauche : pince + poignée{% endcomment %}
+    <g
+    {% if animated %}class="pince-armL"{% endif %}
+    >
+    <path d="M50 48 C45 41,41 35,43 29 C44 25,48 25,49 28" stroke="#F4F1EC" stroke-width="7" stroke-linecap="round" />
+    <path d="M50 49 L34 85" stroke="#F4F1EC" stroke-width="8" stroke-linecap="round" />
+    </g>
+    {% comment %}bras droit{% endcomment %}
+    <g
+    {% if animated %}class="pince-armR"{% endif %}
+    >
+    <path d="M50 48 C55 41,59 35,57 29 C56 25,52 25,51 28" stroke="#F4F1EC" stroke-width="7" stroke-linecap="round" />
+    <path d="M50 49 L66 85" stroke="#F4F1EC" stroke-width="8" stroke-linecap="round" />
+    </g>
+    {% comment %}pièce pêche pincée en haut{% endcomment %}
+    <circle cx="50" cy="24" r="6" fill="url(#pince-peach)"
+    {% if animated %}class="pince-coin"{% endif %}
+    />
+    {% comment %}pivot : disque crème + cœur sombre{% endcomment %}
+    <circle cx="50" cy="48" r="5.5" fill="#F4F1EC" />
+    <circle cx="50" cy="48" r="2" fill="#0E0E11" />
+</svg>

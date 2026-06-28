@@ -1,10 +1,8 @@
 {# Sidebar — navigation principale gauche. #}
-<!-- LOGO -->
+{% comment %}Logo Pince (animé) — composant brand/_logo.html. « Tout compter, moins dépenser ».{% endcomment %}
 <div class="flex items-center gap-3 px-4 py-5">
-    <div class="w-8 h-8 rounded-full bg-gold flex items-center justify-center flex-shrink-0">
-        <span class="text-xs font-bold text-surface-1">BB</span>
-    </div>
-    <span class="text-sm font-semibold text-text-base tracking-wide">BricBudget</span>
+    {% include "components/brand/_logo.html" with size="w-8 h-8" animated=True %}
+    <span class="text-base font-bold tracking-tight text-text-base">Pince</span>
 </div>
 <!-- NAVIGATION -->
 <nav class="flex-1 overflow-y-auto py-2 px-2">
