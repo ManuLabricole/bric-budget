@@ -18,7 +18,9 @@ function getPluginRoot(options = {}) {
   if (process.env.ECC_PLUGIN_ROOT && process.env.ECC_PLUGIN_ROOT.trim()) {
     return process.env.ECC_PLUGIN_ROOT.trim();
   }
-  return path.resolve(__dirname, '..', '..');
+  // Layout BricBudget : observe-runner.js vit sous .claude/hooks/ → la racine plugin
+  // (où se trouve skills/continuous-learning-v2/) est .claude, un seul niveau au-dessus.
+  return path.resolve(__dirname, '..');
 }
 
 function resolveTarget(rootDir, relPath) {
@@ -136,7 +138,9 @@ function run(raw, options = {}) {
   });
 
   const output = {
-    exitCode: Number.isInteger(result.status) ? result.status : 0
+    // fail-open : une observation ratée (observe.sh non-zéro) ne doit JAMAIS
+    // bloquer/perturber le flux d'outils. On logue plus bas mais on sort 0.
+    exitCode: 0
   };
 
   if (typeof result.stdout === 'string' && result.stdout.length > 0) {
