@@ -32,9 +32,11 @@ repos:
       # 1. Lint — catches unused imports, undefined names, style issues
       - id: ruff
         args: [--fix]
+        exclude: '^\.claude/skills/(continuous-learning-v2|continuous-learning)/'
 
       # 2. Format — enforces consistent style (replaces Black)
       - id: ruff-format
+        exclude: '^\.claude/skills/(continuous-learning-v2|continuous-learning)/'
 
   # ---------------------------------------------------------------------------
   # djLint — Django template linter + formatter
