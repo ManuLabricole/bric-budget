@@ -26,14 +26,23 @@ if [ "$(id -u)" != "0" ]; then
     exec "$@"
 fi
 
+# Garde-fou AVANT le chown -R (qui tourne en root) : refuser tout chemin dangereux — vide, relatif,
+# ou racine "/". Un IMPORT_STORAGE_ROOT mal configuré ne doit JAMAIS déclencher un chown récursif hors
+# du volume (ex. chowner "/" ou un chemin relatif résolu depuis le CWD). On exige un chemin absolu.
+case "$STORAGE_ROOT" in
+    "" | "/" | [!/]*)
+        echo "[entrypoint] ERREUR : IMPORT_STORAGE_ROOT invalide (vide, relatif ou /) : '$STORAGE_ROOT'" >&2
+        exit 1
+        ;;
+esac
+
 # Démarré en root : on corrige la propriété du point de montage du volume (monté root:root) pour que
 # l'app non-root puisse y créer ses dossiers.
 #   - garde `-d`      : pas de volume en dev local → on ne chowne rien.
-#   - garde `!= "/"`  : filet anti-catastrophe si IMPORT_STORAGE_ROOT est mal configuré (jamais chowner /).
 #   - -R              : couvre aussi d'éventuels fichiers root-owned hérités d'un ancien run.
 #   - échec explicite : sans ça, `set -e` ferait crasher le conteneur SANS log actionnable (juste un
 #                       exit 1 opaque), pire à débugger sur Railway que le PermissionError d'origine.
-if [ "$STORAGE_ROOT" != "/" ] && [ -d "$STORAGE_ROOT" ]; then
+if [ -d "$STORAGE_ROOT" ]; then
     chown -R appuser:appuser "$STORAGE_ROOT" \
         || { echo "[entrypoint] ERREUR : chown de $STORAGE_ROOT a échoué" >&2; exit 1; }
 fi
