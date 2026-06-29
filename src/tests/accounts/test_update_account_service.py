@@ -7,10 +7,12 @@ par omission (édition partielle), identité d'import obligatoire, soft-delete.
 """
 
 from decimal import Decimal
+from typing import cast
 
 import pytest
 from django.core.exceptions import ValidationError
 
+from accounts.models import Account
 from accounts.services import archive_account, update_account
 from tests.factories import (
     AccountFactory,
@@ -23,12 +25,15 @@ from tests.factories import (
 @pytest.mark.django_db
 def test_update_account_persists_name_currency_and_iban():
     user = UserFactory()
-    account = AccountFactory(
-        members=[user],
-        account_type="checking",
-        currency="CHF",
-        iban=None,
-        contract_number="OLD-123",
+    account = cast(
+        Account,
+        AccountFactory(
+            members=[user],
+            account_type="checking",
+            currency="CHF",
+            iban=None,
+            contract_number="OLD-123",
+        ),
     )
     CheckingAccountFactory(account=account, bic="")
 
@@ -54,11 +59,14 @@ def test_update_account_persists_name_currency_and_iban():
 def test_update_savings_without_iban_field_keeps_existing_iban():
     """Le form savings n'a pas de champ IBAN → omission ne doit PAS l'effacer."""
     user = UserFactory()
-    account = AccountFactory(
-        members=[user],
-        account_type="savings",
-        currency="CHF",
-        iban="CH5604835012345678009",
+    account = cast(
+        Account,
+        AccountFactory(
+            members=[user],
+            account_type="savings",
+            currency="CHF",
+            iban="CH5604835012345678009",
+        ),
     )
     SavingsAccountFactory(account=account, interest_rate=Decimal("1.00"))
 
@@ -80,11 +88,14 @@ def test_update_savings_without_iban_field_keeps_existing_iban():
 @pytest.mark.django_db
 def test_update_account_requires_iban_or_contract_number():
     user = UserFactory()
-    account = AccountFactory(
-        members=[user],
-        account_type="checking",
-        iban=None,
-        contract_number="C-1",
+    account = cast(
+        Account,
+        AccountFactory(
+            members=[user],
+            account_type="checking",
+            iban=None,
+            contract_number="C-1",
+        ),
     )
     CheckingAccountFactory(account=account)
 
@@ -106,7 +117,9 @@ def test_update_account_requires_iban_or_contract_number():
 @pytest.mark.django_db
 def test_archive_account_sets_is_active_false():
     user = UserFactory()
-    account = AccountFactory(members=[user], iban=None, contract_number="C-1")
+    account = cast(
+        Account, AccountFactory(members=[user], iban=None, contract_number="C-1")
+    )
 
     archive_account(account)
 

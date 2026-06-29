@@ -9,6 +9,7 @@ La logique de mutation est testée dans tests/accounts/test_update_account_servi
 """
 
 from decimal import Decimal
+from typing import cast
 
 import pytest
 from django.urls import reverse
@@ -18,6 +19,7 @@ from pytest_django.asserts import (
     assertTemplateUsed,
 )
 
+from accounts.models import Account
 from patrimoine.views.account_detail import back_url_for
 from tests.factories import (
     AccountFactory,
@@ -173,12 +175,15 @@ def test_update_checking_can_clear_iban_when_contract_present(
 
 
 def test_update_savings_does_not_wipe_iban(user, client_logged):
-    account = AccountFactory(
-        members=[user],
-        account_type="savings",
-        currency="CHF",
-        iban="CH5604835012345678009",
-        name="Livret",
+    account = cast(
+        Account,
+        AccountFactory(
+            members=[user],
+            account_type="savings",
+            currency="CHF",
+            iban="CH5604835012345678009",
+            name="Livret",
+        ),
     )
     SavingsAccountFactory(account=account, interest_rate=Decimal("1.00"))
 
@@ -201,12 +206,15 @@ def test_update_savings_does_not_wipe_iban(user, client_logged):
 
 
 def test_update_pension_forces_chf(user, client_logged):
-    account = AccountFactory(
-        members=[user],
-        account_type="pension_3a",
-        currency="CHF",
-        iban=None,
-        contract_number="3A-123",
+    account = cast(
+        Account,
+        AccountFactory(
+            members=[user],
+            account_type="pension_3a",
+            currency="CHF",
+            iban=None,
+            contract_number="3A-123",
+        ),
     )
     resp = client_logged.post(
         _update_url(account),
@@ -223,12 +231,15 @@ def test_edit_form_preserves_stored_zero_for_pension(user, client_logged):
     # éditer le nom le ferait revenir None au submit (perte de donnée, CR #294).
     from accounts.models import PensionDetails
 
-    account = AccountFactory(
-        members=[user],
-        account_type="pension_3a",
-        currency="CHF",
-        iban=None,
-        contract_number="3A-123",
+    account = cast(
+        Account,
+        AccountFactory(
+            members=[user],
+            account_type="pension_3a",
+            currency="CHF",
+            iban=None,
+            contract_number="3A-123",
+        ),
     )
     PensionDetails.objects.create(account=account, contributions_ytd=Decimal("0"))
 
