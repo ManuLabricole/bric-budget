@@ -15,9 +15,9 @@ Le corps gauche est swappable via #account-detail-body (la période change sans 
 {% endblock %}
 {% block panel_right %}
     <aside class="flex-[1] min-w-0 border-l border-edge/60 pl-4 flex flex-col gap-4">
-        {# ── Détails du compte : lecture + édition/archivage (#292) ──────────
+        {% comment %} ── Détails du compte : lecture + édition/archivage (#292) ──────────
         Carte en 2 modes (lecture ↔ formulaire) — le bouton « Modifier » bascule
-        la carte via swap HTMX de #account-detail-panel. Les crayons inline restent. #}
+        la carte via swap HTMX de #account-detail-panel. Les crayons inline restent. {% endcomment %}
         {% include "patrimoine/partials/_account_detail_panel.html" with panel_editing=False %}
         {% comment %}
         ── Détail transaction — composant inline partagé (source=patrimoine) ──
