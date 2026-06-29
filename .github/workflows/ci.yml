@@ -37,8 +37,9 @@ env:
 jobs:
   # ── Changes (path filter) ───────────────────────────────────────────────────
   # Détecte si du CODE testable a changé. Les jobs lourds (test/e2e/reference-data/
-  # deploy-guard/security) ne tournent QUE si `code == true` → une PR docs/.claude/
-  # configs saute tout le lourd (#261). lint + secrets restent toujours actifs.
+  # deploy-guard/security/lint) ne tournent QUE si `code == true` → une PR docs/.claude/
+  # configs ne lance que `changes` + `secrets` + la sentinelle (#261). `secrets` (gitleaks)
+  # reste TOUJOURS actif : un IBAN/token fuité dans un .md/.claude doit être scanné.
   changes:
     name: Detect changed paths
     runs-on: ubuntu-latest
@@ -65,12 +66,15 @@ jobs:
               - 'tailwind.config.js'
               - 'package.json'
               - 'package-lock.json'
+              - 'conftest.py'           # conftest racine = fixtures pytest globales
 
   # ── Lint ────────────────────────────────────────────────────────────────────
   # Vérifie le style Python (ruff) et les templates Django (djlint).
   # Ce job ne touche pas la DB — il est rapide (~10s).
   lint:
     name: Lint (ruff + djlint)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     steps:
