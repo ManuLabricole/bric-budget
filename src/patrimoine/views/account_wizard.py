@@ -98,6 +98,16 @@ def _parse_decimal(raw: str, label: str) -> Decimal | None:
     return value
 
 
+def _normalize_iban(raw: str) -> str:
+    """IBAN saisi → sans AUCUN blanc + majuscules (clé de rattachement des imports).
+
+    split() avale TOUS les espaces unicode (insécable A0, fine 202F...) que les
+    banques/macOS glissent dans un IBAN copié-collé — un `replace(" ", "")` ne
+    retire que l'espace ASCII et laisserait un IBAN malformé qui casse le matching.
+    """
+    return "".join(raw.split()).upper()
+
+
 def _human_validation_error(exc: ValidationError) -> str:
     """Messages modèle (locale en-us) → libellé UI français pour les cas connus."""
     messages = getattr(exc, "message_dict", None)
@@ -111,15 +121,14 @@ def _parse_type_fields(request: HttpRequest, account_type: str) -> dict[str, Any
     post = request.POST
     if account_type == Account.AccountType.CHECKING:
         return {
-            "iban": post.get("iban", "").replace(" ", "").upper(),
+            "iban": _normalize_iban(post.get("iban", "")),
             "bic": post.get("bic", "").replace(" ", "").upper(),
         }
     if account_type == Account.AccountType.SAVINGS:
         # IBAN sur Account (clé de rattachement des imports UBS, universelle
-        # checking + savings — cf. connectors/resolver.py). Même normalisation
-        # que checking : sans espaces, majuscules.
+        # checking + savings — cf. connectors/resolver.py).
         return {
-            "iban": post.get("iban", "").replace(" ", "").upper(),
+            "iban": _normalize_iban(post.get("iban", "")),
             "interest_rate": _parse_decimal(
                 post.get("interest_rate", ""), "Taux d'intérêt"
             ),

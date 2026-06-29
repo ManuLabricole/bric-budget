@@ -117,7 +117,7 @@ def test_update_persists_and_returns_read_card(client_logged, checking_account):
         {
             "name": "Compte renommé",
             "currency": "EUR",
-            "iban": "CH5604835012345678009",
+            "iban": "ch56 0483 5012 3456 7800 9",
             "bic": "BCVLCH2L",
             "contract_number": "",
         },
@@ -200,7 +200,8 @@ def test_edit_form_savings_renders_iban_field(user, client_logged):
 def test_update_savings_can_set_iban(user, client_logged):
     # Bug réel (compte d'épargne UBS) : un savings sans IBAN ne pouvait pas s'en
     # voir attribuer un depuis le form → l'import ne le matchait jamais. On saisit
-    # l'IBAN avec des espaces → persisté normalisé (sans espaces, majuscules).
+    # l'IBAN avec des blancs hétérogènes (espace insécable \xa0 + fine   que
+    # les banques/macOS collent) → persisté normalisé, sinon l'import ne matche pas.
     account = cast(
         Account,
         AccountFactory(
@@ -219,7 +220,7 @@ def test_update_savings_can_set_iban(user, client_logged):
         {
             "name": "Épargne UBS",
             "currency": "CHF",
-            "iban": "CH56 0483 5012 3456 7800 9",
+            "iban": "ch56 0483 5012 3456 7800 9",
             "interest_rate": "0",
             "contract_number": "0243-00693382",
         },
@@ -228,7 +229,7 @@ def test_update_savings_can_set_iban(user, client_logged):
 
     assert resp.status_code == 200
     account.refresh_from_db()
-    assert account.iban == "CH5604835012345678009"  # normalisé sans espaces
+    assert account.iban == "CH5604835012345678009"  # tous blancs retirés, majuscules
 
 
 def test_update_savings_preserves_iban_when_resubmitted(user, client_logged):
