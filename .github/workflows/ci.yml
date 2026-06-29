@@ -60,6 +60,10 @@ jobs:
               - 'nixpacks.toml'
               - 'scripts/**'
               - '.github/workflows/ci.yml'
+              - '.semgrep/**'
+              - 'tailwind.config.js'
+              - 'package.json'
+              - 'package-lock.json'
 
   # ── Lint ────────────────────────────────────────────────────────────────────
   # Vérifie le style Python (ruff) et les templates Django (djlint).
