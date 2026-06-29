@@ -80,7 +80,15 @@ def _get_account_or_404(request: HttpRequest, account_id: int) -> Account:
         account = (
             Account.objects.for_user(request.user)
             .filter(is_active=True)
-            .select_related("institution")
+            # OneToOne *Details lues par _editable_fields / _edit_values (#292) :
+            # select_related évite une requête par sous-modèle au rendu de la carte.
+            .select_related(
+                "institution",
+                "checking_account",
+                "savings_account",
+                "life_insurance_details",
+                "pension_details",
+            )
             .get(pk=account_id)
         )
     except Account.DoesNotExist:
@@ -157,6 +165,17 @@ def _editable_fields(account: Account) -> list[dict]:
     return fields
 
 
+def back_url_for(account: Account) -> str:
+    """Lien retour : page catégorie du compte si sa classe est fonctionnelle, sinon bilan.
+
+    Partagé par la page détail et l'archivage (#292) qui y redirige après soft-delete.
+    """
+    asset_class = asset_class_for_account_type(account.account_type)
+    if asset_class is not None and asset_class.functional:
+        return reverse("patrimoine:asset_class", args=[asset_class.slug])
+    return reverse("patrimoine:overview")
+
+
 def _detail_context(request: HttpRequest, account: Account) -> dict:
     period = request.session.get(_period_key(account.pk), DEFAULT_PERIOD)
     if period not in PERIODS:
@@ -168,12 +187,7 @@ def _detail_context(request: HttpRequest, account: Account) -> dict:
     )
     chart_json = single_account_series(account, start, end)
 
-    # Lien retour : page catégorie du compte si sa classe est fonctionnelle, sinon bilan.
-    asset_class = asset_class_for_account_type(account.account_type)
-    if asset_class is not None and asset_class.functional:
-        back_url = reverse("patrimoine:asset_class", args=[asset_class.slug])
-    else:
-        back_url = reverse("patrimoine:overview")
+    back_url = back_url_for(account)
 
     txs, page_obj = _get_tx_page(account, 1)
 

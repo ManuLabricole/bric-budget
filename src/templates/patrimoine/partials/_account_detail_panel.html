@@ -1,0 +1,184 @@
+{% comment %}
+patrimoine/partials/_account_detail_panel.html — carte « Détails du compte » (#292).
+
+Deux modes dans le même partial (swap HTMX outerHTML sur #account-detail-panel) :
+  - lecture (panel_editing=False) : Type/Devise (lecture seule) + champs éditables
+    inline (crayons ✏️, _account_detail_field.html) + bouton « Modifier ».
+  - édition (panel_editing=True)  : formulaire complet prérempli (nom, devise, champs
+    du type, n° de contrat) + zone d'archivage. POST account_update.
+
+Le bouton Modifier et l'édition inline coexistent (décision #292) : crayon = retouche
+rapide d'un champ ; Modifier = tout d'un coup + archivage.
+
+Requiert (lecture)  : account, editable_fields.
+Requiert (édition)  : account, account_type, currencies, chf_only, values, tx_count.
+Optionnel (erreur)  : error (str).
+{% endcomment %}
+<div id="account-detail-panel"
+     class="bg-surface-3/70 border border-edge/60 rounded-xl overflow-hidden">
+    {% if panel_editing %}
+        {# ── Mode édition ─────────────────────────────────────────────────── #}
+        <form hx-post="{% url 'patrimoine:account_update' account.pk %}"
+              hx-target="#account-detail-panel"
+              hx-swap="outerHTML"
+              hx-disabled-elt="find button[type=submit]"
+              class="flex flex-col gap-3 p-5">
+            {% csrf_token %}
+            <div class="flex items-center justify-between">
+                <h2 class="text-sm font-semibold text-text-base">Modifier le compte</h2>
+                {% comment %}
+                Annuler → re-rend la carte en LECTURE. Pas d'endpoint « lecture seule »
+                dédié : on re-fetch la page compte et hx-select extrait juste la carte
+                (déjà en lecture), même pattern que l'édition inline d'un champ.
+                {% endcomment %}
+                <button type="button"
+                        hx-get="{% url 'patrimoine:account_detail' account.pk %}"
+                        hx-select="#account-detail-panel"
+                        hx-target="#account-detail-panel"
+                        hx-swap="outerHTML"
+                        aria-label="Annuler"
+                        class="text-text-muted transition-colors hover:text-text-base">
+                    <svg class="h-5 w-5"
+                         fill="none"
+                         viewBox="0 0 24 24"
+                         stroke-width="2"
+                         stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            {% if error %}
+                <p class="rounded-lg border border-expense/30 bg-expense/10 px-3 py-2 text-xs text-expense">{{ error }}</p>
+            {% endif %}
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Nom du compte</label>
+                <input type="text"
+                       name="name"
+                       value="{{ values.name|default:'' }}"
+                       maxlength="200"
+                       required
+                       class="w-full bg-surface-3 border border-edge rounded-lg px-3 py-2 text-xs text-text-base placeholder:text-text-disabled focus:outline-none focus:border-gold/50 transition-colors">
+            </div>
+            {# Type de compte — LECTURE SEULE (changer le type muterait le OneToOne, hors scope #82). #}
+            <div class="flex items-center justify-between px-1">
+                <span class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Type de compte</span>
+                <span class="text-xs font-semibold text-text-base">{{ account.get_account_type_display }}</span>
+            </div>
+            {% if chf_only %}
+                <div class="flex items-center justify-between px-1">
+                    <span class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Devise</span>
+                    <span class="text-xs font-semibold text-text-base">CHF</span>
+                </div>
+                <p class="text-[10px] text-text-muted -mt-2">CHF uniquement — réglementation suisse (prévoyance).</p>
+            {% else %}
+                <div class="flex flex-col gap-1">
+                    <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Devise</label>
+                    <select name="currency"
+                            class="w-full bg-surface-3 border border-edge rounded-lg px-3 py-2 text-xs text-text-base focus:outline-none focus:border-gold/50 transition-colors">
+                        {% for value, label in currencies %}
+                            <option value="{{ value }}"
+                                    {% if value == values.currency %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            {% endif %}
+            {% include "patrimoine/partials/_account_form_fields.html" %}
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+                    N° de contrat <span class="text-text-disabled">(optionnel)</span>
+                </label>
+                <input type="text"
+                       name="contract_number"
+                       value="{{ values.contract_number|default:'' }}"
+                       maxlength="100"
+                       class="w-full bg-surface-3 border border-edge rounded-lg px-3 py-2 text-xs text-text-base placeholder:text-text-disabled focus:outline-none focus:border-gold/50 transition-colors font-mono">
+            </div>
+            <p class="text-[10px] text-text-muted -mt-2">
+                IBAN ou n° de contrat : <span class="text-text-base">au moins l'un des deux</span> — c'est ce qui rattache tes imports à ce compte.
+            </p>
+            <button type="submit"
+                    class="w-full mt-1 px-4 py-2.5 text-xs font-semibold rounded-xl bg-gold text-surface-3 hover:bg-gold-hover transition-colors">
+                Enregistrer
+            </button>
+            {% comment %}
+            ── Zone d'archivage (soft-delete) ──────────────────────────────────
+            Révélée par une checkbox sr-only (pas de swap HTMX → la transition
+            CSS s'anime, cf. htmx.md). Le bouton Archiver est type="button" (ne
+            soumet pas le form d'édition) et POST account_archive → 204 + HX-Redirect.
+            {% endcomment %}
+            <div class="mt-1 border-t border-edge/40 pt-3">
+                <input type="checkbox"
+                       id="archive-toggle-{{ account.pk }}"
+                       class="peer sr-only">
+                <label for="archive-toggle-{{ account.pk }}"
+                       class="inline-flex cursor-pointer items-center gap-1.5 text-[11px] font-medium text-expense/80 transition-colors hover:text-expense peer-checked:hidden">
+                    <svg class="h-3.5 w-3.5"
+                         fill="none"
+                         viewBox="0 0 24 24"
+                         stroke-width="1.8"
+                         stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M9.75 11.25h4.5M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z" />
+                    </svg>
+                    Archiver ce compte
+                </label>
+                <div class="hidden flex-col gap-2 rounded-lg border border-expense/30 bg-expense/5 p-3 peer-checked:flex">
+                    <p class="text-[11px] text-text-secondary">
+                        Archiver <span class="font-semibold text-text-base">{{ account.name }}</span> ?
+                        Ses {{ tx_count }} transaction{{ tx_count|pluralize }} et imports restent
+                        conservés — réversible.
+                    </p>
+                    <div class="flex items-center gap-2">
+                        <button type="button"
+                                hx-post="{% url 'patrimoine:account_archive' account.pk %}"
+                                hx-disabled-elt="this"
+                                class="px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-expense text-white hover:bg-expense/80 transition-colors">
+                            Archiver
+                        </button>
+                        <label for="archive-toggle-{{ account.pk }}"
+                               class="cursor-pointer px-3 py-1.5 text-[11px] text-text-muted transition-colors hover:text-text-base">
+                            Annuler
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </form>
+    {% else %}
+        {# ── Mode lecture ─────────────────────────────────────────────────── #}
+        <div class="flex items-center justify-between px-5 pt-4 pb-3">
+            <h2 class="text-sm font-semibold text-text-base">Détails du compte</h2>
+            <button type="button"
+                    hx-get="{% url 'patrimoine:account_edit_form' account.pk %}"
+                    hx-target="#account-detail-panel"
+                    hx-swap="outerHTML"
+                    class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium text-text-muted transition-colors hover:bg-surface-hover hover:text-gold">
+                <svg class="h-3.5 w-3.5"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="1.8"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" />
+                </svg>
+                Modifier
+            </button>
+        </div>
+        <dl class="divide-y divide-edge/30">
+            {# Type de compte — LECTURE SEULE (hors scope #82 : muter le OneToOne). #}
+            <div class="flex items-center gap-3 px-5 py-3">
+                <dt class="text-xs text-text-muted w-32 flex-shrink-0">Type de compte</dt>
+                <dd class="text-sm text-text-base flex-1 min-w-0">
+                    {{ account.get_account_type_display }}
+                </dd>
+            </div>
+            <div class="flex items-center gap-3 px-5 py-3">
+                <dt class="text-xs text-text-muted w-32 flex-shrink-0">Devise</dt>
+                <dd class="text-sm text-text-base flex-1 min-w-0">
+                    {{ account.currency }}
+                </dd>
+            </div>
+            {# Champs éditables inline — un partial par ligne (lecture ↔ édition HTMX). #}
+            {% for field in editable_fields %}
+                {% include "patrimoine/partials/_account_detail_field.html" with field=field editing=False %}
+            {% endfor %}
+        </dl>
+    {% endif %}
+</div>
