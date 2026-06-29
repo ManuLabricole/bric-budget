@@ -39,12 +39,24 @@ esac
 # Démarré en root : on corrige la propriété du point de montage du volume (monté root:root) pour que
 # l'app non-root puisse y créer ses dossiers.
 #   - garde `-d`      : pas de volume en dev local → on ne chowne rien.
-#   - -R              : couvre aussi d'éventuels fichiers root-owned hérités d'un ancien run.
+#   - marqueur 1-shot : le `chown -R` (qui réquisitionne d'éventuels fichiers root-owned hérités d'un
+#                       ancien run) ne tourne qu'au PREMIER boot après provisioning du volume. Aux boots
+#                       suivants, l'app tournant déjà en appuser ne crée plus de fichier root-owned →
+#                       on évite la traversée récursive (coût croissant avec le volume) et on se borne
+#                       au point de montage lui-même. Marqueur posé APRÈS un -R réussi → si le -R
+#                       échoue, on retentera au prochain boot (pas de marqueur orphelin).
 #   - échec explicite : sans ça, `set -e` ferait crasher le conteneur SANS log actionnable (juste un
 #                       exit 1 opaque), pire à débugger sur Railway que le PermissionError d'origine.
 if [ -d "$STORAGE_ROOT" ]; then
-    chown -R appuser:appuser "$STORAGE_ROOT" \
-        || { echo "[entrypoint] ERREUR : chown de $STORAGE_ROOT a échoué" >&2; exit 1; }
+    OWNERSHIP_MARKER="$STORAGE_ROOT/.ownership-fixed"
+    if [ -f "$OWNERSHIP_MARKER" ]; then
+        chown appuser:appuser "$STORAGE_ROOT" \
+            || { echo "[entrypoint] ERREUR : chown de $STORAGE_ROOT a échoué" >&2; exit 1; }
+    else
+        chown -R appuser:appuser "$STORAGE_ROOT" \
+            || { echo "[entrypoint] ERREUR : chown -R de $STORAGE_ROOT a échoué" >&2; exit 1; }
+        : > "$OWNERSHIP_MARKER"
+    fi
 fi
 
 # Vérifie que gosu est fonctionnel (binaire/architecture) AVANT de s'en remettre à lui pour lancer
