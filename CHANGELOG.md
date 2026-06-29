@@ -1,3 +1,9 @@
+## v1.2.1 (2026-06-29)
+
+### Fix
+
+- **patrimoine**: comment {% comment %} au lieu de {# #} multiligne
+
 ## v1.2.0 (2026-06-29)
 
 ### Feat
