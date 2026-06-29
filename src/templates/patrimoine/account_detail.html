@@ -15,31 +15,10 @@ Le corps gauche est swappable via #account-detail-body (la période change sans 
 {% endblock %}
 {% block panel_right %}
     <aside class="flex-[1] min-w-0 border-l border-edge/60 pl-4 flex flex-col gap-4">
-        {# ── Détails éditable (IBAN / BIC ou Taux) ───────────────────────── #}
-        <div class="bg-surface-3/70 border border-edge/60 rounded-xl overflow-hidden">
-            <div class="px-5 pt-4 pb-3">
-                <h2 class="text-sm font-semibold text-text-base">Détails du compte</h2>
-            </div>
-            <dl class="divide-y divide-edge/30">
-                {# Type de compte — LECTURE SEULE (hors scope #82 : muter le OneToOne). #}
-                <div class="flex items-center gap-3 px-5 py-3">
-                    <dt class="text-xs text-text-muted w-32 flex-shrink-0">Type de compte</dt>
-                    <dd class="text-sm text-text-base flex-1 min-w-0">
-                        {{ account.get_account_type_display }}
-                    </dd>
-                </div>
-                <div class="flex items-center gap-3 px-5 py-3">
-                    <dt class="text-xs text-text-muted w-32 flex-shrink-0">Devise</dt>
-                    <dd class="text-sm text-text-base flex-1 min-w-0">
-                        {{ account.currency }}
-                    </dd>
-                </div>
-                {# Champs éditables — un partial par ligne (lecture ↔ édition HTMX). #}
-                {% for field in editable_fields %}
-                    {% include "patrimoine/partials/_account_detail_field.html" with field=field editing=False %}
-                {% endfor %}
-            </dl>
-        </div>
+        {# ── Détails du compte : lecture + édition/archivage (#292) ──────────
+        Carte en 2 modes (lecture ↔ formulaire) — le bouton « Modifier » bascule
+        la carte via swap HTMX de #account-detail-panel. Les crayons inline restent. #}
+        {% include "patrimoine/partials/_account_detail_panel.html" with panel_editing=False %}
         {% comment %}
         ── Détail transaction — composant inline partagé (source=patrimoine) ──
         Rempli au clic sur une ligne (panel_target="#ac-tx-detail"). Même conteneur

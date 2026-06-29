@@ -86,6 +86,24 @@ urlpatterns = [
         views.account_transactions,
         name="account_transactions",
     ),
+    # /patrimoine/compte/<id>/modifier/ → carte Détails → formulaire d'édition (GET, HTMX, #292)
+    path(
+        "compte/<int:account_id>/modifier/",
+        views.account_edit_form,
+        name="account_edit_form",
+    ),
+    # /patrimoine/compte/<id>/enregistrer/ → valide + persiste l'édition (POST, HTMX, #292)
+    path(
+        "compte/<int:account_id>/enregistrer/",
+        views.account_update,
+        name="account_update",
+    ),
+    # /patrimoine/compte/<id>/archiver/ → soft-delete (POST, HTMX → 204 + HX-Redirect, #292)
+    path(
+        "compte/<int:account_id>/archiver/",
+        views.account_archive,
+        name="account_archive",
+    ),
     # /patrimoine/compte/<id>/champ/<field>/edit/ → passe un champ en édition (GET, HTMX)
     path(
         "compte/<int:account_id>/champ/<str:field>/edit/",

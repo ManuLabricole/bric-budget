@@ -11,6 +11,7 @@
 | `rules/` | auto **par chemin** (`paths:`) | conventions courtes (django, htmx, tailwind, testing) |
 | `skills/` | auto **par intention** (`description`) | expertise (`security`) + outillage (`skill-creator`) |
 | `SECURITY_RULES.md` | via skill `security` | SR-XX — source de vérité sécurité (committé) |
+| `ARCHITECTURE.md` (racine) | sur demande / nav agent | carte des apps Django + outillage nav ([.claude/agent-codenav.md](agent-codenav.md) : Serena LSP + ast-grep) |
 | `project/DECISIONS.md` | sur demande | ADRs append-only (privé) |
 | `project/UBIQUITOUS_LANGUAGE.md` | sur demande | vocabulaire + module map (privé) |
 | `project/ops.md` | sur demande | config prod / Railway (privé) |

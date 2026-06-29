@@ -7,6 +7,7 @@ from .account_detail import (
     account_transactions,
     set_account_period,
 )
+from .account_edit import account_archive, account_edit_form, account_update
 from .account_wizard import account_create, account_form
 from .asset_class import (
     asset_class_page,
@@ -24,12 +25,15 @@ from .navigation import sidebar_toggle
 from .overview import overview, set_period, toggle_class
 
 __all__ = [
+    "account_archive",
     "account_create",
     "account_detail",
+    "account_edit_form",
     "account_field_form",
     "account_field_save",
     "account_form",
     "account_transactions",
+    "account_update",
     "asset_class_page",
     "asset_class_transactions",
     "institution_logo_form",

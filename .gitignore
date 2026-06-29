@@ -16,6 +16,7 @@
 !.claude/README.md
 !.claude/VERSION
 !.claude/SECURITY_RULES.md
+!.claude/agent-codenav.md
 assets/private/
 
 # Docs privés sortis de .claude/ (références AI-coding + sorties d'audits CTO)
@@ -120,3 +121,6 @@ test-results/
 
 # mutmut (#198) — copie de travail + résultats, régénérés à chaque run
 mutants/
+
+# Serena MCP (cache + mémoires LSP, par poste)
+.serena/
