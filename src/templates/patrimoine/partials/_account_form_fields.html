@@ -40,6 +40,23 @@ input bg-surface-3 border-edge, font-mono pour IBAN/BIC).
 {% elif account_type == "savings" %}
     <div class="flex flex-col gap-1">
         <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+            IBAN
+            {% if 'iban' in locked_fields %}
+                <span class="text-gold">· détecté à l'import</span>
+            {% else %}
+                <span class="text-text-disabled">(optionnel)</span>
+            {% endif %}
+        </label>
+        <input type="text"
+               name="iban"
+               value="{{ values.iban|default:'' }}"
+               maxlength="34"
+               placeholder="CH56 0483 5012 3456 7800 9"
+               {% if 'iban' in locked_fields %}readonly{% endif %}
+               class="w-full bg-surface-3 border border-edge rounded-lg px-3 py-2 text-xs text-text-base placeholder:text-text-disabled focus:outline-none focus:border-gold/50 transition-colors font-mono {% if 'iban' in locked_fields %}opacity-70 cursor-not-allowed{% endif %}">
+    </div>
+    <div class="flex flex-col gap-1">
+        <label class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
             Taux d'intérêt (% / an) <span class="text-text-disabled">(optionnel)</span>
         </label>
         <input type="text"
