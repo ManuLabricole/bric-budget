@@ -31,9 +31,15 @@ ou un `--body "merge"` contenant le mot interdit ne déclenchent rien.
 ## Tester un garde-fou (sans danger)
 On simule l'appel du tool en passant un faux JSON sur stdin :
 ```bash
-echo '{"tool_input":{"command":"gh pr merge 1"}}' | bash .claude/hooks/block_gh_merge.sh; echo "rc=$?"          # → rc=2 + message
-echo '{"tool_input":{"command":"git push origin development"}}' | bash .claude/hooks/block_protected_branch.sh; echo "rc=$?"  # → rc=2
-echo '{"tool_input":{"command":"gh pr view 1"}}' | bash .claude/hooks/block_gh_merge.sh; echo "rc=$?"            # → rc=0 (autorisé)
+# Interdit → message sur stderr + rc=2 (on capture stderr pour voir la raison du blocage).
+out=$(echo '{"tool_input":{"command":"gh pr merge 1"}}' | bash .claude/hooks/block_gh_merge.sh 2>&1); rc=$?
+printf '%s\n(rc=%s)\n' "$out" "$rc"          # → ⛔ 'gh pr merge' interdit … + rc=2
+
+out=$(echo '{"tool_input":{"command":"git push origin development"}}' | bash .claude/hooks/block_protected_branch.sh 2>&1); rc=$?
+printf '%s\n(rc=%s)\n' "$out" "$rc"          # → ⛔ commit/push sur 'main'/'development' … + rc=2
+
+# Autorisé → aucun message, rc=0.
+echo '{"tool_input":{"command":"gh pr view 1"}}' | bash .claude/hooks/block_gh_merge.sh; echo "rc=$?"   # → rc=0
 ```
 
 ## Limites connues (hors scope #188)
