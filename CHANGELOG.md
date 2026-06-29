@@ -1,3 +1,18 @@
+## v1.2.0 (2026-06-29)
+
+### Feat
+
+- **patrimoine**: édition & archivage d'un compte depuis la page compte (#292) (#294)
+- **ui**: logo + favicon Pince (composant brand réutilisable)
+
+### Fix
+
+- **imports**: app non-root via gosu pour écrire dans le volume Railway (#296)
+- **devtools**: traiter findings CodeRabbit sur mon code (PR #287)
+- **devtools**: corriger l'invocation agentshield (scan --path, pas audit)
+- **deps**: resynchroniser poetry.lock avec pyproject (content-hash perime)
+- **devtools**: retirer l'exclude ruff de pyproject (cassait le content-hash poetry)
+
 ## v1.1.0 (2026-06-28)
 
 ### Feat
