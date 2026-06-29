@@ -1,0 +1,6 @@
+# ast-grep — recherche structurelle (tree-sitter), aide à l'audit SR-XX.
+# Usage : `ast-grep scan` (toutes les règles) | `ast-grep scan --rule tools/ast-grep/rules/<f>.yml`
+# Les règles sont des HEURISTIQUES d'audit (faux positifs possibles), pas un gate CI.
+# Le gate reste pre-commit (ruff/djlint) + pre-push (pytest) + CI (mypy/semgrep).
+ruleDirs:
+  - tools/ast-grep/rules

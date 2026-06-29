@@ -1,0 +1,20 @@
+id: sr-decimal-from-str
+language: python
+severity: warning
+message: "SR — précision monétaire : Decimal(str(x)) attendu, jamais Decimal(float). Vérifier l'argument."
+note: >
+  Heuristique : signale Decimal(<arg>) où l'arg n'est ni str(...), ni un littéral
+  string/int. Cible le vrai risque : Decimal(float_var) / Decimal(0.1). Des faux
+  positifs restent possibles (ex. Decimal(montant) déjà Decimal) — à lire.
+files:
+  - "src/**/*.py"
+rule:
+  pattern: Decimal($ARG)
+  not:
+    pattern: Decimal(str($$$))
+constraints:
+  ARG:
+    not:
+      any:
+        - kind: string
+        - kind: integer

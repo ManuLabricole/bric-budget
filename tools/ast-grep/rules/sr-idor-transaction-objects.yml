@@ -1,0 +1,16 @@
+id: sr-idor-transaction-objects
+language: python
+severity: error
+message: "SR-IDOR — Transaction.objects sans for_user. Utiliser Transaction.objects.for_user(request.user)."
+note: >
+  Signale tout Transaction.objects.<méthode>(...) qui n'est pas .for_user(...).
+  Un for_user chaîné (Transaction.objects.for_user(u).filter(...)) n'est PAS signalé.
+files:
+  - "src/**/*.py"
+ignores:
+  - "src/**/tests/**"
+  - "src/**/migrations/**"
+rule:
+  pattern: Transaction.objects.$METHOD($$$)
+  not:
+    pattern: Transaction.objects.for_user($$$)
