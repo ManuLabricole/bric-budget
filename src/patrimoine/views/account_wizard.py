@@ -115,10 +115,14 @@ def _parse_type_fields(request: HttpRequest, account_type: str) -> dict[str, Any
             "bic": post.get("bic", "").replace(" ", "").upper(),
         }
     if account_type == Account.AccountType.SAVINGS:
+        # IBAN sur Account (clé de rattachement des imports UBS, universelle
+        # checking + savings — cf. connectors/resolver.py). Même normalisation
+        # que checking : sans espaces, majuscules.
         return {
+            "iban": post.get("iban", "").replace(" ", "").upper(),
             "interest_rate": _parse_decimal(
                 post.get("interest_rate", ""), "Taux d'intérêt"
-            )
+            ),
         }
     if account_type == Account.AccountType.INSURANCE:
         return {
