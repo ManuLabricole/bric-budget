@@ -267,7 +267,19 @@ jobs:
       # -p no:randomly : pytest-randomly est déjà installé (dep historique) et
       # randomiserait l'ordre → risque de flaky en semaine de release. On fige
       # l'ordre en CI (désactivation explicite du plugin), sans toucher la dep (#156).
-      - name: Run tests + coverage
+      # Feature PR (-> development) : pytest NU, sans coverage -> plus rapide.
+      # Couverture + gate bloquant reportes au contexte release (ci-dessous). (#261)
+      - name: Run tests (feature PR — sans coverage)
+        if: github.event_name == 'pull_request' && github.base_ref == 'development'
+        run: |
+          poetry run pytest --color=yes -q \
+            -p no:randomly \
+            -n auto --reuse-db
+
+      # Release (PR->main ou push main) : suite COMPLETE + coverage + gate bloquant
+      # (--cov-fail-under=78) = LA barriere couverture avant prod. (#261)
+      - name: Run tests + coverage (release — gate bloquant)
+        if: github.event_name == 'push' || github.base_ref == 'main'
         run: |
           poetry run pytest --color=yes -q \
             -p no:randomly \
@@ -278,7 +290,7 @@ jobs:
       # Publie le % de couverture + le total directement sur la page de la PR
       # ($GITHUB_STEP_SUMMARY) → visible sans ouvrir les logs (#154).
       - name: Coverage — résumé PR
-        if: always()
+        if: github.event_name == 'push' || github.base_ref == 'main'
         run: |
           {
             echo "### 🧪 Couverture de test";
@@ -472,7 +484,13 @@ jobs:
   e2e:
     name: E2E (Playwright)
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    # E2E (job le plus cher) : seulement en contexte RELEASE (push main / PR->main)
+    # ou opt-in via label `run-e2e`. Pas sur chaque PR feature -> development. (#261)
+    if: >-
+      needs.changes.outputs.code == 'true' &&
+      ( github.event_name == 'push'
+        || github.base_ref == 'main'
+        || contains(github.event.pull_request.labels.*.name, 'run-e2e') )
     runs-on: ubuntu-latest
 
     services:
