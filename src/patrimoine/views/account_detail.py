@@ -36,6 +36,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
+from accounts.iban import normalize_iban
 from accounts.models import Account, BalanceSnapshot, CheckingAccount, SavingsAccount
 from patrimoine.context_processors import SIDEBAR_SESSION_KEY
 from patrimoine.services.asset_classes import asset_class_for_account_type
@@ -56,10 +57,12 @@ TX_PAGE_SIZE = 50
 _BODY_TARGET = "#account-detail-body"
 
 # Champs éditables inline par type de compte (str, car account_type est un str en DB).
-# checking : iban/bic ; savings : interest_rate. Tout autre champ = refusé.
+# checking : iban/bic ; savings : iban/taux. L'IBAN vit sur Account et rattache les
+# imports UBS (universel checking + savings, cf. resolver) → éditable pour les deux.
+# Tout autre champ = refusé.
 _EDITABLE_FIELDS: dict[str, tuple[str, ...]] = {
     Account.AccountType.CHECKING: ("iban", "bic"),
-    Account.AccountType.SAVINGS: ("interest_rate",),
+    Account.AccountType.SAVINGS: ("iban", "interest_rate"),
 }
 
 # Forme minimale d'un IBAN : 2 lettres pays + 2 chiffres de contrôle + 11..30
@@ -150,6 +153,15 @@ def _editable_fields(account: Account) -> list[dict]:
             }
         )
     elif account.account_type == Account.AccountType.SAVINGS:
+        fields.append(
+            {
+                "name": "iban",
+                "label": "IBAN",
+                # IBAN canonique = Account.iban (source unique, consolidation #82).
+                "value": account.iban,
+                "kind": "text",
+            }
+        )
         savings = getattr(account, "savings_account", None)
         # 0 (ou None) → considéré « non renseigné » côté UI (affiché « — »).
         rate = savings.interest_rate if savings else None
@@ -325,8 +337,8 @@ def account_field_form(
 
 
 def _validate_iban(raw: str) -> tuple[str | None, str | None]:
-    """('CH56…'|None, error|None). Normalise (maj, sans espaces). Vide → (None, None)."""
-    value = raw.replace(" ", "").upper()
+    """('CH56…'|None, error|None). Normalise (maj, sans blanc). Vide → (None, None)."""
+    value = normalize_iban(raw)
     if not value:
         return None, None  # IBAN effacé → None (autorisé, NULL != NULL)
     if not _IBAN_RE.match(value):
@@ -379,6 +391,20 @@ def account_field_save(
     # Une variable typée par branche (mypy) : iban/bic → str|None, taux → Decimal.
     if field == "iban":
         iban_value, error = _validate_iban(raw)
+        # Invariant d'identité (même règle que create/update_account) : un compte ne
+        # peut pas se retrouver SANS IBAN ET SANS n° de contrat, sinon plus aucun
+        # import ne peut le rattacher. Le modèle ne l'enforce pas (Account.clean ne
+        # couvre que CHF-only) → on garde-fou ici, sinon le crayon inline permettrait
+        # d'orpheliner un compte (le formulaire panel, lui, le bloque déjà).
+        if (
+            error is None
+            and iban_value is None
+            and not (account.contract_number or "").strip()
+        ):
+            error = (
+                "Renseigne l'IBAN ou le n° de contrat — c'est ce qui rattache "
+                "les imports de relevés à ce compte."
+            )
         if error is None:
             error = _save_iban(account, iban_value)
     elif field == "bic":

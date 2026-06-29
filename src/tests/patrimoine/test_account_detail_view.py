@@ -246,10 +246,30 @@ def test_field_save_iban_duplicate_returns_422(
 
 
 @pytest.mark.django_db
-def test_field_save_iban_empty_clears_to_none(
+def test_field_save_iban_clear_rejected_when_no_other_identifier(
     client_logged, chf_account, checking_details
 ):
-    """IBAN effacé → None sur Account.iban (NULL != NULL autorise plusieurs)."""
+    """Vider l'IBAN d'un compte SANS n° de contrat → 422 : sinon plus aucun import
+    ne peut le rattacher (invariant d'identité, parité avec le formulaire panel)."""
+    assert not chf_account.contract_number  # la fixture n'a pas de n° de contrat
+    resp = client_logged.post(
+        reverse("patrimoine:account_field_save", args=[chf_account.pk, "iban"]),
+        {"value": ""},
+    )
+    assert resp.status_code == 422
+    assert "n° de contrat" in resp.content.decode()
+    chf_account.refresh_from_db()
+    assert chf_account.iban == "CH5604835012345678009"  # inchangé
+
+
+@pytest.mark.django_db
+def test_field_save_iban_clear_allowed_when_contract_present(
+    client_logged, chf_account, checking_details
+):
+    """Vider l'IBAN → None est autorisé tant qu'un n° de contrat subsiste (NULL !=
+    NULL autorise plusieurs comptes sans IBAN)."""
+    chf_account.contract_number = "C-123"
+    chf_account.save(update_fields=["contract_number"])
     resp = client_logged.post(
         reverse("patrimoine:account_field_save", args=[chf_account.pk, "iban"]),
         {"value": ""},
@@ -257,6 +277,32 @@ def test_field_save_iban_empty_clears_to_none(
     assert resp.status_code == 200
     chf_account.refresh_from_db()
     assert chf_account.iban is None
+
+
+# ── Édition inline IBAN — compte d'épargne (#292) ───────────────────────────────
+
+
+@pytest.mark.django_db
+def test_field_form_savings_iban_renders_editable(client_logged, savings_account):
+    """RED : l'IBAN n'était pas éditable inline pour un savings (404). Le crayon IBAN
+    ouvre désormais le formulaire d'édition (parité avec checking)."""
+    resp = client_logged.get(
+        reverse("patrimoine:account_field_form", args=[savings_account.pk, "iban"])
+    )
+    assert resp.status_code == 200
+    assert 'id="field-iban"' in resp.content.decode()
+
+
+@pytest.mark.django_db
+def test_field_save_savings_iban_sets_account_iban(client_logged, savings_account):
+    """POST IBAN (saisi avec espaces) sur un savings → normalisé + posé sur Account.iban."""
+    resp = client_logged.post(
+        reverse("patrimoine:account_field_save", args=[savings_account.pk, "iban"]),
+        {"value": "ch56 0483 5012 3456 7800 9"},
+    )
+    assert resp.status_code == 200
+    savings_account.refresh_from_db()
+    assert savings_account.iban == "CH5604835012345678009"
 
 
 # ── Édition inline BIC ──────────────────────────────────────────────────────────
@@ -326,8 +372,9 @@ def test_field_save_rate_invalid_returns_422(client_logged, savings_account):
 
 
 @pytest.mark.django_db
-def test_savings_page_offers_rate_not_iban(client_logged, savings_account):
-    """Page d'un livret : champ Taux éditable, PAS de champ IBAN/BIC."""
+def test_savings_page_offers_iban_and_rate_not_bic(client_logged, savings_account):
+    """Page d'un livret : champs IBAN + Taux éditables (l'IBAN rattache les imports
+    UBS, universel checking + savings), mais PAS de BIC (spécifique compte courant)."""
     resp = client_logged.get(
         reverse("patrimoine:account_detail", args=[savings_account.pk])
     )
@@ -342,6 +389,10 @@ def test_savings_page_offers_rate_not_iban(client_logged, savings_account):
     )
     assert (
         reverse("patrimoine:account_field_form", args=[savings_account.pk, "iban"])
+        in html
+    )
+    assert (
+        reverse("patrimoine:account_field_form", args=[savings_account.pk, "bic"])
         not in html
     )
 

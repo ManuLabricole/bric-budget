@@ -267,6 +267,82 @@ def test_update_savings_preserves_iban_when_resubmitted(user, client_logged):
     assert account.savings_account.interest_rate == Decimal("2.5")
 
 
+def test_update_savings_duplicate_iban_rerenders_422(user, client_logged):
+    # Un savings ne peut pas réutiliser l'IBAN d'un autre compte (unique=True).
+    other = cast(
+        Account,
+        AccountFactory(
+            members=[user],
+            account_type="checking",
+            currency="CHF",
+            iban="CH9300762011623852957",
+            name="Autre",
+        ),
+    )
+    CheckingAccountFactory(account=other)
+    account = cast(
+        Account,
+        AccountFactory(
+            members=[user],
+            account_type="savings",
+            currency="CHF",
+            iban="CH5604835012345678009",
+            name="Livret",
+        ),
+    )
+    SavingsAccountFactory(account=account, interest_rate=Decimal("1.00"))
+
+    resp = client_logged.post(
+        _update_url(account),
+        {
+            "name": "Livret",
+            "currency": "CHF",
+            "iban": "CH9300762011623852957",  # déjà pris par `other`
+            "interest_rate": "1.0",
+            "contract_number": "",
+        },
+        **_HX,
+    )
+
+    assert resp.status_code == 422
+    assertContains(resp, "existe déjà", status_code=422)
+    account.refresh_from_db()
+    assert account.iban == "CH5604835012345678009"  # inchangé
+
+
+def test_update_savings_can_clear_iban_when_contract_present(user, client_logged):
+    # Vider l'IBAN d'un savings est autorisé SI un n° de contrat subsiste (identité
+    # d'import préservée) — parité avec le checking.
+    account = cast(
+        Account,
+        AccountFactory(
+            members=[user],
+            account_type="savings",
+            currency="CHF",
+            iban="CH5604835012345678009",
+            name="Livret",
+        ),
+    )
+    SavingsAccountFactory(account=account, interest_rate=Decimal("1.00"))
+
+    resp = client_logged.post(
+        _update_url(account),
+        {
+            "name": "Livret",
+            "currency": "CHF",
+            "iban": "",
+            "interest_rate": "1.0",
+            "contract_number": "C-777",
+        },
+        **_HX,
+    )
+
+    assert resp.status_code == 200
+    account.refresh_from_db()
+    assert account.iban is None
+    assert account.contract_number == "C-777"
+
+
 def test_update_pension_forces_chf(user, client_logged):
     account = cast(
         Account,

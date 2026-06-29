@@ -217,6 +217,31 @@ def test_create_savings_with_iban(client_logged, user, bank):
 
 
 @pytest.mark.django_db
+def test_create_savings_duplicate_iban_rerenders_with_error(client_logged, user, bank):
+    # Un savings ne peut pas être créé avec un IBAN déjà pris par un autre compte.
+    first = client_logged.post(_create_url(), _checking_payload(), **_HX)
+    assert first.status_code == 204
+
+    resp = client_logged.post(
+        _create_url(),
+        {
+            "institution": "yuh",
+            "account_type": "savings",
+            "name": "Livret doublon",
+            "currency": "CHF",
+            "iban": "CH56 0483 5012 3456 7800 9",  # même IBAN que _checking_payload
+            "interest_rate": "1.0",
+            "contract_number": "",
+        },
+        **_HX,
+    )
+
+    assert resp.status_code == 422
+    assert "existe déjà" in resp.content.decode()
+    assert Account.objects.count() == 1
+
+
+@pytest.mark.django_db
 def test_create_pension_forces_chf(client_logged, user, bank):
     """Le select devise disabled ne POste rien → le serveur force CHF (jamais confiance au client)."""
     resp = client_logged.post(
