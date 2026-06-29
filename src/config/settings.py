@@ -562,3 +562,13 @@ DEMO_USER_PASSWORD = config("DEMO_USER_PASSWORD", default="")
 PERSO_SEED_USER_EMAIL = config(
     "PERSO_SEED_USER_EMAIL", default="emmanuel.barriol@gmail.com"
 )
+
+
+# --- Test speedup (#261) : hachage MD5 SOUS pytest uniquement ----------------
+# PBKDF2 (défaut) est volontairement lent ; les tests n'ont pas besoin de sa
+# robustesse → MD5 accélère nettement les tests qui créent des users. Inactif en
+# prod (pytest absent de sys.modules sous gunicorn).
+import sys  # noqa: E402
+
+if "pytest" in sys.modules:
+    PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]

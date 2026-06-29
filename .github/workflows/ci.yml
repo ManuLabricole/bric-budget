@@ -35,11 +35,46 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # ── Changes (path filter) ───────────────────────────────────────────────────
+  # Détecte si du CODE testable a changé. Les jobs lourds (test/e2e/reference-data/
+  # deploy-guard/security/lint) ne tournent QUE si `code == true` → une PR docs/.claude/
+  # configs ne lance que `changes` + `secrets` + la sentinelle (#261). `secrets` (gitleaks)
+  # reste TOUJOURS actif : un IBAN/token fuité dans un .md/.claude doit être scanné.
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read        # requis par actions/checkout (le job-level remplace l'héritage)
+      pull-requests: read   # requis par dorny/paths-filter sur pull_request
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'pyproject.toml'
+              - 'poetry.lock'
+              - 'Dockerfile'
+              - 'nixpacks.toml'
+              - 'scripts/**'
+              - '.github/workflows/ci.yml'
+              - '.semgrep/**'
+              - 'tailwind.config.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'conftest.py'           # conftest racine = fixtures pytest globales
+
   # ── Lint ────────────────────────────────────────────────────────────────────
   # Vérifie le style Python (ruff) et les templates Django (djlint).
   # Ce job ne touche pas la DB — il est rapide (~10s).
   lint:
     name: Lint (ruff + djlint)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -152,6 +187,8 @@ jobs:
   # Django crée un test_bricbudget automatiquement, le détruit en fin de job.
   test:
     name: Tests (pytest)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     # Service PostgreSQL — lancé dans un container Docker auxiliaire.
@@ -235,7 +272,19 @@ jobs:
       # -p no:randomly : pytest-randomly est déjà installé (dep historique) et
       # randomiserait l'ordre → risque de flaky en semaine de release. On fige
       # l'ordre en CI (désactivation explicite du plugin), sans toucher la dep (#156).
-      - name: Run tests + coverage
+      # Feature PR (-> development) : pytest NU, sans coverage -> plus rapide.
+      # Couverture + gate bloquant reportes au contexte release (ci-dessous). (#261)
+      - name: Run tests (feature PR — sans coverage)
+        if: github.event_name == 'pull_request' && github.base_ref == 'development'
+        run: |
+          poetry run pytest --color=yes -q \
+            -p no:randomly \
+            -n auto --reuse-db
+
+      # Release (PR->main ou push main) : suite COMPLETE + coverage + gate bloquant
+      # (--cov-fail-under=78) = LA barriere couverture avant prod. (#261)
+      - name: Run tests + coverage (release — gate bloquant)
+        if: github.event_name == 'push' || github.base_ref == 'main'
         run: |
           poetry run pytest --color=yes -q \
             -p no:randomly \
@@ -246,7 +295,7 @@ jobs:
       # Publie le % de couverture + le total directement sur la page de la PR
       # ($GITHUB_STEP_SUMMARY) → visible sans ouvrir les logs (#154).
       - name: Coverage — résumé PR
-        if: always()
+        if: github.event_name == 'push' || github.base_ref == 'main'
         run: |
           {
             echo "### 🧪 Couverture de test";
@@ -279,6 +328,8 @@ jobs:
   # Release Command Railway, #135) passera en prod. Un seed cassé = CI rouge.
   reference-data:
     name: Release commands (migrate + sync_reference_data)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     services:
@@ -352,6 +403,8 @@ jobs:
   # Note : makemigrations --check n'est PAS ici — il est porté par #197 (PR #223).
   deploy-guard:
     name: Deploy guards (collectstatic + smoke healthz)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     # Postgres requis : settings.py lit DATABASE_URL au boot, et gunicorn initialise
@@ -435,6 +488,14 @@ jobs:
   # artefacts (traces + screenshots) uploadés uniquement en cas d'échec pour debug.
   e2e:
     name: E2E (Playwright)
+    needs: changes
+    # E2E (job le plus cher) : seulement en contexte RELEASE (push main / PR->main)
+    # ou opt-in via label `run-e2e`. Pas sur chaque PR feature -> development. (#261)
+    if: >-
+      needs.changes.outputs.code == 'true' &&
+      ( github.event_name == 'push'
+        || github.base_ref == 'main'
+        || contains(github.event.pull_request.labels.*.name, 'run-e2e') )
     runs-on: ubuntu-latest
 
     services:
@@ -536,6 +597,8 @@ jobs:
   # token, et CsrfViewMiddleware impose le CSRF au runtime (form sans token = 403).
   security:
     name: Security (semgrep SAST)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -570,3 +633,25 @@ jobs:
 
       - name: gitleaks detect
         run: gitleaks detect --source . --redact --no-banner
+
+  # ── Sentinelle (seul required check) ─────────────────────────────────────────
+  # Résout le piège des required checks + path-filter : un job lourd SKIPPÉ sur une
+  # PR docs resterait « Expected — waiting » s'il était lui-même required. À la place,
+  # CE job agrège tous les autres et devient le SEUL required en branch protection.
+  # success/skipped = OK ; failure/cancelled = rouge. (#261, research §C.1)
+  alls-green:
+    name: CI green (required)
+    if: always()
+    needs: [changes, lint, test, reference-data, deploy-guard, e2e, security, secrets]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required jobs
+        run: |
+          echo "results: ${{ join(needs.*.result, ' ') }}"
+          for r in ${{ join(needs.*.result, ' ') }}; do
+            case "$r" in
+              failure|cancelled)
+                echo "::error::A required job did not pass (result=$r)"; exit 1;;
+            esac
+          done
+          echo "All required jobs passed or were skipped — OK."
