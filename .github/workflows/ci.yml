@@ -43,7 +43,8 @@ jobs:
     name: Detect changed paths
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: read
+      contents: read        # requis par actions/checkout (le job-level remplace l'héritage)
+      pull-requests: read   # requis par dorny/paths-filter sur pull_request
     outputs:
       code: ${{ steps.filter.outputs.code }}
     steps:
