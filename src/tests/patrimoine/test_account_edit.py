@@ -218,6 +218,26 @@ def test_update_pension_forces_chf(user, client_logged):
     assert account.currency == "CHF"  # EUR ignoré, CHF forcé
 
 
+def test_edit_form_preserves_stored_zero_for_pension(user, client_logged):
+    # Un 0 STOCKÉ (contributions_ytd=0) doit se pré-remplir "0", pas vide — sinon
+    # éditer le nom le ferait revenir None au submit (perte de donnée, CR #294).
+    from accounts.models import PensionDetails
+
+    account = AccountFactory(
+        members=[user],
+        account_type="pension_3a",
+        currency="CHF",
+        iban=None,
+        contract_number="3A-123",
+    )
+    PensionDetails.objects.create(account=account, contributions_ytd=Decimal("0"))
+
+    resp = client_logged.get(_edit_url(account), **_HX)
+    assert resp.status_code == 200
+    assertContains(resp, 'name="contributions_ytd"')
+    assertContains(resp, 'value="0.00"')  # 0 stocké préservé (pas vidé)
+
+
 def test_update_empty_name_rerenders_422_no_change(client_logged, checking_account):
     resp = client_logged.post(
         _update_url(checking_account),

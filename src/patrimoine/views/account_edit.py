@@ -45,8 +45,10 @@ _PANEL_TEMPLATE = "patrimoine/partials/_account_detail_panel.html"
 
 
 def _decimal_str(value: Any) -> str:
-    """Decimal/None → chaîne pour préremplir un input (None ou 0 → vide)."""
-    return "" if not value else str(value)
+    """Decimal/None → chaîne pour préremplir un input. None → vide, mais un 0
+    STOCKÉ est préservé ("0") : pour pension/insurance (champs nullable), un
+    contributions_ytd=0 légitime ne doit pas se vider puis revenir None au submit."""
+    return "" if value is None else str(value)
 
 
 def _edit_values(account: Account) -> dict[str, str]:
