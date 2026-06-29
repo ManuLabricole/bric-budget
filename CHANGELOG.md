@@ -1,3 +1,9 @@
+## v1.2.2 (2026-06-29)
+
+### Fix
+
+- **patrimoine**: permettre de saisir l'IBAN sur un compte d'épargne (#300)
+
 ## v1.2.1 (2026-06-29)
 
 ### Fix
