@@ -25,9 +25,11 @@ RUN apt-get update \
 https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo "$VERSION_CODENAME")-pgdg main" \
       > /etc/apt/sources.list.d/pgdg.list \
  && apt-get update \
- && apt-get install -y --no-install-recommends postgresql-client-18 \
+ && apt-get install -y --no-install-recommends postgresql-client-18 gosu \
  && apt-get purge -y --auto-remove curl gnupg \
  && rm -rf /var/lib/apt/lists/*
+# gosu : utilitaire minimal pour dégrader les privilèges root → appuser dans l'entrypoint
+# (chown du volume Railway puis exec en non-root). Patron des images officielles postgres/redis.
 
 # ── Poetry ────────────────────────────────────────────────────────────────────
 # virtualenvs.create=false : on installe dans le site-packages système (pas de venv
@@ -61,11 +63,16 @@ RUN cd src \
     poetry run python manage.py collectstatic --noinput
 
 # ── Sécurité : user non-root ──────────────────────────────────────────────────
-# On crée l'image en root (apt, install) puis on bascule sur un user sans privilège
-# pour le runtime. migrate/sync ne touchent que la DB, gunicorn n'a besoin que du PORT
-# → aucun besoin de root au runtime.
+# On crée un user sans privilège (appuser) ; l'application tourne sous lui au runtime.
+# migrate/sync ne touchent que la DB, gunicorn n'a besoin que du PORT → aucun root au runtime.
+#
+# On NE met PAS `USER appuser` ici : le conteneur doit démarrer en root le temps que
+# l'entrypoint chowne le volume Railway monté en root:root (sinon PermissionError sur
+# /mnt/imports), puis l'entrypoint dégrade les privilèges vers appuser via gosu. C'est le
+# patron Docker standard (images officielles) ; l'app ne tourne jamais en root.
 RUN useradd --create-home --uid 10001 appuser && chown -R appuser:appuser /app
-USER appuser
+RUN chmod +x /app/docker-entrypoint.sh
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 
 # ── Start (migrate + seed + serveur) ──────────────────────────────────────────
 # migrate + sync_reference_data tournent ICI, au démarrage du conteneur (RUNTIME),
