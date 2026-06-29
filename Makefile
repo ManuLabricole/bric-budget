@@ -52,6 +52,7 @@ help:
 	@printf "    $(BOLD)make type$(RESET)            Vérification de types (mypy)\n"
 	@printf "    $(BOLD)make check$(RESET)           Lint + type + tests (tout en un)\n"
 	@printf "    $(BOLD)make test$(RESET)            Tests unitaires uniquement\n"
+	@printf "    $(BOLD)make audit-sg$(RESET)        Audit structurel SR-XX (ast-grep, heuristique)\n"
 	@printf "\n"
 	@printf "  $(CYAN)🧪 Dev tools$(RESET)\n"
 	@printf "    $(BOLD)make demo-seed$(RESET)       Seed démo : 6 comptes via imports réels (flush)\n"
@@ -150,6 +151,17 @@ check:
 	@cd src && poetry run mypy . --config-file ../pyproject.toml
 	@poetry run pytest --color=yes
 	@printf "  ✅ $(GREEN)Tout est bon$(RESET)\n"
+
+# =============================================================================
+# 🔎 audit-sg — recherche structurelle SR-XX (ast-grep, tree-sitter)
+#   Heuristique d'audit (faux positifs possibles), PAS un gate CI.
+#   Pré-requis : brew install ast-grep — cf. .claude/agent-codenav.md
+# =============================================================================
+audit-sg:
+	@printf "  🔎 $(CYAN)Audit structurel SR-XX (ast-grep)...$(RESET)\n"
+	@command -v ast-grep >/dev/null 2>&1 || { printf "  ❌ $(RED)ast-grep absent$(RESET) — brew install ast-grep\n"; exit 1; }
+	@ast-grep scan || true
+	@printf "  $(DIM)→ heuristique : juger chaque hit à la lecture (cf. .claude/agent-codenav.md)$(RESET)\n"
 
 migrate:
 	@printf "  🔄 $(CYAN)Application des migrations...$(RESET)\n"
@@ -270,4 +282,4 @@ prod-backup:
 	@bash scripts/db_prod_backup.sh
 
 # =============================================================================
-.PHONY: help status up down logs run migrate makemigrations shell create-superuser seed import-all import-yuh import-ubs import-cic backup restore prod-backup demo-seed demo-reset lint type check test coverage
+.PHONY: help status up down logs run migrate makemigrations shell create-superuser seed import-all import-yuh import-ubs import-cic backup restore prod-backup demo-seed demo-reset lint type check test coverage audit-sg
