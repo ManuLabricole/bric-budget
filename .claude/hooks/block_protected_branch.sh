@@ -65,7 +65,9 @@ def offends(s):
         # refspecs = positionnels apres le remote ; dest = apres ':' (ou le token).
         positionals = [t for t in rest if not t.startswith("-")]
         for rs in positionals[1:]:
-            dest = rs.split(":")[-1].lstrip("+")
+            dest = rs.split(":")[-1].lstrip("+")     # dst du refspec, sans le '+' force
+            if dest.startswith("refs/heads/"):       # HEAD:refs/heads/main, :refs/heads/dev
+                dest = dest[len("refs/heads/"):]
             if dest in PROTECTED:       # ex. `git push origin development`
                 return True
     return False

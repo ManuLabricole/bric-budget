@@ -39,3 +39,8 @@ echo '{"tool_input":{"command":"gh pr view 1"}}' | bash .claude/hooks/block_gh_m
 ## Limites connues (hors scope #188)
 - `git -C <autre-repo> commit` : la branche courante lue est celle du CWD (le refspec
   d'un `push` reste, lui, vérifié). Protection serveur (branch protection GitHub) = autre chantier.
+- **Wrapper shell** (`bash -lc '…'`) et **opérateurs collés sans espace** (`ok&&git push …`) :
+  les guards parsent l'argv top-level (`shlex`) ; ces formes cachent la commande. Choix assumé :
+  un vrai parseur shell ré-introduirait des faux positifs sur les strings quotées, et `block_no_verify.sh`
+  partage la même limite → à traiter (si besoin) dans un helper de parsing commun à tous les hooks, pas ici.
+  Les chaînes `&&`/`;` **avec espaces** et les commandes `git`/`gh` directes restent, elles, bien couvertes.
