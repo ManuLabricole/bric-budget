@@ -160,7 +160,7 @@ check:
 audit-sg:
 	@printf "  🔎 $(CYAN)Audit structurel SR-XX (ast-grep)...$(RESET)\n"
 	@command -v ast-grep >/dev/null 2>&1 || { printf "  ❌ $(RED)ast-grep absent$(RESET) — brew install ast-grep\n"; exit 1; }
-	@ast-grep scan || true
+	@ast-grep scan; code=$$?; [ $$code -le 1 ] || { printf "  ❌ $(RED)ast-grep erreur de config (exit $$code)$(RESET)\n"; exit $$code; }
 	@printf "  $(DIM)→ heuristique : juger chaque hit à la lecture (cf. .claude/agent-codenav.md)$(RESET)\n"
 
 migrate:

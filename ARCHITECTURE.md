@@ -16,8 +16,8 @@ Code applicatif sous `src/`. Outillage de navigation : voir [.claude/agent-coden
 | **transactions** | Cœur : transactions, catégorisation, budget mensuel, journal d'import | `Transaction`, `Category`, `SubCategory`, `CategorizationRule`, `ImportLog`, `BudgetTarget` | `import_service`, `internal_transfer`, `file_hash` |
 | **accounts** | Comptes & institutions (bancaires + placements), soldes, FX | `Account`, `Institution`, `Card`, `CheckingAccount`, `SavingsAccount`, `LifeInsuranceDetails`, `PensionDetails`, `BalanceSnapshot`, `ExchangeRate` | — |
 | **patrimoine** | Vue patrimoine par classe d'actifs : valorisation, bilan, historique de solde, données de graphes | (s'appuie sur `accounts`) | `valuation`, `bilan`, `balance_history`, `asset_classes`, `chart_data` |
-| **budget** | Écran budget (vues package `budget/views/`) | `budget/models.py` | — |
-| **imports** | Wizard d'import CSV (dry-run → confirm), pilote les connecteurs | — | (utilise `connectors/`) |
+| **budget** | Écran budget (vues package `budget/views/`) | aucun modèle propre — `BudgetTarget` vit dans `transactions/models.py` | — |
+| **imports** | Wizard d'import CSV (dry-run → confirm), pilote les connecteurs | `PreparedImport` (transient) | `orchestrator`, `storage` (+ `connectors/`) |
 | **users** | Auth (`CustomUser`), profil | `CustomUser` (via `users.models`), `Profile`, `CustomUserManager` | — |
 | **demo** | Données de démo / fixtures | — | — |
 
@@ -40,6 +40,7 @@ contenu utilisateur. Points d'entrée à connaître (audit `ast-grep` : voir `sg
 |-----------|---------|
 | `TransactionQuerySet.for_user` | `src/transactions/models.py:352` |
 | `OwnedQuerySet` / `OwnedManager.for_user` | `src/transactions/managers.py` |
+| `OwnedBaseManager` (`_base`) — **interne Django** (FK/reverse-FK), jamais dans les vues | `src/transactions/managers.py` |
 | `AccountQuerySet.for_user` | `src/accounts/models/account.py` |
 
 Invariants : `Transaction.objects.for_user(request.user)`, précision monétaire `Decimal(str(x))`,

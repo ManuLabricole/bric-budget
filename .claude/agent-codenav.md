@@ -53,7 +53,7 @@ ast-grep scan --rule tools/ast-grep/rules/sr-idor-transaction-objects.yml
 One-liners du quotidien (recherche structurelle ad hoc) :
 ```bash
 ast-grep -p 'Decimal($X)' -l py src/            # tous les Decimal(...) — structurel, pas grep
-ast-grep -p 'Transaction.objects.$M($$$)' -l py # tous les accès au manager Transaction
+ast-grep -p 'Transaction.objects.$METHOD($$$)' -l py # tous les accès au manager Transaction
 ```
 
 > ⚠️ Les règles sont des **heuristiques d'audit** (faux positifs possibles) — un appui
