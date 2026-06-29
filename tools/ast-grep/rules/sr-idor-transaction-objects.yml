@@ -1,0 +1,21 @@
+id: sr-idor-transaction-objects
+language: python
+severity: warning
+message: "SR-IDOR — Transaction.objects sans for_user. Vérifier le scope (for_user OU account__members=request.user)."
+note: >
+  Signale tout Transaction.objects.<méthode>(...) qui n'est pas .for_user(...).
+  Un for_user chaîné (Transaction.objects.for_user(u).filter(...)) n'est PAS signalé.
+  FAUX POSITIF ATTENDU : Transaction.objects.filter(account__members=request.user, ...)
+  est un scope IDOR-safe valide (cf. imports/views.py) mais sera remonté — à écarter
+  à la lecture. D'où severity=warning (pas error) : heuristique, pas un verdict.
+files:
+  - "src/**/*.py"
+ignores:
+  - "src/**/tests/**"
+  - "src/**/migrations/**"
+  - "src/**/management/commands/**"  # CLI/admin : accès non scopé légitime
+  - "src/demo/**"                    # seed/admin démo : accès non scopé légitime
+rule:
+  pattern: Transaction.objects.$METHOD($$$)
+  not:
+    pattern: Transaction.objects.for_user($$$)

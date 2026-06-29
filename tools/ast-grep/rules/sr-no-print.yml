@@ -1,0 +1,11 @@
+id: sr-no-print
+language: python
+severity: warning
+message: "SR — pas de print() en prod : utiliser logger.debug/info/exception(...)."
+files:
+  - "src/**/*.py"
+ignores:
+  - "src/**/tests/**"
+  - "src/**/management/commands/**"  # CLI ops : print toléré
+rule:
+  pattern: print($$$)
