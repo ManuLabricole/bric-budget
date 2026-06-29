@@ -117,7 +117,7 @@ def test_update_persists_and_returns_read_card(client_logged, checking_account):
         {
             "name": "Compte renommé",
             "currency": "EUR",
-            "iban": "CH5604835012345678009",
+            "iban": "ch56 0483 5012 3456 7800 9",
             "bic": "BCVLCH2L",
             "contract_number": "",
         },
@@ -174,7 +174,68 @@ def test_update_checking_can_clear_iban_when_contract_present(
     assert checking_account.contract_number == "C-999"
 
 
-def test_update_savings_does_not_wipe_iban(user, client_logged):
+def test_edit_form_savings_renders_iban_field(user, client_logged):
+    # Régression : le form savings ne portait PAS de champ IBAN → impossible
+    # d'en saisir un (alors que l'IBAN vit sur Account et rattache les imports UBS,
+    # universel checking + savings). Le form doit désormais le rendre, prérempli.
+    account = cast(
+        Account,
+        AccountFactory(
+            members=[user],
+            account_type="savings",
+            currency="CHF",
+            iban="CH5604835012345678009",
+            name="Livret",
+        ),
+    )
+    SavingsAccountFactory(account=account, interest_rate=Decimal("1.00"))
+
+    resp = client_logged.get(_edit_url(account), **_HX)
+
+    assert resp.status_code == 200
+    assertContains(resp, 'name="iban"')
+    assertContains(resp, "CH5604835012345678009")  # prérempli depuis Account.iban
+
+
+def test_update_savings_can_set_iban(user, client_logged):
+    # Bug réel (compte d'épargne UBS) : un savings sans IBAN ne pouvait pas s'en
+    # voir attribuer un depuis le form → l'import ne le matchait jamais. On saisit
+    # l'IBAN avec des blancs hétérogènes (espace insécable \xa0 + fine   que
+    # les banques/macOS collent) → persisté normalisé, sinon l'import ne matche pas.
+    account = cast(
+        Account,
+        AccountFactory(
+            members=[user],
+            account_type="savings",
+            currency="CHF",
+            iban=None,
+            contract_number="0243-00693382",
+            name="Épargne UBS",
+        ),
+    )
+    SavingsAccountFactory(account=account, interest_rate=Decimal("0.00"))
+
+    resp = client_logged.post(
+        _update_url(account),
+        {
+            "name": "Épargne UBS",
+            "currency": "CHF",
+            "iban": "ch56 0483 5012 3456 7800 9",
+            "interest_rate": "0",
+            "contract_number": "0243-00693382",
+        },
+        **_HX,
+    )
+
+    assert resp.status_code == 200
+    account.refresh_from_db()
+    assert account.iban == "CH5604835012345678009"  # tous blancs retirés, majuscules
+
+
+def test_update_savings_preserves_iban_when_resubmitted(user, client_logged):
+    # Le form prérempli re-poste l'IBAN à chaque submit → éditer le taux ne
+    # l'efface pas. (Vider explicitement le champ = autre cas, géré par l'invariant
+    # IBAN-ou-contrat.)
     account = cast(
         Account,
         AccountFactory(
@@ -192,6 +253,7 @@ def test_update_savings_does_not_wipe_iban(user, client_logged):
         {
             "name": "Livret V2",
             "currency": "CHF",
+            "iban": "CH5604835012345678009",
             "interest_rate": "2.5",
             "contract_number": "",
         },
@@ -200,9 +262,85 @@ def test_update_savings_does_not_wipe_iban(user, client_logged):
 
     assert resp.status_code == 200
     account.refresh_from_db()
-    assert account.iban == "CH5604835012345678009"  # non effacé par omission
+    assert account.iban == "CH5604835012345678009"
     assert account.name == "Livret V2"
     assert account.savings_account.interest_rate == Decimal("2.5")
+
+
+def test_update_savings_duplicate_iban_rerenders_422(user, client_logged):
+    # Un savings ne peut pas réutiliser l'IBAN d'un autre compte (unique=True).
+    other = cast(
+        Account,
+        AccountFactory(
+            members=[user],
+            account_type="checking",
+            currency="CHF",
+            iban="CH9300762011623852957",
+            name="Autre",
+        ),
+    )
+    CheckingAccountFactory(account=other)
+    account = cast(
+        Account,
+        AccountFactory(
+            members=[user],
+            account_type="savings",
+            currency="CHF",
+            iban="CH5604835012345678009",
+            name="Livret",
+        ),
+    )
+    SavingsAccountFactory(account=account, interest_rate=Decimal("1.00"))
+
+    resp = client_logged.post(
+        _update_url(account),
+        {
+            "name": "Livret",
+            "currency": "CHF",
+            "iban": "CH9300762011623852957",  # déjà pris par `other`
+            "interest_rate": "1.0",
+            "contract_number": "",
+        },
+        **_HX,
+    )
+
+    assert resp.status_code == 422
+    assertContains(resp, "existe déjà", status_code=422)
+    account.refresh_from_db()
+    assert account.iban == "CH5604835012345678009"  # inchangé
+
+
+def test_update_savings_can_clear_iban_when_contract_present(user, client_logged):
+    # Vider l'IBAN d'un savings est autorisé SI un n° de contrat subsiste (identité
+    # d'import préservée) — parité avec le checking.
+    account = cast(
+        Account,
+        AccountFactory(
+            members=[user],
+            account_type="savings",
+            currency="CHF",
+            iban="CH5604835012345678009",
+            name="Livret",
+        ),
+    )
+    SavingsAccountFactory(account=account, interest_rate=Decimal("1.00"))
+
+    resp = client_logged.post(
+        _update_url(account),
+        {
+            "name": "Livret",
+            "currency": "CHF",
+            "iban": "",
+            "interest_rate": "1.0",
+            "contract_number": "C-777",
+        },
+        **_HX,
+    )
+
+    assert resp.status_code == 200
+    account.refresh_from_db()
+    assert account.iban is None
+    assert account.contract_number == "C-777"
 
 
 def test_update_pension_forces_chf(user, client_logged):

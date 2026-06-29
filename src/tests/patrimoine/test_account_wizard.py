@@ -128,6 +128,16 @@ def test_form_checking_renders_iban_field(client_logged, bank):
 
 
 @pytest.mark.django_db
+def test_form_savings_renders_iban_field(client_logged, bank):
+    # L'IBAN (UBS épargne…) doit pouvoir se saisir aussi à la CRÉATION d'un
+    # savings, pas seulement checking — même flow « Compléter mon patrimoine ».
+    resp = client_logged.get(
+        _form_url(), {"institution": "yuh", "account_type": "savings"}, **_HX
+    )
+    assert 'name="iban"' in resp.content.decode()
+
+
+@pytest.mark.django_db
 def test_form_contract_number_rendered_for_all_types(client_logged, bank):
     """Identité d'import : le n° de contrat est proposé quel que soit le type."""
     for account_type in ("checking", "savings", "insurance", "pension_3a"):
@@ -179,6 +189,56 @@ def test_create_checking_success(client_logged, user, bank):
     assert account.contract_number == "1234567890"
     details = CheckingAccount.objects.get(account=account)
     assert details.bic == "YUHHCHZZ"
+
+
+@pytest.mark.django_db
+def test_create_savings_with_iban(client_logged, user, bank):
+    # Bug réel (épargne UBS) : à la création d'un savings, l'IBAN saisi doit
+    # être posé sur Account.iban (clé de rattachement des imports), normalisé.
+    resp = client_logged.post(
+        _create_url(),
+        {
+            "institution": "yuh",
+            "account_type": "savings",
+            "name": "Épargne UBS",
+            "currency": "CHF",
+            "iban": "ch56 0483 5012 3456 7800 9",
+            "interest_rate": "1.5",
+            "contract_number": "",
+        },
+        **_HX,
+    )
+
+    assert resp.status_code == 204
+    account = Account.objects.for_user(user).get()
+    assert account.account_type == "savings"
+    assert account.iban == "CH5604835012345678009"  # normalisé (sans espaces, maj)
+    assert account.savings_account.interest_rate == Decimal("1.5")
+
+
+@pytest.mark.django_db
+def test_create_savings_duplicate_iban_rerenders_with_error(client_logged, user, bank):
+    # Un savings ne peut pas être créé avec un IBAN déjà pris par un autre compte.
+    first = client_logged.post(_create_url(), _checking_payload(), **_HX)
+    assert first.status_code == 204
+
+    resp = client_logged.post(
+        _create_url(),
+        {
+            "institution": "yuh",
+            "account_type": "savings",
+            "name": "Livret doublon",
+            "currency": "CHF",
+            "iban": "CH56 0483 5012 3456 7800 9",  # même IBAN que _checking_payload
+            "interest_rate": "1.0",
+            "contract_number": "",
+        },
+        **_HX,
+    )
+
+    assert resp.status_code == 422
+    assert "existe déjà" in resp.content.decode()
+    assert Account.objects.count() == 1
 
 
 @pytest.mark.django_db

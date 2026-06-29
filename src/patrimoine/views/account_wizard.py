@@ -23,6 +23,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
+from accounts.iban import normalize_iban
 from accounts.models import Account, Institution
 from accounts.services import create_account
 from services.logos import get_institution_icon_map
@@ -111,14 +112,17 @@ def _parse_type_fields(request: HttpRequest, account_type: str) -> dict[str, Any
     post = request.POST
     if account_type == Account.AccountType.CHECKING:
         return {
-            "iban": post.get("iban", "").replace(" ", "").upper(),
+            "iban": normalize_iban(post.get("iban", "")),
             "bic": post.get("bic", "").replace(" ", "").upper(),
         }
     if account_type == Account.AccountType.SAVINGS:
+        # IBAN sur Account (clé de rattachement des imports UBS, universelle
+        # checking + savings — cf. connectors/resolver.py).
         return {
+            "iban": normalize_iban(post.get("iban", "")),
             "interest_rate": _parse_decimal(
                 post.get("interest_rate", ""), "Taux d'intérêt"
-            )
+            ),
         }
     if account_type == Account.AccountType.INSURANCE:
         return {
@@ -174,7 +178,13 @@ def account_form(request: HttpRequest) -> HttpResponse:
     prefill_max = {"iban": 34, "contract_number": 100}
     prefill: dict[str, str] = {}
     for field, max_len in prefill_max.items():
-        value = request.GET.get(field, "").replace(" ", "").upper()[:max_len]
+        raw = request.GET.get(field, "")
+        # IBAN : même normalisation canonique que le POST (NBSP/espaces fines) pour
+        # que l'identité préremplie corresponde exactement à ce qui sera persisté.
+        cleaned = (
+            normalize_iban(raw) if field == "iban" else raw.replace(" ", "").upper()
+        )
+        value = cleaned[:max_len]
         if value:
             prefill[field] = value
 
