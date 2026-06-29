@@ -295,10 +295,11 @@ def test_field_form_savings_iban_renders_editable(client_logged, savings_account
 
 @pytest.mark.django_db
 def test_field_save_savings_iban_sets_account_iban(client_logged, savings_account):
-    """POST IBAN (saisi avec espaces) sur un savings → normalisé + posé sur Account.iban."""
+    """POST IBAN avec blancs hétérogènes (NBSP + espace fine) sur un savings →
+    normalisé via normalize_iban + posé sur Account.iban."""
     resp = client_logged.post(
         reverse("patrimoine:account_field_save", args=[savings_account.pk, "iban"]),
-        {"value": "ch56 0483 5012 3456 7800 9"},
+        {"value": "ch56 0483 5012 3456 7800 9"},
     )
     assert resp.status_code == 200
     savings_account.refresh_from_db()
