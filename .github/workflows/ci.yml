@@ -35,6 +35,32 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # ── Changes (path filter) ───────────────────────────────────────────────────
+  # Détecte si du CODE testable a changé. Les jobs lourds (test/e2e/reference-data/
+  # deploy-guard/security) ne tournent QUE si `code == true` → une PR docs/.claude/
+  # configs saute tout le lourd (#261). lint + secrets restent toujours actifs.
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'pyproject.toml'
+              - 'poetry.lock'
+              - 'Dockerfile'
+              - 'nixpacks.toml'
+              - 'scripts/**'
+              - '.github/workflows/ci.yml'
+
   # ── Lint ────────────────────────────────────────────────────────────────────
   # Vérifie le style Python (ruff) et les templates Django (djlint).
   # Ce job ne touche pas la DB — il est rapide (~10s).
@@ -152,6 +178,8 @@ jobs:
   # Django crée un test_bricbudget automatiquement, le détruit en fin de job.
   test:
     name: Tests (pytest)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     # Service PostgreSQL — lancé dans un container Docker auxiliaire.
@@ -279,6 +307,8 @@ jobs:
   # Release Command Railway, #135) passera en prod. Un seed cassé = CI rouge.
   reference-data:
     name: Release commands (migrate + sync_reference_data)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     services:
@@ -352,6 +382,8 @@ jobs:
   # Note : makemigrations --check n'est PAS ici — il est porté par #197 (PR #223).
   deploy-guard:
     name: Deploy guards (collectstatic + smoke healthz)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     # Postgres requis : settings.py lit DATABASE_URL au boot, et gunicorn initialise
@@ -435,6 +467,8 @@ jobs:
   # artefacts (traces + screenshots) uploadés uniquement en cas d'échec pour debug.
   e2e:
     name: E2E (Playwright)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     services:
@@ -536,6 +570,8 @@ jobs:
   # token, et CsrfViewMiddleware impose le CSRF au runtime (form sans token = 403).
   security:
     name: Security (semgrep SAST)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -570,3 +606,25 @@ jobs:
 
       - name: gitleaks detect
         run: gitleaks detect --source . --redact --no-banner
+
+  # ── Sentinelle (seul required check) ─────────────────────────────────────────
+  # Résout le piège des required checks + path-filter : un job lourd SKIPPÉ sur une
+  # PR docs resterait « Expected — waiting » s'il était lui-même required. À la place,
+  # CE job agrège tous les autres et devient le SEUL required en branch protection.
+  # success/skipped = OK ; failure/cancelled = rouge. (#261, research §C.1)
+  alls-green:
+    name: CI green (required)
+    if: always()
+    needs: [lint, test, reference-data, deploy-guard, e2e, security, secrets]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required jobs
+        run: |
+          echo "results: ${{ join(needs.*.result, ' ') }}"
+          for r in ${{ join(needs.*.result, ' ') }}; do
+            case "$r" in
+              failure|cancelled)
+                echo "::error::A required job did not pass (result=$r)"; exit 1;;
+            esac
+          done
+          echo "All required jobs passed or were skipped — OK."
