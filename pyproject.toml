@@ -31,12 +31,12 @@ build-backend = "poetry.core.masonry.api"
 package-mode = false
 
 [tool.poetry.group.dev.dependencies]
-ruff = "^0.15.20"
-djlint = "^1.39.4"
-commitizen = "^4.16.4"
+ruff = "^0.16.3"
+djlint = "^1.44.2"
+commitizen = "^4.17.0"
 pytest = "^9.1"
-pytest-django = "^4.12"
-mutmut = "^3.6.0"  # mutation testing (#198), tourne en nightly scoppé — voir [tool.mutmut]
+pytest-django = "^4.14"
+mutmut = "^3.7.0"  # mutation testing (#198), tourne en nightly scoppé — voir [tool.mutmut]
 
 
 # =============================================================================
@@ -52,18 +52,18 @@ mutmut = "^3.6.0"  # mutation testing (#198), tourne en nightly scoppé — voir
 pytest-cov = "^7.1.0"
 bandit = "^1.9.4"
 vulture = "^2.16"
-mypy = "^2.1.0"
-django-stubs = "^6.0.6"
+mypy = "^2.3.0"
+django-stubs = "^6.1.0"
 djhtml = "^3.0.11"
 pip-audit = "^2.10.1"
 pytest-testmon = "^2.2.0"
 pytest-randomly = "^4.0"
 pytest-xdist = "^3.8.0"
-django-test-migrations = "^1.5.0"
+django-test-migrations = "^1.6.0"
 factory-boy = "^3.3.3"
 pytest-factoryboy = "^2.8.1"
-playwright = "^1.60.0"
-pytest-playwright = "^0.8.0"
+playwright = "^1.62.0"
+pytest-playwright = "^0.9.0"
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings"
