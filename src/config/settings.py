@@ -559,6 +559,22 @@ DEMO_USER_PASSWORD = config("DEMO_USER_PASSWORD", default="")
 # owner=user) et de l'action admin associée. Surchargeable via --user. C'est un EMAIL
 # de compte applicatif (pas un identifiant bancaire), donc committable en défaut —
 # overridable en .env pour une autre instance/propriétaire.
+# ── Seed des comptes bancaires réels (`manage.py seed_accounts`) ──────────────
+# Fichier JSON décrivant les comptes à créer : institution, type, IBAN/n° de contrat.
+#
+# ⛔ SR-008 — ce fichier porte des IBAN/RIB RÉELS. Il vit sous assets/private/,
+# couvert par .gitignore, et n'est JAMAIS committé. Le schéma est documenté par
+# assets/accounts.example.json (valeurs bidon, committé).
+#
+# Surchargeable par .env — utile pour un worktree qui seede un jeu de comptes
+# différent, ou pour pointer un fichier hors du dépôt.
+SEED_ACCOUNTS_FILE = Path(
+    config(
+        "SEED_ACCOUNTS_FILE",
+        default=str(BASE_DIR.parent / "assets" / "private" / "accounts.json"),
+    )
+)
+
 PERSO_SEED_USER_EMAIL = config(
     "PERSO_SEED_USER_EMAIL", default="emmanuel.barriol@gmail.com"
 )

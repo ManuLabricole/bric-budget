@@ -1,291 +1,396 @@
 """
 accounts/management/commands/seed_accounts.py
 
-Wizard interactif pour créer les comptes bancaires une fois pour toutes.
+Crée (ou met à jour) les comptes bancaires réels d'un utilisateur depuis un
+fichier JSON, et les rattache à lui. Idempotente : rejouable à volonté.
 
 Usage :
-    python manage.py seed_accounts
+    python manage.py seed_accounts                    # user = "user_email" du fichier
+    python manage.py seed_accounts --dry-run          # n'écrit rien, montre le plan
+    python manage.py seed_accounts --user me@ex.com   # force le user cible
+    python manage.py seed_accounts --file autre.json  # autre fichier de comptes
 
-Le wizard pose les questions une à une :
-    - IBAN (ou RIB pour CIC) — saisie masquée (getpass) pour ne pas afficher à l'écran
-    - BIC — optionnel, pré-rempli depuis banks_config
-    - Nom du compte — suggéré, modifiable
+Pourquoi cette commande DÉLÈGUE à accounts.services
+----------------------------------------------------
+La version précédente réimplémentait la création (`Account.objects.create` +
+`CheckingAccount.objects.create`) alors que `services.create.create_account()`
+existait déjà — le point d'entrée du wizard UI (#73). Cette duplication avait
+dérivé et perdu des choses en route :
 
-Idempotent : si un compte existe déjà (même contract_number), il est mis à jour.
-Les données ne transitent jamais dans un fichier — saisie terminal uniquement.
+    · `account.members.add(user)`  → OUBLIÉ : le compte n'appartenait à personne,
+      donc INVISIBLE partout (`for_user()` filtre sur members — SR-001).
+    · `full_clean()`               → absent : les invariants modèle (pension ⇒ CHF,
+      IBAN unique, longueurs) n'étaient pas vérifiés.
+    · `transaction.atomic()`       → absent : un échec laissait un Account sans
+      son *Details.
+    · `allocate_color()`           → absent : compte sans couleur stable dans les
+      charts patrimoine (#134).
+    · `iban=""` → None             → partiel : le 2e compte sans IBAN violait la
+      contrainte d'unicité.
+
+D'où la règle suivie ici : le seed ORCHESTRE (lire, valider, décider), les
+services ÉCRIVENT. Créer un compte par le seed et par l'UI emprunte exactement
+le même chemin, donc corriger l'un corrige l'autre.
+
+Tout-ou-rien
+------------
+La totalité des vérifications tourne AVANT la première écriture, et l'écriture
+est enveloppée dans `transaction.atomic()` (SR-003). Un fichier avec un problème
+sur un seul compte ne produit pas une base à moitié seedée ; la commande liste
+TOUS les problèmes d'un coup pour qu'ils se corrigent en une passe.
 """
 
-import getpass
+from __future__ import annotations
 
-from decouple import config
+import logging
+import subprocess
+from pathlib import Path
+
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 
-from accounts.models import Account, CheckingAccount, Institution, SavingsAccount
+from accounts.models import Account, Institution
+from accounts.seed_config import (
+    AccountSpec,
+    SeedConfig,
+    SeedConfigError,
+    load_seed_config,
+)
+from accounts.services.create import create_account
+from accounts.services.update import update_account
+
+logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
     help = (
-        "Wizard interactif pour créer les comptes bancaires (IBAN/RIB saisi en direct)."
+        "Crée ou met à jour les comptes bancaires depuis un fichier JSON "
+        "et les rattache à un utilisateur (idempotent)."
     )
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--file",
+            default=None,
+            help="Fichier de comptes. Défaut : settings.SEED_ACCOUNTS_FILE.",
+        )
+        parser.add_argument(
+            "--user",
+            default=None,
+            help="Email du user cible. Défaut : « user_email » du fichier.",
+        )
+        parser.add_argument(
+            "--dry-run",
+            action="store_true",
+            help="Affiche le plan sans rien écrire en base.",
+        )
+
+    # =========================================================================
+    # Point d'entrée
+    # =========================================================================
+
     def handle(self, *args, **options):
-        if not Institution.objects.filter(slug__in=["yuh", "ubs", "cic"]).exists():
+        dry_run = options["dry_run"]
+        path = Path(options["file"] or settings.SEED_ACCOUNTS_FILE)
+
+        self._assert_not_tracked_by_git(path)
+
+        try:
+            config = load_seed_config(path)
+        except SeedConfigError as exc:
+            raise CommandError(str(exc)) from exc
+
+        user = self._resolve_user(options["user"] or config.user_email)
+
+        self.stdout.write(f"Fichier : {path}")
+        self.stdout.write(f"User    : {user.email}")
+        self.stdout.write("")
+
+        plan = self._build_plan(config, user)
+
+        if dry_run:
+            self.stdout.write(self.style.WARNING("Mode dry-run — rien n'est écrit."))
+            return
+
+        created, updated = self._apply(plan, user)
+        self._report(created, updated, plan, user, path)
+
+    # =========================================================================
+    # Garde-fous
+    # =========================================================================
+
+    def _assert_not_tracked_by_git(self, path: Path) -> None:
+        """
+        Refuse de tourner si le fichier de comptes est suivi par git (SR-008).
+
+        Le fichier contient des IBAN réels. `.gitignore` le couvre, mais un
+        `git add -f` un soir de fatigue suffit à le committer — et un secret
+        poussé une fois reste dans l'historique. Ce garde-fou coûte trois lignes.
+
+        git absent ou hors dépôt → on n'empêche rien (la commande doit tourner
+        dans un conteneur sans git).
+        """
+        try:
+            result = subprocess.run(
+                ["git", "ls-files", "--error-unmatch", str(path)],
+                capture_output=True,
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return  # pas de git ici : rien à vérifier
+
+        if result.returncode == 0:
             raise CommandError(
-                "Institutions introuvables. Lancez d'abord : python manage.py seed_institutions"
+                f"{path} est SUIVI PAR GIT — il contient des IBAN réels (SR-008).\n"
+                f"Retire-le de l'index avant de continuer :\n"
+                f"    git rm --cached {path}\n"
+                f"Puis vérifie qu'il est bien ignoré : git check-ignore -v {path}"
             )
 
-        self.stdout.write("\n╔══════════════════════════════════════════════════╗")
-        self.stdout.write("║       BricBudget — Configuration des comptes     ║")
-        self.stdout.write("╚══════════════════════════════════════════════════╝")
-        self.stdout.write("\nLes valeurs saisies ne sont pas affichées à l'écran.")
-        self.stdout.write("Laisser vide = passer / valeur entre [] = défaut.\n")
+    def _resolve_user(self, email: str):
+        user_model = get_user_model()
+        user = user_model.objects.filter(email__iexact=email).first()
+        if user is None:
+            known = ", ".join(user_model.objects.values_list("email", flat=True)[:10])
+            raise CommandError(
+                f"Utilisateur « {email} » introuvable.\n"
+                f"Users existants : {known or '(aucun)'}\n"
+                "Crée-le avec : python manage.py create_user"
+            )
+        return user
 
-        created = 0
-        updated = 0
+    # =========================================================================
+    # Plan — tout est décidé (et vérifié) avant la moindre écriture
+    # =========================================================================
 
-        # ── Yuh ───────────────────────────────────────────────────────────────
-        self.stdout.write("─" * 50)
-        self.stdout.write("🏦  Yuh (CHF — compte courant)")
-        self.stdout.write("    Pas d'identifiant dans le fichier CSV — IBAN saisi ici.")
-        n_c, n_u = self._wizard_checking(
-            institution_slug="yuh",
-            default_name="Compte Yuh",
-            contract_number="",
-            iban_label="IBAN Yuh",
-            iban_prefill="",
-        )
-        created += n_c
-        updated += n_u
+    def _build_plan(
+        self, config: SeedConfig, user
+    ) -> list[tuple[str, AccountSpec, object]]:
+        """
+        Retourne [(action, spec, existing_account_or_None)] et échoue si un
+        problème bloquant est détecté.
 
-        # ── UBS ───────────────────────────────────────────────────────────────
-        self.stdout.write("")
-        self.stdout.write("─" * 50)
-        self.stdout.write("🏦  UBS (CHF — compte courant)")
-        self.stdout.write("    L'IBAN est aussi extrait du fichier CSV à l'import.")
-        n_c, n_u = self._wizard_checking(
-            institution_slug="ubs",
-            default_name="UBS Compte courant",
-            contract_number=None,  # sera défini par l'IBAN saisi
-            iban_label="IBAN UBS",
-            iban_prefill="",
-        )
-        created += n_c
-        updated += n_u
+        Les problèmes sont TOUS collectés avant d'être levés ensemble : corriger
+        un fichier de comptes une erreur à la force la main est pénible, et
+        chaque aller-retour coûte un run.
+        """
+        institutions = {i.slug: i for i in Institution.objects.all()}
+        plan: list[tuple[str, AccountSpec, object]] = []
+        problems: list[str] = []
 
-        # ── CIC ───────────────────────────────────────────────────────────────
-        cic_accounts = [
-            {
-                "label": "CIC — Compte courant (EUR)",
-                "type": Account.AccountType.CHECKING,
-                "default_name": "Compte courant",
-                "rib_label": "RIB Compte courant (sans espaces, visible dans Excel CIC)",
-            },
-            {
-                "label": "CIC — Livret A (EUR)",
-                "type": Account.AccountType.SAVINGS,
-                "default_name": "Livret A",
-                "rib_label": "RIB Livret A (sans espaces)",
-            },
-            {
-                "label": "CIC — LDDS (EUR)",
-                "type": Account.AccountType.SAVINGS,
-                "default_name": "LDDS",
-                "rib_label": "RIB LDDS (sans espaces)",
-            },
-        ]
-
-        for acc in cic_accounts:
-            self.stdout.write("")
-            self.stdout.write("─" * 50)
-            self.stdout.write(f"🏦  {acc['label']}")
-
-            rib = self._prompt_secret(acc["rib_label"])
-            if not rib:
-                self.stdout.write(self.style.WARNING("    → Ignoré (RIB vide)."))
+        for spec in config.accounts:
+            if not spec.has_identity:
+                plan.append(("skip", spec, None))
                 continue
 
-            rib = rib.replace(" ", "")  # normaliser sans espaces
+            if spec.institution not in institutions:
+                problems.append(
+                    f"« {spec.name} » : institution « {spec.institution} » absente "
+                    "en base. Lance d'abord : python manage.py seed_institutions"
+                )
+                continue
 
-            if acc["type"] == Account.AccountType.CHECKING:
-                iban = self._prompt_secret(
-                    "IBAN (optionnel — peut être ajouté plus tard)"
-                )
-                bic = self._prompt_secret(
-                    "BIC (optionnel — peut être ajouté plus tard)"
-                )
-                name = self._prompt(
-                    f"Nom du compte [{acc['default_name']}]",
-                    default=acc["default_name"],
-                )
-                n_c, n_u = self._save_checking(
-                    institution_slug="cic",
-                    name=name,
-                    currency=Account.Currency.EUR,
-                    contract_number=rib,
-                    iban=iban or None,
-                    bic=bic,
+            existing = self._find_existing(spec, institutions[spec.institution])
+
+            if existing is None:
+                plan.append(("create", spec, None))
+            elif existing.members.filter(pk=user.pk).exists():
+                plan.append(("update", spec, existing))
+            elif existing.members.exists():
+                owners = ", ".join(m.email for m in existing.members.all())
+                problems.append(
+                    f"« {spec.name} » : son identifiant est DÉJÀ porté par le compte "
+                    f"« {existing.name} » (#{existing.pk}) qui appartient à {owners}. "
+                    "Le seed ne rattache pas le compte d'un autre utilisateur. "
+                    f"Supprime ce compte, ou retire {user.email} de ce seed."
                 )
             else:
-                name = self._prompt(
-                    f"Nom du compte [{acc['default_name']}]",
-                    default=acc["default_name"],
-                )
-                n_c, n_u = self._save_savings(
-                    institution_slug="cic",
-                    name=name,
-                    currency=Account.Currency.EUR,
-                    contract_number=rib,
-                )
-            created += n_c
-            updated += n_u
+                # Compte orphelin (aucun membre) portant déjà cette identité :
+                # on l'adopte plutôt que d'en créer un doublon, qui rendrait la
+                # résolution à l'import ambiguë (deux comptes, même n° de contrat).
+                plan.append(("adopt", spec, existing))
 
-        # ── Résumé ────────────────────────────────────────────────────────────
+        if problems:
+            raise CommandError(
+                "Seed impossible — "
+                + f"{len(problems)} problème(s), rien n'a été écrit :\n  · "
+                + "\n  · ".join(problems)
+            )
+
+        self._print_plan(plan)
+        return plan
+
+    def _find_existing(self, spec: AccountSpec, institution: Institution):
+        """
+        Cherche un compte portant déjà cette identité, SANS filtre utilisateur.
+
+        La recherche est volontairement globale : son but est justement de
+        DÉTECTER qu'un identifiant est déjà pris par quelqu'un d'autre. Le
+        rattachement, lui, reste fail-closed — `_build_plan` refuse tout compte
+        appartenant à un autre utilisateur.
+        """
+        if spec.iban:
+            # Account.iban est unique globalement → au plus un résultat.
+            found = Account.objects.filter(iban=spec.iban).first()
+            if found is not None:
+                return found
+
+        if spec.contract_number:
+            return Account.objects.filter(
+                institution=institution, contract_number=spec.contract_number
+            ).first()
+
+        return None
+
+    def _print_plan(self, plan) -> None:
+        labels = {
+            "create": (self.style.SUCCESS, "créer "),
+            "update": (self.style.WARNING, "màj   "),
+            "adopt": (self.style.WARNING, "adopte"),
+            "skip": (self.style.NOTICE, "ignore"),
+        }
+        for action, spec, _existing in plan:
+            style, label = labels[action]
+            suffix = (
+                "  (ni IBAN ni n° de contrat — à compléter dans le fichier)"
+                if action == "skip"
+                else ""
+            )
+            self.stdout.write(
+                style(f"  {label}  {spec.institution:<7} {spec.name}{suffix}")
+            )
         self.stdout.write("")
-        self.stdout.write("═" * 50)
+
+    # =========================================================================
+    # Écriture — atomique (SR-003)
+    # =========================================================================
+
+    def _apply(self, plan, user) -> tuple[int, int]:
+        created = updated = 0
+        try:
+            with transaction.atomic():
+                for action, spec, existing in plan:
+                    if action == "skip":
+                        continue
+                    if action == "create":
+                        self._create(spec, user)
+                        created += 1
+                    else:
+                        self._update(spec, existing, user)
+                        updated += 1
+        except ValidationError as exc:
+            # Remontée telle quelle : les messages des services sont déjà écrits
+            # pour l'utilisateur final (« Renseigne l'IBAN ou le n° de contrat »).
+            raise CommandError(
+                "Écriture refusée, rien n'a été enregistré : " + "; ".join(exc.messages)
+            ) from exc
+        return created, updated
+
+    def _type_fields(self, spec: AccountSpec) -> dict:
+        """
+        Champs propres au type, déjà castés (contrat de create_account/builders).
+
+        L'IBAN est passé pour les DEUX types : il vit sur `Account.iban` (source
+        unique #82), pas sur le sous-modèle — UBS exporte des relevés d'épargne
+        qui portent leur propre IBAN, et c'est lui qui résout le compte.
+        Le BIC n'existe que sur CheckingAccount : l'envoyer pour une épargne
+        serait ignoré en silence, donc on ne l'envoie pas.
+        """
+        fields: dict = {"iban": spec.iban}
+        if spec.account_type == Account.AccountType.CHECKING:
+            fields["bic"] = spec.bic
+        else:
+            fields["interest_rate"] = spec.interest_rate
+            fields["account_reference"] = spec.account_reference
+        return fields
+
+    def _create(self, spec: AccountSpec, user) -> None:
+        account = create_account(
+            user=user,
+            institution=Institution.objects.get(slug=spec.institution),
+            account_type=spec.account_type,
+            name=spec.name,
+            currency=spec.currency,
+            contract_number=spec.contract_number,
+            **self._type_fields(spec),
+        )
+        self._sync_is_active(account, spec)
+
+    def _update(self, spec: AccountSpec, account: Account, user) -> None:
+        update_account(
+            account=account,
+            name=spec.name,
+            currency=spec.currency,
+            contract_number=spec.contract_number,
+            **self._type_fields(spec),
+        )
+        # Idempotent : add() sur un membre déjà présent est un no-op. C'est aussi
+        # ce qui « adopte » un compte orphelin trouvé par _find_existing.
+        account.members.add(user)
+        self._sync_is_active(account, spec)
+
+    def _sync_is_active(self, account: Account, spec: AccountSpec) -> None:
+        """
+        `is_active` n'est pas un paramètre des services (l'UI passe par
+        archive_account) → on l'aligne ici, et seulement s'il diffère.
+        """
+        if account.is_active != spec.is_active:
+            account.is_active = spec.is_active
+            account.save(update_fields=["is_active"])
+
+    # =========================================================================
+    # Rapport
+    # =========================================================================
+
+    def _report(self, created: int, updated: int, plan, user, path: Path) -> None:
+        skipped = sum(1 for action, _, _ in plan if action == "skip")
         self.stdout.write(
-            self.style.SUCCESS(f"✓  {created} compte(s) créé(s), {updated} mis à jour.")
+            self.style.SUCCESS(
+                f"✓ {created} compte(s) créé(s), {updated} mis à jour"
+                + (f", {skipped} ignoré(s)" if skipped else "")
+            )
         )
-        self._warn_incomplete()
-
-    # ── Helpers prompt ────────────────────────────────────────────────────────
-
-    def _prompt_secret(self, label):
-        """Saisie masquée (ne s'affiche pas dans le terminal)."""
-        return getpass.getpass(f"    {label} : ").strip()
-
-    def _prompt(self, label, default=""):
-        """Saisie normale avec valeur par défaut."""
-        value = input(f"    {label} : ").strip()
-        return value if value else default
-
-    # ── Helpers save ──────────────────────────────────────────────────────────
-
-    def _wizard_checking(
-        self,
-        institution_slug,
-        default_name,
-        contract_number,
-        iban_label,
-        iban_prefill,
-    ):
-        iban = self._prompt_secret(
-            f"{iban_label} (optionnel — peut être ajouté plus tard)"
-        )
-        if not iban:
-            iban = None
-        else:
-            iban = iban.replace(" ", "")
-
-        bic = self._prompt_secret("BIC (optionnel — peut être ajouté plus tard)")
-        name = self._prompt(f"Nom du compte [{default_name}]", default=default_name)
-
-        # Pour UBS, le contract_number == IBAN
-        if contract_number is None:
-            contract_number = iban or ""
-
-        return self._save_checking(
-            institution_slug=institution_slug,
-            name=name,
-            currency=Account.Currency.CHF,
-            contract_number=contract_number,
-            iban=iban,
-            bic=bic,
+        logger.info(
+            "seed_accounts ok created=%d updated=%d skipped=%d",
+            created,
+            updated,
+            skipped,
         )
 
-    def _save_checking(
-        self, institution_slug, name, currency, contract_number, iban, bic
-    ):
-        bank = Institution.objects.get(slug=institution_slug)
+        self._warn_incomplete(user, path)
 
-        if contract_number:
-            existing = Account.objects.filter(
-                institution=bank, contract_number=contract_number
-            ).first()
-        else:
-            existing = Account.objects.filter(
-                institution=bank, account_type=Account.AccountType.CHECKING
-            ).first()
+    def _warn_incomplete(self, user, path: Path) -> None:
+        """
+        Signale les comptes épargne sans taux — corrigeables dans le FICHIER.
 
-        status = "" if (iban and bic) else "  ⚠ incomplet"
+        Scopé `for_user` (SR-001) : sans ce filtre, le rapport listerait les
+        comptes d'autres utilisateurs présents en base (démo, tests), ce qui est
+        à la fois une fuite et un bruit inutile.
 
-        if existing:
-            existing.name = name
-            # IBAN canonique sur Account (source unique #82) ; "" → None.
-            existing.iban = iban or None
-            existing.save()
-            ca, _ = CheckingAccount.objects.get_or_create(account=existing)
-            ca.bic = bic or ""
-            ca.save()
-            self.stdout.write(f"    · Mis à jour : {name}{status}")
-            return 0, 1
-        else:
-            account = Account.objects.create(
-                institution=bank,
-                name=name,
-                account_type=Account.AccountType.CHECKING,
-                currency=currency,
-                # IBAN canonique sur Account (source unique #82) ; "" → None.
-                iban=iban or None,
-                contract_number=contract_number,
-                is_active=True,
+        On renvoie vers le fichier de seed, pas vers l'admin : le fichier est
+        désormais la source de vérité, et une correction faite dans l'admin
+        serait écrasée au prochain run.
+        """
+        incomplete = [
+            f"{a.institution.name} — {a.name}"
+            for a in Account.objects.for_user(user)
+            .filter(account_type=Account.AccountType.SAVINGS)
+            .select_related("institution", "savings_account")
+            if getattr(a, "savings_account", None) and not a.savings_account.is_complete
+        ]
+        if not incomplete:
+            return
+
+        self.stdout.write("")
+        self.stdout.write(self.style.WARNING("⚠  Taux d'intérêt à renseigner :"))
+        for line in incomplete:
+            self.stdout.write(self.style.WARNING(f"   • {line}"))
+        self.stdout.write(
+            self.style.WARNING(
+                f'   → ajoute "interest_rate" dans {path}, puis relance la commande.'
             )
-            CheckingAccount.objects.create(account=account, bic=bic or "")
-            self.stdout.write(self.style.SUCCESS(f"    ✓ Créé : {name}{status}"))
-            return 1, 0
-
-    def _save_savings(self, institution_slug, name, currency, contract_number):
-        bank = Institution.objects.get(slug=institution_slug)
-        existing = Account.objects.filter(
-            institution=bank, contract_number=contract_number
-        ).first()
-
-        if existing:
-            existing.name = name
-            existing.save()
-            self.stdout.write(f"    · Mis à jour : {name}  ⚠ taux à définir")
-            return 0, 1
-        else:
-            account = Account.objects.create(
-                institution=bank,
-                name=name,
-                account_type=Account.AccountType.SAVINGS,
-                currency=currency,
-                contract_number=contract_number,
-                is_active=True,
-            )
-            SavingsAccount.objects.create(account=account, interest_rate=0)
-            self.stdout.write(
-                self.style.SUCCESS(f"    ✓ Créé : {name}  ⚠ taux à définir")
-            )
-            return 1, 0
-
-    def _warn_incomplete(self):
-        incomplete = []
-        for ca in CheckingAccount.objects.select_related("account__institution"):
-            if not ca.is_complete:
-                missing = []
-                if not ca.account.iban:  # IBAN canonique sur Account (#82)
-                    missing.append("IBAN")
-                if not ca.bic:
-                    missing.append("BIC")
-                incomplete.append((ca.account, missing))
-        for sa in SavingsAccount.objects.select_related("account__institution"):
-            if not sa.is_complete:
-                incomplete.append((sa.account, ["taux d'intérêt"]))
-
-        if incomplete:
-            self.stdout.write("")
-            self.stdout.write(
-                self.style.WARNING("⚠  Comptes incomplets (is_complete=False) :")
-            )
-            for account, missing in incomplete:
-                self.stdout.write(
-                    self.style.WARNING(
-                        f"   • {account.institution.name} — {account.name} : {', '.join(missing)}"
-                    )
-                )
-            self.stdout.write(
-                self.style.WARNING(
-                    f"   → Compléter dans l'admin : /{config('ADMIN_URL', default='admin')}/accounts/checkingaccount/"
-                )
-            )
+        )
