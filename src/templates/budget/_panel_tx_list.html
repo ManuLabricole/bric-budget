@@ -92,8 +92,21 @@ Données :
   ce qui préserve la search bar et la nav période lors du filtrage.
   Le div entier (outerHTML) est remplacé pour que l'id soit toujours présent
   dans la réponse serveur et ré-injectable.
+
+  hx-trigger="rulesApplied from:body" — la création d'une règle (modal, bulk
+  update en DB) ne touche jamais ce panel : sans ce trigger la liste reste
+  affichée avec les anciennes catégories tant que la page n'est pas rechargée.
+  budget_rule_create_submit / _standalone_submit émettent HX-Trigger:
+  rulesApplied après le bulk apply → cette zone se refetch toute seule.
 {% endcomment %}
-<div id="tx-results" class="flex flex-col flex-1 min-h-0">
+<div id="tx-results"
+     class="flex flex-col flex-1 min-h-0"
+     hx-get="{{ panel_search_url }}"
+     hx-trigger="rulesApplied from:body"
+     hx-select="#tx-results"
+     hx-target="#tx-results"
+     hx-swap="outerHTML"
+     hx-include="[name='q'], #panel-amount-filter input">
     {% comment %} Compteur — total depuis le paginator, pas juste la page courante {% endcomment %}
     <div class="px-4 py-2 flex-shrink-0">
         <p class="text-[10px] text-text-disabled">
