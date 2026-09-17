@@ -28,3 +28,16 @@ def yuh_csv_path() -> Path:
 def ubs_csv_path() -> Path:
     """Chemin vers le CSV UBS de test. Contient 3 transactions."""
     return FIXTURES_DIR / "ubs_sample.csv"
+
+
+@pytest.fixture
+def tsb_csv_path() -> Path:
+    """
+    CSV TSB de test — 8 transactions couvrant les pièges du format réel.
+
+    Identifiants FACTICES (sort code 00-00-00, compte 00000000, carte 1234) :
+    les libellés TSB réels encastrent le sort code et le numéro du compte
+    d'épargne du titulaire, qui n'ont rien à faire dans un fichier committé
+    (SR-008, gardé par tests/test_reference_data.py).
+    """
+    return FIXTURES_DIR / "tsb_sample.csv"
