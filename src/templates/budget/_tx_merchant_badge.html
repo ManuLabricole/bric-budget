@@ -1,0 +1,63 @@
+{% comment %}
+budget/_tx_merchant_badge.html — Badge logo marchand, à cheval sur l'icône catégorie (COL 1).
+
+Contexte attendu :
+    tx                 — objet Transaction
+    merchant_logo_url  — str, résolu par services.merchant_logos.get_merchant_logo_map
+                          ("" si aucun logo connu/ajouté pour ce display_name)
+
+2 états, TOUJOURS un bouton (décision actée — pas de mode "lecture seule") :
+    - Logo présent  → l'image + un overlay crayon révélé au survol DE LA LIGNE
+                       (`group` posé sur #tx-{{ tx.id }} dans _panel_tx_row.html,
+                       même mécanisme que les boutons œil/pointer de COL 5).
+    - Logo absent   → un "+" doré au hover, TOUJOURS visible (pas de hover-gate :
+                       c'est la seule façon de découvrir qu'un slot existe).
+
+onclick="event.stopPropagation()" — la ligne entière a un hx-get (ouvre le picker
+catégorie) ; sans ça, cliquer sur le badge ouvrirait aussi le picker.
+{% endcomment %}
+<div id="tx-merchant-badge-{{ tx.id }}"
+     class="absolute -bottom-1 -right-1 w-[18px] h-[18px] rounded-full ring-2 ring-surface-2 bg-white flex-shrink-0 overflow-hidden">
+    {% if merchant_logo_url %}
+        <div class="relative w-full h-full">
+            <img src="{{ merchant_logo_url }}"
+                 width="18"
+                 height="18"
+                 class="w-full h-full object-contain"
+                 alt="">
+            <button type="button"
+                    title="Changer le logo de ce marchand"
+                    aria-label="Changer le logo"
+                    hx-get="{% url 'budget:merchant_logo_form' tx.id %}"
+                    hx-target="#tx-merchant-badge-{{ tx.id }}"
+                    hx-swap="outerHTML"
+                    onclick="event.stopPropagation()"
+                    class="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
+                <svg class="w-2 h-2 text-white"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke-width="2"
+                     stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Z" />
+                </svg>
+            </button>
+        </div>
+    {% else %}
+        <button type="button"
+                title="Ajouter un logo pour ce marchand"
+                aria-label="Ajouter un logo"
+                hx-get="{% url 'budget:merchant_logo_form' tx.id %}"
+                hx-target="#tx-merchant-badge-{{ tx.id }}"
+                hx-swap="outerHTML"
+                onclick="event.stopPropagation()"
+                class="w-full h-full flex items-center justify-center text-text-disabled hover:text-gold transition-colors">
+            <svg class="w-2.5 h-2.5"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke-width="2.5"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+        </button>
+    {% endif %}
+</div>

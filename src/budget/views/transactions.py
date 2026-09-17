@@ -21,7 +21,7 @@ from django.core.paginator import EmptyPage, InvalidPage, Paginator
 from django.db.models import Count, Prefetch, Q
 from django.db.models.functions import Abs
 from django.http import HttpResponse
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -35,6 +35,7 @@ from budget.utils import (
     safe_referer,
 )
 from services.logos import get_institution_icon_map
+from services.merchant_logos import get_merchant_logo_map, save_manual_logo
 from transactions.models import BudgetTarget, Category, SubCategory, Transaction
 from transactions.services import sync_internal_transfer
 
@@ -89,11 +90,23 @@ def _inline_cashflow_url(tx):
     return reverse("budget:category_cashflow_fragment", args=[slug]) if slug else None
 
 
+def _merchant_logo_url_for(tx) -> str:
+    """
+    Résolution single-tx du logo marchand (badge _panel_tx_row.html, COL 1).
+    Même coût qu'un get_institution_icon_map() frais (déjà rappelé à chaque site
+    single-tx de ce fichier) : 1 scan disque mis en cache TTL + regex pur Python —
+    seule la vue LISTE (potentiellement 50 tx/page) a besoin du batch dédié
+    (get_merchant_logo_map appelé une fois avant la boucle, cf. budget_panel_transactions).
+    """
+    return get_merchant_logo_map([tx.display_name])[tx.display_name]
+
+
 def _inline_card_ctx(tx, institution_icon_url, key, *, cashflow_refresh_url=None):
     cfg = _INLINE_TX[key]
     return {
         "tx": tx,
         "institution_icon_url": institution_icon_url,
+        "merchant_logo_url": _merchant_logo_url_for(tx),
         "detail_id": cfg["detail_id"],
         "toggle_source": f"{key}_detail",
         "picker_source": cfg["picker_source"],
@@ -136,6 +149,7 @@ def _inline_card_response(
         {
             "tx": tx,
             "institution_icon_url": institution_icon_url,
+            "merchant_logo_url": _merchant_logo_url_for(tx),
             "panel_source": key,
             "panel_target": f"#{cfg['detail_id']}",
             "oob": True,
@@ -156,6 +170,7 @@ def _inline_row(request, tx, institution_icon_url, key):
         {
             "tx": tx,
             "institution_icon_url": institution_icon_url,
+            "merchant_logo_url": _merchant_logo_url_for(tx),
             "panel_source": key,
             "panel_target": f"#{_INLINE_TX[key]['detail_id']}",
         },
@@ -465,8 +480,11 @@ def budget_panel_transactions(request):
 
     tx_list = list(page_obj.object_list)
 
-    # Annoter chaque transaction avec l'URL résolue de l'icône institution.
-    # tx.institution_icon_url est ensuite accessible directement dans le template.
+    # Annoter chaque transaction avec l'URL résolue de l'icône institution + logo
+    # marchand. merchant_logo_map batché AVANT la boucle (jusqu'à 50 tx/page) —
+    # même anti-N+1 que institution_icon_map (#139) ; tx.institution_icon_url /
+    # tx.merchant_logo_url sont ensuite accessibles directement dans le template.
+    merchant_logo_map = get_merchant_logo_map([tx.display_name for tx in tx_list])
     for tx in tx_list:
         slug = (
             tx.account.institution.icon_slug
@@ -474,6 +492,7 @@ def budget_panel_transactions(request):
             else ""
         )
         tx.institution_icon_url = institution_icon_map.get(slug, "")
+        tx.merchant_logo_url = merchant_logo_map.get(tx.display_name, "")
 
     # ── Page > 1 = réponse "append-only" pour le scroll infini ─────────────────
     # Le sentinel HTMX en bas de liste fait un GET ?page=N.
@@ -654,6 +673,7 @@ def budget_toggle_ignore(request, tx_id):
         else ""
     )
     institution_icon_url = institution_icon_map.get(slug, "")
+    merchant_logo_url = _merchant_logo_url_for(tx)
 
     # Contextes carte détail inline (patrimoine, category) — cf. _INLINE_TX.
     inline = _inline_dispatch(request, tx, institution_icon_url)
@@ -684,6 +704,7 @@ def budget_toggle_ignore(request, tx_id):
                 {
                     "tx": tx,
                     "institution_icon_url": institution_icon_url,
+                    "merchant_logo_url": merchant_logo_url,
                     "detail_target": "#panel-content",
                     "close_on_back": True,
                     "source": "category",
@@ -693,7 +714,12 @@ def budget_toggle_ignore(request, tx_id):
             )
             row_html = render_to_string(
                 "budget/_panel_tx_row.html",
-                {"tx": tx, "institution_icon_url": institution_icon_url, "oob": True},
+                {
+                    "tx": tx,
+                    "institution_icon_url": institution_icon_url,
+                    "merchant_logo_url": merchant_logo_url,
+                    "oob": True,
+                },
                 request=request,
             )
             return HttpResponse(panel_html + row_html)
@@ -703,6 +729,7 @@ def budget_toggle_ignore(request, tx_id):
             {
                 "tx": tx,
                 "institution_icon_url": institution_icon_url,
+                "merchant_logo_url": merchant_logo_url,
                 "detail_target": "#panel-content",
                 "close_on_back": False,
                 "source": "",
@@ -715,7 +742,11 @@ def budget_toggle_ignore(request, tx_id):
     return render(
         request,
         "budget/_panel_tx_row.html",
-        {"tx": tx, "institution_icon_url": institution_icon_url},
+        {
+            "tx": tx,
+            "institution_icon_url": institution_icon_url,
+            "merchant_logo_url": merchant_logo_url,
+        },
     )
 
 
@@ -950,6 +981,7 @@ def budget_panel_tx_detail(request):
         else ""
     )
     institution_icon_url = institution_icon_map.get(slug, "")
+    merchant_logo_url = _merchant_logo_url_for(tx)
 
     source = request.GET.get("source", "")
 
@@ -965,6 +997,7 @@ def budget_panel_tx_detail(request):
         {
             "tx": tx,
             "institution_icon_url": institution_icon_url,
+            "merchant_logo_url": merchant_logo_url,
             "close_on_back": False,
             "source": source,
             "detail_target": "#panel-content",
@@ -1015,6 +1048,7 @@ def budget_toggle_reconcile(request, tx_id):
         else ""
     )
     institution_icon_url = institution_icon_map.get(slug, "")
+    merchant_logo_url = _merchant_logo_url_for(tx)
 
     # Contextes carte détail inline — voir _INLINE_TX. with_cashflow=False : pointer
     # ne change pas les totaux. Doit précéder le défaut `!= "detail"`.
@@ -1041,7 +1075,11 @@ def budget_toggle_reconcile(request, tx_id):
     if request.POST.get("source") != "detail":
         row_html = render_to_string(
             "budget/_panel_tx_row.html",
-            {"tx": tx, "institution_icon_url": institution_icon_url},
+            {
+                "tx": tx,
+                "institution_icon_url": institution_icon_url,
+                "merchant_logo_url": merchant_logo_url,
+            },
             request=request,
         )
         period_start, period_end = _period_from_session(request.session)
@@ -1080,6 +1118,7 @@ def budget_toggle_reconcile(request, tx_id):
             {
                 "tx": tx,
                 "institution_icon_url": institution_icon_url,
+                "merchant_logo_url": merchant_logo_url,
                 "detail_target": "#panel-content",
                 "close_on_back": True,
                 "source": "category",
@@ -1088,7 +1127,12 @@ def budget_toggle_reconcile(request, tx_id):
         )
         row_html = render_to_string(
             "budget/_panel_tx_row.html",
-            {"tx": tx, "institution_icon_url": institution_icon_url, "oob": True},
+            {
+                "tx": tx,
+                "institution_icon_url": institution_icon_url,
+                "merchant_logo_url": merchant_logo_url,
+                "oob": True,
+            },
             request=request,
         )
         return HttpResponse(panel_html + row_html)
@@ -1098,8 +1142,99 @@ def budget_toggle_reconcile(request, tx_id):
         {
             "tx": tx,
             "institution_icon_url": institution_icon_url,
+            "merchant_logo_url": merchant_logo_url,
             "detail_target": "#panel-content",
             "close_on_back": False,
             "source": "",
         },
+    )
+
+
+# =============================================================================
+# budget_merchant_logo_form / _repair — Ajout manuel du logo marchand (#124 proto)
+# =============================================================================
+#
+# Même pattern que la réparation de logo institution (#128, patrimoine/views/
+# institutions.py::institution_logo_form / institution_logo_repair) : GET ouvre
+# un mini-formulaire (URL collée à la main), POST installe via services.logos
+# (SSRF guard, whitelist content-type, anti-XSS SVG) — ici via
+# services.merchant_logos.save_manual_logo, qui délègue au même primitif avec
+# un prefix MEDIA dédié (icons/merchants). Toujours accessible, même quand un
+# logo est déjà résolu (seed) : bouton "modifier" plutôt que "+" côté template.
+
+
+@login_required
+def budget_merchant_logo_form(request, tx_id):
+    """GET (HTMX) → mini-formulaire d'ajout/modification du logo marchand (badge)."""
+    if not request.headers.get("HX-Request"):
+        return redirect("budget:index")
+    tx = get_object_or_404(Transaction.objects.for_user(request.user), pk=tx_id)
+    return render(request, "budget/_tx_merchant_logo_form.html", {"tx": tx})
+
+
+@login_required
+def budget_merchant_logo_badge(request, tx_id):
+    """
+    GET (HTMX) → re-rend juste le badge (état courant, sans le formulaire).
+    Cible du bouton "Annuler" du formulaire : referme sans repartir sur un
+    reload de toute la liste (le formulaire ne touche qu'une ligne).
+    """
+    if not request.headers.get("HX-Request"):
+        return redirect("budget:index")
+    tx = get_object_or_404(Transaction.objects.for_user(request.user), pk=tx_id)
+    return render(
+        request,
+        "budget/_tx_merchant_badge.html",
+        {"tx": tx, "merchant_logo_url": _merchant_logo_url_for(tx)},
+    )
+
+
+@login_required
+@require_POST
+def budget_merchant_logo_repair(request, tx_id):
+    """
+    POST (HTMX) — installe un logo collé à la main pour CE display_name exact.
+    Succès → re-rend le badge seul (#tx-merchant-badge-<id>) ; échec → re-rend
+    le formulaire en 422 avec le message (même contrat que institution_logo_repair).
+    """
+    if not request.headers.get("HX-Request"):
+        return redirect("budget:index")
+    tx = get_object_or_404(Transaction.objects.for_user(request.user), pk=tx_id)
+    url = request.POST.get("logo_url", "").strip()
+
+    if not url.startswith("https://") or len(url) > 500:
+        logger.warning(
+            "merchant_logo_repair rejected tx=%s reason=bad_url user=%s",
+            tx.id,
+            request.user.id,
+        )
+        return render(
+            request,
+            "budget/_tx_merchant_logo_form.html",
+            {"tx": tx, "error": "URL https valide obligatoire."},
+            status=422,
+        )
+
+    if save_manual_logo(tx.display_name, url) is None:
+        # save_manual_logo (→ logos.fetch_from_url) a déjà loggé la cause précise.
+        return render(
+            request,
+            "budget/_tx_merchant_logo_form.html",
+            {
+                "tx": tx,
+                "error": "Image impossible à installer (format, taille ou URL invalide).",
+            },
+            status=422,
+        )
+
+    logger.info(
+        "merchant_logo_repair ok tx=%s display_name=%r user=%s",
+        tx.id,
+        tx.display_name,
+        request.user.id,
+    )
+    return render(
+        request,
+        "budget/_tx_merchant_badge.html",
+        {"tx": tx, "merchant_logo_url": _merchant_logo_url_for(tx)},
     )

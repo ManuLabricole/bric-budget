@@ -41,28 +41,33 @@ Rendu d'une transaction ignorée (is_ignored=True) :
         {% comment %}
         COL 1 — Icône catégorie 44px : carré arrondi coloré + SVG Tabler blanc.
         Fallback "?" si pas de catégorie ou pas d'icône.
+        Wrapper relative : porte le badge logo marchand à cheval sur le coin
+        bas-droit (_tx_merchant_badge.html, absolute -bottom-1 -right-1).
         {% endcomment %}
-        <div class="w-11 h-11 rounded-full flex-shrink-0 flex items-center justify-center"
-             style="background-color: {{ tx.category.colour_hex|default:'#2d3033' }}">
-            {% if tx.subcategory and tx.subcategory.icon %}
-                {% with icon_path="icons/categories/"|add:tx.subcategory.icon|add:".svg" %}
-                    <img src="{% static icon_path %}"
-                         width="24"
-                         height="24"
-                         class="w-6 h-6 brightness-0 invert"
-                         alt="">
-                {% endwith %}
-            {% elif tx.category and tx.category.icon %}
-                {% with icon_path="icons/categories/"|add:tx.category.icon|add:".svg" %}
-                    <img src="{% static icon_path %}"
-                         width="24"
-                         height="24"
-                         class="w-6 h-6 brightness-0 invert"
-                         alt="">
-                {% endwith %}
-            {% else %}
-                <span class="text-white text-sm font-bold">?</span>
-            {% endif %}
+        <div class="relative w-11 h-11 flex-shrink-0">
+            <div class="w-11 h-11 rounded-full flex items-center justify-center"
+                 style="background-color: {{ tx.category.colour_hex|default:'#2d3033' }}">
+                {% if tx.subcategory and tx.subcategory.icon %}
+                    {% with icon_path="icons/categories/"|add:tx.subcategory.icon|add:".svg" %}
+                        <img src="{% static icon_path %}"
+                             width="24"
+                             height="24"
+                             class="w-6 h-6 brightness-0 invert"
+                             alt="">
+                    {% endwith %}
+                {% elif tx.category and tx.category.icon %}
+                    {% with icon_path="icons/categories/"|add:tx.category.icon|add:".svg" %}
+                        <img src="{% static icon_path %}"
+                             width="24"
+                             height="24"
+                             class="w-6 h-6 brightness-0 invert"
+                             alt="">
+                    {% endwith %}
+                {% else %}
+                    <span class="text-white text-sm font-bold">?</span>
+                {% endif %}
+            </div>
+            {% include "budget/_tx_merchant_badge.html" with tx=tx merchant_logo_url=merchant_logo_url %}
         </div>
         {% comment %} COL 2 — Sous-catégorie (muted, small) + description (UPPERCASE, bold) {% endcomment %}
         <div class="w-[200px] flex-shrink-0 min-w-0">

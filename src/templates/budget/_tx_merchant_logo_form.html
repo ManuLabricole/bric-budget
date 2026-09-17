@@ -1,0 +1,46 @@
+{% comment %}
+budget/_tx_merchant_logo_form.html — mini-formulaire d'ajout/modification du logo marchand.
+
+Calqué sur patrimoine/partials/_logo_repair_form.html (#128) — même contrat :
+succès → POST budget_merchant_logo_repair re-rend le badge (#tx-merchant-badge-<id>)
+avec le logo installé ; échec → ce formulaire re-rendu en 422 avec {{ error }}.
+
+Variables : tx (Transaction), error (str optionnel — message de rejet 422).
+Annuler → GET budget_merchant_logo_badge : re-rend le badge seul dans son état
+courant, sans recharger toute la liste (le formulaire ne concerne qu'une ligne).
+{% endcomment %}
+<div id="tx-merchant-badge-{{ tx.id }}"
+     class="relative w-[220px] rounded-xl border border-gold/30 bg-surface-3 p-3 shadow-lg z-10"
+     onclick="event.stopPropagation()">
+    <form hx-post="{% url 'budget:merchant_logo_repair' tx.id %}"
+          hx-target="#tx-merchant-badge-{{ tx.id }}"
+          hx-swap="outerHTML"
+          hx-disabled-elt="this">
+        {% csrf_token %}
+        <p class="mb-2 text-[11px] text-text-muted">
+            Logo pour <span class="font-semibold text-text-base">{{ tx.display_name|slice:":30" }}</span>.
+            Colle l'URL directe d'une image (PNG, JPG, WebP ou SVG).
+        </p>
+        <input type="url"
+               name="logo_url"
+               required
+               placeholder="https://…/logo.png"
+               class="mb-2 w-full rounded-lg border border-edge/60 bg-surface px-2 py-1.5 text-xs text-text-base placeholder:text-text-disabled focus:border-gold/50 focus:outline-none">
+        {% if error %}
+            <p class="mb-2 rounded-lg border border-expense/30 bg-expense/10 px-2 py-1 text-[10px] text-expense">{{ error }}</p>
+        {% endif %}
+        <div class="flex gap-2">
+            <button type="submit"
+                    class="rounded-lg bg-gold/15 px-2.5 py-1 text-[11px] font-semibold text-gold transition-colors hover:bg-gold/25">
+                Installer
+            </button>
+            <button type="button"
+                    hx-get="{% url 'budget:merchant_logo_badge' tx.id %}"
+                    hx-target="#tx-merchant-badge-{{ tx.id }}"
+                    hx-swap="outerHTML"
+                    class="rounded-lg px-2.5 py-1 text-[11px] text-text-muted transition-colors hover:text-text-base">
+                Annuler
+            </button>
+        </div>
+    </form>
+</div>

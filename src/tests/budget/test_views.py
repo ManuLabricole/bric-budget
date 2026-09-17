@@ -11,11 +11,20 @@ import re
 from decimal import Decimal
 
 import pytest
-from django.test import Client
+from django.test import Client, override_settings
 from django.urls import reverse
 from pytest_django.asserts import assertTemplateUsed
 
+from services import logos as logos_service
 from transactions.models import Category, Transaction
+
+# Storage MEDIA en mémoire pour les tests merchant_logo_repair — même pattern
+# que tests/services/test_logos.py (aucun fichier réel écrit, aucun réseau :
+# services.logos._download_url est monkeypatché).
+_INMEM_STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.InMemoryStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
 
 # =============================================================================
 # Fixtures locales (cashflow — scope narrow, pas dans conftest)
@@ -814,3 +823,158 @@ def test_category_tx_fragment_idor_other_user_sees_no_data(
     )
     assert r.status_code == 200
     assert b"SECRET TX OTHER" not in r.content
+
+
+# =============================================================================
+# Badge logo marchand — merchant_logo_form / merchant_logo_repair / merchant_logo_badge
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_panel_transactions_shows_seed_logo_for_known_merchant(
+    auth_client, account, cf_category
+):
+    """
+    Une transaction dont le display_name contient un mot-clé du seed (ex. MIGROS)
+    doit afficher l'URL du logo statique committé dans le fragment liste — pas
+    juste le bouton "+" par défaut.
+    """
+    tx = make_tx(account, cf_category, seed="migros-badge")
+    tx.display_name = "MIGROS MM CHAILLY 0101 LAUSANNE"
+    tx.save(update_fields=["display_name"])
+
+    html = auth_client.get(reverse("budget:panel_transactions")).content.decode()
+
+    assert "/static/icons/merchants/migros.png" in html
+    assert f'id="tx-merchant-badge-{tx.id}"' in html
+
+
+@pytest.mark.django_db
+def test_panel_transactions_shows_add_button_for_unknown_merchant(
+    auth_client, account, cf_category
+):
+    """Marchand non résolu par le seed → badge vide avec le bouton "+" d'ajout."""
+    tx = make_tx(account, cf_category, seed="unknown-badge")
+
+    html = auth_client.get(reverse("budget:panel_transactions")).content.decode()
+
+    assert f'hx-get="/budget/transactions/{tx.id}/merchant-logo/"' in html
+    assert "Ajouter un logo pour ce marchand" in html
+
+
+@pytest.mark.django_db
+def test_merchant_logo_form_requires_login(client, account, cf_category):
+    tx = make_tx(account, cf_category, seed="form-auth")
+    response = client.get(
+        reverse("budget:merchant_logo_form", args=[tx.id]),
+        HTTP_HX_REQUEST="true",
+    )
+    assert response.status_code == 302
+    assert "/login/" in response["Location"]
+
+
+@pytest.mark.django_db
+def test_merchant_logo_form_other_user_tx_returns_404(
+    auth_client, other_client, account, cf_category
+):
+    """IDOR : un user ne doit pas pouvoir ouvrir le formulaire sur la tx d'un autre."""
+    tx = make_tx(account, cf_category, seed="form-idor")
+    response = other_client.get(
+        reverse("budget:merchant_logo_form", args=[tx.id]),
+        HTTP_HX_REQUEST="true",
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_merchant_logo_form_renders_form_partial(auth_client, account, cf_category):
+    tx = make_tx(account, cf_category, seed="form-ok")
+    response = auth_client.get(
+        reverse("budget:merchant_logo_form", args=[tx.id]),
+        HTTP_HX_REQUEST="true",
+    )
+    html = response.content.decode()
+    assert response.status_code == 200
+    assertTemplateUsed(response, "budget/_tx_merchant_logo_form.html")
+    assert f'id="tx-merchant-badge-{tx.id}"' in html
+    assert "<!DOCTYPE html>" not in html
+
+
+@override_settings(STORAGES=_INMEM_STORAGES)
+@pytest.mark.django_db
+def test_merchant_logo_repair_installs_logo_and_returns_badge(
+    auth_client, account, cf_category, monkeypatch
+):
+    """POST réussi → badge re-rendu avec l'image installée (pas le formulaire)."""
+    monkeypatch.setattr(
+        logos_service, "_download_url", lambda url: (b"\x89PNG-fake", "image/png")
+    )
+    tx = make_tx(account, cf_category, seed="repair-ok")
+    tx.display_name = "MA PETITE BOUTIQUE"
+    tx.save(update_fields=["display_name"])
+
+    response = auth_client.post(
+        reverse("budget:merchant_logo_repair", args=[tx.id]),
+        {"logo_url": "https://brand.example/logo.png"},
+        HTTP_HX_REQUEST="true",
+    )
+    html = response.content.decode()
+
+    assert response.status_code == 200
+    assertTemplateUsed(response, "budget/_tx_merchant_badge.html")
+    assert "<img" in html
+    assert "form" not in html.lower().split(">")[0]  # pas le formulaire
+
+
+@override_settings(STORAGES=_INMEM_STORAGES)
+@pytest.mark.django_db
+def test_merchant_logo_repair_rejects_non_https_url(
+    auth_client, account, cf_category, monkeypatch
+):
+    """URL non-https → 422 + message d'erreur, pas d'installation."""
+    touched = {"net": False}
+
+    def spy(_url):
+        touched["net"] = True
+        return (b"x", "image/png")
+
+    monkeypatch.setattr(logos_service, "_download_url", spy)
+    tx = make_tx(account, cf_category, seed="repair-bad-url")
+
+    response = auth_client.post(
+        reverse("budget:merchant_logo_repair", args=[tx.id]),
+        {"logo_url": "http://brand.example/logo.png"},
+        HTTP_HX_REQUEST="true",
+    )
+    html = response.content.decode()
+
+    assert response.status_code == 422
+    assert "https valide obligatoire" in html
+    assert touched["net"] is False
+
+
+@pytest.mark.django_db
+def test_merchant_logo_repair_other_user_tx_returns_404(
+    auth_client, other_client, account, cf_category
+):
+    tx = make_tx(account, cf_category, seed="repair-idor")
+    response = other_client.post(
+        reverse("budget:merchant_logo_repair", args=[tx.id]),
+        {"logo_url": "https://brand.example/logo.png"},
+        HTTP_HX_REQUEST="true",
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_merchant_logo_badge_renders_current_state(auth_client, account, cf_category):
+    """Cible du bouton Annuler — re-rend le badge sans le formulaire."""
+    tx = make_tx(account, cf_category, seed="badge-cancel")
+    response = auth_client.get(
+        reverse("budget:merchant_logo_badge", args=[tx.id]),
+        HTTP_HX_REQUEST="true",
+    )
+    html = response.content.decode()
+    assert response.status_code == 200
+    assertTemplateUsed(response, "budget/_tx_merchant_badge.html")
+    assert f'id="tx-merchant-badge-{tx.id}"' in html
