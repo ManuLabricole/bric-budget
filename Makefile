@@ -185,7 +185,7 @@ create-superuser:
 seed:
 	@printf "  🌱 $(CYAN)Seed des référentiels (catégories + institutions)...$(RESET)\n"
 	@$(MANAGE) seed_initial
-	@printf "  $(DIM)→ comptes perso : make setup-accounts (ou python manage.py setup_accounts)$(RESET)\n"
+	@printf "  $(DIM)→ comptes perso : python manage.py seed_accounts (fichier assets/private/accounts.json)$(RESET)\n"
 
 import-all:
 	@printf "  📥 $(CYAN)Import all raw files$(if $(COMMIT), — écriture DB,  — dry run)...$(RESET)\n"
@@ -248,16 +248,42 @@ backfill-logos:
 BACKUP_DIR := backups
 BACKUP_FILE := $(BACKUP_DIR)/bricbudget_$(shell date +%Y%m%d_%H%M%S).sql
 
+# Utilisateur + base lus depuis les settings Django, qui parsent déjà DATABASE_URL.
+# C'est LA source de vérité : littéralement la base à laquelle cette copie du projet
+# se connecte.
+#
+# Pourquoi pas `grep DB_USER .env` (l'ancienne version) : ces variables n'existent
+# pas, le projet ne déclare que DATABASE_URL. pg_dump recevait donc `--username=`
+# vide, retombait sur l'utilisateur du conteneur (« root », qui n'est pas un rôle
+# Postgres) et échouait. Le backup local était cassé sans que ça se voie.
+#
+# Pourquoi pas une constante « bricbudget » : chaque worktree /wt a sa PROPRE base
+# (bric_wt_<issue>) dans le même conteneur — une constante sauvegarderait la mauvaise
+# base depuis un worktree, silencieusement.
+#
+# --no-imports : sans lui, le shell Django préfixe sa sortie de « 32 objects imported
+# automatically » et le résultat n'est plus exploitable par un script.
+DB_CREDS := $(MANAGE) shell --no-imports -c "from django.conf import settings as s; d=s.DATABASES['default']; print(d['USER'], d['NAME'])"
+
 backup:
 	@mkdir -p $(BACKUP_DIR)
 	@printf "  💾 $(CYAN)Sauvegarde PostgreSQL...$(RESET)\n"
-	@docker exec bricbudget-db pg_dump \
-		--username=$(shell grep DB_USER .env | cut -d= -f2) \
-		--dbname=$(shell grep DB_NAME .env | cut -d= -f2) \
-		--clean \
-		--if-exists \
-		> $(BACKUP_FILE)
-	@printf "  ✅ $(GREEN)Sauvegarde créée :$(RESET) $(BACKUP_FILE)\n"
+	@set -- $$($(DB_CREDS) 2>/dev/null); \
+	if [ -z "$$1" ] || [ -z "$$2" ]; then \
+		printf "  ❌ $(RED)Impossible de lire DATABASE_URL depuis .env$(RESET)\n"; \
+		exit 1; \
+	fi; \
+	printf "  $(DIM)→ base « $$2 » (utilisateur $$1)$(RESET)\n"; \
+	part="$(BACKUP_FILE).part"; \
+	if docker exec bricbudget-db pg_dump --username="$$1" --dbname="$$2" \
+			--clean --if-exists > "$$part" && [ -s "$$part" ]; then \
+		mv "$$part" "$(BACKUP_FILE)"; \
+		printf "  ✅ $(GREEN)Sauvegarde créée :$(RESET) $(BACKUP_FILE) $(DIM)($$(du -h "$(BACKUP_FILE)" | cut -f1))$(RESET)\n"; \
+	else \
+		rm -f "$$part"; \
+		printf "  ❌ $(RED)Échec — aucune sauvegarde écrite$(RESET)\n"; \
+		exit 1; \
+	fi
 
 # Usage : make restore FILE=backups/bricbudget_20260405_103000.sql[.gz]
 # Gère les .sql ET les .sql.gz (les dumps prod sont gzippés) → décompression à la volée.
@@ -266,13 +292,22 @@ restore:
 		printf "  ❌ $(RED)Précise le fichier : make restore FILE=backups/nom_du_fichier.sql[.gz]$(RESET)\n"; \
 		exit 1; \
 	fi
+	@if [ ! -s "$(FILE)" ]; then \
+		printf "  ❌ $(RED)$(FILE) est introuvable ou vide — restauration annulée$(RESET)\n"; \
+		printf "  $(DIM)Un dump de 0 octet écraserait la base par du vide.$(RESET)\n"; \
+		exit 1; \
+	fi
 	@printf "  ⚠️  $(YELLOW)Restauration depuis $(FILE)... (la DB actuelle sera écrasée)$(RESET)\n"
-	@case "$(FILE)" in \
+	@set -- $$($(DB_CREDS) 2>/dev/null); \
+	if [ -z "$$1" ] || [ -z "$$2" ]; then \
+		printf "  ❌ $(RED)Impossible de lire DATABASE_URL depuis .env$(RESET)\n"; \
+		exit 1; \
+	fi; \
+	printf "  $(DIM)→ base « $$2 » (utilisateur $$1)$(RESET)\n"; \
+	case "$(FILE)" in \
 		*.gz) gunzip -c "$(FILE)" ;; \
 		*)    cat "$(FILE)" ;; \
-	esac | docker exec -i bricbudget-db psql \
-		--username=$(shell grep DB_USER .env | cut -d= -f2) \
-		--dbname=$(shell grep DB_NAME .env | cut -d= -f2)
+	esac | docker exec -i bricbudget-db psql --username="$$1" --dbname="$$2"
 	@printf "  ✅ $(GREEN)Restauration terminée$(RESET)\n"
 
 # Dump de la PROD (Railway) — #257. Le script DEMANDE l'URL en saisie masquée si
