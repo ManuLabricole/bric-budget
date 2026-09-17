@@ -3,7 +3,7 @@ tests/connectors/test_tsb.py — Tests unitaires de TSBConnector.
 
 Tests PURS PYTHON — aucun accès à la base de données.
 
-Fixture CSV (tsb_sample.csv) — 8 transactions choisies pour couvrir les pièges
+Fixture CSV (tsb_sample.csv) — 9 transactions choisies pour couvrir les pièges
 que l'analyse des 831 lignes réelles a fait apparaître :
 
     2× FIRST GLASGOW le même jour, même montant, même libellé  → occurrence_index
@@ -12,6 +12,8 @@ que l'analyse des 831 lignes réelles a fait apparaître :
     DEBIT INTEREST → solde -38.79                              → découvert légitime
     PLAIN MERCHANT à « 3 » (sans décimales)                     → normalisation
     « CD 1234 09FEB26 » sans nom de marchand                    → display_name non vide
+    « 2.99% CD 9614 23APR26 » frais de change carte étrangère   → display_name pas
+                                                                   juste "2.99%"
     ordre ANTI-chronologique (17/03 en tête)                    → solde de clôture
                                                                    sur la 1re ligne
 """
@@ -59,8 +61,8 @@ def test_other_connectors_reject_tsb_csv(tsb_csv_path):
 
 
 def test_parse_returns_all_rows(tsb_csv_path):
-    """Aucun type TSB n'est filtré : les 8 lignes sont de vraies transactions."""
-    assert len(TSBConnector().parse(tsb_csv_path)) == 8
+    """Aucun type TSB n'est filtré : les 9 lignes sont de vraies transactions."""
+    assert len(TSBConnector().parse(tsb_csv_path)) == 9
 
 
 def test_debit_is_negative(tsb_csv_path):
@@ -209,6 +211,29 @@ def test_merchant_name_mirrors_display_name(tsb_csv_path):
     """merchant_name = copie de display_name à l'import (override user ensuite)."""
     for tx in TSBConnector().parse(tsb_csv_path):
         assert tx["merchant_name"] == tx["display_name"]
+
+
+def test_fx_fee_description_is_not_left_as_bare_percentage(tsb_csv_path):
+    """
+    « 2.99% CD 9614 23APR26 » : retirer le marqueur carte laisse "2.99%" —
+    non vide, donc l'ancien repli (cleaned or description) ne se déclenchait
+    PAS, et l'UI affichait une ligne illisible ("2.99%" sans aucun contexte).
+
+    Le nouveau repli élargi (aucune lettre → on garde le libellé brut complet)
+    doit préserver "CD 9614 23APR26" plutôt que produire "2.99%" tout seul —
+    quitte à laisser plus d'info que nécessaire, jamais moins.
+    """
+    tx = next(
+        t
+        for t in TSBConnector().parse(tsb_csv_path)
+        if t["description_raw"] == "2.99% CD 9614 23APR26"
+    )
+    assert tx["display_name"] != "2.99%"
+    assert "2.99%" in tx["display_name"]
+    assert "CD 9614" in tx["display_name"]
+    # card_last_four reste extrait normalement — le repli ne touche que
+    # display_name, pas _parse_card() (regex indépendante).
+    assert tx["card_last_four"] == "9614"
 
 
 # =============================================================================

@@ -307,13 +307,21 @@ class TSBConnector(BaseConnector):
         « SCOTRAIL CD 9614 » → « SCOTRAIL ». Le numéro de carte n'est pas perdu,
         il part dans card_last_four.
 
-        REPLI OBLIGATOIRE : certains libellés ne contiennent QUE ce marqueur
-        (« CD 1234 09FEB26 »). Les nettoyer produirait un display_name vide —
-        une transaction invisible dans l'UI et inutilisable par les règles. Dans
-        ce cas on garde le libellé brut normalisé.
+        REPLI, élargi : on ne garde le résultat nettoyé QUE s'il contient au
+        moins une lettre. Objectif « mieux trop que trop peu » — deux libellés
+        réels du corpus le prouvent :
+          - « CD 1234 09FEB26 »        → nettoyé = ""     (vide)
+          - « 2.99% CD 9614 23APR26 »  → nettoyé = "2.99%" (frais de change
+            carte étrangère — pas vide, mais aucune lettre : ce n'est pas un
+            nom de marchand, juste un taux orphelin, illisible dans l'UI)
+        Un simple `cleaned or description` (ancien repli) ne rattrapait que le
+        premier cas. Tester la présence d'une lettre plutôt que régler un motif
+        « % » ad hoc : plus général, couvre tout futur libellé qui se réduit à
+        du bruit numérique une fois le marqueur carte retiré.
         """
         cleaned = _CARD_RE.sub("", description).strip()
-        return self._normalize_merchant(cleaned or description)
+        has_letter = any(c.isalpha() for c in cleaned)
+        return self._normalize_merchant(cleaned if has_letter else description)
 
     def _parse_card(self, description: str) -> str | None:
         """Les 4 derniers chiffres de la carte, depuis « CD 9614 » en fin de libellé."""
