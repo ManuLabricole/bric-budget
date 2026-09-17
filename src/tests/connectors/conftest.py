@@ -26,8 +26,32 @@ def yuh_csv_path() -> Path:
 
 @pytest.fixture
 def ubs_csv_path() -> Path:
-    """Chemin vers le CSV UBS de test. Contient 3 transactions."""
+    """CSV UBS ANCIEN format (colonne « Monnaie »). Contient 3 transactions."""
     return FIXTURES_DIR / "ubs_sample.csv"
+
+
+@pytest.fixture
+def ubs_csv_devise_path() -> Path:
+    """
+    CSV UBS NOUVEAU format (colonne « Devise ») — mêmes 3 transactions.
+
+    UBS a renommé « Monnaie » en « Devise » dans ses exports. Les deux formats
+    doivent être acceptés : les anciens fichiers restent réimportables (le
+    dossier d'archives en contient), et les nouveaux doivent passer.
+    """
+    return FIXTURES_DIR / "ubs_sample_devise.csv"
+
+
+@pytest.fixture
+def ubs_csv_empty_savings_path() -> Path:
+    """
+    CSV UBS d'un compte d'épargne SANS mouvement (nouveau format).
+
+    Variante réelle : 7 lignes de metadata au lieu de 8 (pas de « Évaluation en »),
+    « Solde final:;; » vide, et zéro ligne de transaction. Sert de garde-fou
+    contre un crash sur un export parfaitement légitime.
+    """
+    return FIXTURES_DIR / "ubs_sample_empty_savings.csv"
 
 
 @pytest.fixture

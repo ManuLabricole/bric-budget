@@ -7,9 +7,13 @@ Encoding  : UTF-8 with BOM (open with "utf-8-sig" to strip BOM automatically)
 Delimiter : semicolon (;)
 Header    : line 10 (9 metadata lines + 1 blank before)
 Columns   : Date de transaction ; Heure de transaction ; Date de comptabilisation ;
-            Date de valeur ; Monnaie ; Débit ; Crédit ; Sous-montant ; Solde ;
+            Date de valeur ; Devise ; Débit ; Crédit ; Sous-montant ; Solde ;
             No de transaction ; Description1 ; Description2 ; Description3 ;
             Notes de bas de page
+
+            ⚠️ La 5e colonne s'appelait « Monnaie » dans les exports antérieurs.
+            Les deux noms sont acceptés (cf. UBSConnector.CURRENCY_COLUMNS) :
+            les fichiers archivés doivent rester réimportables.
 
 Metadata block (lines 1-8, line 9 is blank)
 -------------------------------------------
@@ -39,8 +43,11 @@ This is deterministic: one file = one IBAN = one account.
 
 Balance extraction
 ------------------
-Line 6: "Solde final:;7281.45;"  → 7281.45
-Extracted from the metadata block before the header.
+"Solde final:;7281.45;"  → 7281.45
+Repéré par son LIBELLÉ dans le bloc de metadata, pas par son numéro de ligne :
+le bloc n'a pas la même hauteur selon le type de compte (le relevé d'épargne
+n'a pas de ligne « Évaluation en »). Un compte d'épargne sans mouvement exporte
+"Solde final:;;" (vide) → None, ce qui est normal et ne doit rien logger.
 
 Row filtering
 -------------
@@ -72,14 +79,28 @@ class UBSConnector(BaseConnector):
     INSTITUTION_SLUG = "ubs"
     IDENTITY_FIELD: str | None = "iban"
 
+    # Noms successifs de la colonne de devise. UBS l'a renommée « Monnaie » →
+    # « Devise » ; les deux doivent être acceptés, sinon les exports archivés à
+    # l'ancien format cessent d'être réimportables. Ordre = préférence de lecture.
+    #
+    # Pourquoi ce détail mérite une constante : quand ce nom a changé, le
+    # connecteur a échoué DEUX fois, de deux façons opposées. La signature ne
+    # matchait plus (fichier ignoré sans un mot), et la lecture de la valeur
+    # renvoyait "" (devise vide sur chaque ligne, sans erreur — donc des montants
+    # convertis faux par services.exchange_rates.to_chf). Un seul point de
+    # vérité évite de ne réparer qu'une des deux moitiés.
+    CURRENCY_COLUMNS = ("Devise", "Monnaie")
+
     # UBS CSV column header signature — used for format detection
-    # Must match exactly (order + names) to avoid false positives
+    # Must match exactly (order + names) to avoid false positives.
+    # La colonne de devise y figure sous son nom courant ; _canonical_columns()
+    # ramène l'ancien nom à celui-ci avant comparaison.
     COLUMN_SIGNATURE = [
         "Date de transaction",
         "Heure de transaction",
         "Date de comptabilisation",
         "Date de valeur",
-        "Monnaie",
+        CURRENCY_COLUMNS[0],
         "Débit",
         "Crédit",
         "Sous-montant",
@@ -90,6 +111,33 @@ class UBSConnector(BaseConnector):
         "Description3",
         "Notes de bas de page",
     ]
+
+    @classmethod
+    def _canonical_columns(cls, columns: list[str]) -> list[str]:
+        """
+        Ramène un en-tête lu dans un fichier à la forme de COLUMN_SIGNATURE.
+
+        Seule la colonne de devise varie d'un millésime UBS à l'autre : on la
+        normalise, le reste est comparé tel quel (une vraie divergence de format
+        doit continuer à faire échouer la détection, pas passer en douce).
+        """
+        canonical = cls.CURRENCY_COLUMNS[0]
+        return [canonical if col in cls.CURRENCY_COLUMNS else col for col in columns]
+
+    @classmethod
+    def _currency(cls, row: dict) -> str:
+        """
+        Devise de la ligne, quel que soit le nom de colonne du millésime.
+
+        DictReader conserve les en-têtes du fichier : selon l'export, la clé est
+        « Devise » ou « Monnaie ». On essaie les deux plutôt que de dépendre du
+        nom courant.
+        """
+        for name in cls.CURRENCY_COLUMNS:
+            value = (row.get(name) or "").strip()
+            if value:
+                return value
+        return ""
 
     # =========================================================================
     # Public API
@@ -115,7 +163,7 @@ class UBSConnector(BaseConnector):
             for _ in range(12):
                 line = f.readline()
                 cols = [c.strip() for c in line.strip().split(";") if c.strip()]
-                if cols == self.COLUMN_SIGNATURE:
+                if self._canonical_columns(cols) == self.COLUMN_SIGNATURE:
                     header_line = line
                     break
 
@@ -205,20 +253,38 @@ class UBSConnector(BaseConnector):
 
     def extract_balance(self, filepath: Path) -> float | None:
         """
-        Extract the final account balance from the UBS file's metadata block (line 6).
+        Extract the final account balance from the UBS file's metadata block.
 
-        Line 6 format: "Solde final:;7281.45;"
-        Returns 7281.45 as a float, or None if not found.
+        Format attendu : "Solde final:;7281.45;" → 7281.45
+
+        Repéré par son LIBELLÉ et non par son numéro de ligne : le bloc de
+        metadata n'a pas la même hauteur selon le type de compte (le relevé
+        d'épargne n'a pas de ligne « Évaluation en »), et un décalage d'une
+        ligne rendrait le solde silencieusement introuvable.
+
+        Renvoie None dans deux cas NORMAUX, sans rien logger :
+            - libellé absent du fichier ;
+            - "Solde final:;;" — champ vide, cas réel d'un compte d'épargne
+              sans aucun mouvement sur la période.
+        Seul un fichier illisible (I/O, encodage) justifie un avertissement.
         """
         try:
             with open(filepath, encoding="utf-8-sig") as f:
-                for i, line in enumerate(f, start=1):
-                    if i == 6:
-                        parts = line.strip().split(";")
-                        if len(parts) >= 2:
-                            return float(parts[1].strip())
-                        break
-        except Exception:
+                for line in f:
+                    if not line.startswith("Solde final"):
+                        continue
+                    parts = line.strip().split(";")
+                    raw = parts[1].strip() if len(parts) >= 2 else ""
+                    if not raw:
+                        return None  # compte sans mouvement — pas une anomalie
+                    try:
+                        return float(raw)
+                    except ValueError:
+                        logger.warning(
+                            "[UBS] solde final illisible (%r) dans %s", raw, filepath
+                        )
+                        return None
+        except OSError:
             logger.warning(
                 "[UBS] extract_balance failed for %s", filepath, exc_info=True
             )
@@ -254,7 +320,7 @@ class UBSConnector(BaseConnector):
                     columns = [
                         col.strip() for col in line.strip().split(";") if col.strip()
                     ]
-                    if columns == cls.COLUMN_SIGNATURE:
+                    if cls._canonical_columns(columns) == cls.COLUMN_SIGNATURE:
                         return True
         except Exception:
             logger.warning("[UBS] matches_file failed for %s", filepath, exc_info=True)
@@ -350,7 +416,7 @@ class UBSConnector(BaseConnector):
         One column is empty per row. Debit is already stored negative in the file.
         Raises ValueError if both are empty or values can't be parsed.
         """
-        currency = row.get("Monnaie", "").strip()
+        currency = self._currency(row)
         debit = row.get("Débit", "").strip()
         credit = row.get("Crédit", "").strip()
 
