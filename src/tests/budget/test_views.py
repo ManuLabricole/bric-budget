@@ -830,14 +830,15 @@ def test_category_tx_fragment_idor_other_user_sees_no_data(
 # =============================================================================
 
 
+@override_settings(BRANDFETCH_CLIENT_ID="test-client-id")
 @pytest.mark.django_db
 def test_panel_transactions_shows_seed_logo_for_known_merchant(
     auth_client, account, cf_category
 ):
     """
     Une transaction dont le display_name contient un mot-clé du seed (ex. MIGROS)
-    doit afficher l'URL du logo statique committé dans le fragment liste — pas
-    juste le bouton "+" par défaut.
+    doit afficher l'URL Brandfetch (hotlink live) du domaine associé dans le
+    fragment liste — pas juste le bouton "+" par défaut.
     """
     tx = make_tx(account, cf_category, seed="migros-badge")
     tx.display_name = "MIGROS MM CHAILLY 0101 LAUSANNE"
@@ -845,7 +846,7 @@ def test_panel_transactions_shows_seed_logo_for_known_merchant(
 
     html = auth_client.get(reverse("budget:panel_transactions")).content.decode()
 
-    assert "/static/icons/merchants/migros.png" in html
+    assert "https://cdn.brandfetch.io/domain/migros.ch/" in html
     assert f'id="tx-merchant-badge-{tx.id}"' in html
 
 

@@ -2,16 +2,22 @@
 services/merchant_logos.py — display_name → logo (seed connu + ajout manuel).
 
 Deux couches, key-spaces disjoints (pas de collision possible) :
-  - SEED (committé, STATIC) : mot-clé régulier → marque connue, résolu par
-    resolve_seed_key() contre transactions/reference/merchant_seed.json. Fichier
-    servi depuis static/icons/merchants/<key>.png (déployé par collectstatic —
-    jamais écrit à l'exécution, alimenté par la commande prototype_merchant_logos).
+  - SEED (Brandfetch Logo API, LIVE) : mot-clé régulier → marque connue,
+    résolu par _match_seed() contre transactions/reference/merchant_seed.json.
+    L'URL renvoyée pointe DIRECTEMENT sur cdn.brandfetch.io — le serveur ne
+    télécharge ni ne cache JAMAIS ce logo, condition explicite du tier gratuit
+    Brandfetch (« you must hotlink the logos we serve rather than caching
+    them » ; un fetch côté serveur est détecté comme "automated_traffic" et
+    bloqué — vérifié empiriquement). Le navigateur du user charge l'image lui-
+    même, comme n'importe quelle image externe classique.
   - MANUEL (runtime, MEDIA) : l'utilisateur colle une URL pour UN display_name
     précis (bouton badge sur une transaction) → stocké sous
     icons/merchants/<slugify(display_name)>.<ext> dans le storage MEDIA par
     défaut (bucket S3 en prod), via services.logos.fetch_from_url — même
-    primitif que la réparation de logo institution (#128). Gagne TOUJOURS sur
-    le seed (action utilisateur explicite).
+    primitif que la réparation de logo institution (#128). CE tier-là reste
+    téléchargé/caché côté serveur (l'utilisateur peut coller N'IMPORTE quelle
+    URL, pas seulement Brandfetch) — gagne TOUJOURS sur le seed (action
+    utilisateur explicite).
 
 Limite assumée (#124 — pas de modèle Merchant dans ce lot) : la clé manuelle est
 le display_name EXACT, pas un alias flou. Deux variantes textuelles du même
@@ -21,7 +27,8 @@ besoin se confirme.
 
 Appelant à fort volume (liste de transactions) : get_merchant_logo_map(names)
 résout tout en 1 scan disque (manuel, mis en cache) + 1 passage regex par nom
-distinct (seed) — jamais de N+1 (même principe que get_institution_icon_map).
+distinct (seed, pur Python — construire une URL Brandfetch ne fait AUCUN I/O)
+— jamais de N+1 (même principe que get_institution_icon_map).
 
 NOTE fuzzy : le prototype (management command) a mesuré rapidfuzz en tier de
 secours et trouvé un faux positif net ("PARKING" → APCOA Parking, score 100 en
@@ -40,7 +47,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from django.conf import settings
-from django.templatetags.static import static as static_url
 from django.utils.text import slugify
 
 from services import logos
@@ -54,6 +60,20 @@ SEED_PATH = (
 MERCHANT_LOGO_PREFIX = "icons/merchants"
 _MANUAL_CACHE_TTL_SECONDS = 600
 _SLUG_MAX_LENGTH = 80
+
+# ── Brandfetch Logo API (seed tier) ──────────────────────────────────────────
+# Format d'URL vérifié empiriquement (curl + Referer + UA navigateur — un curl
+# nu SANS ces en-têtes est détecté "automated_traffic" et redirigé vers leur
+# doc, ce qui a piégé un premier essai) : /domain/<d>/theme/light/w/<n>/h/<n>/
+# fallback/404/icon.png?c=<client_id> — tous les modificateurs (theme, taille,
+# fallback) sont des SEGMENTS DE CHEMIN, pas des query params (seul `c` en est
+# un). fallback/404 (segment, pas ?fallback=404 qui est silencieusement
+# ignoré) : sans lui, un domaine inconnu de Brandfetch renvoie leur lettermark
+# générique ("B" stylisé) au lieu d'un vrai 404 — trompeur, on préfère notre
+# propre bouton "+" à leur placeholder de marque. theme=light : variante
+# pensée pour un fond clair (notre badge est TOUJOURS sur bg-white).
+BRANDFETCH_CDN_BASE = "https://cdn.brandfetch.io"
+_BRANDFETCH_LOGO_SIZE = 48  # 2x la taille CSS du badge (18px) — écrans retina
 
 
 @dataclass(frozen=True)
@@ -91,13 +111,18 @@ def normalize(display_name: str) -> str:
     return display_name.upper().strip()
 
 
-def resolve_seed_key(display_name: str) -> str | None:
+def _match_seed(display_name: str) -> MerchantSeed | None:
     """Premier seed dont un mot-clé apparaît (frontières de mots) — ordre = priorité."""
     normalized = normalize(display_name)
     for seed in load_seed():
         if seed.pattern.search(normalized):
-            return seed.key
+            return seed
     return None
+
+
+def resolve_seed_key(display_name: str) -> str | None:
+    seed = _match_seed(display_name)
+    return seed.key if seed else None
 
 
 def slug_for(display_name: str) -> str:
@@ -118,27 +143,20 @@ def clear_manual_logo_cache() -> None:
     _manual_logo_urls_cached.cache_clear()
 
 
-def _seed_logo_static_dir() -> Path:
-    """Racine static/icons/merchants — même pattern que logos.institutions_icon_base()."""
-    return Path(settings.BASE_DIR) / "static" / "icons" / "merchants"
-
-
-def _seed_logo_url(seed_key: str) -> str:
+def _brandfetch_url(domain: str) -> str:
     """
-    URL statique résolue via le tag {% static %} (django.templatetags.static.static),
-    PAS une concaténation de string : en prod STATICFILES_STORAGE est un
-    CompressedManifestStaticFilesStorage (WhiteNoise) qui renomme chaque fichier avec
-    un hash de contenu (`decathlon.a1b2c3.png`) — une URL construite à la main serait
-    un 404 silencieux en prod alors qu'elle marche en dev (DEBUG=True, pas de manifest).
-
-    Vérifie D'ABORD que le fichier existe sur disque (le seed JSON peut lister une
-    entrée dont le logo n'a pas encore été récupéré via prototype_merchant_logos) —
-    un fichier absent du manifest fait lever ValueError côté Django, donc on ne
-    tente static() que si le fichier source est bien là.
+    URL Brandfetch LIVE (hotlink direct navigateur) pour `domain`. "" si pas de
+    Client ID configuré (dev sans .env rempli) ou domaine invalide — dégradation
+    silencieuse, jamais d'exception (même contrat que le reste du module logos).
     """
-    if not (_seed_logo_static_dir() / f"{seed_key}.png").is_file():
+    client_id = settings.BRANDFETCH_CLIENT_ID
+    if not client_id or not logos.is_valid_domain(domain):
         return ""
-    return static_url(f"icons/merchants/{seed_key}.png")
+    size = _BRANDFETCH_LOGO_SIZE
+    return (
+        f"{BRANDFETCH_CDN_BASE}/domain/{domain}/theme/light/w/{size}/h/{size}"
+        f"/fallback/404/icon.png?c={client_id}"
+    )
 
 
 def get_merchant_logo_map(display_names: list[str]) -> dict[str, str]:
@@ -153,8 +171,8 @@ def get_merchant_logo_map(display_names: list[str]) -> dict[str, str]:
         if manual_url:
             result[name] = manual_url
             continue
-        seed_key = resolve_seed_key(name)
-        result[name] = _seed_logo_url(seed_key) if seed_key else ""
+        seed = _match_seed(name)
+        result[name] = _brandfetch_url(seed.domain) if seed else ""
     return result
 
 

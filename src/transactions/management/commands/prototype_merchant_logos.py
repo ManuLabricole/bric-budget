@@ -1,18 +1,19 @@
 """
 transactions/management/commands/prototype_merchant_logos.py
 
-PROTOTYPE (#124) — mesurer avant de construire le vrai modèle Merchant/MerchantAlias.
-N'écrit AUCUN champ en base, ne crée AUCUNE table : lecture seule de
-Transaction.display_name, matching 100% local contre un seed JSON committé
-(transactions/reference/merchant_seed.json), puis téléchargement du logo via
-services.logos (Google Favicons) — donc SEUL le domaine (jamais la description
-brute d'une transaction) part vers un tiers.
+PROTOTYPE (#124) — outil de découverte, pas de pipeline de production. Lecture
+seule de Transaction.display_name, matching 100% local contre le seed JSON
+committé (transactions/reference/merchant_seed.json). N'écrit AUCUN fichier,
+AUCUN champ en base : sert à repérer quels display_name distincts manquent
+encore d'une entrée seed, pour l'étoffer à la main.
 
-Le matching keyword (load_seed/MerchantSeed) vit dans services.merchant_logos —
-c'est le MÊME code que celui utilisé en live par budget/views/transactions.py
-pour résoudre le badge logo marchand. Cette commande n'ajoute que ce qui lui est
-propre : le fuzzy tier (exploration CLI, jamais branché en live, voir NOTE) et
-la boucle de téléchargement/rapport en masse.
+La résolution du logo lui-même (à quelle URL pointer une fois un marchand
+matché) vit dans services.merchant_logos — ce n'est PAS le rôle de cette
+commande. Depuis le passage à Brandfetch (Logo API, hotlink navigateur live,
+#124), il n'y a plus rien à télécharger/cacher côté serveur pour le tier
+seed : la commande ne fait plus que matcher + rapporter, elle ne fetch plus
+aucun logo (l'ancienne version téléchargeait via Google Favicons — obsolète,
+supprimée avec le passage à Brandfetch).
 
 Pipeline :
   1. Transaction.objects.values("display_name").annotate(n=Count("id")) —
@@ -21,8 +22,7 @@ Pipeline :
        a. keyword tier  — services.merchant_logos.load_seed(), même règle
           d'ordre/priorité que la résolution live.
        b. fuzzy tier (rapidfuzz) — seulement si (a) n'a rien trouvé.
-  3. Match + logo absent → services.logos.fetch_logo(domain, dest).
-  4. Récap : matched (keyword) / matched (fuzzy) / non matché.
+  3. Récap : matched (keyword) / matched (fuzzy) / non matché + top non-matchés.
 
 NOTE choix librairie fuzzy : rapidfuzz plutôt que fuzzywuzzy/thefuzz — implémentation
 C++ (rapide sur 2000+ display_name distincts), licence MIT (fuzzywuzzy est GPL via
@@ -35,27 +35,20 @@ pourquoi le fuzzy reste CLI-only : services.merchant_logos.get_merchant_logo_map
 (résolution live) n'utilise QUE le keyword tier.
 
 Usage :
-    python manage.py prototype_merchant_logos                    # dry-run (aucun fichier écrit)
-    python manage.py prototype_merchant_logos --apply             # télécharge réellement les logos
-    python manage.py prototype_merchant_logos --apply -v 2         # 1 ligne par transaction distincte
-    python manage.py prototype_merchant_logos --min-count 3        # ignore le bruit à occurrence unique
-    python manage.py prototype_merchant_logos --apply --apply-fuzzy --fuzzy-threshold 92
+    python manage.py prototype_merchant_logos                    # top non-matchés
+    python manage.py prototype_merchant_logos -v 2                # 1 ligne par display_name distinct
+    python manage.py prototype_merchant_logos --min-count 3       # ignore le bruit à occurrence unique
+    python manage.py prototype_merchant_logos --fuzzy-threshold 92
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from django.conf import settings
 from django.core.management.base import BaseCommand, CommandParser
 from django.db.models import Count
 from rapidfuzz import fuzz, process
 
-from services import logos
 from services.merchant_logos import MerchantSeed, load_seed, normalize
 from transactions.models import Transaction
-
-LOGO_DEST_DIR = Path(settings.BASE_DIR) / "static" / "icons" / "merchants"
 
 DEFAULT_FUZZY_THRESHOLD = 90
 
@@ -83,19 +76,9 @@ def match_fuzzy(
 
 
 class Command(BaseCommand):
-    help = "[PROTOTYPE #124] Matche display_name → merchant seed + télécharge les logos manquants."
+    help = "[PROTOTYPE #124] Matche display_name → merchant seed, rapporte les non-matchés."
 
     def add_arguments(self, parser: CommandParser) -> None:
-        parser.add_argument(
-            "--apply",
-            action="store_true",
-            help="Télécharge réellement les logos (défaut : dry-run, aucun fichier écrit).",
-        )
-        parser.add_argument(
-            "--apply-fuzzy",
-            action="store_true",
-            help="Télécharge aussi les logos matchés par la tier fuzzy (défaut : keyword tier only).",
-        )
         parser.add_argument(
             "--fuzzy-threshold",
             type=int,
@@ -111,8 +94,6 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options) -> None:
         seeds = load_seed()
-        apply = options["apply"]
-        apply_fuzzy = options["apply_fuzzy"]
         threshold = options["fuzzy_threshold"]
         min_count = options["min_count"]
         verbosity = options["verbosity"]
@@ -126,7 +107,6 @@ class Command(BaseCommand):
         )
 
         stats = {"keyword": 0, "fuzzy": 0, "unmatched": 0}
-        fetched = skipped = failed = 0
         unmatched_report: list[tuple[str, int]] = []
 
         for row in rows:
@@ -160,25 +140,6 @@ class Command(BaseCommand):
                     f"[{tier}{score_suffix}] domain={seed.domain}"
                 )
 
-            should_fetch = apply and (tier == "keyword" or apply_fuzzy)
-            if not should_fetch:
-                continue
-
-            dest = LOGO_DEST_DIR / f"{seed.key}.png"
-            if dest.is_file():
-                skipped += 1
-                continue
-
-            result = logos.fetch_logo(seed.domain, dest)
-            if result is None:
-                failed += 1
-                self.stderr.write(f"  ❌  logo {seed.name} ({seed.domain}) — échec")
-            else:
-                fetched += 1
-                self.stdout.write(
-                    f"  ✅  logo {seed.name} → {dest.relative_to(settings.BASE_DIR)}"
-                )
-
         self.stdout.write("")
         self.stdout.write(
             self.style.SUCCESS(
@@ -186,14 +147,6 @@ class Command(BaseCommand):
                 f"{stats['unmatched']} non matchés."
             )
         )
-        if apply:
-            self.stdout.write(
-                f"   logos : {fetched} téléchargé(s), {skipped} déjà présent(s), {failed} échec(s)."
-            )
-        else:
-            self.stdout.write(
-                "   dry-run — relancer avec --apply pour télécharger les logos."
-            )
 
         if unmatched_report:
             top_unmatched = sorted(unmatched_report, key=lambda pair: -pair[1])[:20]

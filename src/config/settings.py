@@ -580,6 +580,16 @@ PERSO_SEED_USER_EMAIL = config(
 )
 
 
+# ── Logos marchands — Brandfetch Logo API (#124) ──────────────────────────────
+# Client ID gratuit (développeurs.brandfetch.com) — sert à construire l'URL de
+# logo à la volée (cdn.brandfetch.io), jamais à s'authentifier côté serveur :
+# l'URL entière (avec ce client ID) part directement dans le src d'un <img>,
+# chargée par le navigateur (hotlink obligatoire — condition du tier gratuit,
+# le serveur ne télécharge/cache JAMAIS ces logos). Vide → badge marchand seed
+# sans logo, dégradation silencieuse (voir services.merchant_logos).
+BRANDFETCH_CLIENT_ID = config("BRANDFETCH_CLIENT_ID", default="")
+
+
 # --- Test speedup (#261) : hachage MD5 SOUS pytest uniquement ----------------
 # PBKDF2 (défaut) est volontairement lent ; les tests n'ont pas besoin de sa
 # robustesse → MD5 accélère nettement les tests qui créent des users. Inactif en

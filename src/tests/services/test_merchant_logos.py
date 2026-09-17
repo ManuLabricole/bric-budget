@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from django.test import override_settings
 
 from services import merchant_logos
 
@@ -119,14 +120,26 @@ def test_get_merchant_logo_map_manual_override_wins_over_seed(
     assert result["MA BOUTIQUE UBER"] == "/media/manual.png"
 
 
-def test_get_merchant_logo_map_falls_back_to_seed_when_no_manual_entry(
-    small_seed, clear_manual_cache, monkeypatch, tmp_path
+@override_settings(BRANDFETCH_CLIENT_ID="test-client-id")
+def test_get_merchant_logo_map_falls_back_to_seed_brandfetch_url_when_no_manual_entry(
+    small_seed, clear_manual_cache, monkeypatch
 ):
     monkeypatch.setattr(merchant_logos.logos, "listdir_urls", lambda prefix: {})
-    monkeypatch.setattr(merchant_logos, "_seed_logo_static_dir", lambda: tmp_path)
-    (tmp_path / "uber.png").write_bytes(b"x")
     result = merchant_logos.get_merchant_logo_map(["HELP.UBER.COM UBER *EATS"])
-    assert result["HELP.UBER.COM UBER *EATS"] == "/static/icons/merchants/uber.png"
+    assert result["HELP.UBER.COM UBER *EATS"] == (
+        "https://cdn.brandfetch.io/domain/uber.com/theme/light/w/48/h/48"
+        "/fallback/404/icon.png?c=test-client-id"
+    )
+
+
+@override_settings(BRANDFETCH_CLIENT_ID="")
+def test_get_merchant_logo_map_seed_match_without_client_id_returns_empty(
+    small_seed, clear_manual_cache, monkeypatch
+):
+    """Pas de Client ID configuré (dev sans .env rempli) → dégradation silencieuse."""
+    monkeypatch.setattr(merchant_logos.logos, "listdir_urls", lambda prefix: {})
+    result = merchant_logos.get_merchant_logo_map(["HELP.UBER.COM UBER *EATS"])
+    assert result["HELP.UBER.COM UBER *EATS"] == ""
 
 
 def test_get_merchant_logo_map_empty_string_when_unmatched(
@@ -154,10 +167,24 @@ def test_get_merchant_logo_map_scans_disk_once_for_n_names(
     assert calls["n"] == 1
 
 
-def test_seed_logo_url_returns_empty_when_file_missing_on_disk(tmp_path, monkeypatch):
-    """Seed JSON peut lister une entrée dont le PNG n'a pas encore été récupéré."""
-    monkeypatch.setattr(merchant_logos, "_seed_logo_static_dir", lambda: tmp_path)
-    assert merchant_logos._seed_logo_url("nonexistent_key") == ""
+@override_settings(BRANDFETCH_CLIENT_ID="test-client-id")
+def test_brandfetch_url_builds_expected_hotlink():
+    url = merchant_logos._brandfetch_url("decathlon.com")
+    assert url == (
+        "https://cdn.brandfetch.io/domain/decathlon.com/theme/light/w/48/h/48"
+        "/fallback/404/icon.png?c=test-client-id"
+    )
+
+
+@override_settings(BRANDFETCH_CLIENT_ID="")
+def test_brandfetch_url_empty_without_client_id():
+    assert merchant_logos._brandfetch_url("decathlon.com") == ""
+
+
+@override_settings(BRANDFETCH_CLIENT_ID="test-client-id")
+def test_brandfetch_url_empty_for_invalid_domain():
+    """Défense en profondeur — is_valid_domain() réutilisé (garde anti-injection URL)."""
+    assert merchant_logos._brandfetch_url("https://evil.example/x") == ""
 
 
 # ── save_manual_logo ──────────────────────────────────────────────────────────
