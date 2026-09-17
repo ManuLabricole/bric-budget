@@ -98,6 +98,14 @@ Données :
   affichée avec les anciennes catégories tant que la page n'est pas rechargée.
   budget_rule_create_submit / _standalone_submit émettent HX-Trigger:
   rulesApplied après le bulk apply → cette zone se refetch toute seule.
+
+  hx-disinherit="*" — INDISPENSABLE : hx-select/hx-target/hx-swap/hx-include
+  posés ici s'héritent par défaut à TOUS les descendants qui n'ont pas leur
+  propre valeur (le sentinel scroll infini, mais aussi hx-select/hx-include
+  qu'aucune ligne/bouton ne redéfinit). Sans ce disinherit, un clic sur une
+  transaction (hx-get panel_tx_detail) hérite hx-select="#tx-results" → la
+  réponse (picker catégorie) ne contient pas cet id → swap vide → plus rien
+  ne s'affiche au clic (bug réel constaté après coup, cf. rulesApplied).
 {% endcomment %}
 <div id="tx-results"
      class="flex flex-col flex-1 min-h-0"
@@ -106,14 +114,10 @@ Données :
      hx-select="#tx-results"
      hx-target="#tx-results"
      hx-swap="outerHTML"
-     hx-include="[name='q'], #panel-amount-filter input">
-    {% comment %} Compteur — total depuis le paginator, pas juste la page courante {% endcomment %}
-    <div class="px-4 py-2 flex-shrink-0">
-        <p class="text-[10px] text-text-disabled">
-            {{ page_obj.paginator.count }} transaction{{ page_obj.paginator.count|pluralize }}
-            · {{ period_start|date:"j M Y" }} – {{ period_end|date:"j M Y" }}
-        </p>
-    </div>
+     hx-include="[name='q'], #panel-amount-filter input"
+     hx-disinherit="*">
+    {% comment %} Compteur + KPIs — total depuis le paginator, pas juste la page courante {% endcomment %}
+    {% include "budget/_panel_tx_kpi_summary.html" with total_count=page_obj.paginator.count %}
     {% if transactions %}
         <div id="tx-scroll-container"
              class="flex-1 overflow-y-auto"
@@ -140,10 +144,25 @@ Données :
             hx-trigger="revealed" = HTMX détecte quand ce div entre dans le viewport.
             hx-swap="outerHTML" = remplace CE div par la réponse (nouvelles lignes + nouveau sentinel).
             ?q={{ q }} préserve la recherche en cours lors du chargement de la page suivante.
+
+            root:#panel-content, PAS #tx-scroll-container : #tx-scroll-container est un flex
+            item dont le parent (#panel-content) est en display:block, donc son flex-1 ne
+            contraint rien — il grandit pour contenir TOUTE la liste au lieu d'être limité à
+            la hauteur du panel. #panel-content est le VRAI conteneur scrollable (overflow-y-auto
+            + hauteur bornée par #right-panel). Avec le mauvais root, le sentinel était considéré
+            "visible" en permanence → il rechargeait TOUTES les pages d'un coup à l'ouverture au
+            lieu d'une seule au scroll réel (bug réel en 3M/1A : cascade de 20+ requêtes
+            instantanées, imperceptible en 1M faute d'assez de pages pour le révéler).
             {% endcomment %}
             {% if page_obj.has_next %}
+                {% comment %}
+                hx-target="this" explicite — cf. _panel_tx_rows_append.html : sans lui,
+                ce sentinel hérite du hx-target="#tx-results" posé sur l'ancêtre (rulesApplied)
+                et écrase tout le container au lieu de se remplacer lui-même.
+                {% endcomment %}
                 <div hx-get="{% url 'budget:panel_transactions' %}?page={{ page_obj.next_page_number }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if amount_min %}&amount_min={{ amount_min }}{% endif %}{% if amount_max %}&amount_max={{ amount_max }}{% endif %}"
-                     hx-trigger="intersect root:#tx-scroll-container once"
+                     hx-trigger="intersect root:#panel-content once"
+                     hx-target="this"
                      hx-swap="outerHTML"
                      class="py-4 flex justify-center">
                     <span class="text-[10px] text-text-disabled">Chargement…</span>

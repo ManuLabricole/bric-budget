@@ -149,9 +149,17 @@ Rendu d'une transaction ignorée (is_ignored=True) :
         Bouton "pointer" — toggle is_reconciled directement depuis la liste.
         Même pattern que le bouton ignorer : hx-swap="outerHTML" sur #tx-id
         pour que le nouvel état (badge vert / carré vide) soit bien rendu.
+
+        hx-include — #tx-results a hx-disinherit="*" (voir _panel_tx_list.html) :
+        rien ne s'hérite, donc sans ce hx-include explicite ici, la vue ne
+        recevrait ni q ni le filtre montant. Elle en a besoin pour recalculer
+        les KPIs (#tx-kpi-summary, swap OOB) sur EXACTEMENT le même queryset
+        filtré que celui déjà affiché — sinon les compteurs dériveraient du
+        total visible dès qu'une recherche/filtre montant est active.
         {% endcomment %}
         <button hx-post="{% url 'budget:toggle_reconcile' tx.id %}"
                 hx-vals='{"source": "{{ panel_source|default:"" }}"}'
+                hx-include="[name='q'], #panel-amount-filter input"
                 hx-target="#tx-{{ tx.id }}"
                 hx-swap="outerHTML"
                 title="{% if tx.is_reconciled %}Dépointée{% else %}Pointer la transaction{% endif %}"

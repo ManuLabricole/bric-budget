@@ -18,7 +18,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import EmptyPage, InvalidPage, Paginator
-from django.db.models import Prefetch
+from django.db.models import Count, Prefetch, Q
 from django.db.models.functions import Abs
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, render
@@ -280,6 +280,88 @@ def budget_modal_target_create(request):
 
 
 # =============================================================================
+# Queryset + KPIs transactions — PARTAGÉS entre budget_panel_transactions
+# (liste) et budget_toggle_reconcile (recalcul des KPIs après un pointage
+# depuis la liste, voir plus bas). Un seul point de vérité pour le filtrage :
+# un filtre ajouté ici (compte masqué, recherche...) s'applique aux deux.
+# =============================================================================
+
+
+def _parse_amount_filter(raw):
+    """Retourne un entier positif ou None si invalide/vide (filtre montant min/max)."""
+    try:
+        v = int(float(raw)) if raw and raw.strip() else None
+        return v if v and v > 0 else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _build_tx_queryset(
+    request, period_start, period_end, *, q="", amount_min=None, amount_max=None
+):
+    """
+    Queryset Transaction filtré (période, comptes/catégories masqués, recherche,
+    montant) — SANS select_related/order_by/pagination : chaque appelant ajoute
+    ce qu'il lui faut (la liste a besoin de select_related + order_by + Paginator ;
+    un recalcul de KPI n'a besoin que du queryset pour un .aggregate()).
+
+    Pas de filtre is_ignored=False — le panel affiche les ignorées en grisé,
+    l'utilisateur doit les voir pour pouvoir les réactiver (cf. budget_index
+    qui, lui, les exclut des KPIs budget).
+    """
+    filter_account_ids = request.session.get("budget_filter_accounts_hidden", [])
+    hidden_cat_slugs = request.session.get("budget_filter_categories_hidden", [])
+
+    qs = Transaction.objects.for_user(request.user).filter(
+        date__gte=period_start,
+        date__lte=period_end,
+        is_internal_transfer=False,
+    )
+    if filter_account_ids:
+        qs = qs.exclude(account_id__in=filter_account_ids)
+    if hidden_cat_slugs:
+        qs = qs.exclude(category__slug__in=hidden_cat_slugs)
+    if q:
+        qs = qs.filter(display_name__icontains=q)
+    if amount_min is not None or amount_max is not None:
+        # Abs() annote chaque ligne avec la valeur absolue du montant.
+        qs = qs.annotate(abs_amount=Abs("amount"))
+        if amount_min is not None:
+            qs = qs.filter(abs_amount__gte=amount_min)
+        if amount_max is not None:
+            qs = qs.filter(abs_amount__lte=amount_max)
+    return qs
+
+
+# Slug de la catégorie système "Inconnu" — même valeur que celle assignée par
+# défaut à l'import (transactions/services/import_service.py::_load_default_categories)
+# quand aucune règle ne matche.
+UNKNOWN_CATEGORY_SLUG = "inconnu"
+
+
+def _tx_kpi_counts(qs):
+    """
+    KPIs du panel transactions, calculés sur le queryset DÉJÀ filtré — un seul
+    .aggregate() (3 COUNT conditionnels dans la même requête) plutôt que 3
+    requêtes séparées.
+
+    unknown_count    : catégorie "Inconnu" OU sans catégorie (cf. UNKNOWN_CATEGORY_SLUG) —
+                        donne l'ordre de grandeur du reste à classer.
+    reconciled_count : is_reconciled=True ("pointée", vérifiée contre le relevé).
+    total_count      : count() du même queryset — pour les appelants qui n'ont
+                        pas déjà un Paginator sous la main (ex: toggle_reconcile).
+    """
+    return qs.aggregate(
+        total_count=Count("id"),
+        unknown_count=Count(
+            "id",
+            filter=Q(category__isnull=True) | Q(category__slug=UNKNOWN_CATEGORY_SLUG),
+        ),
+        reconciled_count=Count("id", filter=Q(is_reconciled=True)),
+    )
+
+
+# =============================================================================
 # budget_panel_transactions — Partial HTMX : liste transactions (right panel)
 # =============================================================================
 
@@ -326,14 +408,6 @@ def budget_panel_transactions(request):
     # Limitation connue : pour les comptes non-CHF (EUR), `amount` est en devise
     # native. On filtre donc en EUR pour ces comptes. Acceptable pour l'usage actuel
     # (majorité des comptes sont CHF).
-    def _parse_amount_filter(raw):
-        """Retourne un entier positif ou None si invalide/vide."""
-        try:
-            v = int(float(raw)) if raw and raw.strip() else None
-            return v if v and v > 0 else None
-        except (ValueError, TypeError):
-            return None
-
     amount_min = _parse_amount_filter(request.GET.get("amount_min", ""))
     amount_max = _parse_amount_filter(request.GET.get("amount_max", ""))
 
@@ -354,38 +428,26 @@ def budget_panel_transactions(request):
 
     # ── Queryset transactions ─────────────────────────────────────────────────
     #
-    # list() force l'évaluation du queryset pour pouvoir annoter les objets.
-    # select_related → 1 JOIN au lieu de N+1 requêtes en template.
-    # order_by("-date", "-id") → plus récentes en premier, "-id" = tie-breaker.
-    #
-    # Pas de filtre is_ignored=False ici — contrairement à budget_index()
-    # qui exclut les ignorées des KPIs budget, le panel les affiche en grisé.
-    # L'utilisateur doit voir ce qu'il a ignoré pour pouvoir le réactiver.
+    # _build_tx_queryset (partagé avec budget_toggle_reconcile — voir plus bas)
+    # applique période + filtres actifs. select_related/order_by ajoutés ici :
+    # 1 JOIN au lieu de N+1 en template, plus récentes en premier ("-id" = tie-breaker).
     qs = (
-        Transaction.objects.for_user(request.user)
-        .filter(
-            date__gte=period_start,
-            date__lte=period_end,
-            is_internal_transfer=False,
+        _build_tx_queryset(
+            request,
+            period_start,
+            period_end,
+            q=q,
+            amount_min=amount_min,
+            amount_max=amount_max,
         )
         .select_related("category", "subcategory", "account", "account__institution")
         .order_by("-date", "-id")
     )
-    if filter_account_ids:
-        qs = qs.exclude(account_id__in=filter_account_ids)
-    if hidden_cat_slugs:
-        qs = qs.exclude(category__slug__in=hidden_cat_slugs)
-    if q:
-        qs = qs.filter(display_name__icontains=q)
-    if amount_min is not None or amount_max is not None:
-        # Abs() annote chaque ligne avec la valeur absolue du montant.
-        # On filtre ensuite dessus — les dépenses (négatives) et entrées (positives)
-        # sont traitées de la même façon.
-        qs = qs.annotate(abs_amount=Abs("amount"))
-        if amount_min is not None:
-            qs = qs.filter(abs_amount__gte=amount_min)
-        if amount_max is not None:
-            qs = qs.filter(abs_amount__lte=amount_max)
+
+    # KPIs — recalculés sur CE queryset (mêmes filtres que le total affiché),
+    # donc toujours cohérents avec le nombre de transactions montré. Un seul
+    # aggregate (3 COUNT conditionnels) plutôt que 3 requêtes.
+    tx_kpis = _tx_kpi_counts(qs)
 
     # Pagination 50 tx/page — scroll infini côté client (HTMX "revealed").
     # ?page= est injecté par le sentinel HTMX en bas du scroll.
@@ -469,6 +531,10 @@ def budget_panel_transactions(request):
             "q": q,
             "amount_min": amount_min,
             "amount_max": amount_max,
+            # KPIs — voir _tx_kpi_counts. Inclus dans _panel_tx_kpi_summary.html
+            # (import de contexte implicite par {% include %}, pas d'"only").
+            "unknown_count": tx_kpis["unknown_count"],
+            "reconciled_count": tx_kpis["reconciled_count"],
         },
     )
 
@@ -956,13 +1022,53 @@ def budget_toggle_reconcile(request, tx_id):
     if inline is not None:
         return inline
 
-    # source=list → appelé depuis la ligne liste → retourner juste la ligne
+    # source=list → appelé depuis la ligne liste → retourner la ligne + un swap
+    # OOB des KPIs (#tx-kpi-summary, voir _panel_tx_kpi_summary.html) : pointer
+    # change reconciled_count, donc le compteur "X/Y pointées" doit suivre SANS
+    # recharger toute la liste (contrairement à rulesApplied — un pointage est
+    # une action bien plus fréquente, resynchroniser #tx-results à chaque clic
+    # réinitialiserait le scroll). Si le fragment KPI n'est pas dans le DOM
+    # courant (contexte inline patrimoine/catégorie — déjà sorti via
+    # _inline_dispatch ci-dessus, donc jamais atteint ici en pratique), htmx
+    # ignore silencieusement un swap OOB sans cible : aucun risque à toujours
+    # l'inclure.
+    #
+    # q/amount_min/amount_max viennent de request.POST (hx-include explicite
+    # sur le bouton — #tx-results a hx-disinherit="*", rien ne s'hérite) : sans
+    # eux, le recalcul porterait sur un queryset plus large que celui affiché
+    # (dès qu'une recherche/filtre montant est active) et les KPIs dériveraient
+    # silencieusement du total réellement visible.
     if request.POST.get("source") != "detail":
-        return render(
-            request,
+        row_html = render_to_string(
             "budget/_panel_tx_row.html",
             {"tx": tx, "institution_icon_url": institution_icon_url},
+            request=request,
         )
+        period_start, period_end = _period_from_session(request.session)
+        amount_min = _parse_amount_filter(request.POST.get("amount_min", ""))
+        amount_max = _parse_amount_filter(request.POST.get("amount_max", ""))
+        kpi_qs = _build_tx_queryset(
+            request,
+            period_start,
+            period_end,
+            q=request.POST.get("q", "").strip(),
+            amount_min=amount_min,
+            amount_max=amount_max,
+        )
+        tx_kpis = _tx_kpi_counts(kpi_qs)
+        kpi_html = render_to_string(
+            "budget/_panel_tx_kpi_summary.html",
+            {
+                "total_count": tx_kpis["total_count"],
+                "unknown_count": tx_kpis["unknown_count"],
+                "reconciled_count": tx_kpis["reconciled_count"],
+                "period_start": period_start,
+                "period_end": period_end,
+                "oob": True,
+            },
+            request=request,
+        )
+        return HttpResponse(row_html + kpi_html)
 
     # source=detail → retourner le panneau entier mis à jour.
     close_on_back = request.POST.get("close_on_back") == "true"

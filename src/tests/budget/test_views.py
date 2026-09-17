@@ -7,6 +7,7 @@ Tests des vues budget/ :
 """
 
 import hashlib
+import re
 from decimal import Decimal
 
 import pytest
@@ -434,6 +435,186 @@ def test_panel_transactions_contains_category_filter(auth_client, cf_category):
     r = auth_client.get(reverse("budget:panel_transactions"))
     assert r.status_code == 200
     assert b"categories-filter-details" in r.content
+
+
+# =============================================================================
+# Panel transactions — KPI dynamiques (inconnues / pointées)
+# =============================================================================
+
+
+def _kpi_fraction(html: str, label: str) -> str:
+    """
+    Extrait "N/M <label>(s)" du HTML — regex plutôt qu'un match d'octets brut
+    pour ne pas dépendre de l'indentation exacte du template autour du texte,
+    tout en distinguant proprement le singulier du pluriel via `es?`.
+    """
+    m = re.search(rf"(\d+)/(\d+) {label}s?", html)
+    assert m is not None, f"KPI '{label}' introuvable dans : {html[:2000]}"
+    return m.group(0)
+
+
+@pytest.mark.django_db
+def test_panel_transactions_shows_unknown_and_reconciled_counts(
+    auth_client, account, cf_category
+):
+    """
+    2 tx sans catégorie (inconnues) + 1 tx pointée sur 3 au total → le panel
+    affiche "2/3 inconnues" et "1/3 pointée" (singulier correct).
+    """
+    from datetime import date
+
+    for seed in ("unknown-001", "unknown-002"):
+        Transaction.objects.create(
+            account=account,
+            category=None,
+            date=date.today().replace(day=1),
+            amount=Decimal("-10.00"),
+            currency="CHF",
+            amount_chf=Decimal("-10.00"),
+            description_raw=f"UNKNOWN TX {seed}",
+            display_name=f"UNKNOWN TX {seed}",
+            import_hash=f"panel_kpi_{seed}",
+        )
+    Transaction.objects.create(
+        account=account,
+        category=cf_category,
+        date=date.today().replace(day=1),
+        amount=Decimal("-30.00"),
+        currency="CHF",
+        amount_chf=Decimal("-30.00"),
+        description_raw="RECONCILED TX",
+        display_name="RECONCILED TX",
+        is_reconciled=True,
+        import_hash="panel_kpi_reconciled_001",
+    )
+
+    html = auth_client.get(reverse("budget:panel_transactions")).content.decode()
+
+    assert _kpi_fraction(html, "inconnue") == "2/3 inconnues"
+    assert _kpi_fraction(html, "pointée") == "1/3 pointée"
+
+
+@pytest.mark.django_db
+def test_panel_transactions_kpi_counts_respect_search_filter(
+    auth_client, account, cf_category
+):
+    """
+    Les KPIs portent sur le MÊME queryset filtré que le total affiché, pas sur
+    toute la période — une recherche qui exclut la tx inconnue doit la sortir
+    du dénominateur ET du numérateur (sinon les KPIs mentent dès qu'on filtre).
+    """
+    from datetime import date
+
+    Transaction.objects.create(
+        account=account,
+        category=None,
+        date=date.today().replace(day=1),
+        amount=Decimal("-10.00"),
+        currency="CHF",
+        amount_chf=Decimal("-10.00"),
+        description_raw="ZZZ UNKNOWN NOMATCH",
+        display_name="ZZZ UNKNOWN NOMATCH",
+        import_hash="panel_kpi_filter_unknown_001",
+    )
+    Transaction.objects.create(
+        account=account,
+        category=cf_category,
+        date=date.today().replace(day=1),
+        amount=Decimal("-20.00"),
+        currency="CHF",
+        amount_chf=Decimal("-20.00"),
+        description_raw="MIGROS MATCH",
+        display_name="MIGROS MATCH",
+        import_hash="panel_kpi_filter_known_001",
+    )
+
+    html = auth_client.get(
+        reverse("budget:panel_transactions"), {"q": "MIGROS"}
+    ).content.decode()
+
+    # Total filtré = 1 (pas 2) : la tx "ZZZ UNKNOWN NOMATCH" est hors recherche.
+    assert _kpi_fraction(html, "inconnue") == "0/1 inconnues"
+
+
+@pytest.mark.django_db
+def test_toggle_reconcile_from_list_returns_oob_kpi_update(
+    auth_client, account, cf_category
+):
+    """
+    Pointer une tx depuis la LISTE (source != detail) doit renvoyer, en plus de
+    la ligne, un swap OOB de #tx-kpi-summary avec le compteur pointées à jour —
+    sinon le KPI affiché reste faux tant que la page n'est pas rechargée
+    (c'est tout le sens de la demande : dynamique, pas figé au chargement).
+    """
+    from datetime import date
+
+    tx = Transaction.objects.create(
+        account=account,
+        category=cf_category,
+        date=date.today().replace(day=1),
+        amount=Decimal("-15.00"),
+        currency="CHF",
+        amount_chf=Decimal("-15.00"),
+        description_raw="TOGGLE RECONCILE TX",
+        display_name="TOGGLE RECONCILE TX",
+        import_hash="toggle_reconcile_oob_001",
+    )
+    assert tx.is_reconciled is False
+
+    response = auth_client.post(
+        reverse("budget:toggle_reconcile", args=[tx.id]), {"source": ""}
+    )
+    html = response.content.decode()
+
+    assert response.status_code == 200
+    tx.refresh_from_db()
+    assert tx.is_reconciled is True
+    assert 'id="tx-kpi-summary"' in html
+    assert "hx-swap-oob" in html
+    assert _kpi_fraction(html, "pointée") == "1/1 pointée"
+
+
+@pytest.mark.django_db
+def test_toggle_reconcile_oob_kpi_respects_active_search(
+    auth_client, account, cf_category
+):
+    """
+    Le bouton pointer envoie q/amount via hx-include (#tx-results a
+    hx-disinherit="*", rien ne s'hérite) — le recalcul OOB doit porter sur le
+    MÊME sous-ensemble filtré que celui affiché, pas sur toute la période.
+    """
+    from datetime import date
+
+    tx_match = Transaction.objects.create(
+        account=account,
+        category=cf_category,
+        date=date.today().replace(day=1),
+        amount=Decimal("-15.00"),
+        currency="CHF",
+        amount_chf=Decimal("-15.00"),
+        description_raw="MIGROS TOGGLE",
+        display_name="MIGROS TOGGLE",
+        import_hash="toggle_reconcile_oob_filter_001",
+    )
+    Transaction.objects.create(
+        account=account,
+        category=cf_category,
+        date=date.today().replace(day=1),
+        amount=Decimal("-25.00"),
+        currency="CHF",
+        amount_chf=Decimal("-25.00"),
+        description_raw="COOP OTHER",
+        display_name="COOP OTHER",
+        import_hash="toggle_reconcile_oob_filter_002",
+    )
+
+    html = auth_client.post(
+        reverse("budget:toggle_reconcile", args=[tx_match.id]),
+        {"source": "", "q": "MIGROS"},
+    ).content.decode()
+
+    # 1 seule tx dans le sous-ensemble "MIGROS" — pas 2 — et elle vient d'être pointée.
+    assert _kpi_fraction(html, "pointée") == "1/1 pointée"
 
 
 # =============================================================================
