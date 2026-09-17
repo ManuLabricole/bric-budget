@@ -65,12 +65,12 @@ def test_yuh_same_transaction_same_hash_regardless_of_line_number():
     counters_full_export: dict[str, int] = {}
     tx_line_45 = connector._parse_row(
         row, line_number=45, occurrence_counters=counters_full_export
-    )
+    )[0]  # 1 seule jambe : DEBIT rempli, CREDIT vide
 
     counters_monthly_export: dict[str, int] = {}
     tx_line_3 = connector._parse_row(
         row, line_number=3, occurrence_counters=counters_monthly_export
-    )
+    )[0]
 
     assert tx_line_45["import_hash"] == tx_line_3["import_hash"]
 
@@ -87,8 +87,8 @@ def test_yuh_two_identical_transactions_same_day_get_different_hashes():
     row = _yuh_row()
 
     counters: dict[str, int] = {}
-    tx1 = connector._parse_row(row, line_number=1, occurrence_counters=counters)
-    tx2 = connector._parse_row(row, line_number=2, occurrence_counters=counters)
+    tx1 = connector._parse_row(row, line_number=1, occurrence_counters=counters)[0]
+    tx2 = connector._parse_row(row, line_number=2, occurrence_counters=counters)[0]
 
     assert tx1["import_hash"] != tx2["import_hash"]
 
@@ -116,13 +116,13 @@ def test_yuh_occurrence_index_stable_across_partial_exports():
     counters_jan: dict[str, int] = {}
     tx_jan = connector._parse_row(
         loyer, line_number=1, occurrence_counters=counters_jan
-    )
+    )[0]
 
     # Import full year — loyer est à la ligne 45 mais c'est toujours le 1er du groupe
     counters_full: dict[str, int] = {}
     tx_full = connector._parse_row(
         loyer, line_number=45, occurrence_counters=counters_full
-    )
+    )[0]
 
     assert tx_jan["import_hash"] == tx_full["import_hash"]
 
@@ -143,15 +143,15 @@ def test_yuh_occurrence_index_increments_correctly_for_repeated_transactions():
     counters_monthly: dict[str, int] = {}
     monthly_hashes = [
         connector._parse_row(row, line_number=i, occurrence_counters=counters_monthly)[
-            "import_hash"
-        ]
+            0
+        ]["import_hash"]
         for i in range(1, 4)
     ]
 
     # Fichier complet : lignes 50, 51, 52
     counters_full: dict[str, int] = {}
     full_hashes = [
-        connector._parse_row(row, line_number=i, occurrence_counters=counters_full)[
+        connector._parse_row(row, line_number=i, occurrence_counters=counters_full)[0][
             "import_hash"
         ]
         for i in range(50, 53)
@@ -167,10 +167,10 @@ def test_yuh_different_amounts_produce_different_hashes():
     counters: dict[str, int] = {}
     tx_2chf = connector._parse_row(
         _yuh_row(amount="2.00"), line_number=1, occurrence_counters=counters
-    )
+    )[0]
     tx_3chf = connector._parse_row(
         _yuh_row(amount="3.00"), line_number=2, occurrence_counters=counters
-    )
+    )[0]
 
     assert tx_2chf["import_hash"] != tx_3chf["import_hash"]
 
@@ -178,7 +178,7 @@ def test_yuh_different_amounts_produce_different_hashes():
 def test_yuh_balance_after_is_none():
     """Yuh n'a pas de solde par ligne → balance_after doit être None."""
     connector = YuhConnector()
-    tx = connector._parse_row(_yuh_row(), line_number=1, occurrence_counters={})
+    tx = connector._parse_row(_yuh_row(), line_number=1, occurrence_counters={})[0]
     assert tx["balance_after"] is None
 
 

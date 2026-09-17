@@ -69,13 +69,38 @@ Set to None if the source file does not provide a per-row balance:
   - CIC  : balance in column F on every row → daily snapshots possible ✓
 
 Future connectors (Finpension, Swissquote...) should set this when available.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONTRACT : paired_leg_key (mouvements internes multi-devises)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Certains fichiers source encodent UN mouvement sur DEUX lignes de sortie —
+typiquement une conversion de devise où une colonne débit et une colonne
+crédit sont remplies simultanément, dans deux devises différentes (Yuh :
+"Change automatique Francs suisses", DEBIT -8.30 CHF + CREDIT 8.90 EUR sur
+la MÊME ligne CSV). Le connecteur doit alors émettre DEUX TransactionDict
+(une jambe par devise) plutôt que d'en laisser une disparaître.
+
+paired_leg_key relie ces deux jambes pour ImportService, SANS dépendre d'un
+texte de libellé (fragile — change si la banque reformule) ni d'une règle de
+catégorisation modifiable par l'utilisateur :
+  - None                → transaction normale, aucun appariement.
+  - une clé partagée par exactement 2 TransactionDict du même import → les
+    deux jambes d'un même mouvement. ImportService les relie via
+    Transaction.paired_transaction et force is_internal_transfer=True /
+    is_ignored=True sur les deux, indépendamment de la catégorie matchée.
+
+La clé doit être stable entre deux exports partiels (même construction que
+import_hash, sans le montant — voir yuh/parser.py pour l'implémentation).
+Optionnel (NotRequired) : les connecteurs qui ne scindent jamais une ligne
+(UBS, CIC, TSB) n'ont rien à changer.
 """
 
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 
 @dataclass
@@ -126,6 +151,11 @@ class TransactionDict(TypedDict):
     # Used by ImportService to create daily BalanceSnapshots.
     # See CONTRACT above for which connectors set this.
     balance_after: float | None
+
+    # Clé d'appariement des mouvements internes scindés en 2 jambes — voir
+    # CONTRACT ci-dessus. NotRequired : seuls les connecteurs qui scindent
+    # une ligne source en 2 TransactionDict (Yuh) le renseignent.
+    paired_leg_key: NotRequired[str | None]
 
 
 class BaseConnector(ABC):

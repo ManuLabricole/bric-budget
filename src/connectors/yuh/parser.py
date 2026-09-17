@@ -32,6 +32,21 @@ KEEP everything else:
     SAVINGS_PLAN_*            savings plan movements — keep
     Any future activity type  → kept by default (blacklist = future-proof)
 
+Currency conversions (2 legs per row)
+--------------------------------------
+BANK_AUTO_ORDER_EXECUTED and BANK_ORDER_EXECUTED can fill BOTH DEBIT and
+CREDIT on the SAME row, in two different currencies — e.g. "Change automatique
+Francs suisses": DEBIT -8.30 CHF + CREDIT 8.90 EUR. This is ONE wallet
+movement (money leaves the CHF pocket, enters the EUR pocket of the SAME
+Yuh account), not a CHF expense. _parse_row() emits 2 TransactionDict in
+that case (one per currency), linked via paired_leg_key (see CONTRACT in
+connectors/base.py) so ImportService pairs them via Transaction.
+paired_transaction and marks both is_internal_transfer=True / is_ignored=True
+— they must never count as real spend/income, in ANY currency (CHF, EUR,
+GBP, USD all observed on real exports). Rows with only one column filled
+(most CARD_TRANSACTION_OUT, transfers, and some BANK_ORDER_EXECUTED that
+only convert without a matching debit on this account) stay 1 leg, no pairing.
+
 Balance extraction
 ------------------
 Filename format: "Activités_2026_03_17 - 33,344.CSV"
@@ -132,7 +147,7 @@ class YuhConnector(BaseConnector):
                     continue
 
                 try:
-                    transactions.append(
+                    transactions.extend(
                         self._parse_row(row, line_number, occurrence_counters)
                     )
                 except Exception as e:
@@ -202,15 +217,21 @@ class YuhConnector(BaseConnector):
 
     def _parse_row(
         self, row: dict, line_number: int, occurrence_counters: dict
-    ) -> TransactionDict:
+    ) -> list[TransactionDict]:
         """
-        Convert one CSV row dict into a TransactionDict.
+        Convert one CSV row dict into 1 or 2 TransactionDict.
 
         Called for each row that passed the KEPT_ACTIVITY_TYPES filter.
         Raises ValueError if a required field is missing or malformed.
+
+        2 TransactionDict when the row is a currency conversion (BANK_AUTO_
+        ORDER_EXECUTED, BANK_ORDER_EXECUTED with both DEBIT and CREDIT filled) :
+        one CSV row = one movement, but two currencies, two legs. Dropping
+        either leg silently understates one currency and overstates the other
+        by the exact same amount — see CONTRACT in base.py (paired_leg_key).
         """
         date_str = self._parse_date(row["DATE"].strip())
-        amount, currency = self._parse_amount(row)
+        legs = self._parse_legs(row)
         description_raw = self._strip_quotes(row["ACTIVITY NAME"].strip())
         # Yuh RECIPIENT/SENDER columns are already clean names — use as display_name
         # when available (better than cleaning ACTIVITY NAME which is already clean).
@@ -235,7 +256,7 @@ class YuhConnector(BaseConnector):
         # Yuh has no bank-assigned transaction ID, so we build a stable key from
         # content fields + occurrence_index.
         #
-        # occurrence_index = how many times this exact (date, type, amount, desc)
+        # occurrence_index = how many times this exact (date, type, description)
         # combination has already appeared earlier in THIS file. This disambiguates
         # two identical transactions on the same day (e.g. two 2 CHF parking) while
         # staying stable across partial exports:
@@ -245,25 +266,48 @@ class YuhConnector(BaseConnector):
         #
         # Contrast with line_number: full-year line 150 vs Jan-only line 5 → different
         # hashes → duplicate import. That's the bug occurrence_index fixes.
-        group_key = (date_str, row["ACTIVITY TYPE"], amount, description_raw)
+        #
+        # The group key deliberately EXCLUDES the amount (unlike before this
+        # supported the single-leg case only): a 2-leg conversion has two
+        # different amounts (one per currency) but is still ONE occurrence of
+        # ONE source row — including the amount would desync occurrence_index
+        # between the debit and credit leg and break hash stability.
+        group_key = (date_str, row["ACTIVITY TYPE"], description_raw)
         occurrence_index = occurrence_counters.get(group_key, 0)
         occurrence_counters[group_key] = occurrence_index + 1
 
-        raw = f"{date_str}|{row['ACTIVITY TYPE']}|{amount}|{description_raw}|{occurrence_index}"
-        import_hash = hashlib.sha256(raw.encode()).hexdigest()
-
-        return TransactionDict(
-            date=date_str,
-            time=None,  # Yuh doesn't export transaction time
-            amount=amount,
-            currency=currency,
-            description_raw=description_raw,
-            display_name=display_name,
-            merchant_name=merchant_name,
-            card_last_four=card_last_four,
-            import_hash=import_hash,
-            balance_after=None,
+        # paired_leg_key — only set when the row produced 2 legs. Built the same
+        # way as import_hash minus the leg-specific amount/currency, so it's
+        # identical for both legs and stable across partial re-exports.
+        paired_leg_key = (
+            f"{date_str}|{row['ACTIVITY TYPE']}|{description_raw}|{occurrence_index}"
+            if len(legs) == 2
+            else None
         )
+
+        results = []
+        for leg_index, (amount, currency) in enumerate(legs):
+            raw = (
+                f"{date_str}|{row['ACTIVITY TYPE']}|{description_raw}"
+                f"|{occurrence_index}|leg{leg_index}|{amount}|{currency}"
+            )
+            import_hash = hashlib.sha256(raw.encode()).hexdigest()
+            results.append(
+                TransactionDict(
+                    date=date_str,
+                    time=None,  # Yuh doesn't export transaction time
+                    amount=amount,
+                    currency=currency,
+                    description_raw=description_raw,
+                    display_name=display_name,
+                    merchant_name=merchant_name,
+                    card_last_four=card_last_four,
+                    import_hash=import_hash,
+                    balance_after=None,
+                    paired_leg_key=paired_leg_key,
+                )
+            )
+        return results
 
     def _parse_date(self, raw: str) -> str:
         """
@@ -278,29 +322,44 @@ class YuhConnector(BaseConnector):
         day, month, year = parts
         return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
 
-    def _parse_amount(self, row: dict) -> tuple[float, str]:
+    def _parse_legs(self, row: dict) -> list[tuple[float, str]]:
         """
-        Extract (amount, currency) from the DEBIT/CREDIT columns.
+        Extract [(amount, currency), ...] from the DEBIT/CREDIT columns.
 
-        Yuh uses two separate columns:
+        Yuh uses two separate column pairs:
             DEBIT  + DEBIT CURRENCY  → negative amount (money out)
             CREDIT + CREDIT CURRENCY → positive amount (money in)
 
-        One of the two pairs is always empty. We check DEBIT first.
-        Raises ValueError if both are empty or the value can't be parsed.
+        Most rows fill only ONE pair → 1 leg (a normal card payment, transfer...).
+
+        Currency conversions (BANK_AUTO_ORDER_EXECUTED, BANK_ORDER_EXECUTED) fill
+        BOTH pairs on the SAME row: e.g. DEBIT -8.30 CHF + CREDIT 8.90 EUR is one
+        wallet movement expressed in two currencies, not a CHF expense. Returning
+        only the debit leg (the old behaviour) silently drops the EUR credit —
+        the account then looks 8.90 EUR poorer than it really is. Both legs are
+        real Decimal amounts as written in the file (already signed — no abs()),
+        including the rare case where Yuh puts a NEGATIVE value in CREDIT
+        (observed on real exports: "Échange Francs suisses" selling CHF back).
+
+        Raises ValueError if both pairs are empty or a value can't be parsed.
         """
         debit = row.get("DEBIT", "").strip()
         debit_currency = row.get("DEBIT CURRENCY", "").strip()
         credit = row.get("CREDIT", "").strip()
         credit_currency = row.get("CREDIT CURRENCY", "").strip()
 
+        legs = []
         if debit:
             # Debit amounts are already negative in the file (e.g. "-196.20")
-            return float(debit), debit_currency
-        elif credit:
-            return float(credit), credit_currency
-        else:
+            legs.append((float(debit), debit_currency))
+        if credit:
+            # Usually positive, but Yuh sometimes writes a negative CREDIT
+            # (e.g. selling CHF back to buy EUR) — kept as-is, never abs().
+            legs.append((float(credit), credit_currency))
+
+        if not legs:
             raise ValueError("Both DEBIT and CREDIT are empty")
+        return legs
 
     def _strip_quotes(self, text: str) -> str:
         """

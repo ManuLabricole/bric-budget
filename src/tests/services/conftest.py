@@ -22,6 +22,7 @@ import pytest
 
 from connectors.base import TransactionDict
 from tests.factories import AccountFactory, InstitutionFactory, UserFactory
+from transactions.models import Category
 
 # =============================================================================
 # Fixtures DB — Utilisateur + Comptes (délèguent aux factories #194)
@@ -107,12 +108,17 @@ def make_tx(
     description_raw: str = "TEST SHOP LAUSANNE",
     display_name: str = "Test Shop Lausanne",
     merchant_name: str = "Test Shop",
+    paired_leg_key: str | None = None,
 ) -> TransactionDict:
     """
     Crée un TransactionDict minimal pour les tests.
 
     'seed' garantit des import_hash distincts entre les appels :
     make_tx("a") et make_tx("b") produisent des hashes différents.
+
+    paired_leg_key : voir CONTRACT dans connectors/base.py — None par défaut
+    (transaction normale). Renseigné pour tester l'appariement des 2 jambes
+    d'une conversion de devise (test_import_service_fx_pairing.py).
 
     Pourquoi ne pas utiliser un vrai connecteur ici ?
     → Les tests d'ImportService ne doivent pas dépendre du parsing.
@@ -132,9 +138,41 @@ def make_tx(
         card_last_four=None,
         import_hash=import_hash,
         balance_after=None,
+        paired_leg_key=paired_leg_key,
     )
 
 
 def make_file_hash(seed: str) -> str:
     """Génère un file_hash de test depuis une graine courte."""
     return hashlib.sha1(f"file:{seed}".encode(), usedforsecurity=False).hexdigest()
+
+
+# =============================================================================
+# Fixtures DB — Catégories système (défauts ImportService)
+# =============================================================================
+
+
+@pytest.fixture
+def income_category(db):
+    """Catégorie 'revenus' — slug utilisé par ImportService comme défaut positif."""
+    return Category.objects.create(
+        name="Revenus",
+        slug="revenus",
+        icon="",
+        colour_hex="#00FF00",
+        order=1,
+        is_system=True,
+    )
+
+
+@pytest.fixture
+def unknown_category(db):
+    """Catégorie 'inconnu' — slug utilisé par ImportService comme défaut négatif."""
+    return Category.objects.create(
+        name="Inconnu",
+        slug="inconnu",
+        icon="",
+        colour_hex="#888888",
+        order=2,
+        is_system=True,
+    )
