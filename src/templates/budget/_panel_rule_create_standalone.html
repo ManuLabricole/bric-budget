@@ -339,9 +339,15 @@ Ref : Phase 2G — T2 (Issue #33)
         standaloneUpdateSubmit();
     }
 
-    // Delegated listener : un seul handler attaché à body, fonctionne aussi sur les
-    // boutons réinjectés par HTMX (modal re-renders).
-    document.body.addEventListener('click', function (e) {
+    // Delegated listener, scopé sur #modal-content — PAS document.body.
+    // #modal-content a onclick="event.stopPropagation()" (base_app.html, pour que
+    // les clics DANS la modale ne la ferment pas via le handler du fond #modal) :
+    // ça empêche tout clic à l'intérieur de jamais atteindre body. Un listener sur
+    // body ne se déclenchait donc JAMAIS (bug réel : le picker restait ouvert,
+    // aucune erreur console — cf. même correctif dans _panel_category_create.html).
+    // #modal-content reste le bon scope pour survivre aux ré-injections HTMX
+    // (modal re-renders) : lui seul n'est jamais remplacé, seul son innerHTML l'est.
+    document.getElementById('modal-content').addEventListener('click', function (e) {
         var btn = e.target.closest('.js-cat-select[data-cat-target="rule-standalone"]');
         if (!btn) return;
         applyStandaloneSelection(btn.dataset);
