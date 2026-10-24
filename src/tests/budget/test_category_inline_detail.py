@@ -14,6 +14,7 @@ import hashlib
 import pytest
 from django.test import Client
 from django.urls import reverse
+from django.utils import timezone
 
 from accounts.models import Account, Institution
 from transactions.models import Category, Transaction
@@ -54,11 +55,16 @@ def account(db, user):
 
 @pytest.fixture
 def tx(db, account, cat):
-    # Date dans le mois courant (période par défaut de category_detail).
+    # Date dans le mois courant — la période par défaut de category_detail est le mois
+    # en cours. Une date EN DUR pourrit : "2026-06-05" était bien dans le mois courant
+    # à l'écriture du test, puis est sortie de la période une fois juin passé. La page
+    # n'avait alors plus aucun montant → donut vide → has_donut False → tout le panel
+    # droit (dont #cat-tx-detail) disparaissait, et le test échouait sans qu'aucun code
+    # applicatif n'ait bougé. day=5 est valide dans tous les mois.
     return Transaction.objects.create(
         account=account,
         category=cat,
-        date="2026-06-05",
+        date=timezone.localdate().replace(day=5),
         amount=-50,
         currency="CHF",
         amount_chf=-50,
