@@ -12,7 +12,7 @@ Requiert : txs, page_obj, account, account_tx_url.
             <span class="text-[10px] font-medium text-text-muted">{{ tx.date|date:"j F Y" }}</span>
         </div>
     {% endifchanged %}
-    {% include "budget/_panel_tx_row.html" with institution_icon_url=tx.institution_icon_url panel_source="patrimoine" panel_target="#ac-tx-detail" %}
+    {% include "budget/_panel_tx_row.html" with institution_icon_url=tx.institution_icon_url merchant_logo_url=tx.merchant_logo_url panel_source="patrimoine" panel_target="#ac-tx-detail" %}
 {% endfor %}
 {% if page_obj.has_next %}
     <div hx-get="{{ account_tx_url }}?page={{ page_obj.next_page_number }}"

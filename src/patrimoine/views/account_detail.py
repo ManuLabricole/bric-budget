@@ -8,6 +8,7 @@ Vues :
   - account_detail        : page (graphe mono-compte + transactions + panneau Détails)
   - set_account_period    : change la période de la courbe (POST, session)
   - account_transactions  : scroll infini page 2+ (GET, HTMX)
+  - account_balance_manual_save : ancre un solde à une date choisie (POST, HTMX, #124)
   - account_field_form    : passe un champ éditable en mode édition (GET, HTMX)
   - account_field_save    : valide + persiste un champ (POST, HTMX) — PAS de Django Form
 
@@ -20,6 +21,7 @@ Sécurité (SR-001) : le compte est TOUJOURS résolu via Account.objects.for_use
 
 from __future__ import annotations
 
+import datetime
 import logging
 import re
 from decimal import Decimal, InvalidOperation
@@ -44,8 +46,8 @@ from patrimoine.services.balance_history import PERIODS, period_bounds
 from patrimoine.services.chart_data import single_account_series
 from patrimoine.services.valuation import current_value
 from patrimoine.views.overview import PERIOD_LABELS
-from services.logos import get_institution_icon_map
 from transactions.models import Transaction
+from transactions.services import annotate_tx_display_icons
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +109,7 @@ def _earliest_date(account: Account):
 
 
 def _get_tx_page(account: Account, page_number: int):
-    """Queryset paginé des transactions du compte (icône institution résolue)."""
+    """Queryset paginé des transactions du compte (icônes institution + marchand résolues)."""
     qs = (
         Transaction.objects.filter(account=account)
         .select_related("account", "account__institution", "category", "subcategory")
@@ -121,12 +123,7 @@ def _get_tx_page(account: Account, page_number: int):
     except InvalidPage:
         page_obj = paginator.page(1)
 
-    icon_map = get_institution_icon_map()
-    tx_list = list(page_obj.object_list)
-    inst = account.institution
-    icon_url = icon_map.get(inst.icon_slug, "") if inst else ""
-    for tx in tx_list:
-        tx.institution_icon_url = icon_url
+    tx_list = annotate_tx_display_icons(page_obj.object_list)
     return tx_list, page_obj
 
 
@@ -282,6 +279,102 @@ def account_transactions(request: HttpRequest, account_id: int) -> HttpResponse:
             ),
         },
     )
+
+
+# =============================================================================
+# Solde manuel — ancre BalanceSnapshot(source=MANUAL) à une date choisie (#124)
+# =============================================================================
+#
+# Contexte : le solde extrait à l'import (filename Yuh, footer CIC/UBS) peut être
+# absent, corrompu, ou simplement périmé (pas de nouvel import depuis des mois).
+# Plutôt que de deviner (recalcul depuis 0 = faux dès qu'une transaction manque
+# à l'historique importé), on laisse l'utilisateur poser SA valeur de référence
+# à une date connue — le moteur d'ancrage (balance_history.py) s'en sert comme
+# n'importe quelle autre ancre : tout ce qui est APRÈS se recalcule seul, aucune
+# logique de recalcul à écrire ici. Le template marque visuellement ce point
+# ("saisi à la main") via chart_json["manual_points"] (chart_data.py).
+
+
+@require_POST
+@login_required
+def account_balance_manual_save(request: HttpRequest, account_id: int) -> HttpResponse:
+    """
+    POST (HTMX) — installe l'ancre.
+
+    Le formulaire est statique (2 champs, aucune donnée dynamique par compte) —
+    pas de vue GET dédiée : il vit toujours dans le DOM (patrimoine/partials/
+    _account_balance_manual_form.html), replié via <details> (fermeture par
+    closest(), pas de handler parent — même pattern que les autres <details>
+    de l'appli). hx-target par défaut =
+    ce <details> (réaffiche l'erreur au même endroit, 422) ; succès → on
+    RETARGET vers #account-detail-body (HX-Retarget/HX-Reswap) pour rafraîchir
+    courbe + tx + détails d'un coup, sans dupliquer le rendu de _detail_context
+    dans un scénario ET dans l'autre.
+    """
+    account = _get_account_or_404(request, account_id)
+
+    raw_date = request.POST.get("date", "").strip()
+    try:
+        snap_date = datetime.date.fromisoformat(raw_date)
+    except ValueError:
+        return render(
+            request,
+            "patrimoine/partials/_account_balance_manual_form.html",
+            {"account": account, "error": "Date invalide."},
+            status=422,
+        )
+    if snap_date > timezone.localdate():
+        return render(
+            request,
+            "patrimoine/partials/_account_balance_manual_form.html",
+            {"account": account, "error": "La date ne peut pas être dans le futur."},
+            status=422,
+        )
+
+    raw_amount = request.POST.get("amount", "").strip().replace(",", ".")
+    try:
+        amount = Decimal(raw_amount)
+    except InvalidOperation:
+        return render(
+            request,
+            "patrimoine/partials/_account_balance_manual_form.html",
+            {"account": account, "error": "Montant invalide."},
+            status=422,
+        )
+
+    from services.exchange_rates import to_chf
+
+    with transaction.atomic():
+        BalanceSnapshot.objects.update_or_create(
+            account=account,
+            date=snap_date,
+            defaults={
+                "balance": amount,
+                "currency": account.currency,
+                "balance_chf": to_chf(amount, account.currency, snap_date),
+                "source": BalanceSnapshot.Source.MANUAL,
+            },
+        )
+
+    logger.info(
+        "account_balance_manual_save ok account=%s date=%s amount=%s %s user=%s",
+        account.pk,
+        snap_date,
+        amount,
+        account.currency,
+        request.user.id,
+    )
+
+    if request.headers.get("HX-Request"):
+        response = render(
+            request,
+            "patrimoine/partials/_account_detail_body.html",
+            _detail_context(request, account),
+        )
+        response["HX-Retarget"] = "#account-detail-body"
+        response["HX-Reswap"] = "outerHTML"
+        return response
+    return redirect("patrimoine:account_detail", account_id=account.pk)
 
 
 # =============================================================================

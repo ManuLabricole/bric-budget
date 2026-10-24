@@ -1,6 +1,7 @@
 """patrimoine/views/ — package de vues (cf. feedback_python_packages : pas de views.py à plat)."""
 
 from .account_detail import (
+    account_balance_manual_save,
     account_detail,
     account_field_form,
     account_field_save,
@@ -26,6 +27,7 @@ from .overview import overview, set_period, toggle_class
 
 __all__ = [
     "account_archive",
+    "account_balance_manual_save",
     "account_create",
     "account_detail",
     "account_edit_form",
