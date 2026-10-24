@@ -5,7 +5,7 @@ Tests pour la création et la cohérence des BalanceSnapshots.
 
 Deux mécanismes créent des snapshots dans ImportService :
   1. Daily snapshots  : depuis balance_after par ligne (CIC uniquement)
-  2. Closing snapshot : depuis extract_balance() du connecteur (Yuh/UBS/CIC footer)
+  2. Closing snapshot : depuis extract_balance() du connecteur (UBS header/CIC footer — Yuh: toujours None)
 
 Comportements vérifiés :
   A. Daily snapshots créés depuis balance_after
@@ -333,7 +333,7 @@ def test_no_daily_snapshots_when_balance_after_is_none(chf_account, user):
 def test_closing_snapshot_created_from_balance_parameter(chf_account, user):
     """
     Le paramètre balance de ImportService.run() correspond au solde extrait du fichier
-    (ex: footer CIC, header UBS, nom de fichier Yuh).
+    (ex: footer CIC, header UBS — Yuh n'en fournit jamais).
     Il doit créer un snapshot sur la date max des transactions.
     """
     service = ImportService()
@@ -443,6 +443,51 @@ def test_computed_balance_calculated_from_previous_snapshot(chf_account, user):
 
     snap = BalanceSnapshot.objects.get(account=chf_account, date=date(2026, 3, 22))
     assert snap.computed_balance == Decimal("10050.00")
+
+
+@pytest.mark.django_db
+def test_computed_balance_chf_set_when_extraction_fails_for_chf_account(
+    chf_account, user
+):
+    """
+    RÉGRESSION réelle (#124) : quand extract_balance() échoue (balance=None) MAIS
+    qu'un snapshot précédent permet de calculer computed_balance, balance_chf
+    doit AUSSI être posé (= computed_balance pour un compte CHF, identité).
+
+    Avant ce fix : balance_chf ne suivait QUE le solde extrait (balance), jamais
+    computed_balance — un compte CHF avec un import dont l'extraction échoue
+    (mais qui a une base de calcul) se retrouvait avec balance_chf=None, donc
+    "ancre indisponible" pour le moteur d'ancrage → solde affiché en "—" et
+    courbe qui retombe à 0 à cette date, alors que le solde EST connu (calculé).
+    """
+    service = ImportService()
+
+    tx_baseline = [{**make_tx("cbf_base"), "date": "2026-03-15"}]
+    service.run(
+        tx_baseline,  # type: ignore[arg-type]
+        chf_account,
+        user,
+        "file1.csv",
+        make_file_hash("cbf1"),
+        balance=10000.0,
+    )
+
+    txs_new = [make_tx("cbf_new", date="2026-03-20", amount=-100.0)]
+    service.run(
+        txs_new,
+        chf_account,
+        user,
+        "file2.csv",
+        make_file_hash("cbf2"),
+        balance=None,  # type: ignore[arg-type]
+    )
+
+    from datetime import date
+
+    snap = BalanceSnapshot.objects.get(account=chf_account, date=date(2026, 3, 20))
+    assert snap.balance is None
+    assert snap.computed_balance == Decimal("9900.00")
+    assert snap.balance_chf == Decimal("9900.00")
 
 
 # =============================================================================

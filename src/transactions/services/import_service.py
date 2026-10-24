@@ -491,8 +491,9 @@ class ImportService:
             balance          = solde extrait du fichier (None si indisponible)
             computed_balance = snapshot précédent + somme des nouvelles tx
 
-        Même si balance=None (ex: Yuh nom de fichier URL-encodé), on crée quand
-        même le snapshot avec computed_balance pour ne pas perdre la traçabilité.
+        Même si balance=None (ex: Yuh, qui n'expose aucun solde — toujours
+        None), on crée quand même le snapshot avec computed_balance pour ne
+        pas perdre la traçabilité.
         Si les deux sont disponibles, on alerte sur la dérive.
         """
         if not transactions_to_create:
@@ -522,11 +523,34 @@ class ImportService:
             # Premier import pour ce compte : pas de base de calcul
             computed = None
 
+        extracted = Decimal(str(balance)) if balance is not None else None
+
         # balance_chf converti EXACTEMENT comme amount_chf (même porte to_chf) :
         # plus de NULL silencieux sur les comptes non-CHF — c'était la cause du
         # « conversion en attente » et du solde « — » en patrimoine.
-        extracted = Decimal(str(balance)) if balance is not None else None
-        balance_chf = to_chf(extracted, account.currency, snapshot_date)
+        #
+        # RÉGRESSION réelle #1 (#124) : balance_chf suivait UNIQUEMENT `extracted`.
+        # Quand l'extraction échoue (footer illisible, nom de fichier corrompu…)
+        # mais que `computed` est disponible, balance_chf restait None — le
+        # moteur d'ancrage (balance_history.py, in_chf=True) lit balance_chf, PAS
+        # authoritative_balance : un solde pourtant CONNU (calculé) rendait le
+        # jour "sans ancre" → solde affiché "—" et courbe retombant à 0.
+        #
+        # RÉGRESSION réelle #2 (introduite en corrigeant la #1, jamais publiée) :
+        # tomber sur `computed` sans vérifier la ligne EXISTANTE écrase un
+        # balance_chf déjà juste posé par _save_daily_snapshots pour CETTE même
+        # date (CIC, col F quotidienne) — `computed` ici est la clôture calculée
+        # depuis le snapshot précédent, une base de calcul DIFFÉRENTE de celle du
+        # quotidien → conversion CHF fausse. D'où la lecture de la ligne existante
+        # AVANT de retomber sur `computed` : ne jamais dégrader un balance connu.
+        existing = BalanceSnapshot.objects.filter(
+            account=account, date=snapshot_date
+        ).first()
+        existing_balance = existing.balance if existing is not None else None
+        authoritative = extracted if extracted is not None else existing_balance
+        if authoritative is None:
+            authoritative = computed
+        balance_chf = to_chf(authoritative, account.currency, snapshot_date)
 
         if extracted is not None or computed is not None:
             # Ne jamais écraser un solde banque existant par None. Important pour
@@ -539,9 +563,10 @@ class ImportService:
             }
             if extracted is not None:
                 snap_defaults["balance"] = extracted
-                snap_defaults["balance_chf"] = balance_chf
             if computed is not None:
                 snap_defaults["computed_balance"] = computed
+            if authoritative is not None:
+                snap_defaults["balance_chf"] = balance_chf
 
             BalanceSnapshot.objects.update_or_create(
                 account=account,
