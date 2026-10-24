@@ -979,3 +979,30 @@ def test_merchant_logo_badge_renders_current_state(auth_client, account, cf_cate
     assert response.status_code == 200
     assertTemplateUsed(response, "budget/_tx_merchant_badge.html")
     assert f'id="tx-merchant-badge-{tx.id}"' in html
+
+
+@override_settings(BRANDFETCH_CLIENT_ID="test-client-id")
+@pytest.mark.django_db
+def test_category_tx_fragment_shows_merchant_logo(auth_client, account, cf_category):
+    """
+    Bug réel corrigé (#124) : le badge logo marchand n'apparaissait QUE dans le
+    panel "Tout voir" (budget_panel_transactions) — absent ici car cette vue
+    résolvait institution_icon_url à la main sans jamais poser merchant_logo_url.
+    """
+    from datetime import date
+
+    Transaction.objects.create(
+        account=account,
+        category=cf_category,
+        date=date.today().replace(day=1),
+        amount=Decimal("-30.00"),
+        currency="CHF",
+        amount_chf=Decimal("-30.00"),
+        description_raw="MIGROS LAUSANNE",
+        display_name="MIGROS LAUSANNE",
+        import_hash="cat_frag_merchant_logo_001",
+    )
+
+    r = auth_client.get(reverse("budget:category_tx_fragment", args=[cf_category.slug]))
+
+    assert b"https://cdn.brandfetch.io/domain/migros.ch/" in r.content

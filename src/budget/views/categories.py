@@ -34,7 +34,6 @@ from budget.utils import (
     _seg_factor,
     _vary_color,
 )
-from services.logos import get_institution_icon_map
 from transactions.models import (
     BudgetTarget,
     CategorizationRule,
@@ -42,6 +41,7 @@ from transactions.models import (
     SubCategory,
     Transaction,
 )
+from transactions.services import annotate_tx_display_icons
 
 logger = logging.getLogger(__name__)
 
@@ -278,10 +278,11 @@ def budget_category_tx_fragment(request, slug):
     qs = qs.select_related("account", "account__institution", "subcategory").order_by(
         "-date"
     )[:50]
+    transactions = annotate_tx_display_icons(qs)
     return render(
         request,
         "budget/partials/_category_tx_fragment.html",
-        {"transactions": qs, "q": q, "category": category},
+        {"transactions": transactions, "q": q, "category": category},
     )
 
 
@@ -332,19 +333,11 @@ def budget_category_detail(request, slug):
         .order_by("institution__name", "name")
     )
 
-    txs = (
+    txs = annotate_tx_display_icons(
         cc["base_qs"]
         .select_related("subcategory", "account", "account__institution")
         .order_by("-date", "-id")
     )
-    institution_icon_map = get_institution_icon_map()
-    for tx in txs:
-        icon_slug = (
-            tx.account.institution.icon_slug
-            if tx.account and tx.account.institution
-            else ""
-        )
-        tx.institution_icon_url = institution_icon_map.get(icon_slug, "")
 
     avg_amount = (cc["total_amount"] / cc["tx_count"]) if cc["tx_count"] > 0 else None
 
