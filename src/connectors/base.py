@@ -233,9 +233,13 @@ class BaseConnector(ABC):
         authoritative BalanceSnapshot for the import date.
 
         Default: None. Override when the source embeds a closing balance:
-            Yuh : in the filename  ("Activités_2026_03_17 - 33,344.CSV")
             UBS : in file header   (line 6: "Solde final:;7281.45;")
             CIC : in sheet footer  ("Solde au 30/03/2026 : 798.27")
+        Yuh does NOT embed a balance anywhere — the number in its export
+        filename looks like one but was verified wrong (see connectors/yuh/
+        parser.py "Balance extraction"). Don't reintroduce filename parsing
+        there without independently confirming the number against a real
+        balance first.
 
         Distinct from balance_after in TransactionDict — that's a per-row value
         for daily history; this is the single closing balance for the snapshot.

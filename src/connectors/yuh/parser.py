@@ -49,9 +49,17 @@ only convert without a matching debit on this account) stay 1 leg, no pairing.
 
 Balance extraction
 ------------------
-Filename format: "Activités_2026_03_17 - 33,344.CSV"
-The balance is the number between " - " and ".CSV", with commas removed.
-Example: "Activités_2026_03_17 - 33,344.CSV" → 33344.0
+None — Yuh exposes NO balance anywhere, not in the file content and not in
+the filename. The number after " - " in the filename (e.g. "Activités_
+2026_09_18 - 46,933.CSV") LOOKS like a balance and was originally treated as
+one, but this was never verified against a real balance and turned out to be
+wrong: summing every transaction from a confirmed anchor forward lands ~30k
+CHF away from that number on a real account. What that number actually is
+remains unknown (not a transaction count, not a same-currency running sum —
+checked both). Since it is not reliable, extract_balance() always returns
+None; the account balance can only be anchored via a manual entry
+(patrimoine account-detail page) or trusted from bank-confirmed data of
+other institutions.
 
 Account detection
 -----------------
@@ -63,7 +71,6 @@ we assign it. Error if 0 or more than 1.
 import csv
 import hashlib
 import logging
-import re
 from pathlib import Path
 
 from connectors.base import BaseConnector, TransactionDict
@@ -169,28 +176,13 @@ class YuhConnector(BaseConnector):
 
     def extract_balance(self, filepath: Path) -> float | None:
         """
-        Extract the account balance from the filename.
+        Yuh exposes no balance — see module docstring "Balance extraction".
 
-        Pattern: "Activités_2026_03_17 - 33,344.CSV"
-        → everything after " - " and before ".CSV", commas stripped → 33344.0
-
-        Returns None if the filename doesn't match the pattern.
+        The number after " - " in the filename looks like a balance but
+        isn't one (verified wrong on a real account: off by ~30k CHF from
+        the transaction-confirmed total). Always None — base class default.
         """
-        # re.search: find the pattern anywhere in the string (not just at start)
-        # Pattern breakdown:
-        #   " - "        literal separator between date and balance
-        #   ([\d,]+)     capture group: digits and commas (the balance number)
-        #   (?:\.CSV)?$  optional ".CSV" extension (case handled below)
-        match = re.search(r" - ([\d,]+)(?:\.csv)?$", filepath.name, re.IGNORECASE)
-        if not match:
-            return None
-
-        # Remove commas used as thousands separators: "33,344" → "33344"
-        balance_str = match.group(1).replace(",", "")
-        try:
-            return float(balance_str)
-        except ValueError:
-            return None
+        return None
 
     @classmethod
     def matches_file(cls, filepath: Path) -> bool:

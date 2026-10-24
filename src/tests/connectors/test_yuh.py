@@ -127,35 +127,31 @@ def test_parse_import_hash_is_deterministic(yuh_csv_path):
 
 
 # =============================================================================
-# extract_balance() — lecture depuis le nom de fichier
+# extract_balance() — Yuh n'expose aucun solde (voir docstring module)
 # =============================================================================
 
 
-def test_extract_balance_parses_filename_pattern():
+def test_extract_balance_always_returns_none():
     """
-    Le solde est encodé dans le nom du fichier Yuh :
-    "Activités_2026_03_17 - 33,344.CSV" → 33344.0
+    Yuh n'expose de solde ni dans le fichier ni dans le nom de fichier.
 
-    extract_balance() lit filepath.name — pas le contenu du fichier.
-    On peut donc passer un Path avec un nom fictif sans ouvrir de fichier.
+    Le nombre après " - " dans le nom ("Activités_2026_09_18 - 46,933.CSV")
+    ressemble à un solde mais n'en est pas un : vérifié faux sur un compte
+    réel (~30k CHF d'écart avec le total confirmé par les transactions).
+    extract_balance() ne doit plus jamais le lire, quelle que soit la forme
+    du nom de fichier (droit, encodé URL, suffixe doublon navigateur...).
     """
     connector = YuhConnector()
-    p = Path("Activités_2026_03_17 - 33,344.CSV")
-    assert connector.extract_balance(p) == 33344.0
-
-
-def test_extract_balance_handles_no_separator():
-    """Nom de fichier sans pattern ' - BALANCE' → None."""
-    connector = YuhConnector()
-    p = Path("export_yuh.csv")
-    assert connector.extract_balance(p) is None
-
-
-def test_extract_balance_single_digit():
-    """Solde sans virgule de millier."""
-    connector = YuhConnector()
-    p = Path("Activités_2026_03_17 - 500.CSV")
-    assert connector.extract_balance(p) == 500.0
+    names = [
+        "Activités_2026_03_17 - 33,344.CSV",
+        "export_yuh.csv",
+        "Activit%C3%A9s_2026_04_29%20-%2036,341.CSV",
+        "Activités_2026_09_11 - 46,461 2.CSV",
+        "Activit%C3%A9s_2026_09_11%20-%2046,461 2.CSV",
+        "yuh_sample_2026_03_17.csv",
+    ]
+    for name in names:
+        assert connector.extract_balance(Path(name)) is None
 
 
 # =============================================================================
