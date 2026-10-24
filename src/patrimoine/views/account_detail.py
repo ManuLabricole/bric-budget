@@ -55,6 +55,10 @@ _PERIOD_KEY_PREFIX = "patrimoine_account_period_"
 DEFAULT_PERIOD = "1m"
 TX_PAGE_SIZE = 50
 
+# Plafond d'un solde saisi à la main, dérivé du schéma : BalanceSnapshot.balance est
+# DecimalField(max_digits=14, decimal_places=2) → 12 chiffres avant la virgule.
+MAX_MANUAL_BALANCE = Decimal("999999999999.99")
+
 # Cible HTMX du swap (graphe + sélecteurs re-rendus sans recharger la page).
 _BODY_TARGET = "#account-detail-body"
 
@@ -335,6 +339,21 @@ def account_balance_manual_save(request: HttpRequest, account_id: int) -> HttpRe
     try:
         amount = Decimal(raw_amount)
     except InvalidOperation:
+        return render(
+            request,
+            "patrimoine/partials/_account_balance_manual_form.html",
+            {"account": account, "error": "Montant invalide."},
+            status=422,
+        )
+
+    # Decimal() accepte "NaN" et "Infinity" SANS lever InvalidOperation, et ne borne
+    # pas la magnitude. Les deux passeraient jusqu'au update_or_create (dans
+    # transaction.atomic(), hors de tout try) et remonteraient en DataError non
+    # catchée → 500 avec stack trace au lieu du 422 que le reste de la vue garantit.
+    # BalanceSnapshot.balance est DecimalField(max_digits=14, decimal_places=2) :
+    # 12 chiffres avant la virgule, donc |montant| <= 999 999 999 999,99.
+    # Même garde-fou explicite que _validate_rate plus bas dans ce fichier.
+    if not amount.is_finite() or abs(amount) > MAX_MANUAL_BALANCE:
         return render(
             request,
             "patrimoine/partials/_account_balance_manual_form.html",

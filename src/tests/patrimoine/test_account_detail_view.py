@@ -572,6 +572,61 @@ def test_balance_manual_save_rejects_invalid_amount(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("raw", ["NaN", "Infinity", "-Infinity"])
+def test_balance_manual_save_rejects_non_finite_amount(
+    client_logged, chf_account, checking_details, raw
+):
+    """
+    Decimal("NaN") / Decimal("Infinity") se construisent SANS lever InvalidOperation.
+    Sans garde `is_finite()`, ils traversaient la validation et explosaient en DataError
+    dans update_or_create (hors try, dans transaction.atomic()) → 500 au lieu de 422.
+    """
+    resp = client_logged.post(
+        reverse("patrimoine:account_balance_manual_save", args=[chf_account.pk]),
+        {"date": "2026-06-01", "amount": raw},
+        HTTP_HX_REQUEST="true",
+    )
+    assert resp.status_code == 422
+    assert "Montant invalide" in resp.content.decode()
+
+
+@pytest.mark.django_db
+def test_balance_manual_save_rejects_amount_beyond_column_capacity(
+    client_logged, chf_account, checking_details
+):
+    """
+    balance est DecimalField(max_digits=14, decimal_places=2) → 12 chiffres entiers max.
+    Un montant au-delà atteignait la DB et remontait en DataError non catchée (500).
+    """
+    resp = client_logged.post(
+        reverse("patrimoine:account_balance_manual_save", args=[chf_account.pk]),
+        {"date": "2026-06-01", "amount": "1000000000000"},  # 13 chiffres entiers
+        HTTP_HX_REQUEST="true",
+    )
+    assert resp.status_code == 422
+    assert "Montant invalide" in resp.content.decode()
+
+
+@pytest.mark.django_db
+def test_balance_manual_save_accepts_amount_at_column_capacity(
+    client_logged, chf_account, checking_details
+):
+    """La borne est bien le maximum de la colonne, pas une valeur arbitraire plus stricte."""
+    from accounts.models import BalanceSnapshot
+
+    resp = client_logged.post(
+        reverse("patrimoine:account_balance_manual_save", args=[chf_account.pk]),
+        {"date": "2026-06-01", "amount": "999999999999.99"},
+        HTTP_HX_REQUEST="true",
+    )
+    assert resp.status_code == 200
+    snap = BalanceSnapshot.objects.get(
+        account=chf_account, date=datetime.date(2026, 6, 1)
+    )
+    assert snap.balance == Decimal("999999999999.99")
+
+
+@pytest.mark.django_db
 def test_balance_manual_save_accepts_comma_decimal_separator(
     client_logged, chf_account, checking_details
 ):
