@@ -60,9 +60,9 @@ def test_iban_spaces_are_stripped(tmp_path):
     sans espaces avant de matcher. Sans cette normalisation, un IBAN copié depuis
     l'e-banking ne correspondrait JAMAIS au compte, sans message d'erreur.
     """
-    payload = valid_payload(valid_account(iban="CH94 0024 3243 6933 8240 P"))
+    payload = valid_payload(valid_account(iban="CH00 0000 0000 0000 0000 X"))
     assert load_seed_config(write(tmp_path, payload)).accounts[0].iban == (
-        "CH940024324369338240P"
+        "CH000000000000000000X"
     )
 
 
@@ -110,7 +110,7 @@ def test_account_without_any_identity_has_no_identity(tmp_path):
 
 def test_account_with_only_contract_number_has_identity(tmp_path):
     """CIC/TSB s'identifient par n° de contrat, pas par IBAN."""
-    payload = valid_payload(valid_account(iban="", contract_number="100961802700064"))
+    payload = valid_payload(valid_account(iban="", contract_number="000000000000001"))
     assert load_seed_config(write(tmp_path, payload)).accounts[0].has_identity is True
 
 

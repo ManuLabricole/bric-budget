@@ -44,7 +44,7 @@ DEVISE ABSENTE — HYPOTHÈSE ASSUMÉE
     pour que l'hypothèse échoue bruyamment si elle cesse d'être vraie.
 
 DATE = DATE DE COMPTABILISATION
-    13 lignes du corpus portent une date carte encastrée (« … CD 9614 29APR26 »)
+    13 lignes du corpus portent une date carte encastrée (« … CD 0000 29APR26 »)
     antérieure de 1 à 2 jours. On garde la date de la colonne : extraire celle
     du libellé casserait la stabilité du hash pour un gain d'exactitude marginal.
 
@@ -95,8 +95,8 @@ from connectors.base import BaseConnector, TransactionDict
 
 logger = logging.getLogger(__name__)
 
-# Marqueur de carte en fin de libellé : « CD 9614 », parfois suivi de la date
-# d'achat au format DDMMMYY (« CD 9614 29APR26 »).
+# Marqueur de carte en fin de libellé : « CD 0000 », parfois suivi de la date
+# d'achat au format DDMMMYY (« CD 0000 29APR26 »).
 _CARD_RE = re.compile(r"\bCD\s+(\d{4})\b(?:\s+\d{2}[A-Z]{3}\d{2})?\s*$", re.IGNORECASE)
 
 
@@ -203,7 +203,7 @@ class TSBConnector(BaseConnector):
         """
         Identité = sort code sans tirets + numéro de compte, concaténés.
 
-        « 87-37-63 » + « 77792868 » → « 87376377792868 ». C'est exactement la
+        « 00-00-00 » + « 00000000 » → « 00000000000000 ». C'est exactement la
         forme attendue dans Account.contract_number : les deux côtés doivent
         partager la même normalisation, sinon aucun match ne se produira.
         """
@@ -301,17 +301,17 @@ class TSBConnector(BaseConnector):
 
     def _clean_merchant(self, description: str) -> str:
         """
-        Retire le marqueur de carte final (« CD 9614 », « CD 9614 29APR26 »).
+        Retire le marqueur de carte final (« CD 0000 », « CD 0000 29APR26 »).
 
         C'est du bruit structurel de TSB, pas une partie du nom du marchand :
-        « SCOTRAIL CD 9614 » → « SCOTRAIL ». Le numéro de carte n'est pas perdu,
+        « SCOTRAIL CD 0000 » → « SCOTRAIL ». Le numéro de carte n'est pas perdu,
         il part dans card_last_four.
 
         REPLI, élargi : on ne garde le résultat nettoyé QUE s'il contient au
         moins une lettre. Objectif « mieux trop que trop peu » — deux libellés
         réels du corpus le prouvent :
           - « CD 1234 09FEB26 »        → nettoyé = ""     (vide)
-          - « 2.99% CD 9614 23APR26 »  → nettoyé = "2.99%" (frais de change
+          - « 2.99% CD 0000 23APR26 »  → nettoyé = "2.99%" (frais de change
             carte étrangère — pas vide, mais aucune lettre : ce n'est pas un
             nom de marchand, juste un taux orphelin, illisible dans l'UI)
         Un simple `cleaned or description` (ancien repli) ne rattrapait que le
@@ -324,6 +324,6 @@ class TSBConnector(BaseConnector):
         return self._normalize_merchant(cleaned if has_letter else description)
 
     def _parse_card(self, description: str) -> str | None:
-        """Les 4 derniers chiffres de la carte, depuis « CD 9614 » en fin de libellé."""
+        """Les 4 derniers chiffres de la carte, depuis « CD 0000 » en fin de libellé."""
         match = _CARD_RE.search(description)
         return match.group(1) if match else None

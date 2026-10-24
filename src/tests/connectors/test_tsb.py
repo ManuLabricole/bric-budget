@@ -12,7 +12,7 @@ que l'analyse des 831 lignes réelles a fait apparaître :
     DEBIT INTEREST → solde -38.79                              → découvert légitime
     PLAIN MERCHANT à « 3 » (sans décimales)                     → normalisation
     « CD 1234 09FEB26 » sans nom de marchand                    → display_name non vide
-    « 2.99% CD 9614 23APR26 » frais de change carte étrangère   → display_name pas
+    « 2.99% CD 0000 23APR26 » frais de change carte étrangère   → display_name pas
                                                                    juste "2.99%"
     ordre ANTI-chronologique (17/03 en tête)                    → solde de clôture
                                                                    sur la 1re ligne
@@ -215,25 +215,25 @@ def test_merchant_name_mirrors_display_name(tsb_csv_path):
 
 def test_fx_fee_description_is_not_left_as_bare_percentage(tsb_csv_path):
     """
-    « 2.99% CD 9614 23APR26 » : retirer le marqueur carte laisse "2.99%" —
+    « 2.99% CD 0000 23APR26 » : retirer le marqueur carte laisse "2.99%" —
     non vide, donc l'ancien repli (cleaned or description) ne se déclenchait
     PAS, et l'UI affichait une ligne illisible ("2.99%" sans aucun contexte).
 
     Le nouveau repli élargi (aucune lettre → on garde le libellé brut complet)
-    doit préserver "CD 9614 23APR26" plutôt que produire "2.99%" tout seul —
+    doit préserver "CD 0000 23APR26" plutôt que produire "2.99%" tout seul —
     quitte à laisser plus d'info que nécessaire, jamais moins.
     """
     tx = next(
         t
         for t in TSBConnector().parse(tsb_csv_path)
-        if t["description_raw"] == "2.99% CD 9614 23APR26"
+        if t["description_raw"] == "2.99% CD 0000 23APR26"
     )
     assert tx["display_name"] != "2.99%"
     assert "2.99%" in tx["display_name"]
-    assert "CD 9614" in tx["display_name"]
+    assert "CD 0000" in tx["display_name"]
     # card_last_four reste extrait normalement — le repli ne touche que
     # display_name, pas _parse_card() (regex indépendante).
-    assert tx["card_last_four"] == "9614"
+    assert tx["card_last_four"] == "0000"
 
 
 # =============================================================================

@@ -176,7 +176,7 @@ def _parse_account(entry: dict, index: int) -> AccountSpec:
         )
 
     # Espaces retirés : les banques écrivent l'IBAN par groupes de 4 pour la
-    # lisibilité ("CH94 0024 …"), les connecteurs le normalisent sans espaces
+    # lisibilité ("CH00 0000 …"), les connecteurs le normalisent sans espaces
     # avant de matcher. Les deux côtés doivent employer la même forme.
     iban = _optional_str(entry, "iban").replace(" ", "").upper()
     contract_number = _optional_str(entry, "contract_number").replace(" ", "")
