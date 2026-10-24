@@ -37,7 +37,7 @@ from budget.utils import (
 from services.logos import get_institution_icon_map
 from services.merchant_logos import get_merchant_logo_map, save_manual_logo
 from transactions.models import BudgetTarget, Category, SubCategory, Transaction
-from transactions.services import sync_internal_transfer
+from transactions.services import annotate_tx_display_icons, sync_internal_transfer
 
 logger = logging.getLogger(__name__)
 
@@ -478,21 +478,12 @@ def budget_panel_transactions(request):
         page_obj = paginator.page(1)
         page_number = 1
 
-    tx_list = list(page_obj.object_list)
-
-    # Annoter chaque transaction avec l'URL résolue de l'icône institution + logo
-    # marchand. merchant_logo_map batché AVANT la boucle (jusqu'à 50 tx/page) —
-    # même anti-N+1 que institution_icon_map (#139) ; tx.institution_icon_url /
-    # tx.merchant_logo_url sont ensuite accessibles directement dans le template.
-    merchant_logo_map = get_merchant_logo_map([tx.display_name for tx in tx_list])
-    for tx in tx_list:
-        slug = (
-            tx.account.institution.icon_slug
-            if tx.account and tx.account.institution
-            else ""
-        )
-        tx.institution_icon_url = institution_icon_map.get(slug, "")
-        tx.merchant_logo_url = merchant_logo_map.get(tx.display_name, "")
+    # Annotation icône institution + logo marchand — même helper que les autres vues
+    # listant des transactions (transactions/services/tx_display.py) : 1 scan disque
+    # (logos manuels) + N regex (seed) quelle que soit la taille de la page, pas de N+1.
+    # Le queryset ci-dessus porte bien le select_related("account", "account__institution")
+    # qu'exige le helper.
+    tx_list = annotate_tx_display_icons(page_obj.object_list)
 
     # ── Page > 1 = réponse "append-only" pour le scroll infini ─────────────────
     # Le sentinel HTMX en bas de liste fait un GET ?page=N.
