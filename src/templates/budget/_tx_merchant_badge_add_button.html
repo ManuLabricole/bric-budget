@@ -1,0 +1,26 @@
+{% comment %}
+budget/_tx_merchant_badge_add_button.html — bouton "+" d'ajout de logo marchand.
+
+Extrait de _tx_merchant_badge.html pour être réutilisé 2 fois : état "aucun
+logo" ET fallback caché révélé par onerror si l'URL Brandfetch échoue au
+chargement (domaine seed connu de nous mais pas de Brandfetch, ou requête
+réseau en échec côté navigateur — cf. _tx_merchant_badge.html).
+
+Variables : tx (Transaction), extra_class (str optionnel, ex. "hidden merchant-logo-fallback").
+{% endcomment %}
+<button type="button"
+        title="Ajouter un logo pour ce marchand"
+        aria-label="Ajouter un logo"
+        hx-get="{% url 'budget:merchant_logo_form' tx.id %}"
+        hx-target="#tx-merchant-badge-{{ tx.id }}"
+        hx-swap="outerHTML"
+        onclick="event.stopPropagation()"
+        class="w-full h-full flex items-center justify-center text-text-disabled hover:text-gold transition-colors {{ extra_class }}">
+    <svg class="w-2.5 h-2.5"
+         fill="none"
+         viewBox="0 0 24 24"
+         stroke-width="2.5"
+         stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+    </svg>
+</button>

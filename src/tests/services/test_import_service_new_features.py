@@ -35,36 +35,8 @@ from tests.services.conftest import make_file_hash, make_tx
 from transactions.models import Category, Transaction
 from transactions.services import ImportService
 
-# =============================================================================
-# Helpers — catégories de test
-# =============================================================================
-
-
-@pytest.fixture
-def income_category(db):
-    """Catégorie 'revenus' — slug utilisé par ImportService comme défaut positif."""
-    return Category.objects.create(
-        name="Revenus",
-        slug="revenus",
-        icon="",
-        colour_hex="#00FF00",
-        order=1,
-        is_system=True,
-    )
-
-
-@pytest.fixture
-def unknown_category(db):
-    """Catégorie 'inconnu' — slug utilisé par ImportService comme défaut négatif."""
-    return Category.objects.create(
-        name="Inconnu",
-        slug="inconnu",
-        icon="",
-        colour_hex="#888888",
-        order=2,
-        is_system=True,
-    )
-
+# income_category / unknown_category : fixtures partagées, voir conftest.py —
+# aussi utilisées par test_import_service_fx_pairing.py.
 
 # =============================================================================
 # A. Catégories par défaut

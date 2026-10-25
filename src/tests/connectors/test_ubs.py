@@ -15,6 +15,8 @@ Fixture CSV (ubs_sample.csv) — structure :
         Ligne 6 : Solde final:;12000.00;
 """
 
+import logging
+
 from connectors.ubs.parser import UBSConnector
 
 # =============================================================================
@@ -207,3 +209,109 @@ def test_clean_merchant_collapses_spaces():
         c._clean_merchant("FEEL EAT SARL            LA CHAUX-D")
         == "FEEL EAT SARL LA CHAUX-D"
     )
+
+
+# =============================================================================
+# Renommage de colonne UBS : « Monnaie » → « Devise » (#setup-local)
+#
+# UBS a renommé la colonne de devise dans ses exports. Le connecteur attendait
+# « Monnaie » à deux endroits, avec deux conséquences très différentes :
+#   1. COLUMN_SIGNATURE : matches_file() renvoyait False → fichier IGNORÉ en
+#      silence, aucun message, aucune trace.
+#   2. _parse_amount()  : row.get("Monnaie") → currency="" sur TOUTES les lignes.
+#      Bien plus grave, parce que muet : les transactions seraient entrées en
+#      base sans devise, et services.exchange_rates.to_chf (porte unique de
+#      conversion) aurait produit des montants faux sans lever d'erreur.
+#
+# Les DEUX formats doivent passer : le dossier d'archives contient des exports
+# à l'ancien format, qui doivent rester réimportables.
+# =============================================================================
+
+
+def test_matches_file_accepts_new_devise_header(ubs_csv_devise_path):
+    """Le nouveau format (colonne « Devise ») doit être reconnu."""
+    assert UBSConnector.matches_file(ubs_csv_devise_path) is True
+
+
+def test_matches_file_still_accepts_legacy_monnaie_header(ubs_csv_path):
+    """Non-régression : l'ancien format (« Monnaie ») reste reconnu."""
+    assert UBSConnector.matches_file(ubs_csv_path) is True
+
+
+def test_parse_new_format_returns_same_transactions(ubs_csv_devise_path):
+    """Le nouveau format contient les mêmes 3 transactions que l'ancien."""
+    transactions = UBSConnector().parse(ubs_csv_devise_path)
+    assert len(transactions) == 3
+
+
+def test_parse_new_format_sets_currency(ubs_csv_devise_path):
+    """
+    Le bug MUET : sans lecture de « Devise », currency valait "" sur chaque ligne.
+
+    On assert sur la valeur réelle, pas sur « la clé existe » — une chaîne vide
+    aurait satisfait un test plus faible tout en corrompant la conversion CHF.
+    """
+    transactions = UBSConnector().parse(ubs_csv_devise_path)
+    assert [tx["currency"] for tx in transactions] == ["CHF", "CHF", "CHF"]
+
+
+def test_parse_both_formats_produce_identical_output(ubs_csv_path, ubs_csv_devise_path):
+    """
+    Ancien et nouveau format décrivent les mêmes écritures → même sortie.
+
+    Compare les dicts entiers : si un jour le renommage touche une AUTRE colonne,
+    ce test le voit, alors qu'un test ciblé sur `currency` ne le verrait pas.
+    """
+    connector = UBSConnector()
+    assert connector.parse(ubs_csv_path) == connector.parse(ubs_csv_devise_path)
+
+
+# =============================================================================
+# Compte d'épargne sans mouvement — export légitime, ne doit rien casser
+# =============================================================================
+
+
+def test_matches_file_accepts_empty_savings_export(ubs_csv_empty_savings_path):
+    """Un relevé d'épargne à 0 transaction reste un relevé UBS valide."""
+    assert UBSConnector.matches_file(ubs_csv_empty_savings_path) is True
+
+
+def test_parse_empty_savings_returns_no_transaction(ubs_csv_empty_savings_path):
+    """Zéro ligne de données → liste vide, pas une exception."""
+    assert UBSConnector().parse(ubs_csv_empty_savings_path) == []
+
+
+def test_extract_balance_returns_none_when_balance_field_is_empty(
+    ubs_csv_empty_savings_path, caplog
+):
+    """
+    « Solde final:;; » (champ vide) → None, sans lever ni logger de stacktrace.
+
+    Un solde absent est une donnée manquante NORMALE sur un compte sans
+    mouvement — pas une anomalie à signaler bruyamment.
+
+    On assert AUSSI sur l'absence de log : la version fautive renvoyait déjà
+    None (l'exception était rattrapée), donc un test qui se contente du None
+    passait au vert tout en laissant une stacktrace à chaque import.
+    """
+    with caplog.at_level(logging.WARNING, logger="connectors.ubs.parser"):
+        assert UBSConnector().extract_balance(ubs_csv_empty_savings_path) is None
+    assert caplog.records == []
+
+
+def test_extract_balance_reads_final_not_initial_balance(ubs_csv_devise_path):
+    """
+    « Solde initial » précède « Solde final » — on doit lire le second.
+
+    Garde-fou du repérage par libellé : un startswith trop large attraperait
+    « Solde initial:;0.00; » et renverrait 0.00 au lieu de 12000.00.
+    """
+    assert UBSConnector().extract_balance(ubs_csv_devise_path) == 12000.00
+
+
+def test_extract_account_identifier_works_on_empty_savings(
+    ubs_csv_empty_savings_path,
+):
+    """L'IBAN reste lisible même sans transaction — c'est lui qui résout le compte."""
+    identifier = UBSConnector().extract_account_identifier(ubs_csv_empty_savings_path)
+    assert identifier == "CH0000000000000000001"

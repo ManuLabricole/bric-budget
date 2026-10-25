@@ -13,9 +13,9 @@ class BalanceSnapshot(models.Model):
     """
     Captures the balance of an account on a given date.
 
-    Created automatically on each file import.
-    For Yuh: the balance is extracted from the CSV filename.
-    Example: "Activités_2026_03_17 - 33,344.CSV" → 33 344 CHF on 2026-03-17
+    Created automatically on each file import (UBS/CIC embed a real closing
+    balance in the file; Yuh embeds none — balance stays null, only
+    computed_balance is set) and manually via the account-detail page.
 
     balance_chf: balance converted to CHF (reference currency).
     Used to consolidate multi-currency net worth on charts.
@@ -30,9 +30,9 @@ class BalanceSnapshot(models.Model):
 
     date = models.DateField()
 
-    # Solde extrait du fichier source (filename pour Yuh, metadata pour UBS/CIC).
-    # null=True : si le connecteur ne peut pas extraire le solde (ex: Yuh avec
-    # nom de fichier URL-encodé), on crée quand même le snapshot avec computed_balance.
+    # Solde extrait du fichier source (metadata pour UBS/CIC — Yuh n'en expose
+    # aucun, voir connectors/yuh/parser.py). null=True : si le connecteur ne
+    # peut pas extraire le solde, on crée quand même le snapshot avec computed_balance.
     balance = models.DecimalField(
         max_digits=14, decimal_places=2, null=True, blank=True
     )

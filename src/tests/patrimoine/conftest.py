@@ -74,7 +74,9 @@ def _d(s: str) -> datetime.date:
 def make_snapshot(db):
     from accounts.models import BalanceSnapshot
 
-    def _make(account, date, *, balance=None, computed=None, balance_chf=None):
+    def _make(
+        account, date, *, balance=None, computed=None, balance_chf=None, source=None
+    ):
         return BalanceSnapshot.objects.create(
             account=account,
             date=_d(date),
@@ -82,6 +84,7 @@ def make_snapshot(db):
             computed_balance=None if computed is None else Decimal(str(computed)),
             currency=account.currency,
             balance_chf=None if balance_chf is None else Decimal(str(balance_chf)),
+            source=source or BalanceSnapshot.Source.IMPORT,
         )
 
     return _make

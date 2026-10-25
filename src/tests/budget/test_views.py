@@ -7,14 +7,24 @@ Tests des vues budget/ :
 """
 
 import hashlib
+import re
 from decimal import Decimal
 
 import pytest
-from django.test import Client
+from django.test import Client, override_settings
 from django.urls import reverse
 from pytest_django.asserts import assertTemplateUsed
 
+from services import logos as logos_service
 from transactions.models import Category, Transaction
+
+# Storage MEDIA en mémoire pour les tests merchant_logo_repair — même pattern
+# que tests/services/test_logos.py (aucun fichier réel écrit, aucun réseau :
+# services.logos._download_url est monkeypatché).
+_INMEM_STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.InMemoryStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
 
 # =============================================================================
 # Fixtures locales (cashflow — scope narrow, pas dans conftest)
@@ -437,6 +447,186 @@ def test_panel_transactions_contains_category_filter(auth_client, cf_category):
 
 
 # =============================================================================
+# Panel transactions — KPI dynamiques (inconnues / pointées)
+# =============================================================================
+
+
+def _kpi_fraction(html: str, label: str) -> str:
+    """
+    Extrait "N/M <label>(s)" du HTML — regex plutôt qu'un match d'octets brut
+    pour ne pas dépendre de l'indentation exacte du template autour du texte,
+    tout en distinguant proprement le singulier du pluriel via `es?`.
+    """
+    m = re.search(rf"(\d+)/(\d+) {label}s?", html)
+    assert m is not None, f"KPI '{label}' introuvable dans : {html[:2000]}"
+    return m.group(0)
+
+
+@pytest.mark.django_db
+def test_panel_transactions_shows_unknown_and_reconciled_counts(
+    auth_client, account, cf_category
+):
+    """
+    2 tx sans catégorie (inconnues) + 1 tx pointée sur 3 au total → le panel
+    affiche "2/3 inconnues" et "1/3 pointée" (singulier correct).
+    """
+    from datetime import date
+
+    for seed in ("unknown-001", "unknown-002"):
+        Transaction.objects.create(
+            account=account,
+            category=None,
+            date=date.today().replace(day=1),
+            amount=Decimal("-10.00"),
+            currency="CHF",
+            amount_chf=Decimal("-10.00"),
+            description_raw=f"UNKNOWN TX {seed}",
+            display_name=f"UNKNOWN TX {seed}",
+            import_hash=f"panel_kpi_{seed}",
+        )
+    Transaction.objects.create(
+        account=account,
+        category=cf_category,
+        date=date.today().replace(day=1),
+        amount=Decimal("-30.00"),
+        currency="CHF",
+        amount_chf=Decimal("-30.00"),
+        description_raw="RECONCILED TX",
+        display_name="RECONCILED TX",
+        is_reconciled=True,
+        import_hash="panel_kpi_reconciled_001",
+    )
+
+    html = auth_client.get(reverse("budget:panel_transactions")).content.decode()
+
+    assert _kpi_fraction(html, "inconnue") == "2/3 inconnues"
+    assert _kpi_fraction(html, "pointée") == "1/3 pointée"
+
+
+@pytest.mark.django_db
+def test_panel_transactions_kpi_counts_respect_search_filter(
+    auth_client, account, cf_category
+):
+    """
+    Les KPIs portent sur le MÊME queryset filtré que le total affiché, pas sur
+    toute la période — une recherche qui exclut la tx inconnue doit la sortir
+    du dénominateur ET du numérateur (sinon les KPIs mentent dès qu'on filtre).
+    """
+    from datetime import date
+
+    Transaction.objects.create(
+        account=account,
+        category=None,
+        date=date.today().replace(day=1),
+        amount=Decimal("-10.00"),
+        currency="CHF",
+        amount_chf=Decimal("-10.00"),
+        description_raw="ZZZ UNKNOWN NOMATCH",
+        display_name="ZZZ UNKNOWN NOMATCH",
+        import_hash="panel_kpi_filter_unknown_001",
+    )
+    Transaction.objects.create(
+        account=account,
+        category=cf_category,
+        date=date.today().replace(day=1),
+        amount=Decimal("-20.00"),
+        currency="CHF",
+        amount_chf=Decimal("-20.00"),
+        description_raw="MIGROS MATCH",
+        display_name="MIGROS MATCH",
+        import_hash="panel_kpi_filter_known_001",
+    )
+
+    html = auth_client.get(
+        reverse("budget:panel_transactions"), {"q": "MIGROS"}
+    ).content.decode()
+
+    # Total filtré = 1 (pas 2) : la tx "ZZZ UNKNOWN NOMATCH" est hors recherche.
+    assert _kpi_fraction(html, "inconnue") == "0/1 inconnues"
+
+
+@pytest.mark.django_db
+def test_toggle_reconcile_from_list_returns_oob_kpi_update(
+    auth_client, account, cf_category
+):
+    """
+    Pointer une tx depuis la LISTE (source != detail) doit renvoyer, en plus de
+    la ligne, un swap OOB de #tx-kpi-summary avec le compteur pointées à jour —
+    sinon le KPI affiché reste faux tant que la page n'est pas rechargée
+    (c'est tout le sens de la demande : dynamique, pas figé au chargement).
+    """
+    from datetime import date
+
+    tx = Transaction.objects.create(
+        account=account,
+        category=cf_category,
+        date=date.today().replace(day=1),
+        amount=Decimal("-15.00"),
+        currency="CHF",
+        amount_chf=Decimal("-15.00"),
+        description_raw="TOGGLE RECONCILE TX",
+        display_name="TOGGLE RECONCILE TX",
+        import_hash="toggle_reconcile_oob_001",
+    )
+    assert tx.is_reconciled is False
+
+    response = auth_client.post(
+        reverse("budget:toggle_reconcile", args=[tx.id]), {"source": ""}
+    )
+    html = response.content.decode()
+
+    assert response.status_code == 200
+    tx.refresh_from_db()
+    assert tx.is_reconciled is True
+    assert 'id="tx-kpi-summary"' in html
+    assert "hx-swap-oob" in html
+    assert _kpi_fraction(html, "pointée") == "1/1 pointée"
+
+
+@pytest.mark.django_db
+def test_toggle_reconcile_oob_kpi_respects_active_search(
+    auth_client, account, cf_category
+):
+    """
+    Le bouton pointer envoie q/amount via hx-include (#tx-results a
+    hx-disinherit="*", rien ne s'hérite) — le recalcul OOB doit porter sur le
+    MÊME sous-ensemble filtré que celui affiché, pas sur toute la période.
+    """
+    from datetime import date
+
+    tx_match = Transaction.objects.create(
+        account=account,
+        category=cf_category,
+        date=date.today().replace(day=1),
+        amount=Decimal("-15.00"),
+        currency="CHF",
+        amount_chf=Decimal("-15.00"),
+        description_raw="MIGROS TOGGLE",
+        display_name="MIGROS TOGGLE",
+        import_hash="toggle_reconcile_oob_filter_001",
+    )
+    Transaction.objects.create(
+        account=account,
+        category=cf_category,
+        date=date.today().replace(day=1),
+        amount=Decimal("-25.00"),
+        currency="CHF",
+        amount_chf=Decimal("-25.00"),
+        description_raw="COOP OTHER",
+        display_name="COOP OTHER",
+        import_hash="toggle_reconcile_oob_filter_002",
+    )
+
+    html = auth_client.post(
+        reverse("budget:toggle_reconcile", args=[tx_match.id]),
+        {"source": "", "q": "MIGROS"},
+    ).content.decode()
+
+    # 1 seule tx dans le sous-ensemble "MIGROS" — pas 2 — et elle vient d'être pointée.
+    assert _kpi_fraction(html, "pointée") == "1/1 pointée"
+
+
+# =============================================================================
 # Garde anti-N+1 (#166) — vue chaude liste transactions (budget/views/transactions.py)
 # =============================================================================
 
@@ -633,3 +823,186 @@ def test_category_tx_fragment_idor_other_user_sees_no_data(
     )
     assert r.status_code == 200
     assert b"SECRET TX OTHER" not in r.content
+
+
+# =============================================================================
+# Badge logo marchand — merchant_logo_form / merchant_logo_repair / merchant_logo_badge
+# =============================================================================
+
+
+@override_settings(BRANDFETCH_CLIENT_ID="test-client-id")
+@pytest.mark.django_db
+def test_panel_transactions_shows_seed_logo_for_known_merchant(
+    auth_client, account, cf_category
+):
+    """
+    Une transaction dont le display_name contient un mot-clé du seed (ex. MIGROS)
+    doit afficher l'URL Brandfetch (hotlink live) du domaine associé dans le
+    fragment liste — pas juste le bouton "+" par défaut.
+    """
+    tx = make_tx(account, cf_category, seed="migros-badge")
+    tx.display_name = "MIGROS MM CHAILLY 0101 LAUSANNE"
+    tx.save(update_fields=["display_name"])
+
+    html = auth_client.get(reverse("budget:panel_transactions")).content.decode()
+
+    assert "https://cdn.brandfetch.io/domain/migros.ch/" in html
+    assert f'id="tx-merchant-badge-{tx.id}"' in html
+
+
+@pytest.mark.django_db
+def test_panel_transactions_shows_add_button_for_unknown_merchant(
+    auth_client, account, cf_category
+):
+    """Marchand non résolu par le seed → badge vide avec le bouton "+" d'ajout."""
+    tx = make_tx(account, cf_category, seed="unknown-badge")
+
+    html = auth_client.get(reverse("budget:panel_transactions")).content.decode()
+
+    assert f'hx-get="/budget/transactions/{tx.id}/merchant-logo/"' in html
+    assert "Ajouter un logo pour ce marchand" in html
+
+
+@pytest.mark.django_db
+def test_merchant_logo_form_requires_login(client, account, cf_category):
+    tx = make_tx(account, cf_category, seed="form-auth")
+    response = client.get(
+        reverse("budget:merchant_logo_form", args=[tx.id]),
+        HTTP_HX_REQUEST="true",
+    )
+    assert response.status_code == 302
+    assert "/login/" in response["Location"]
+
+
+@pytest.mark.django_db
+def test_merchant_logo_form_other_user_tx_returns_404(
+    auth_client, other_client, account, cf_category
+):
+    """IDOR : un user ne doit pas pouvoir ouvrir le formulaire sur la tx d'un autre."""
+    tx = make_tx(account, cf_category, seed="form-idor")
+    response = other_client.get(
+        reverse("budget:merchant_logo_form", args=[tx.id]),
+        HTTP_HX_REQUEST="true",
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_merchant_logo_form_renders_form_partial(auth_client, account, cf_category):
+    tx = make_tx(account, cf_category, seed="form-ok")
+    response = auth_client.get(
+        reverse("budget:merchant_logo_form", args=[tx.id]),
+        HTTP_HX_REQUEST="true",
+    )
+    html = response.content.decode()
+    assert response.status_code == 200
+    assertTemplateUsed(response, "budget/_tx_merchant_logo_form.html")
+    assert f'id="tx-merchant-badge-{tx.id}"' in html
+    assert "<!DOCTYPE html>" not in html
+
+
+@override_settings(STORAGES=_INMEM_STORAGES)
+@pytest.mark.django_db
+def test_merchant_logo_repair_installs_logo_and_returns_badge(
+    auth_client, account, cf_category, monkeypatch
+):
+    """POST réussi → badge re-rendu avec l'image installée (pas le formulaire)."""
+    monkeypatch.setattr(
+        logos_service, "_download_url", lambda url: (b"\x89PNG-fake", "image/png")
+    )
+    tx = make_tx(account, cf_category, seed="repair-ok")
+    tx.display_name = "MA PETITE BOUTIQUE"
+    tx.save(update_fields=["display_name"])
+
+    response = auth_client.post(
+        reverse("budget:merchant_logo_repair", args=[tx.id]),
+        {"logo_url": "https://brand.example/logo.png"},
+        HTTP_HX_REQUEST="true",
+    )
+    html = response.content.decode()
+
+    assert response.status_code == 200
+    assertTemplateUsed(response, "budget/_tx_merchant_badge.html")
+    assert "<img" in html
+    assert "form" not in html.lower().split(">")[0]  # pas le formulaire
+
+
+@override_settings(STORAGES=_INMEM_STORAGES)
+@pytest.mark.django_db
+def test_merchant_logo_repair_rejects_non_https_url(
+    auth_client, account, cf_category, monkeypatch
+):
+    """URL non-https → 422 + message d'erreur, pas d'installation."""
+    touched = {"net": False}
+
+    def spy(_url):
+        touched["net"] = True
+        return (b"x", "image/png")
+
+    monkeypatch.setattr(logos_service, "_download_url", spy)
+    tx = make_tx(account, cf_category, seed="repair-bad-url")
+
+    response = auth_client.post(
+        reverse("budget:merchant_logo_repair", args=[tx.id]),
+        {"logo_url": "http://brand.example/logo.png"},
+        HTTP_HX_REQUEST="true",
+    )
+    html = response.content.decode()
+
+    assert response.status_code == 422
+    assert "https valide obligatoire" in html
+    assert touched["net"] is False
+
+
+@pytest.mark.django_db
+def test_merchant_logo_repair_other_user_tx_returns_404(
+    auth_client, other_client, account, cf_category
+):
+    tx = make_tx(account, cf_category, seed="repair-idor")
+    response = other_client.post(
+        reverse("budget:merchant_logo_repair", args=[tx.id]),
+        {"logo_url": "https://brand.example/logo.png"},
+        HTTP_HX_REQUEST="true",
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_merchant_logo_badge_renders_current_state(auth_client, account, cf_category):
+    """Cible du bouton Annuler — re-rend le badge sans le formulaire."""
+    tx = make_tx(account, cf_category, seed="badge-cancel")
+    response = auth_client.get(
+        reverse("budget:merchant_logo_badge", args=[tx.id]),
+        HTTP_HX_REQUEST="true",
+    )
+    html = response.content.decode()
+    assert response.status_code == 200
+    assertTemplateUsed(response, "budget/_tx_merchant_badge.html")
+    assert f'id="tx-merchant-badge-{tx.id}"' in html
+
+
+@override_settings(BRANDFETCH_CLIENT_ID="test-client-id")
+@pytest.mark.django_db
+def test_category_tx_fragment_shows_merchant_logo(auth_client, account, cf_category):
+    """
+    Bug réel corrigé (#124) : le badge logo marchand n'apparaissait QUE dans le
+    panel "Tout voir" (budget_panel_transactions) — absent ici car cette vue
+    résolvait institution_icon_url à la main sans jamais poser merchant_logo_url.
+    """
+    from datetime import date
+
+    Transaction.objects.create(
+        account=account,
+        category=cf_category,
+        date=date.today().replace(day=1),
+        amount=Decimal("-30.00"),
+        currency="CHF",
+        amount_chf=Decimal("-30.00"),
+        description_raw="MIGROS LAUSANNE",
+        display_name="MIGROS LAUSANNE",
+        import_hash="cat_frag_merchant_logo_001",
+    )
+
+    r = auth_client.get(reverse("budget:category_tx_fragment", args=[cf_category.slug]))
+
+    assert b"https://cdn.brandfetch.io/domain/migros.ch/" in r.content

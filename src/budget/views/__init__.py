@@ -51,6 +51,9 @@ from .rules import (
 )
 from .transactions import (
     budget_categorize_transaction,
+    budget_merchant_logo_badge,
+    budget_merchant_logo_form,
+    budget_merchant_logo_repair,
     budget_modal_target_create,
     budget_panel_category_picker,
     budget_panel_navigate,

@@ -170,13 +170,35 @@ def single_account_series(
     Pas de stacking (un seul compte) : `total` = sa série CHF, `series` vide → la
     courbe rend la ligne gold standard (cf. balance.js mode standard). Le compte doit
     être pré-scopé for_user (SR-001) par l'appelant — ce service ne vérifie pas.
+
+    manual_points : ancres BalanceSnapshot(source=MANUAL) dans [start, end] — solde
+    saisi à la main (#124, ex. Yuh sans solde fiable au nom de fichier) plutôt
+    qu'extrait d'un import. balance.js les dessine en marqueur distinct sur la
+    courbe pour qu'on se souvienne que CE point n'est pas une donnée banque.
     """
+    from accounts.models import BalanceSnapshot
+
     from .balance_history import account_balance_series
 
     s = account_balance_series(account, start, end, in_chf=True)
+    manual_snapshots = BalanceSnapshot.objects.filter(
+        account=account,
+        source=BalanceSnapshot.Source.MANUAL,
+        date__gte=start,
+        date__lte=end,
+        balance_chf__isnull=False,
+    ).order_by("date")
+    # balance_chf__isnull=False exclut déjà None en DB — narrowing explicite pour
+    # mypy (le queryset ne le sait pas statiquement).
+    manual_points = [
+        {"date": snap.date.isoformat(), "value": float(snap.balance_chf)}
+        for snap in manual_snapshots
+        if snap.balance_chf is not None
+    ]
     return {
         "dates": [d.isoformat() for d in s.dates],
         "total": [float(v) for v in s.values],
+        "manual_points": manual_points,
         "series": [],
         "anchored": s.anchored,
         "complete": s.complete,

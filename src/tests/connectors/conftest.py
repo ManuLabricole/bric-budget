@@ -25,6 +25,54 @@ def yuh_csv_path() -> Path:
 
 
 @pytest.fixture
+def yuh_fx_csv_path() -> Path:
+    """
+    CSV Yuh dédié aux conversions de devise (DEBIT + CREDIT remplis sur la
+    même ligne). 6 lignes : 1 carte CHF simple, 3 BANK_AUTO_ORDER_EXECUTED
+    2-jambes (CHF/EUR, CHF/GBP, CHF/USD), 1 BANK_ORDER_EXECUTED 1-jambe à
+    CREDIT négatif (vente de CHF — cas réel observé), 1 virement simple.
+    """
+    return FIXTURES_DIR / "yuh_fx_sample.csv"
+
+
+@pytest.fixture
 def ubs_csv_path() -> Path:
-    """Chemin vers le CSV UBS de test. Contient 3 transactions."""
+    """CSV UBS ANCIEN format (colonne « Monnaie »). Contient 3 transactions."""
     return FIXTURES_DIR / "ubs_sample.csv"
+
+
+@pytest.fixture
+def ubs_csv_devise_path() -> Path:
+    """
+    CSV UBS NOUVEAU format (colonne « Devise ») — mêmes 3 transactions.
+
+    UBS a renommé « Monnaie » en « Devise » dans ses exports. Les deux formats
+    doivent être acceptés : les anciens fichiers restent réimportables (le
+    dossier d'archives en contient), et les nouveaux doivent passer.
+    """
+    return FIXTURES_DIR / "ubs_sample_devise.csv"
+
+
+@pytest.fixture
+def ubs_csv_empty_savings_path() -> Path:
+    """
+    CSV UBS d'un compte d'épargne SANS mouvement (nouveau format).
+
+    Variante réelle : 7 lignes de metadata au lieu de 8 (pas de « Évaluation en »),
+    « Solde final:;; » vide, et zéro ligne de transaction. Sert de garde-fou
+    contre un crash sur un export parfaitement légitime.
+    """
+    return FIXTURES_DIR / "ubs_sample_empty_savings.csv"
+
+
+@pytest.fixture
+def tsb_csv_path() -> Path:
+    """
+    CSV TSB de test — 9 transactions couvrant les pièges du format réel.
+
+    Identifiants FACTICES (sort code 00-00-00, compte 00000000, carte 1234) :
+    les libellés TSB réels encastrent le sort code et le numéro du compte
+    d'épargne du titulaire, qui n'ont rien à faire dans un fichier committé
+    (SR-008, gardé par tests/test_reference_data.py).
+    """
+    return FIXTURES_DIR / "tsb_sample.csv"
