@@ -21,8 +21,6 @@ from django.core.management.base import BaseCommand, CommandError
 from accounts.models import Account
 from transactions.services import tx_overrides
 
-_MAX_UNMATCHED_SHOWN = 20
-
 
 class Command(BaseCommand):
     help = "Restaure la couche manuelle d'un compte depuis un JSON d'overrides"
@@ -61,25 +59,34 @@ class Command(BaseCommand):
             f"{prefix}{report.applied} override(s) appliqué(s) sur « {account.name} »"
         )
         self.stdout.write(
-            f"{prefix}  catégorie déjà correcte : {report.category_already_correct}"
-            f" · catégorie restaurée : {report.category_changed}"
+            f"{prefix}  dont catégories manuelles restaurées : {report.category_restored}"
         )
 
-        if not report.unmatched:
+        if report.is_clean:
             self.stdout.write(
                 self.style.SUCCESS(f"{prefix}✅ réappariement 100 % — purge sûre.")
             )
             return
 
-        self.stdout.write(
-            self.style.ERROR(
-                f"{prefix}⛔ {len(report.unmatched)} override(s) NON réapparié(s)"
-                f" — taux {report.match_rate:.1%}. Ne pas purger en l'état."
-            )
-        )
-        for line in report.unmatched[:_MAX_UNMATCHED_SHOWN]:
-            self.stdout.write(f"     {line}")
-        if len(report.unmatched) > _MAX_UNMATCHED_SHOWN:
+        # Liste EXHAUSTIVE, jamais tronquée : l'opérateur doit pouvoir identifier chaque
+        # ligne perdue pour décider s'il purge. Un « … et 37 autres » rendrait le filet
+        # inutilisable précisément quand il sert le plus.
+        if report.unmatched:
             self.stdout.write(
-                f"     … et {len(report.unmatched) - _MAX_UNMATCHED_SHOWN} autre(s)"
+                self.style.ERROR(
+                    f"{prefix}⛔ {len(report.unmatched)} override(s) NON réapparié(s)"
+                    f" — taux {report.match_rate:.1%}. Ne pas purger en l'état."
+                )
             )
+            for line in report.unmatched:
+                self.stdout.write(f"     {line}")
+
+        if report.unresolved:
+            self.stdout.write(
+                self.style.ERROR(
+                    f"{prefix}⛔ {len(report.unresolved)} référence(s) de catégorie"
+                    " introuvable(s) — champ laissé en l'état, pas vidé :"
+                )
+            )
+            for line in report.unresolved:
+                self.stdout.write(f"     {line}")

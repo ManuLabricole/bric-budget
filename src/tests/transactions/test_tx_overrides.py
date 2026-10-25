@@ -24,6 +24,8 @@ from accounts.models import Account, Institution
 from transactions.models import Category, SubCategory, Transaction
 from transactions.services import tx_overrides
 
+MANUAL = Transaction.CategorizationSource.MANUAL
+
 # =============================================================================
 # Fixtures
 # =============================================================================
@@ -93,8 +95,14 @@ def make_tx(
 @pytest.mark.django_db
 def test_export_produces_one_entry_per_transaction(user, account, categories):
     courses, _, _ = categories
-    make_tx(account, "a", category=courses)
-    make_tx(account, "b", description_raw="COOP", category=courses)
+    make_tx(account, "a", category=courses, categorization_source=MANUAL)
+    make_tx(
+        account,
+        "b",
+        description_raw="COOP",
+        category=courses,
+        categorization_source=MANUAL,
+    )
 
     payload = tx_overrides.export_overrides(account)
 
@@ -107,7 +115,7 @@ def test_identical_rows_get_distinct_occurrence_ranks(user, account, categories)
     """3 lignes strictement identiques → rangs 0/1/2, sinon elles s'écrasent au retour."""
     courses, _, _ = categories
     for seed in ("x1", "x2", "x3"):
-        make_tx(account, seed, category=courses)
+        make_tx(account, seed, category=courses, categorization_source=MANUAL)
 
     payload = tx_overrides.export_overrides(account)
     ranks = sorted(o["key"]["occurrence"] for o in payload["overrides"])
@@ -122,7 +130,13 @@ def test_key_ignores_display_name(user, account, categories):
     en dépendait, aucun override ne se réapparierait après un changement de parseur.
     """
     courses, _, _ = categories
-    tx = make_tx(account, "d", display_name="ANCIEN LIBELLE", category=courses)
+    tx = make_tx(
+        account,
+        "d",
+        display_name="ANCIEN LIBELLE",
+        category=courses,
+        categorization_source=MANUAL,
+    )
     before = tx_overrides.export_overrides(account)["overrides"][0]["key"]
 
     tx.display_name = "NOUVEAU LIBELLE NETTOYE"
@@ -146,6 +160,7 @@ def test_round_trip_restores_manual_layer(user, account, categories):
         "r",
         category=courses,
         subcategory=sub,
+        categorization_source=MANUAL,
         is_reconciled=True,
         is_ignored=True,
         note="loyer de mars",
@@ -175,7 +190,13 @@ def test_round_trip_restores_manual_layer(user, account, categories):
 def test_unmatched_overrides_are_reported_by_name(user, account, categories):
     """Jamais d'échec silencieux : une ligne disparue doit être nommée."""
     courses, _, _ = categories
-    make_tx(account, "gone", description_raw="DISPARUE", category=courses)
+    make_tx(
+        account,
+        "gone",
+        description_raw="DISPARUE",
+        category=courses,
+        categorization_source=MANUAL,
+    )
     payload = tx_overrides.export_overrides(account)
 
     Transaction.objects.filter(account=account).delete()
@@ -194,7 +215,7 @@ def test_new_transaction_without_override_is_left_alone(user, account, categorie
     manquantes). Elles n'ont aucun override — il ne faut surtout pas les toucher.
     """
     courses, _, _ = categories
-    make_tx(account, "known", category=courses)
+    make_tx(account, "known", category=courses, categorization_source=MANUAL)
     payload = tx_overrides.export_overrides(account)
 
     Transaction.objects.filter(account=account).delete()
@@ -213,7 +234,14 @@ def test_new_transaction_without_override_is_left_alone(user, account, categorie
 @pytest.mark.django_db
 def test_import_is_idempotent(user, account, categories):
     courses, sub, _ = categories
-    make_tx(account, "i", category=courses, subcategory=sub, is_reconciled=True)
+    make_tx(
+        account,
+        "i",
+        category=courses,
+        subcategory=sub,
+        categorization_source=MANUAL,
+        is_reconciled=True,
+    )
     payload = tx_overrides.export_overrides(account)
 
     first = tx_overrides.import_overrides(payload, user=user)
@@ -227,11 +255,17 @@ def test_import_is_idempotent(user, account, categories):
 @pytest.mark.django_db
 def test_dry_run_writes_nothing(user, account, categories):
     courses, _, autre = categories
-    make_tx(account, "dr", category=courses, is_reconciled=True)
+    make_tx(
+        account,
+        "dr",
+        category=courses,
+        categorization_source=MANUAL,
+        is_reconciled=True,
+    )
     payload = tx_overrides.export_overrides(account)
 
     Transaction.objects.filter(account=account).delete()
-    tx = make_tx(account, "dr2", category=autre)
+    tx = make_tx(account, "dr2", category=autre, categorization_source=MANUAL)
 
     report = tx_overrides.import_overrides(payload, user=user, dry_run=True)
 
@@ -242,24 +276,160 @@ def test_dry_run_writes_nothing(user, account, categories):
 
 
 @pytest.mark.django_db
-def test_report_counts_categories_the_rules_already_got_right(
+def test_rule_assigned_category_is_not_exported(user, account, categories):
+    """
+    Une catégorie posée par une RÈGLE ne fait pas partie de la couche manuelle : au
+    réimport les règles retournent, éventuellement améliorées depuis. La restaurer
+    figerait un ancien verdict par-dessus un meilleur.
+    """
+    courses, _, _ = categories
+    make_tx(
+        account,
+        "byrule",
+        category=courses,
+        categorization_source=Transaction.CategorizationSource.RULE,
+    )
+
+    payload = tx_overrides.export_overrides(account)
+
+    assert payload["overrides"] == []
+
+
+@pytest.mark.django_db
+def test_restoring_a_category_marks_it_manual_and_clears_rule_provenance(
     user, account, categories
 ):
-    """
-    Distinguer « restauré » de « déjà correct » : c'est ce qui révèle les divergences
-    entre la catégorie manuelle sauvegardée et ce que les règles assignent aujourd'hui
-    (15 cas sur le compte Yuh réel).
-    """
+    """Sans ça, la ligne resterait marquée « rule » en pointant une règle qui ne l'a pas produite."""
     courses, _, autre = categories
-    make_tx(account, "c1", category=courses)
-    make_tx(account, "c2", description_raw="COOP", category=courses)
+    make_tx(account, "prov", category=courses, categorization_source=MANUAL)
     payload = tx_overrides.export_overrides(account)
 
     Transaction.objects.filter(account=account).delete()
-    make_tx(account, "c1b", category=courses)  # la règle a retrouvé la même
-    make_tx(account, "c2b", description_raw="COOP", category=autre)  # divergence
+    make_tx(
+        account,
+        "prov2",
+        category=autre,
+        categorization_source=Transaction.CategorizationSource.RULE,
+    )
+
+    tx_overrides.import_overrides(payload, user=user)
+
+    tx = Transaction.objects.get(account=account)
+    assert tx.category_id == courses.pk
+    assert tx.categorization_source == MANUAL
+    assert tx.categorization_rule_id is None
+
+
+@pytest.mark.django_db
+def test_system_and_personal_slugs_do_not_collide(user, account, categories):
+    """
+    Un slug système (owner NULL, unique global) et un slug perso (unique par user)
+    coexistent légitimement, et for_user renvoie LES DEUX. Indexer par slug seul en
+    écrasait un : la mauvaise catégorie était restaurée.
+    """
+    _, _, _ = categories
+    systeme = Category.objects.create(
+        name="Homonyme système", slug="homonyme", colour_hex="#111111", order=1
+    )
+    perso = Category.objects.create(
+        name="Homonyme perso",
+        slug="homonyme",
+        colour_hex="#222222",
+        order=2,
+        owner=user,
+    )
+    assert systeme.pk != perso.pk
+
+    make_tx(account, "coll", category=perso, categorization_source=MANUAL)
+    payload = tx_overrides.export_overrides(account)
+    assert payload["overrides"][0]["category"] == {"slug": "homonyme", "system": False}
+
+    Transaction.objects.filter(account=account).delete()
+    make_tx(account, "coll2")
+
+    tx_overrides.import_overrides(payload, user=user)
+
+    assert Transaction.objects.get(account=account).category_id == perso.pk
+
+
+@pytest.mark.django_db
+def test_unresolvable_category_is_reported_and_field_left_untouched(
+    user, account, categories
+):
+    """Une catégorie supprimée depuis l'export ne doit pas VIDER le champ en silence."""
+    courses, _, autre = categories
+    make_tx(account, "del", category=courses, categorization_source=MANUAL)
+    payload = tx_overrides.export_overrides(account)
+
+    Transaction.objects.filter(account=account).delete()
+    courses.delete()
+    make_tx(
+        account,
+        "del2",
+        category=autre,
+        categorization_source=Transaction.CategorizationSource.RULE,
+    )
 
     report = tx_overrides.import_overrides(payload, user=user)
 
-    assert report.category_already_correct == 1
-    assert report.category_changed == 1
+    tx = Transaction.objects.get(account=account)
+    assert tx.category_id == autre.pk  # pas écrasé, pas vidé
+    assert len(report.unresolved) == 1
+    assert "courses-ovr" in report.unresolved[0]
+    assert report.is_clean is False
+
+
+@pytest.mark.django_db
+def test_merchant_name_prefilled_by_the_parser_is_not_exported(
+    user, account, categories
+):
+    """
+    Les connecteurs préremplissent merchant_name avec le libellé nettoyé. L'exporter
+    comme s'il était manuel réécrirait l'ancien libellé par-dessus celui du parseur
+    corrigé — exactement l'inverse du but d'un réimport.
+    """
+    make_tx(
+        account,
+        "pref",
+        display_name="MIGROS LAUSANNE",
+        merchant_name="MIGROS LAUSANNE",
+        is_reconciled=True,
+    )
+    make_tx(
+        account,
+        "edit",
+        description_raw="COOP",
+        display_name="COOP",
+        merchant_name="Coop du coin",
+        is_reconciled=True,
+    )
+
+    overrides = {
+        o["key"]["description_raw"]: o
+        for o in tx_overrides.export_overrides(account)["overrides"]
+    }
+
+    assert overrides["MIGROS LAUSANNE"]["merchant_name"] == ""
+    assert overrides["COOP"]["merchant_name"] == "Coop du coin"
+
+
+@pytest.mark.django_db
+def test_manual_nature_override_survives(user, account, categories):
+    """15 `nature` surchargées à la main sur le compte Yuh réel — elles étaient perdues."""
+    courses, sub, _ = categories
+    make_tx(
+        account,
+        "nat",
+        category=courses,
+        subcategory=sub,
+        categorization_source=MANUAL,
+        nature="fixed",
+    )
+    payload = tx_overrides.export_overrides(account)
+
+    Transaction.objects.filter(account=account).delete()
+    make_tx(account, "nat2")
+
+    tx_overrides.import_overrides(payload, user=user)
+
+    assert Transaction.objects.get(account=account).nature == "fixed"

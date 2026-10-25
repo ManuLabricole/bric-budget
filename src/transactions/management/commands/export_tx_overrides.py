@@ -12,6 +12,8 @@ Usage :
 """
 
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
@@ -43,9 +45,18 @@ class Command(BaseCommand):
         payload = tx_overrides.export_overrides(account)
         out = Path(options["output"])
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        # Écriture atomique : write_text() tronque la cible AVANT d'écrire. Sur un
+        # chemin de sauvegarde réutilisé, une interruption laisserait un fichier vide
+        # ou tronqué — et c'est le seul filet avant une purge. tmp + replace : soit
+        # l'ancien fichier intact, soit le nouveau complet, jamais d'entre-deux.
+        fd, tmp = tempfile.mkstemp(dir=out.parent, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump(payload, fh, indent=2, ensure_ascii=False)
+            os.replace(tmp, out)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
 
         n = len(payload["overrides"])
         self.stdout.write(
