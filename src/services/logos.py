@@ -59,6 +59,8 @@ _ALLOWED_IMAGE_TYPES = {
     "image/svg+xml": "svg",
 }
 _MAX_LOGO_BYTES = 512 * 1024
+# ~8 Mpx : au-delà, ce n'est plus un logo. Garde-fou anti-bombe de décompression.
+_MAX_IMAGE_PIXELS = 8_000_000
 # Motifs interdits dans un SVG uploadé (script, handlers inline, refs externes).
 # Heuristique de défense en profondeur (la vraie barrière = rendu <img> + origine bucket
 # distincte), PAS une sanitisation XML complète. `[\s/]on\w+` couvre `<svg/onload=` (pas
@@ -91,7 +93,21 @@ def _is_likely_invisible_on_white(data: bytes) -> bool:
     Pillow ne sait pas décoder (SVG notamment — pas de faux positif silencieux).
     """
     try:
-        img = Image.open(BytesIO(data)).convert("RGBA")
+        probe = Image.open(BytesIO(data))
+        # Bombe de décompression : fetch_from_url accepte 512 Ko, or un PNG de cette
+        # taille peut déclarer des centaines de mégapixels. On lit les dimensions dans
+        # l'en-tête (Image.open est paresseux, il ne décode pas encore) AVANT de
+        # convertir : 8 Mpx = ~32 Mo en RGBA, largement au-dessus de tout logo réel.
+        width, height = probe.size
+        if width * height > _MAX_IMAGE_PIXELS:
+            logger.warning(
+                "logo refusé : %sx%s px dépasse la limite de %s px.",
+                width,
+                height,
+                _MAX_IMAGE_PIXELS,
+            )
+            return False
+        img = probe.convert("RGBA")
     except Exception:
         return False
 

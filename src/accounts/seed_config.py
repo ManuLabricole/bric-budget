@@ -115,9 +115,25 @@ def _require_str(entry: dict, key: str, where: str) -> str:
     return value.strip()
 
 
-def _optional_str(entry: dict, key: str) -> str:
+def _optional_str(entry: dict, key: str, where: str = "") -> str:
+    """
+    Champ texte optionnel. Un type NON-string est REJETÉ, jamais converti en "".
+
+    Un IBAN ou un numéro de contrat écrit sans guillemets dans le JSON arrive ici en
+    int/float. L'ancien `else ""` le transformait silencieusement en absence de valeur :
+    le compte perdait son identité et devenait inappariable à l'import, sans le moindre
+    message. Mieux vaut un échec de seed explicite.
+    """
     value = entry.get(key)
-    return value.strip() if isinstance(value, str) else ""
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise SeedConfigError(
+            f"{where} : champ « {key} » doit être une chaîne entre guillemets "
+            f"(reçu {type(value).__name__}). Un identifiant numérique non quoté "
+            f"serait perdu silencieusement."
+        )
+    return value.strip()
 
 
 def _parse_rate(entry: dict, where: str) -> Decimal | None:
@@ -178,8 +194,8 @@ def _parse_account(entry: dict, index: int) -> AccountSpec:
     # Espaces retirés : les banques écrivent l'IBAN par groupes de 4 pour la
     # lisibilité ("CH00 0000 …"), les connecteurs le normalisent sans espaces
     # avant de matcher. Les deux côtés doivent employer la même forme.
-    iban = _optional_str(entry, "iban").replace(" ", "").upper()
-    contract_number = _optional_str(entry, "contract_number").replace(" ", "")
+    iban = _optional_str(entry, "iban", where).replace(" ", "").upper()
+    contract_number = _optional_str(entry, "contract_number", where).replace(" ", "")
 
     return AccountSpec(
         institution=_require_str(entry, "institution", where),
@@ -188,9 +204,9 @@ def _parse_account(entry: dict, index: int) -> AccountSpec:
         currency=currency,
         iban=iban or None,  # "" → None : Account.iban est unique ET nullable
         contract_number=contract_number,
-        bic=_optional_str(entry, "bic").upper(),
+        bic=_optional_str(entry, "bic", where).upper(),
         interest_rate=_parse_rate(entry, where),
-        account_reference=_optional_str(entry, "account_reference"),
+        account_reference=_optional_str(entry, "account_reference", where),
         is_active=is_active,
     )
 

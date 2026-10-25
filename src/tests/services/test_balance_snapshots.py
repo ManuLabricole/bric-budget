@@ -625,3 +625,45 @@ def test_no_snapshot_has_balance_without_balance_chf_when_rate_available(
         f"{orphans.count()} snapshot(s) avec balance mais sans balance_chf alors "
         "qu'un taux est dispo — conversion CHF oubliée."
     )
+
+
+# =============================================================================
+# H. Une ancre MANUELLE n'est jamais écrasée par un import
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_import_never_overwrites_a_manual_anchor(eur_account, user):
+    """
+    Un solde saisi à la main est de l'information utilisateur. Les deux écritures de
+    snapshot font `update_or_create` sur (account, date) avec source=IMPORT : sans
+    garde-fou l'import remplaçait l'ancre en silence — certitude sur un compte à
+    snapshots quotidiens, et c'est justement sur un compte au solde extrait absent
+    (Yuh) qu'une ancre manuelle sert.
+    """
+    from datetime import date
+
+    BalanceSnapshot.objects.create(
+        account=eur_account,
+        date=date(2026, 3, 31),
+        balance=Decimal("1000.00"),
+        balance_chf=Decimal("930.00"),
+        currency="EUR",
+        source=BalanceSnapshot.Source.MANUAL,
+    )
+
+    with patch(
+        "services.exchange_rates.get_exchange_rate", return_value=Decimal("0.93")
+    ):
+        ImportService().run(
+            [make_tx_with_balance("anchor", "2026-03-31", balance_after=4242.42)],
+            eur_account,
+            user,
+            "cic.xlsx",
+            make_file_hash("anchor"),
+            balance=7777.77,
+        )
+
+    snap = BalanceSnapshot.objects.get(account=eur_account, date=date(2026, 3, 31))
+    assert snap.balance == Decimal("1000.00")
+    assert snap.source == BalanceSnapshot.Source.MANUAL

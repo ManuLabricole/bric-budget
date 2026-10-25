@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import functools
 import json
+import logging
 import re
 import time
 from dataclasses import dataclass
@@ -50,6 +51,8 @@ from django.conf import settings
 from django.utils.text import slugify
 
 from services import logos
+
+logger = logging.getLogger(__name__)
 
 SEED_PATH = (
     Path(__file__).resolve().parent.parent
@@ -94,8 +97,25 @@ def load_seed(path: Path = SEED_PATH) -> list[MerchantSeed]:
         # ("GOOGLE YOUTUBEPR" = YouTube Premium coupé) et un \b final raterait tout
         # mot-clé suivi directement d'une troncature. \b à gauche seul suffit à éviter
         # les faux positifs par IMBRICATION (ex. "APPLE" dans "SNAPPLE").
-        alternation = "|".join(re.escape(kw) for kw in entry["keywords"])
-        pattern = re.compile(rf"\b(?:{alternation})")
+        # Deux familles de mots-clés, et le choix se fait dans le SEED, pas par une
+        # heuristique de longueur — mesuré sur les données réelles, une règle « tout
+        # mot-clé court prend une frontière à droite » perdait plus qu'elle ne gagnait :
+        # elle cassait ESSOF108 (16 tx), AMZNMKTPLACE, AGIP9351, ENI9570 — des marchands
+        # authentiques que la banque a tronqués — pour ne corriger que « VOI ».
+        #
+        #   keywords        → frontière GAUCHE seule. Tolère la troncature bancaire
+        #                     ("GOOGLE YOUTUBEPR", "ESSOF108").
+        #   strict_keywords → frontière des DEUX côtés. Pour un mot-clé qui est aussi
+        #                     le début d'un mot courant : « VOI » matchait PRET VOITURE,
+        #                     EPARGNE PRECAUTION VOITURE et LAUSANNE SOUS-VOIES.
+        loose = entry.get("keywords", [])
+        strict = entry.get("strict_keywords", [])
+        branches = []
+        if loose:
+            branches.append(rf"\b(?:{'|'.join(re.escape(k) for k in loose)})")
+        if strict:
+            branches.append(rf"\b(?:{'|'.join(re.escape(k) for k in strict)})\b")
+        pattern = re.compile("|".join(branches))
         seeds.append(
             MerchantSeed(
                 key=entry["key"],
@@ -126,6 +146,13 @@ def resolve_seed_key(display_name: str) -> str | None:
 
 
 def slug_for(display_name: str) -> str:
+    """
+    Clé de stockage du logo manuel. Peut être VIDE : slugify("日本") == "", comme tout
+    libellé sans caractère latin. L'appelant DOIT traiter ce cas — un slug vide produit
+    « icons/merchants/.png », que listdir_urls filtre comme fichier caché : la vue
+    répondrait « logo installé » alors qu'il n'apparaîtra jamais, et tous les marchands
+    non latins partageraient le même fichier.
+    """
     return slugify(display_name)[:_SLUG_MAX_LENGTH]
 
 
@@ -178,9 +205,17 @@ def get_merchant_logo_map(display_names: list[str]) -> dict[str, str]:
 
 def save_manual_logo(display_name: str, url: str) -> str | None:
     """Installe un logo collé à la main pour CE display_name exact. None si refus/échec."""
+    slug = slug_for(display_name)
+    if not slug:
+        logger.warning(
+            "save_manual_logo refusé : display_name=%r produit un slug vide "
+            "(aucun caractère latin) — stockage impossible.",
+            display_name,
+        )
+        return None
     name = logos.fetch_from_url(
         url,
-        slug_for(display_name),
+        slug,
         prefix=MERCHANT_LOGO_PREFIX,
         on_saved=clear_manual_logo_cache,
     )

@@ -32,7 +32,7 @@ d'icône d'image cassée affichée à l'utilisateur.
                  height="18"
                  class="w-full h-full object-contain"
                  alt=""
-                 onerror="this.closest('.merchant-logo-loaded').remove(); this.closest('#tx-merchant-badge-{{ tx.id }}').querySelector('.merchant-logo-fallback').classList.remove('hidden')">
+                 onerror="const b = this.closest('#tx-merchant-badge-{{ tx.id }}'); b.querySelector('.merchant-logo-fallback').classList.remove('hidden'); b.querySelector('.merchant-logo-loaded').remove()">
             <button type="button"
                     title="Changer le logo de ce marchand"
                     aria-label="Changer le logo"

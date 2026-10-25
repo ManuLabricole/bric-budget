@@ -466,6 +466,8 @@ class ImportService:
             return
         for _snap_date_str, _snap_balance in daily_balances.items():
             _snap_date = _dt.date.fromisoformat(_snap_date_str)
+            if self._is_manual_anchor(account, _snap_date):
+                continue
             BalanceSnapshot.objects.update_or_create(
                 account=account,
                 date=_snap_date,
@@ -478,6 +480,24 @@ class ImportService:
                     "source": BalanceSnapshot.Source.IMPORT,
                 },
             )
+
+    @staticmethod
+    def _is_manual_anchor(account: Account, snap_date) -> bool:
+        """
+        Un solde saisi à la main est de l'INFORMATION UTILISATEUR : un import ne doit
+        jamais l'écraser.
+
+        Les deux écritures de snapshot font `update_or_create` sur (account, date) avec
+        `source=IMPORT` : sans ce garde-fou, un import couvrant la date d'une ancre la
+        remplaçait silencieusement — certitude sur un compte à snapshots quotidiens
+        (CIC, colonne F), et c'est précisément ce qui rend une ancre manuelle utile sur
+        un compte dont le solde extrait est faux ou absent (Yuh).
+        """
+        return BalanceSnapshot.objects.filter(
+            account=account,
+            date=snap_date,
+            source=BalanceSnapshot.Source.MANUAL,
+        ).exists()
 
     def _save_closing_snapshot(
         self,
@@ -568,11 +588,18 @@ class ImportService:
             if authoritative is not None:
                 snap_defaults["balance_chf"] = balance_chf
 
-            BalanceSnapshot.objects.update_or_create(
-                account=account,
-                date=snapshot_date,
-                defaults=snap_defaults,
-            )
+            if self._is_manual_anchor(account, snapshot_date):
+                logger.info(
+                    "closing snapshot ignoré : ancre MANUELLE existante account=%s date=%s",
+                    account.pk,
+                    snapshot_date,
+                )
+            else:
+                BalanceSnapshot.objects.update_or_create(
+                    account=account,
+                    date=snapshot_date,
+                    defaults=snap_defaults,
+                )
 
         # Alerte si les deux sont disponibles et divergent de plus de 1 centime
         if extracted is not None and computed is not None:

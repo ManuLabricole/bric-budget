@@ -12,7 +12,11 @@ hx-target="closest details" : réaffiche l'erreur (422) au même endroit sans
 avoir à connaître son id. Succès → la vue RETARGET vers #account-detail-body
 (HX-Retarget/HX-Reswap) pour rafraîchir courbe + tx + détails d'un coup.
 {% endcomment %}
-<details id="account-balance-manual" class="relative inline-block">
+{# `open` si error : au retour 422 HTMX re-swappe ce partial ; sans l'attribut le
+   <details> revient fermé et le message d'erreur n'est jamais lu. #}
+<details id="account-balance-manual"
+         class="relative inline-block"
+         {% if error %}open{% endif %}>
     <summary title="Ajouter un solde à une date"
              aria-label="Ajouter un solde à une date"
              class="list-none cursor-pointer w-6 h-6 rounded-full border border-edge flex items-center justify-center text-text-disabled hover:text-gold hover:border-edge-subtle transition-colors">

@@ -218,3 +218,49 @@ def test_save_manual_logo_returns_none_on_failure(monkeypatch):
         merchant_logos.save_manual_logo("SOME SHOP", "https://x.example/logo.png")
         is None
     )
+
+
+# =============================================================================
+# Frontières de mots-clés — déclaration explicite dans le seed (CodeRabbit #344)
+# =============================================================================
+
+
+def test_strict_keyword_requires_a_boundary_on_both_sides():
+    """
+    « VOI » (trottinettes) matchait PRET VOITURE, EPARGNE PRECAUTION VOITURE et
+    LAUSANNE SOUS-VOIES. Mesuré sur la base réelle : 35 transactions faussement
+    étiquetées, 0 vraie perdue en resserrant.
+    """
+    from services.merchant_logos import _match_seed
+
+    hit = _match_seed("VOI FR")
+    assert hit is not None and hit.key == "voi"
+    assert _match_seed("PRET VOITURE I20V23122L065307") is None
+    assert _match_seed("LAUSANNE SOUS-VOIES GA") is None
+
+
+def test_loose_keyword_still_tolerates_bank_truncation():
+    """
+    La frontière gauche seule est DÉLIBÉRÉE : les banques tronquent. Resserrer tous les
+    mots-clés courts cassait ESSOF108 (16 tx), AMZNMKTPLACE, AGIP9351 — des marchands
+    authentiques. D'où une déclaration par mot-clé plutôt qu'une règle de longueur.
+    """
+    from services.merchant_logos import _match_seed
+
+    hit = _match_seed("BIVIERS CERTAS ESSOF108")
+    assert hit is not None and hit.key == "esso"
+    hit = _match_seed("AMZNMKTPLACE*V90DE8P55")
+    assert hit is not None and hit.key == "amazon"
+    hit = _match_seed("GRENOBLE AGIP9351PERROT")
+    assert hit is not None and hit.key == "eni"
+
+
+def test_empty_slug_is_refused_rather_than_silently_lost():
+    """
+    slugify("日本") == "" → « icons/merchants/.png », filtré comme fichier caché : la vue
+    répondait « logo installé » et le logo n'apparaissait jamais.
+    """
+    from services.merchant_logos import save_manual_logo, slug_for
+
+    assert slug_for("日本") == ""
+    assert save_manual_logo("日本", "https://example.test/logo.png") is None

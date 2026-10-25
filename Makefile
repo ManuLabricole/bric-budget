@@ -304,10 +304,12 @@ restore:
 		exit 1; \
 	fi; \
 	printf "  $(DIM)→ base « $$2 » (utilisateur $$1)$(RESET)\n"; \
+	set -o pipefail; \
 	case "$(FILE)" in \
 		*.gz) gunzip -c "$(FILE)" ;; \
 		*)    cat "$(FILE)" ;; \
-	esac | docker exec -i bricbudget-db psql --username="$$1" --dbname="$$2"
+	esac | docker exec -i bricbudget-db psql --username="$$1" --dbname="$$2" \
+	       --set ON_ERROR_STOP=1
 	@printf "  ✅ $(GREEN)Restauration terminée$(RESET)\n"
 
 # Dump de la PROD (Railway) — #257. Le script DEMANDE l'URL en saisie masquée si
