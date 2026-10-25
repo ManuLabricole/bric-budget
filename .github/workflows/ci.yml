@@ -165,22 +165,31 @@ jobs:
       - name: bandit — Python security lint
         run: poetry run bandit -r src/ --severity-level medium
 
-      # pip-audit — CVE des dépendances installées (PyPA). Aucune exception :
-      # toute CVE fait échouer la CI.
-      - name: pip-audit — dependency CVEs
-        run: poetry run pip-audit
-
       - name: Generate CI secret key
         run: python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(50))" >> "$GITHUB_ENV"
 
       # mypy — vérification de types (plugin Django). DATABASE_URL dummy :
       # mypy charge les settings pour introspecter les models mais ne se connecte PAS à la DB.
       # SECRET_KEY injecté depuis $GITHUB_ENV (step précédent).
+      #
+      # ⛔ mypy passe AVANT pip-audit, et l'ordre est intentionnel. pip-audit échoue dès
+      # qu'une CVE est publiée sur une dépendance — un évènement EXTERNE, sans rapport
+      # avec le code poussé. Quand il était placé avant, son échec interrompait le job et
+      # mypy était simplement « skipped » : le type-check a cessé de tourner en CI pendant
+      # des semaines, en silence, sans que rien ne le signale. Une CVE de dépendance ne
+      # doit jamais masquer une régression de typage.
       - name: mypy — type check
         env:
           DATABASE_URL: "postgresql://u:p@localhost:5432/db"
           DEBUG: "True"
         run: cd src && poetry run mypy . --config-file ../pyproject.toml
+
+      # pip-audit — CVE des dépendances installées (PyPA). Aucune exception :
+      # toute CVE fait échouer la CI. Placé en DERNIER du job (cf. mypy ci-dessus) :
+      # c'est le seul contrôle dont l'échec ne dépend pas du diff, donc le seul qu'on
+      # accepte de voir rougir sans rien avoir poussé.
+      - name: pip-audit — dependency CVEs
+        run: poetry run pip-audit
 
   # ── Tests ───────────────────────────────────────────────────────────────────
   # Lance les 323 tests pytest avec une vraie DB PostgreSQL.
