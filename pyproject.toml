@@ -8,15 +8,18 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.13,<4.0"
 dependencies = [
-    "django (>=6.0.6,<7.0.0)",
+    # Épinglé sur la ligne 6.0.x : le correctif de la CVE est le PATCH 6.0.7.
+    # La mineure 6.1.x fera l'objet d'une montée de version à part, pour ne pas
+    # mélanger un déblocage de CI avec un changement de version de framework.
+    "django (>=6.0.7,<6.1.0)",
     "psycopg2-binary (>=2.9.12,<3.0.0)",
     "python-decouple (>=3.8,<4.0)",
     "openpyxl (>=3.1.5,<4.0.0)",
-    "cryptography (>=48.0.0,<49.0.0)",
+    "cryptography (>=50.0.0,<51.0.0)",
     "whitenoise (>=6.12.0,<7.0.0)",
     "gunicorn (>=26.0.0,<27.0.0)",
     "django-axes (>=8.3.1,<9.0.0)",
-    "pillow (>=12.2.0,<13.0.0)",
+    "pillow (>=13.0.0,<14.0.0)",
     "django-storages[s3] (>=1.14.6,<2.0.0)",
     "boto3 (>=1.43.36,<2.0.0)",
     "sentry-sdk[django] (>=2.0.0,<3.0.0)"
