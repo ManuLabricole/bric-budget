@@ -10,11 +10,11 @@ Plus : cashflow refresh sur ignore (pas sur pointer) et HX-Redirect sur recatég
 """
 
 import hashlib
+from datetime import date
 
 import pytest
 from django.test import Client
 from django.urls import reverse
-from django.utils import timezone
 
 from accounts.models import Account, Institution
 from transactions.models import Category, Transaction
@@ -55,16 +55,23 @@ def account(db, user):
 
 @pytest.fixture
 def tx(db, account, cat):
-    # Date dans le mois courant — la période par défaut de category_detail est le mois
-    # en cours. Une date EN DUR pourrit : "2026-06-05" était bien dans le mois courant
-    # à l'écriture du test, puis est sortie de la période une fois juin passé. La page
-    # n'avait alors plus aucun montant → donut vide → has_donut False → tout le panel
-    # droit (dont #cat-tx-detail) disparaissait, et le test échouait sans qu'aucun code
-    # applicatif n'ait bougé. day=5 est valide dans tous les mois.
+    # Date dans le mois courant, dérivée de la MÊME horloge que le code testé.
+    #
+    # Une date en dur pourrit : "2026-06-05" était dans le mois courant à l'écriture du
+    # test puis en est sortie une fois juin passé → page sans montant → donut vide →
+    # has_donut False → tout le panel droit (dont #cat-tx-detail) cesse d'être rendu,
+    # test rouge sans qu'aucun code applicatif n'ait bougé.
+    #
+    # Mais `timezone.localdate()` (Europe/Zurich) ne convient pas davantage : la période
+    # par défaut vient de budget.utils._period_from_session(), qui lit `date.today()` —
+    # l'heure du PROCESSUS. À une frontière de mois les deux sources divergent (Zurich
+    # déjà le 1er, runner CI en UTC encore le 31) et le test redevient rouge. On lit donc
+    # la même horloge que la vue : par construction, elles ne peuvent plus se contredire.
+    # day=5 est valide dans tous les mois.
     return Transaction.objects.create(
         account=account,
         category=cat,
-        date=timezone.localdate().replace(day=5),
+        date=date.today().replace(day=5),
         amount=-50,
         currency="CHF",
         amount_chf=-50,
