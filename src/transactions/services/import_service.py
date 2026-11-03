@@ -157,6 +157,16 @@ class ImportService:
         if dry_run:
             return result
 
+        # paired_leg_key par import_hash — voir CONTRACT dans connectors/base.py.
+        # Calculé ici (pas d'attribut Python transitoire sur Transaction, qui
+        # casserait mypy/django-stubs) : import_hash est la clé stable commune
+        # entre TransactionDict (avant bulk_create) et Transaction (après).
+        paired_leg_keys_by_hash = {
+            tx["import_hash"]: key
+            for tx in transactions
+            if (key := tx.get("paired_leg_key"))
+        }
+
         # ── 6. Écriture atomique (ImportLog + transactions + snapshots) ──────
         self._persist(
             account=account,
@@ -164,6 +174,7 @@ class ImportService:
             filename=filename,
             file_hash=file_hash,
             transactions_to_create=transactions_to_create,
+            paired_leg_keys_by_hash=paired_leg_keys_by_hash,
             daily_balances=daily_balances,
             balance=balance,
             result=result,
@@ -316,6 +327,7 @@ class ImportService:
         filename: str,
         file_hash: str,
         transactions_to_create: list[Transaction],
+        paired_leg_keys_by_hash: dict[str, str],
         daily_balances: dict[str, Decimal],
         balance: float | None,
         result: ImportResult,
@@ -330,6 +342,9 @@ class ImportService:
                 account, imported_by, filename, file_hash, result
             )
             self._save_transactions(import_log, transactions_to_create)
+            self._link_paired_transactions(
+                transactions_to_create, paired_leg_keys_by_hash
+            )
             self._save_daily_snapshots(account, daily_balances, transactions_to_create)
             self._save_closing_snapshot(account, transactions_to_create, balance)
             # Exposer le PK de l'ImportLog au caller (orchestrator) pour retrouver
@@ -381,6 +396,54 @@ class ImportService:
                 date_max=max(dates),
             )
 
+    def _link_paired_transactions(
+        self,
+        transactions_to_create: list[Transaction],
+        paired_leg_keys_by_hash: dict[str, str],
+    ) -> None:
+        """
+        Relie via paired_transaction les jambes qui partagent le même
+        paired_leg_key (conversions de devise Yuh — voir CONTRACT dans
+        connectors/base.py). Appelé APRÈS bulk_create : sur Postgres, Django
+        renseigne le .pk des objets bulk_create EN PLACE sur les mêmes instances
+        Python — ce sont donc les mêmes objets que ceux passés à
+        _save_transactions(), désormais avec un pk.
+
+        paired_leg_keys_by_hash (calculé dans run(), voir CONTRACT) associe
+        chaque import_hash à sa clé de groupe — import_hash est la clé stable
+        commune entre TransactionDict (avant écriture) et Transaction (après),
+        pas besoin d'attribut Python transitoire sur le modèle.
+
+        Doublons internes au fichier déjà écartés par _build_transactions()
+        AVANT d'arriver ici (dédup sur import_hash) — un groupe voit donc soit
+        les 2 jambes soit aucune, jamais une seule orpheline.
+        """
+        groups: dict[str, list[Transaction]] = {}
+        for t in transactions_to_create:
+            key = paired_leg_keys_by_hash.get(t.import_hash)
+            if key:
+                groups.setdefault(key, []).append(t)
+
+        to_update: list[Transaction] = []
+        for legs in groups.values():
+            if len(legs) != 2:
+                # Anomalie (1 jambe dédupliquée par une DB déjà partiellement
+                # importée, ou collision de clé) — ne jamais planter l'import
+                # pour un appariement manqué, la transaction reste valide seule.
+                logger.warning(
+                    "[ImportService] paired_leg_key avec %d jambe(s) au lieu de 2 : %s",
+                    len(legs),
+                    [t.import_hash for t in legs],
+                )
+                continue
+            first, second = legs
+            first.paired_transaction = second
+            second.paired_transaction = first
+            to_update.extend([first, second])
+
+        if to_update:
+            Transaction.objects.bulk_update(to_update, ["paired_transaction"])
+
     def _save_daily_snapshots(
         self,
         account: Account,
@@ -403,6 +466,8 @@ class ImportService:
             return
         for _snap_date_str, _snap_balance in daily_balances.items():
             _snap_date = _dt.date.fromisoformat(_snap_date_str)
+            if self._is_manual_anchor(account, _snap_date):
+                continue
             BalanceSnapshot.objects.update_or_create(
                 account=account,
                 date=_snap_date,
@@ -416,6 +481,24 @@ class ImportService:
                 },
             )
 
+    @staticmethod
+    def _is_manual_anchor(account: Account, snap_date) -> bool:
+        """
+        Un solde saisi à la main est de l'INFORMATION UTILISATEUR : un import ne doit
+        jamais l'écraser.
+
+        Les deux écritures de snapshot font `update_or_create` sur (account, date) avec
+        `source=IMPORT` : sans ce garde-fou, un import couvrant la date d'une ancre la
+        remplaçait silencieusement — certitude sur un compte à snapshots quotidiens
+        (CIC, colonne F), et c'est précisément ce qui rend une ancre manuelle utile sur
+        un compte dont le solde extrait est faux ou absent (Yuh).
+        """
+        return BalanceSnapshot.objects.filter(
+            account=account,
+            date=snap_date,
+            source=BalanceSnapshot.Source.MANUAL,
+        ).exists()
+
     def _save_closing_snapshot(
         self,
         account: Account,
@@ -428,8 +511,9 @@ class ImportService:
             balance          = solde extrait du fichier (None si indisponible)
             computed_balance = snapshot précédent + somme des nouvelles tx
 
-        Même si balance=None (ex: Yuh nom de fichier URL-encodé), on crée quand
-        même le snapshot avec computed_balance pour ne pas perdre la traçabilité.
+        Même si balance=None (ex: Yuh, qui n'expose aucun solde — toujours
+        None), on crée quand même le snapshot avec computed_balance pour ne
+        pas perdre la traçabilité.
         Si les deux sont disponibles, on alerte sur la dérive.
         """
         if not transactions_to_create:
@@ -459,11 +543,34 @@ class ImportService:
             # Premier import pour ce compte : pas de base de calcul
             computed = None
 
+        extracted = Decimal(str(balance)) if balance is not None else None
+
         # balance_chf converti EXACTEMENT comme amount_chf (même porte to_chf) :
         # plus de NULL silencieux sur les comptes non-CHF — c'était la cause du
         # « conversion en attente » et du solde « — » en patrimoine.
-        extracted = Decimal(str(balance)) if balance is not None else None
-        balance_chf = to_chf(extracted, account.currency, snapshot_date)
+        #
+        # RÉGRESSION réelle #1 (#124) : balance_chf suivait UNIQUEMENT `extracted`.
+        # Quand l'extraction échoue (footer illisible, nom de fichier corrompu…)
+        # mais que `computed` est disponible, balance_chf restait None — le
+        # moteur d'ancrage (balance_history.py, in_chf=True) lit balance_chf, PAS
+        # authoritative_balance : un solde pourtant CONNU (calculé) rendait le
+        # jour "sans ancre" → solde affiché "—" et courbe retombant à 0.
+        #
+        # RÉGRESSION réelle #2 (introduite en corrigeant la #1, jamais publiée) :
+        # tomber sur `computed` sans vérifier la ligne EXISTANTE écrase un
+        # balance_chf déjà juste posé par _save_daily_snapshots pour CETTE même
+        # date (CIC, col F quotidienne) — `computed` ici est la clôture calculée
+        # depuis le snapshot précédent, une base de calcul DIFFÉRENTE de celle du
+        # quotidien → conversion CHF fausse. D'où la lecture de la ligne existante
+        # AVANT de retomber sur `computed` : ne jamais dégrader un balance connu.
+        existing = BalanceSnapshot.objects.filter(
+            account=account, date=snapshot_date
+        ).first()
+        existing_balance = existing.balance if existing is not None else None
+        authoritative = extracted if extracted is not None else existing_balance
+        if authoritative is None:
+            authoritative = computed
+        balance_chf = to_chf(authoritative, account.currency, snapshot_date)
 
         if extracted is not None or computed is not None:
             # Ne jamais écraser un solde banque existant par None. Important pour
@@ -476,15 +583,23 @@ class ImportService:
             }
             if extracted is not None:
                 snap_defaults["balance"] = extracted
-                snap_defaults["balance_chf"] = balance_chf
             if computed is not None:
                 snap_defaults["computed_balance"] = computed
+            if authoritative is not None:
+                snap_defaults["balance_chf"] = balance_chf
 
-            BalanceSnapshot.objects.update_or_create(
-                account=account,
-                date=snapshot_date,
-                defaults=snap_defaults,
-            )
+            if self._is_manual_anchor(account, snapshot_date):
+                logger.info(
+                    "closing snapshot ignoré : ancre MANUELLE existante account=%s date=%s",
+                    account.pk,
+                    snapshot_date,
+                )
+            else:
+                BalanceSnapshot.objects.update_or_create(
+                    account=account,
+                    date=snapshot_date,
+                    defaults=snap_defaults,
+                )
 
         # Alerte si les deux sont disponibles et divergent de plus de 1 centime
         if extracted is not None and computed is not None:
@@ -599,13 +714,29 @@ class ImportService:
         # Conversion CHF centralisée (services.exchange_rates.to_chf) : CHF →
         # identité, sinon montant × taux (cache DB puis API), None si taux down.
         # Même porte que balance_chf des snapshots → conversion jamais oubliée.
-        amount_chf = to_chf(amount, account.currency, parsed_date)
+        #
+        # tx["currency"] — PAS account.currency : ce sont deux choses différentes.
+        # account.currency est la devise NOMINALE du compte (ex. un compte Yuh
+        # "CHF" en DB) ; tx["currency"] est celle de CETTE ligne, qui peut différer
+        # (Yuh est un wallet multi-devises : lignes EUR/USD/GBP sur un compte
+        # "CHF"). Utiliser account.currency convertissait ces lignes en identité
+        # (currency == "CHF" → aucun taux appliqué) au lieu de vraiment convertir —
+        # un -196.20 EUR ressortait à -196.20 CHF, jamais ~-182 CHF.
+        amount_chf = to_chf(amount, tx["currency"], parsed_date)
 
         # --- Flags virement interne ------------------------------------------
         # Si la catégorie matchée est "virements", on marque la transaction comme
         # virement interne ET ignorée dès l'import. L'utilisateur peut overrider
         # manuellement via le toggle "Inclure dans l'analyse budgétaire".
-        is_internal = bool(category and category.slug == INTERNAL_TRANSFER_SLUG)
+        #
+        # paired_leg_key (voir CONTRACT dans connectors/base.py) force le même
+        # résultat pour les 2 jambes d'une conversion de devise (Yuh), SANS
+        # dépendre d'une règle de catégorisation par mot-clé — un libellé Yuh qui
+        # change de formulation ne doit jamais faire réapparaître ces jambes
+        # dans le budget comme dépense/revenu réel.
+        is_internal = bool(
+            category and category.slug == INTERNAL_TRANSFER_SLUG
+        ) or bool(tx.get("paired_leg_key"))
 
         # --- Build and return the unsaved object -----------------------------
         return Transaction(

@@ -86,6 +86,12 @@ urlpatterns = [
         views.account_transactions,
         name="account_transactions",
     ),
+    # /patrimoine/compte/<id>/solde-manuel/ → installe l'ancre (POST, HTMX, #124)
+    path(
+        "compte/<int:account_id>/solde-manuel/",
+        views.account_balance_manual_save,
+        name="account_balance_manual_save",
+    ),
     # /patrimoine/compte/<id>/modifier/ → carte Détails → formulaire d'édition (GET, HTMX, #292)
     path(
         "compte/<int:account_id>/modifier/",

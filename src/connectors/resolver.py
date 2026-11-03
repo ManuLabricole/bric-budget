@@ -70,6 +70,7 @@ from pathlib import Path
 from accounts.models import Account
 from connectors.base import BaseConnector
 from connectors.cic.parser import CICConnector
+from connectors.tsb.parser import TSBConnector
 from connectors.ubs.parser import UBSConnector
 from connectors.yuh.parser import YuhConnector
 
@@ -141,6 +142,7 @@ CONNECTORS: list[BaseConnector] = [
     YuhConnector(),
     UBSConnector(),
     CICConnector(),
+    TSBConnector(),
 ]
 
 

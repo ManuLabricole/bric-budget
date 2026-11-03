@@ -38,8 +38,8 @@ from patrimoine.services.chart_data import (
 )
 from patrimoine.services.valuation import current_value
 from patrimoine.views.overview import PERIOD_LABELS
-from services.logos import get_institution_icon_map
 from transactions.models import Transaction
+from transactions.services import annotate_tx_display_icons
 
 logger = logging.getLogger(__name__)
 
@@ -154,16 +154,7 @@ def _get_tx_page(accounts, page_number: int):
     except InvalidPage:
         page_obj = paginator.page(1)
 
-    institution_icon_map = get_institution_icon_map()
-    tx_list = list(page_obj.object_list)
-    for tx in tx_list:
-        slug = (
-            tx.account.institution.icon_slug
-            if tx.account and tx.account.institution
-            else ""
-        )
-        tx.institution_icon_url = institution_icon_map.get(slug, "")
-
+    tx_list = annotate_tx_display_icons(page_obj.object_list)
     return tx_list, page_obj
 
 

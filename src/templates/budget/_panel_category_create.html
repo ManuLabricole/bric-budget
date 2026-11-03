@@ -295,7 +295,14 @@
         document.getElementById('parent-picker-details').removeAttribute('open');
         catUpdateSubmit();
     }
-    document.body.addEventListener('click', function (e) {
+    // Délégation scopée sur #modal-content, PAS document.body : #modal-content a
+    // onclick="event.stopPropagation()" (base_app.html, pour que les clics DANS la
+    // modale ne la ferment pas via le handler du fond #modal) — ce stopPropagation
+    // empêche le clic de jamais atteindre body. Un listener sur body ne se déclenche
+    // donc JAMAIS ici (bug réel constaté : le picker catégorie parente restait ouvert,
+    // aucune erreur console). #modal-content encaisse le clic AVANT le stopPropagation
+    // de son propre onclick (même élément, écouteurs indépendants) → il le voit bien.
+    document.getElementById('modal-content').addEventListener('click', function (e) {
         var btn = e.target.closest('.js-cat-select[data-cat-target="cat-create-parent"]');
         if (!btn) return;
         applyParentSelection(btn.dataset);

@@ -1,0 +1,73 @@
+{% comment %}
+patrimoine/partials/_account_balance_manual_form.html — ajout d'un solde à une
+date choisie (#124 — Yuh sans solde fiable, CIC périmé sans réimport).
+
+Contexte : account (Account), error (str optionnel — 422).
+
+Toujours dans le DOM (formulaire statique, pas de vue GET dédiée), replié via
+<details> — le bouton "+" est le <summary>. Annuler = fermer le <details>
+(closest(), pas de handler parent — cf. rules/htmx.md).
+
+hx-target="closest details" : réaffiche l'erreur (422) au même endroit sans
+avoir à connaître son id. Succès → la vue RETARGET vers #account-detail-body
+(HX-Retarget/HX-Reswap) pour rafraîchir courbe + tx + détails d'un coup.
+{% endcomment %}
+{# `open` si error : au retour 422 HTMX re-swappe ce partial ; sans l'attribut le
+   <details> revient fermé et le message d'erreur n'est jamais lu. #}
+<details id="account-balance-manual"
+         class="relative inline-block"
+         {% if error %}open{% endif %}>
+    <summary title="Ajouter un solde à une date"
+             aria-label="Ajouter un solde à une date"
+             class="list-none cursor-pointer w-6 h-6 rounded-full border border-edge flex items-center justify-center text-text-disabled hover:text-gold hover:border-edge-subtle transition-colors">
+        <svg class="w-3.5 h-3.5"
+             fill="none"
+             viewBox="0 0 24 24"
+             stroke-width="2"
+             stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+        </svg>
+    </summary>
+    <form hx-post="{% url 'patrimoine:account_balance_manual_save' account.pk %}"
+          hx-target="closest details"
+          hx-swap="outerHTML"
+          hx-disabled-elt="this"
+          class="absolute right-0 top-8 z-20 w-64 rounded-xl border border-gold/30 bg-surface-3 p-3 shadow-lg">
+        {% csrf_token %}
+        <p class="mb-2 text-[11px] text-text-muted">
+            Solde connu de <span class="font-semibold text-text-base">{{ account.name }}</span> à une date —
+            tout ce qui suit se recalcule automatiquement.
+        </p>
+        <label class="mb-2 block">
+            <span class="mb-1 block text-[10px] uppercase text-text-disabled">Date</span>
+            <input type="date"
+                   name="date"
+                   required
+                   max="{% now "Y-m-d" %}"
+                   class="w-full rounded-lg border border-edge/60 bg-surface px-2 py-1.5 text-xs text-text-base focus:border-gold/50 focus:outline-none">
+        </label>
+        <label class="mb-2 block">
+            <span class="mb-1 block text-[10px] uppercase text-text-disabled">Solde ({{ account.currency }})</span>
+            <input type="text"
+                   name="amount"
+                   inputmode="decimal"
+                   required
+                   placeholder="1234.56"
+                   class="w-full rounded-lg border border-edge/60 bg-surface px-2 py-1.5 text-xs text-text-base placeholder:text-text-disabled focus:border-gold/50 focus:outline-none">
+        </label>
+        {% if error %}
+            <p class="mb-2 rounded-lg border border-expense/30 bg-expense/10 px-2 py-1 text-[10px] text-expense">{{ error }}</p>
+        {% endif %}
+        <div class="flex gap-2">
+            <button type="submit"
+                    class="rounded-lg bg-gold/15 px-2.5 py-1 text-[11px] font-semibold text-gold transition-colors hover:bg-gold/25">
+                Enregistrer
+            </button>
+            <button type="button"
+                    onclick="this.closest('details').removeAttribute('open')"
+                    class="rounded-lg px-2.5 py-1 text-[11px] text-text-muted transition-colors hover:text-text-base">
+                Annuler
+            </button>
+        </div>
+    </form>
+</details>

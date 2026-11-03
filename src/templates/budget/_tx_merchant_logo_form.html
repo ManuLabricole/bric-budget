@@ -1,0 +1,63 @@
+{% comment %}
+budget/_tx_merchant_logo_form.html — mini-formulaire d'ajout/modification du logo marchand.
+
+Calqué sur patrimoine/partials/_logo_repair_form.html (#128) — même contrat :
+succès → POST budget_merchant_logo_repair re-rend le badge (#tx-merchant-badge-<id>)
+avec le logo installé ; échec → ce formulaire re-rendu en 422 avec {{ error }}.
+
+Positionnement — `absolute` obligatoire, pas `relative` : ce panneau remplace le
+badge À L'INTÉRIEUR du slot icône catégorie (44x44, _panel_tx_row.html COL 1). En
+flux normal il mesurait 220x163 dans une boîte de 44px → il débordait 163px SOUS la
+ligne et sortait entièrement de #tx-scroll-container (overflow-y-auto) dès que la
+ligne était dans la moitié basse de la liste : elementFromPoint() sur « Annuler »
+renvoyait null — formulaire impossible à fermer ni à remplir (bug constaté).
+`absolute top-1/2 -translate-y-1/2` le centre sur la ligne (déborde ~60px de chaque
+côté au lieu de 163px vers le bas) et `hx-on::load` le ramène dans le scroll.
+z-30 : les séparateurs de date sont `sticky z-10` et viennent APRÈS dans le DOM —
+à z-index égal ils peindraient par-dessus le panneau.
+Escape ferme (hx-on:keydown → clic sur [data-cancel]), l'input est autofocus.
+
+Variables : tx (Transaction), error (str optionnel — message de rejet 422).
+Annuler → GET budget_merchant_logo_badge : re-rend le badge seul dans son état
+courant, sans recharger toute la liste (le formulaire ne concerne qu'une ligne).
+{% endcomment %}
+<div id="tx-merchant-badge-{{ tx.id }}"
+     tabindex="-1"
+     class="absolute left-0 top-1/2 z-30 w-[220px] -translate-y-1/2 rounded-xl border border-gold/30 bg-surface-3 p-3 shadow-lg"
+     onclick="event.stopPropagation()"
+     hx-on:keydown="if (event.key === 'Escape') this.querySelector('[data-cancel]').click()"
+     hx-on::load="this.scrollIntoView({ block: 'nearest' })">
+    <form hx-post="{% url 'budget:merchant_logo_repair' tx.id %}"
+          hx-target="#tx-merchant-badge-{{ tx.id }}"
+          hx-swap="outerHTML"
+          hx-disabled-elt="this">
+        {% csrf_token %}
+        <p class="mb-2 text-[11px] text-text-muted">
+            Logo pour <span class="font-semibold text-text-base">{{ tx.display_name|slice:":30" }}</span>.
+            Colle l'URL directe d'une image (PNG, JPG, WebP ou SVG).
+        </p>
+        <input type="url"
+               name="logo_url"
+               required
+               autofocus
+               placeholder="https://…/logo.png"
+               class="mb-2 w-full rounded-lg border border-edge/60 bg-surface-hover px-2 py-1.5 text-xs text-text-base placeholder:text-text-disabled focus:border-gold/50 focus:outline-none">
+        {% if error %}
+            <p class="mb-2 rounded-lg border border-expense/30 bg-expense/10 px-2 py-1 text-[10px] text-expense">{{ error }}</p>
+        {% endif %}
+        <div class="flex gap-2">
+            <button type="submit"
+                    class="rounded-lg bg-gold/15 px-2.5 py-1 text-[11px] font-semibold text-gold transition-colors hover:bg-gold/25">
+                Installer
+            </button>
+            <button type="button"
+                    data-cancel
+                    hx-get="{% url 'budget:merchant_logo_badge' tx.id %}"
+                    hx-target="#tx-merchant-badge-{{ tx.id }}"
+                    hx-swap="outerHTML"
+                    class="rounded-lg px-2.5 py-1 text-[11px] text-text-muted transition-colors hover:text-text-base">
+                Annuler
+            </button>
+        </div>
+    </form>
+</div>

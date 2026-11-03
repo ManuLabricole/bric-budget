@@ -1,0 +1,30 @@
+{% comment %}
+budget/_panel_tx_kpi_summary.html — Fragment HTMX : compteur + KPIs transactions (right panel).
+
+Contexte attendu :
+    total_count       — total du queryset filtré (page_obj.paginator.count côté liste)
+    period_start/end  — bornes de la période affichée
+    unknown_count     — transactions catégorie "Inconnu" (ou sans catégorie) dans CE queryset
+    reconciled_count  — transactions pointées (is_reconciled=True) dans CE queryset
+    oob (optionnel)   — True quand ce fragment est renvoyé en Out-Of-Band swap
+                         (budget_toggle_reconcile, pointage depuis la liste) plutôt
+                         qu'inclus dans le rendu normal de _panel_tx_list.html
+
+Recalculé à CHAQUE requête qui retouche #tx-results (catégorisation, règle
+appliquée, pointage) — jamais mis en cache côté client, toujours la vérité DB.
+Voir budget/views/transactions.py::_tx_kpi_counts.
+{% endcomment %}
+<div id="tx-kpi-summary"
+     {% if oob %}hx-swap-oob="outerHTML"{% endif %}
+     class="px-4 py-2 flex-shrink-0">
+    <p class="text-[10px] text-text-disabled">
+        {{ total_count }} transaction{{ total_count|pluralize }}
+        · {{ period_start|date:"j M Y" }} – {{ period_end|date:"j M Y" }}
+    </p>
+    {% if total_count %}
+        <p class="text-[10px] text-gold/60 mt-0.5">
+            {{ unknown_count }}/{{ total_count }} inconnue{{ unknown_count|pluralize }}
+            · {{ reconciled_count }}/{{ total_count }} pointée{{ reconciled_count|pluralize }}
+        </p>
+    {% endif %}
+</div>

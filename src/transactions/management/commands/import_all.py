@@ -31,6 +31,7 @@ from django.core.management.base import BaseCommand
 
 from connectors.cic.parser import CICConnector
 from connectors.resolver import detect_connector
+from connectors.tsb.parser import TSBConnector
 from connectors.ubs.parser import UBSConnector
 from connectors.yuh.parser import YuhConnector
 
@@ -43,6 +44,10 @@ CONNECTOR_COMMAND = {
     YuhConnector: "import_yuh",
     UBSConnector: "import_ubs",
     CICConnector: "import_cic",
+    # Pas de commande import_tsb dédiée : TSB s'importe via
+    # `seed_transactions` (chemin standard). None = ignoré par import_all,
+    # plutôt qu'un KeyError silencieux sur call_command.
+    TSBConnector: None,
 }
 
 
@@ -122,6 +127,18 @@ class Command(BaseCommand):
         # We only orchestrate — no DB logic here.
         for filepath, command_name in matched:
             self.stdout.write("=" * 60)
+            if command_name is None:
+                # Connecteur reconnu mais sans commande import_* dédiée (TSB) :
+                # il s'importe par `seed_transactions`, qui passe par
+                # imports/orchestrator (le chemin de l'UI). On le DIT au lieu
+                # d'appeler call_command(None, …), qui lèverait.
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"→ {filepath.name}  [ignoré — pas de commande import_* ; "
+                        f"utiliser : manage.py seed_transactions --file {filepath}]"
+                    )
+                )
+                continue
             self.stdout.write(f"→ {filepath.name}  [{command_name}]")
             self.stdout.write("=" * 60)
             call_command(

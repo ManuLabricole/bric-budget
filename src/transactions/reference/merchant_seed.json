@@ -1,0 +1,630 @@
+{
+  "_comment": "Prototype merchant seed dict (issue #124 exploration). Chaque entrée : key (id stable), name (affiché), domain (nu, envoyé à Google Favicons), keywords (mots matchés en \\b...\\b contre display_name.upper()). ORDRE = priorité : les entrées spécifiques (ex. UBER, DISNEYPLUS) doivent précéder un fallback générique (ex. PAYPAL) pour gagner le premier match.",
+  "merchants": [
+    {
+      "key": "uber",
+      "name": "Uber",
+      "domain": "uber.com",
+      "keywords": [
+        "UBER"
+      ]
+    },
+    {
+      "key": "disneyplus",
+      "name": "Disney+",
+      "domain": "disneyplus.com",
+      "keywords": [
+        "DISNEYPLUS"
+      ]
+    },
+    {
+      "key": "paypal",
+      "name": "PayPal",
+      "domain": "paypal.com",
+      "keywords": [
+        "PAYPAL"
+      ]
+    },
+    {
+      "key": "sbb",
+      "name": "SBB CFF FFS",
+      "domain": "sbb.ch",
+      "keywords": [
+        "SBB",
+        "CFF"
+      ]
+    },
+    {
+      "key": "sncf",
+      "name": "SNCF",
+      "domain": "sncf.com",
+      "keywords": [
+        "SNCF"
+      ]
+    },
+    {
+      "key": "scotrail",
+      "name": "ScotRail",
+      "domain": "scotrail.co.uk",
+      "keywords": [
+        "SCOTRAIL"
+      ]
+    },
+    {
+      "key": "stagecoach",
+      "name": "Stagecoach",
+      "domain": "stagecoachbus.com",
+      "keywords": [
+        "STAGECOACH"
+      ]
+    },
+    {
+      "key": "easyjet",
+      "name": "easyJet",
+      "domain": "easyjet.com",
+      "keywords": [
+        "EASYJET"
+      ]
+    },
+    {
+      "key": "dott",
+      "name": "Dott",
+      "domain": "ridedott.com",
+      "keywords": [
+        "DOTT"
+      ]
+    },
+    {
+      "key": "voi",
+      "name": "Voi",
+      "domain": "voiscooters.com",
+      "keywords": [],
+      "strict_keywords": [
+        "VOI"
+      ]
+    },
+    {
+      "key": "apcoa",
+      "name": "APCOA Parking",
+      "domain": "apcoa.com",
+      "keywords": [
+        "APCOA"
+      ]
+    },
+    {
+      "key": "aprr",
+      "name": "APRR",
+      "domain": "aprr.fr",
+      "keywords": [
+        "APRR"
+      ]
+    },
+    {
+      "key": "migros",
+      "name": "Migros",
+      "domain": "migros.ch",
+      "keywords": [
+        "MIGROS"
+      ]
+    },
+    {
+      "key": "coop",
+      "name": "Coop",
+      "domain": "coop.ch",
+      "keywords": [
+        "COOP"
+      ]
+    },
+    {
+      "key": "denner",
+      "name": "Denner",
+      "domain": "denner.ch",
+      "keywords": [
+        "DENNER"
+      ]
+    },
+    {
+      "key": "carrefour",
+      "name": "Carrefour",
+      "domain": "carrefour.fr",
+      "keywords": [
+        "CARREFOUR"
+      ]
+    },
+    {
+      "key": "monoprix",
+      "name": "Monoprix",
+      "domain": "monoprix.fr",
+      "keywords": [
+        "MONOPRIX"
+      ]
+    },
+    {
+      "key": "castorama",
+      "name": "Castorama",
+      "domain": "castorama.fr",
+      "keywords": [
+        "CASTORAMA"
+      ]
+    },
+    {
+      "key": "leboncoin",
+      "name": "Leboncoin",
+      "domain": "leboncoin.fr",
+      "keywords": [
+        "LEBONCOIN"
+      ]
+    },
+    {
+      "key": "decathlon",
+      "name": "Decathlon",
+      "domain": "decathlon.com",
+      "keywords": [
+        "DECATHLON"
+      ]
+    },
+    {
+      "key": "tesco",
+      "name": "Tesco",
+      "domain": "tesco.com",
+      "keywords": [
+        "TESCO"
+      ]
+    },
+    {
+      "key": "sainsburys",
+      "name": "Sainsbury's",
+      "domain": "sainsburys.co.uk",
+      "keywords": [
+        "SAINSBURYS"
+      ]
+    },
+    {
+      "key": "morrisons",
+      "name": "Morrisons",
+      "domain": "morrisons.com",
+      "keywords": [
+        "MORRISONS"
+      ]
+    },
+    {
+      "key": "lidl",
+      "name": "Lidl",
+      "domain": "lidl.com",
+      "keywords": [
+        "LIDL"
+      ]
+    },
+    {
+      "key": "boots",
+      "name": "Boots",
+      "domain": "boots.com",
+      "keywords": [
+        "BOOTS"
+      ]
+    },
+    {
+      "key": "tkmaxx",
+      "name": "TK Maxx",
+      "domain": "tkmaxx.com",
+      "keywords": [
+        "TK MAXX"
+      ]
+    },
+    {
+      "key": "maisonsdumonde",
+      "name": "Maisons du Monde",
+      "domain": "maisonsdumonde.com",
+      "keywords": [
+        "MAISONSDUMONDE"
+      ]
+    },
+    {
+      "key": "alltricks",
+      "name": "Alltricks",
+      "domain": "alltricks.fr",
+      "keywords": [
+        "ALLTRICKS"
+      ]
+    },
+    {
+      "key": "galaxus",
+      "name": "Galaxus",
+      "domain": "galaxus.ch",
+      "keywords": [
+        "GALAXUS"
+      ]
+    },
+    {
+      "key": "manor",
+      "name": "Manor",
+      "domain": "manor.ch",
+      "keywords": [
+        "MANOR"
+      ]
+    },
+    {
+      "key": "pret_a_manger",
+      "name": "Pret A Manger",
+      "domain": "pret.com",
+      "keywords": [
+        "PRET A MANGER"
+      ]
+    },
+    {
+      "key": "ibis",
+      "name": "Ibis",
+      "domain": "ibis.com",
+      "keywords": [
+        "IBIS"
+      ]
+    },
+    {
+      "key": "shell",
+      "name": "Shell",
+      "domain": "shell.com",
+      "keywords": [
+        "SHELL"
+      ]
+    },
+    {
+      "key": "esso",
+      "name": "Esso",
+      "domain": "esso.com",
+      "keywords": [
+        "ESSO"
+      ]
+    },
+    {
+      "key": "avia",
+      "name": "Avia",
+      "domain": "avia.com",
+      "keywords": [
+        "AVIA"
+      ]
+    },
+    {
+      "key": "agrola",
+      "name": "Agrola",
+      "domain": "agrola.ch",
+      "keywords": [
+        "AGROLA"
+      ]
+    },
+    {
+      "key": "tamoil",
+      "name": "Tamoil",
+      "domain": "tamoil.ch",
+      "keywords": [
+        "TAMOIL"
+      ]
+    },
+    {
+      "key": "eni",
+      "name": "Eni",
+      "domain": "eni.com",
+      "keywords": [
+        "ENI",
+        "AGIP"
+      ]
+    },
+    {
+      "key": "helsana",
+      "name": "Helsana",
+      "domain": "helsana.ch",
+      "keywords": [
+        "HELSANA"
+      ]
+    },
+    {
+      "key": "free_mobile",
+      "name": "Free Mobile",
+      "domain": "free.fr",
+      "keywords": [
+        "FREE MOBILE"
+      ]
+    },
+    {
+      "key": "apple",
+      "name": "Apple",
+      "domain": "apple.com",
+      "keywords": [
+        "APPLE",
+        "ITUNES"
+      ]
+    },
+    {
+      "key": "youtube",
+      "name": "YouTube",
+      "domain": "youtube.com",
+      "keywords": [
+        "YOUTUBE"
+      ]
+    },
+    {
+      "key": "amazon",
+      "name": "Amazon",
+      "domain": "amazon.com",
+      "keywords": [
+        "AMAZON",
+        "AMZ"
+      ]
+    },
+    {
+      "key": "microsoft",
+      "name": "Microsoft",
+      "domain": "microsoft.com",
+      "keywords": [
+        "MICROSOFT"
+      ]
+    },
+    {
+      "key": "github",
+      "name": "GitHub",
+      "domain": "github.com",
+      "keywords": [
+        "GITHUB"
+      ]
+    },
+    {
+      "key": "openai",
+      "name": "OpenAI",
+      "domain": "openai.com",
+      "keywords": [
+        "OPENAI",
+        "CHATGPT"
+      ]
+    },
+    {
+      "key": "anthropic",
+      "name": "Anthropic",
+      "domain": "anthropic.com",
+      "keywords": [
+        "ANTHROPIC",
+        "CLAUDE.AI"
+      ]
+    },
+    {
+      "key": "notion",
+      "name": "Notion",
+      "domain": "notion.so",
+      "keywords": [
+        "NOTION"
+      ]
+    },
+    {
+      "key": "vinted",
+      "name": "Vinted",
+      "domain": "vinted.fr",
+      "keywords": [
+        "VINTED"
+      ]
+    },
+    {
+      "key": "playstation",
+      "name": "PlayStation Network",
+      "domain": "playstation.com",
+      "keywords": [
+        "PLAYSTATION"
+      ]
+    },
+    {
+      "key": "alphavantage",
+      "name": "Alpha Vantage",
+      "domain": "alphavantage.co",
+      "keywords": [
+        "ALPHAVANTAGE"
+      ]
+    },
+    {
+      "key": "railway_app",
+      "name": "Railway",
+      "domain": "railway.app",
+      "keywords": [
+        "RAILWAY"
+      ]
+    },
+    {
+      "key": "spotify",
+      "name": "Spotify",
+      "domain": "spotify.com",
+      "keywords": [
+        "SPOTIFY"
+      ]
+    },
+    {
+      "key": "netflix",
+      "name": "Netflix",
+      "domain": "netflix.com",
+      "keywords": [
+        "NETFLIX"
+      ]
+    },
+    {
+      "key": "airbnb",
+      "name": "Airbnb",
+      "domain": "airbnb.com",
+      "keywords": [
+        "AIRBNB"
+      ]
+    },
+    {
+      "key": "booking",
+      "name": "Booking.com",
+      "domain": "booking.com",
+      "keywords": [
+        "BOOKING"
+      ]
+    },
+    {
+      "key": "starbucks",
+      "name": "Starbucks",
+      "domain": "starbucks.com",
+      "keywords": [
+        "STARBUCKS"
+      ]
+    },
+    {
+      "key": "mcdonalds",
+      "name": "McDonald's",
+      "domain": "mcdonalds.com",
+      "keywords": [
+        "MCDONALD"
+      ]
+    },
+    {
+      "key": "zara",
+      "name": "Zara",
+      "domain": "zara.com",
+      "keywords": [
+        "ZARA"
+      ]
+    },
+    {
+      "key": "hm",
+      "name": "H&M",
+      "domain": "hm.com",
+      "keywords": [
+        "H&M"
+      ]
+    },
+    {
+      "key": "ikea",
+      "name": "Ikea",
+      "domain": "ikea.com",
+      "keywords": [
+        "IKEA"
+      ]
+    },
+    {
+      "key": "sephora",
+      "name": "Sephora",
+      "domain": "sephora.fr",
+      "keywords": [
+        "SEPHORA"
+      ]
+    },
+    {
+      "key": "salt",
+      "name": "Salt",
+      "domain": "salt.ch",
+      "keywords": [
+        "SALT MOBILE",
+        "SALT.CH",
+        "SALT."
+      ]
+    },
+    {
+      "key": "leroy_merlin",
+      "name": "Leroy Merlin",
+      "domain": "leroymerlin.fr",
+      "keywords": [
+        "LEROY MERLIN"
+      ]
+    },
+    {
+      "key": "fnac",
+      "name": "Fnac",
+      "domain": "fnac.com",
+      "keywords": [
+        "FNAC"
+      ]
+    },
+    {
+      "key": "intermarche",
+      "name": "Intermarché",
+      "domain": "intermarche.com",
+      "keywords": [
+        "INTERMARCHE"
+      ]
+    },
+    {
+      "key": "auchan",
+      "name": "Auchan",
+      "domain": "auchan.fr",
+      "keywords": [
+        "AUCHAN"
+      ]
+    },
+    {
+      "key": "aldi",
+      "name": "Aldi",
+      "domain": "aldi.ch",
+      "keywords": [
+        "ALDI"
+      ]
+    },
+    {
+      "key": "zalando",
+      "name": "Zalando",
+      "domain": "zalando.fr",
+      "keywords": [
+        "ZALANDO"
+      ]
+    },
+    {
+      "key": "etsy",
+      "name": "Etsy",
+      "domain": "etsy.com",
+      "keywords": [
+        "ETSY"
+      ]
+    },
+    {
+      "key": "monzo",
+      "name": "Monzo",
+      "domain": "monzo.com",
+      "keywords": [
+        "MONZO"
+      ]
+    },
+    {
+      "key": "ratp",
+      "name": "RATP",
+      "domain": "ratp.fr",
+      "keywords": [
+        "RATP"
+      ]
+    },
+    {
+      "key": "costa_coffee",
+      "name": "Costa Coffee",
+      "domain": "costa.co.uk",
+      "keywords": [
+        "COSTA COFFEE"
+      ]
+    },
+    {
+      "key": "asda",
+      "name": "Asda",
+      "domain": "asda.com",
+      "keywords": [
+        "ASDA"
+      ]
+    },
+    {
+      "key": "superdrug",
+      "name": "Superdrug",
+      "domain": "superdrug.com",
+      "keywords": [
+        "SUPERDRUG"
+      ]
+    },
+    {
+      "key": "greggs",
+      "name": "Greggs",
+      "domain": "greggs.co.uk",
+      "keywords": [
+        "GREGGS"
+      ]
+    },
+    {
+      "key": "sfr",
+      "name": "SFR",
+      "domain": "sfr.fr",
+      "keywords": [
+        "SFR"
+      ]
+    }
+  ]
+}

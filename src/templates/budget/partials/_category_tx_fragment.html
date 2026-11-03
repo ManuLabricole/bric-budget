@@ -16,7 +16,7 @@ Paramètres :
                 </div>
             {% endifchanged %}
             {% institution_icon_url tx.account.institution as bicon %}
-            {% include "budget/_panel_tx_row.html" with institution_icon_url=bicon panel_source="category" panel_target="#cat-tx-detail" %}
+            {% include "budget/_panel_tx_row.html" with institution_icon_url=bicon merchant_logo_url=tx.merchant_logo_url panel_source="category" panel_target="#cat-tx-detail" %}
         {% endfor %}
     {% else %}
         <div class="flex flex-col items-center justify-center py-12 text-text-disabled">

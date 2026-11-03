@@ -18,10 +18,10 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import EmptyPage, InvalidPage, Paginator
-from django.db.models import Prefetch
+from django.db.models import Count, Prefetch, Q
 from django.db.models.functions import Abs
 from django.http import HttpResponse
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -35,8 +35,9 @@ from budget.utils import (
     safe_referer,
 )
 from services.logos import get_institution_icon_map
+from services.merchant_logos import get_merchant_logo_map, save_manual_logo
 from transactions.models import BudgetTarget, Category, SubCategory, Transaction
-from transactions.services import sync_internal_transfer
+from transactions.services import annotate_tx_display_icons, sync_internal_transfer
 
 logger = logging.getLogger(__name__)
 
@@ -89,11 +90,23 @@ def _inline_cashflow_url(tx):
     return reverse("budget:category_cashflow_fragment", args=[slug]) if slug else None
 
 
+def _merchant_logo_url_for(tx) -> str:
+    """
+    Résolution single-tx du logo marchand (badge _panel_tx_row.html, COL 1).
+    Même coût qu'un get_institution_icon_map() frais (déjà rappelé à chaque site
+    single-tx de ce fichier) : 1 scan disque mis en cache TTL + regex pur Python —
+    seule la vue LISTE (potentiellement 50 tx/page) a besoin du batch dédié
+    (get_merchant_logo_map appelé une fois avant la boucle, cf. budget_panel_transactions).
+    """
+    return get_merchant_logo_map([tx.display_name])[tx.display_name]
+
+
 def _inline_card_ctx(tx, institution_icon_url, key, *, cashflow_refresh_url=None):
     cfg = _INLINE_TX[key]
     return {
         "tx": tx,
         "institution_icon_url": institution_icon_url,
+        "merchant_logo_url": _merchant_logo_url_for(tx),
         "detail_id": cfg["detail_id"],
         "toggle_source": f"{key}_detail",
         "picker_source": cfg["picker_source"],
@@ -136,6 +149,7 @@ def _inline_card_response(
         {
             "tx": tx,
             "institution_icon_url": institution_icon_url,
+            "merchant_logo_url": _merchant_logo_url_for(tx),
             "panel_source": key,
             "panel_target": f"#{cfg['detail_id']}",
             "oob": True,
@@ -156,6 +170,7 @@ def _inline_row(request, tx, institution_icon_url, key):
         {
             "tx": tx,
             "institution_icon_url": institution_icon_url,
+            "merchant_logo_url": _merchant_logo_url_for(tx),
             "panel_source": key,
             "panel_target": f"#{_INLINE_TX[key]['detail_id']}",
         },
@@ -280,6 +295,88 @@ def budget_modal_target_create(request):
 
 
 # =============================================================================
+# Queryset + KPIs transactions — PARTAGÉS entre budget_panel_transactions
+# (liste) et budget_toggle_reconcile (recalcul des KPIs après un pointage
+# depuis la liste, voir plus bas). Un seul point de vérité pour le filtrage :
+# un filtre ajouté ici (compte masqué, recherche...) s'applique aux deux.
+# =============================================================================
+
+
+def _parse_amount_filter(raw):
+    """Retourne un entier positif ou None si invalide/vide (filtre montant min/max)."""
+    try:
+        v = int(float(raw)) if raw and raw.strip() else None
+        return v if v and v > 0 else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _build_tx_queryset(
+    request, period_start, period_end, *, q="", amount_min=None, amount_max=None
+):
+    """
+    Queryset Transaction filtré (période, comptes/catégories masqués, recherche,
+    montant) — SANS select_related/order_by/pagination : chaque appelant ajoute
+    ce qu'il lui faut (la liste a besoin de select_related + order_by + Paginator ;
+    un recalcul de KPI n'a besoin que du queryset pour un .aggregate()).
+
+    Pas de filtre is_ignored=False — le panel affiche les ignorées en grisé,
+    l'utilisateur doit les voir pour pouvoir les réactiver (cf. budget_index
+    qui, lui, les exclut des KPIs budget).
+    """
+    filter_account_ids = request.session.get("budget_filter_accounts_hidden", [])
+    hidden_cat_slugs = request.session.get("budget_filter_categories_hidden", [])
+
+    qs = Transaction.objects.for_user(request.user).filter(
+        date__gte=period_start,
+        date__lte=period_end,
+        is_internal_transfer=False,
+    )
+    if filter_account_ids:
+        qs = qs.exclude(account_id__in=filter_account_ids)
+    if hidden_cat_slugs:
+        qs = qs.exclude(category__slug__in=hidden_cat_slugs)
+    if q:
+        qs = qs.filter(display_name__icontains=q)
+    if amount_min is not None or amount_max is not None:
+        # Abs() annote chaque ligne avec la valeur absolue du montant.
+        qs = qs.annotate(abs_amount=Abs("amount"))
+        if amount_min is not None:
+            qs = qs.filter(abs_amount__gte=amount_min)
+        if amount_max is not None:
+            qs = qs.filter(abs_amount__lte=amount_max)
+    return qs
+
+
+# Slug de la catégorie système "Inconnu" — même valeur que celle assignée par
+# défaut à l'import (transactions/services/import_service.py::_load_default_categories)
+# quand aucune règle ne matche.
+UNKNOWN_CATEGORY_SLUG = "inconnu"
+
+
+def _tx_kpi_counts(qs):
+    """
+    KPIs du panel transactions, calculés sur le queryset DÉJÀ filtré — un seul
+    .aggregate() (3 COUNT conditionnels dans la même requête) plutôt que 3
+    requêtes séparées.
+
+    unknown_count    : catégorie "Inconnu" OU sans catégorie (cf. UNKNOWN_CATEGORY_SLUG) —
+                        donne l'ordre de grandeur du reste à classer.
+    reconciled_count : is_reconciled=True ("pointée", vérifiée contre le relevé).
+    total_count      : count() du même queryset — pour les appelants qui n'ont
+                        pas déjà un Paginator sous la main (ex: toggle_reconcile).
+    """
+    return qs.aggregate(
+        total_count=Count("id"),
+        unknown_count=Count(
+            "id",
+            filter=Q(category__isnull=True) | Q(category__slug=UNKNOWN_CATEGORY_SLUG),
+        ),
+        reconciled_count=Count("id", filter=Q(is_reconciled=True)),
+    )
+
+
+# =============================================================================
 # budget_panel_transactions — Partial HTMX : liste transactions (right panel)
 # =============================================================================
 
@@ -326,14 +423,6 @@ def budget_panel_transactions(request):
     # Limitation connue : pour les comptes non-CHF (EUR), `amount` est en devise
     # native. On filtre donc en EUR pour ces comptes. Acceptable pour l'usage actuel
     # (majorité des comptes sont CHF).
-    def _parse_amount_filter(raw):
-        """Retourne un entier positif ou None si invalide/vide."""
-        try:
-            v = int(float(raw)) if raw and raw.strip() else None
-            return v if v and v > 0 else None
-        except (ValueError, TypeError):
-            return None
-
     amount_min = _parse_amount_filter(request.GET.get("amount_min", ""))
     amount_max = _parse_amount_filter(request.GET.get("amount_max", ""))
 
@@ -354,38 +443,26 @@ def budget_panel_transactions(request):
 
     # ── Queryset transactions ─────────────────────────────────────────────────
     #
-    # list() force l'évaluation du queryset pour pouvoir annoter les objets.
-    # select_related → 1 JOIN au lieu de N+1 requêtes en template.
-    # order_by("-date", "-id") → plus récentes en premier, "-id" = tie-breaker.
-    #
-    # Pas de filtre is_ignored=False ici — contrairement à budget_index()
-    # qui exclut les ignorées des KPIs budget, le panel les affiche en grisé.
-    # L'utilisateur doit voir ce qu'il a ignoré pour pouvoir le réactiver.
+    # _build_tx_queryset (partagé avec budget_toggle_reconcile — voir plus bas)
+    # applique période + filtres actifs. select_related/order_by ajoutés ici :
+    # 1 JOIN au lieu de N+1 en template, plus récentes en premier ("-id" = tie-breaker).
     qs = (
-        Transaction.objects.for_user(request.user)
-        .filter(
-            date__gte=period_start,
-            date__lte=period_end,
-            is_internal_transfer=False,
+        _build_tx_queryset(
+            request,
+            period_start,
+            period_end,
+            q=q,
+            amount_min=amount_min,
+            amount_max=amount_max,
         )
         .select_related("category", "subcategory", "account", "account__institution")
         .order_by("-date", "-id")
     )
-    if filter_account_ids:
-        qs = qs.exclude(account_id__in=filter_account_ids)
-    if hidden_cat_slugs:
-        qs = qs.exclude(category__slug__in=hidden_cat_slugs)
-    if q:
-        qs = qs.filter(display_name__icontains=q)
-    if amount_min is not None or amount_max is not None:
-        # Abs() annote chaque ligne avec la valeur absolue du montant.
-        # On filtre ensuite dessus — les dépenses (négatives) et entrées (positives)
-        # sont traitées de la même façon.
-        qs = qs.annotate(abs_amount=Abs("amount"))
-        if amount_min is not None:
-            qs = qs.filter(abs_amount__gte=amount_min)
-        if amount_max is not None:
-            qs = qs.filter(abs_amount__lte=amount_max)
+
+    # KPIs — recalculés sur CE queryset (mêmes filtres que le total affiché),
+    # donc toujours cohérents avec le nombre de transactions montré. Un seul
+    # aggregate (3 COUNT conditionnels) plutôt que 3 requêtes.
+    tx_kpis = _tx_kpi_counts(qs)
 
     # Pagination 50 tx/page — scroll infini côté client (HTMX "revealed").
     # ?page= est injecté par le sentinel HTMX en bas du scroll.
@@ -401,17 +478,12 @@ def budget_panel_transactions(request):
         page_obj = paginator.page(1)
         page_number = 1
 
-    tx_list = list(page_obj.object_list)
-
-    # Annoter chaque transaction avec l'URL résolue de l'icône institution.
-    # tx.institution_icon_url est ensuite accessible directement dans le template.
-    for tx in tx_list:
-        slug = (
-            tx.account.institution.icon_slug
-            if tx.account and tx.account.institution
-            else ""
-        )
-        tx.institution_icon_url = institution_icon_map.get(slug, "")
+    # Annotation icône institution + logo marchand — même helper que les autres vues
+    # listant des transactions (transactions/services/tx_display.py) : 1 scan disque
+    # (logos manuels) + N regex (seed) quelle que soit la taille de la page, pas de N+1.
+    # Le queryset ci-dessus porte bien le select_related("account", "account__institution")
+    # qu'exige le helper.
+    tx_list = annotate_tx_display_icons(page_obj.object_list)
 
     # ── Page > 1 = réponse "append-only" pour le scroll infini ─────────────────
     # Le sentinel HTMX en bas de liste fait un GET ?page=N.
@@ -469,6 +541,10 @@ def budget_panel_transactions(request):
             "q": q,
             "amount_min": amount_min,
             "amount_max": amount_max,
+            # KPIs — voir _tx_kpi_counts. Inclus dans _panel_tx_kpi_summary.html
+            # (import de contexte implicite par {% include %}, pas d'"only").
+            "unknown_count": tx_kpis["unknown_count"],
+            "reconciled_count": tx_kpis["reconciled_count"],
         },
     )
 
@@ -588,6 +664,7 @@ def budget_toggle_ignore(request, tx_id):
         else ""
     )
     institution_icon_url = institution_icon_map.get(slug, "")
+    merchant_logo_url = _merchant_logo_url_for(tx)
 
     # Contextes carte détail inline (patrimoine, category) — cf. _INLINE_TX.
     inline = _inline_dispatch(request, tx, institution_icon_url)
@@ -618,6 +695,7 @@ def budget_toggle_ignore(request, tx_id):
                 {
                     "tx": tx,
                     "institution_icon_url": institution_icon_url,
+                    "merchant_logo_url": merchant_logo_url,
                     "detail_target": "#panel-content",
                     "close_on_back": True,
                     "source": "category",
@@ -627,7 +705,12 @@ def budget_toggle_ignore(request, tx_id):
             )
             row_html = render_to_string(
                 "budget/_panel_tx_row.html",
-                {"tx": tx, "institution_icon_url": institution_icon_url, "oob": True},
+                {
+                    "tx": tx,
+                    "institution_icon_url": institution_icon_url,
+                    "merchant_logo_url": merchant_logo_url,
+                    "oob": True,
+                },
                 request=request,
             )
             return HttpResponse(panel_html + row_html)
@@ -637,6 +720,7 @@ def budget_toggle_ignore(request, tx_id):
             {
                 "tx": tx,
                 "institution_icon_url": institution_icon_url,
+                "merchant_logo_url": merchant_logo_url,
                 "detail_target": "#panel-content",
                 "close_on_back": False,
                 "source": "",
@@ -649,7 +733,11 @@ def budget_toggle_ignore(request, tx_id):
     return render(
         request,
         "budget/_panel_tx_row.html",
-        {"tx": tx, "institution_icon_url": institution_icon_url},
+        {
+            "tx": tx,
+            "institution_icon_url": institution_icon_url,
+            "merchant_logo_url": merchant_logo_url,
+        },
     )
 
 
@@ -884,6 +972,7 @@ def budget_panel_tx_detail(request):
         else ""
     )
     institution_icon_url = institution_icon_map.get(slug, "")
+    merchant_logo_url = _merchant_logo_url_for(tx)
 
     source = request.GET.get("source", "")
 
@@ -899,6 +988,7 @@ def budget_panel_tx_detail(request):
         {
             "tx": tx,
             "institution_icon_url": institution_icon_url,
+            "merchant_logo_url": merchant_logo_url,
             "close_on_back": False,
             "source": source,
             "detail_target": "#panel-content",
@@ -949,6 +1039,7 @@ def budget_toggle_reconcile(request, tx_id):
         else ""
     )
     institution_icon_url = institution_icon_map.get(slug, "")
+    merchant_logo_url = _merchant_logo_url_for(tx)
 
     # Contextes carte détail inline — voir _INLINE_TX. with_cashflow=False : pointer
     # ne change pas les totaux. Doit précéder le défaut `!= "detail"`.
@@ -956,13 +1047,57 @@ def budget_toggle_reconcile(request, tx_id):
     if inline is not None:
         return inline
 
-    # source=list → appelé depuis la ligne liste → retourner juste la ligne
+    # source=list → appelé depuis la ligne liste → retourner la ligne + un swap
+    # OOB des KPIs (#tx-kpi-summary, voir _panel_tx_kpi_summary.html) : pointer
+    # change reconciled_count, donc le compteur "X/Y pointées" doit suivre SANS
+    # recharger toute la liste (contrairement à rulesApplied — un pointage est
+    # une action bien plus fréquente, resynchroniser #tx-results à chaque clic
+    # réinitialiserait le scroll). Si le fragment KPI n'est pas dans le DOM
+    # courant (contexte inline patrimoine/catégorie — déjà sorti via
+    # _inline_dispatch ci-dessus, donc jamais atteint ici en pratique), htmx
+    # ignore silencieusement un swap OOB sans cible : aucun risque à toujours
+    # l'inclure.
+    #
+    # q/amount_min/amount_max viennent de request.POST (hx-include explicite
+    # sur le bouton — #tx-results a hx-disinherit="*", rien ne s'hérite) : sans
+    # eux, le recalcul porterait sur un queryset plus large que celui affiché
+    # (dès qu'une recherche/filtre montant est active) et les KPIs dériveraient
+    # silencieusement du total réellement visible.
     if request.POST.get("source") != "detail":
-        return render(
-            request,
+        row_html = render_to_string(
             "budget/_panel_tx_row.html",
-            {"tx": tx, "institution_icon_url": institution_icon_url},
+            {
+                "tx": tx,
+                "institution_icon_url": institution_icon_url,
+                "merchant_logo_url": merchant_logo_url,
+            },
+            request=request,
         )
+        period_start, period_end = _period_from_session(request.session)
+        amount_min = _parse_amount_filter(request.POST.get("amount_min", ""))
+        amount_max = _parse_amount_filter(request.POST.get("amount_max", ""))
+        kpi_qs = _build_tx_queryset(
+            request,
+            period_start,
+            period_end,
+            q=request.POST.get("q", "").strip(),
+            amount_min=amount_min,
+            amount_max=amount_max,
+        )
+        tx_kpis = _tx_kpi_counts(kpi_qs)
+        kpi_html = render_to_string(
+            "budget/_panel_tx_kpi_summary.html",
+            {
+                "total_count": tx_kpis["total_count"],
+                "unknown_count": tx_kpis["unknown_count"],
+                "reconciled_count": tx_kpis["reconciled_count"],
+                "period_start": period_start,
+                "period_end": period_end,
+                "oob": True,
+            },
+            request=request,
+        )
+        return HttpResponse(row_html + kpi_html)
 
     # source=detail → retourner le panneau entier mis à jour.
     close_on_back = request.POST.get("close_on_back") == "true"
@@ -974,6 +1109,7 @@ def budget_toggle_reconcile(request, tx_id):
             {
                 "tx": tx,
                 "institution_icon_url": institution_icon_url,
+                "merchant_logo_url": merchant_logo_url,
                 "detail_target": "#panel-content",
                 "close_on_back": True,
                 "source": "category",
@@ -982,7 +1118,12 @@ def budget_toggle_reconcile(request, tx_id):
         )
         row_html = render_to_string(
             "budget/_panel_tx_row.html",
-            {"tx": tx, "institution_icon_url": institution_icon_url, "oob": True},
+            {
+                "tx": tx,
+                "institution_icon_url": institution_icon_url,
+                "merchant_logo_url": merchant_logo_url,
+                "oob": True,
+            },
             request=request,
         )
         return HttpResponse(panel_html + row_html)
@@ -992,8 +1133,99 @@ def budget_toggle_reconcile(request, tx_id):
         {
             "tx": tx,
             "institution_icon_url": institution_icon_url,
+            "merchant_logo_url": merchant_logo_url,
             "detail_target": "#panel-content",
             "close_on_back": False,
             "source": "",
         },
+    )
+
+
+# =============================================================================
+# budget_merchant_logo_form / _repair — Ajout manuel du logo marchand (#124 proto)
+# =============================================================================
+#
+# Même pattern que la réparation de logo institution (#128, patrimoine/views/
+# institutions.py::institution_logo_form / institution_logo_repair) : GET ouvre
+# un mini-formulaire (URL collée à la main), POST installe via services.logos
+# (SSRF guard, whitelist content-type, anti-XSS SVG) — ici via
+# services.merchant_logos.save_manual_logo, qui délègue au même primitif avec
+# un prefix MEDIA dédié (icons/merchants). Toujours accessible, même quand un
+# logo est déjà résolu (seed) : bouton "modifier" plutôt que "+" côté template.
+
+
+@login_required
+def budget_merchant_logo_form(request, tx_id):
+    """GET (HTMX) → mini-formulaire d'ajout/modification du logo marchand (badge)."""
+    if not request.headers.get("HX-Request"):
+        return redirect("budget:index")
+    tx = get_object_or_404(Transaction.objects.for_user(request.user), pk=tx_id)
+    return render(request, "budget/_tx_merchant_logo_form.html", {"tx": tx})
+
+
+@login_required
+def budget_merchant_logo_badge(request, tx_id):
+    """
+    GET (HTMX) → re-rend juste le badge (état courant, sans le formulaire).
+    Cible du bouton "Annuler" du formulaire : referme sans repartir sur un
+    reload de toute la liste (le formulaire ne touche qu'une ligne).
+    """
+    if not request.headers.get("HX-Request"):
+        return redirect("budget:index")
+    tx = get_object_or_404(Transaction.objects.for_user(request.user), pk=tx_id)
+    return render(
+        request,
+        "budget/_tx_merchant_badge.html",
+        {"tx": tx, "merchant_logo_url": _merchant_logo_url_for(tx)},
+    )
+
+
+@login_required
+@require_POST
+def budget_merchant_logo_repair(request, tx_id):
+    """
+    POST (HTMX) — installe un logo collé à la main pour CE display_name exact.
+    Succès → re-rend le badge seul (#tx-merchant-badge-<id>) ; échec → re-rend
+    le formulaire en 422 avec le message (même contrat que institution_logo_repair).
+    """
+    if not request.headers.get("HX-Request"):
+        return redirect("budget:index")
+    tx = get_object_or_404(Transaction.objects.for_user(request.user), pk=tx_id)
+    url = request.POST.get("logo_url", "").strip()
+
+    if not url.startswith("https://") or len(url) > 500:
+        logger.warning(
+            "merchant_logo_repair rejected tx=%s reason=bad_url user=%s",
+            tx.id,
+            request.user.id,
+        )
+        return render(
+            request,
+            "budget/_tx_merchant_logo_form.html",
+            {"tx": tx, "error": "URL https valide obligatoire."},
+            status=422,
+        )
+
+    if save_manual_logo(tx.display_name, url) is None:
+        # save_manual_logo (→ logos.fetch_from_url) a déjà loggé la cause précise.
+        return render(
+            request,
+            "budget/_tx_merchant_logo_form.html",
+            {
+                "tx": tx,
+                "error": "Image impossible à installer (format, taille ou URL invalide).",
+            },
+            status=422,
+        )
+
+    logger.info(
+        "merchant_logo_repair ok tx=%s display_name=%r user=%s",
+        tx.id,
+        tx.display_name,
+        request.user.id,
+    )
+    return render(
+        request,
+        "budget/_tx_merchant_badge.html",
+        {"tx": tx, "merchant_logo_url": _merchant_logo_url_for(tx)},
     )

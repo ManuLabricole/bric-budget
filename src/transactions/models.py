@@ -617,8 +617,7 @@ class ImportLog(models.Model):
         related_name="import_logs",
     )
 
-    # Original filename — useful for debugging and for Yuh balance extraction
-    # (balance is encoded in the filename: "Activités_2026_03_17 - 33,344.CSV")
+    # Original filename — useful for debugging/support.
     filename = models.CharField(max_length=255)
 
     # hex digest — prevents importing the exact same file twice per account.

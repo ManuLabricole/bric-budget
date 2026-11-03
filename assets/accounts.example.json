@@ -1,0 +1,83 @@
+{
+  "_comment": [
+    "TEMPLATE COMMITTÉ du fichier de seed des comptes (manage.py seed_accounts).",
+    "Toutes les valeurs ici sont BIDON — ce fichier ne doit contenir aucun identifiant réel.",
+    "",
+    "Pour l'utiliser :",
+    "  cp assets/accounts.example.json assets/private/accounts.json",
+    "  puis renseigne tes vrais IBAN / n° de contrat dans la COPIE.",
+    "assets/private/ est gitignoré (.gitignore) → la copie n'est jamais committée,",
+    "et seed_accounts refuse de tourner si elle se retrouve suivie par git (SR-008).",
+    "",
+    "Chemin surchargeable par .env : SEED_ACCOUNTS_FILE=/autre/chemin.json"
+  ],
+
+  "_schema": {
+    "user_email": "OBLIGATOIRE — user auquel tous les comptes sont rattachés (Account.members). Surchargeable par --user.",
+    "institution": "OBLIGATOIRE — slug DB (ubs, cic, yuh, tsb, monzo…). Doit exister : manage.py seed_institutions.",
+    "name": "OBLIGATOIRE — nom affiché dans l'app. Reprendre l'intitulé de la banque facilite le rapprochement.",
+    "type": "OBLIGATOIRE — checking | savings.",
+    "currency": "OBLIGATOIRE — CHF | EUR | GBP | USD.",
+    "iban": "Identité d'import. OBLIGATOIRE pour UBS (le parser lit l'IBAN ligne 2 du CSV).",
+    "contract_number": "Identité d'import. OBLIGATOIRE pour CIC (RIB par feuille Excel) et TSB (sort code + n° de compte collés).",
+    "bic": "Compte courant seulement (CheckingAccount.bic). Informatif — ignoré sur une épargne.",
+    "interest_rate": "Compte épargne seulement, en % annuel. Chaîne pour rester en Decimal exact (SR-002).",
+    "account_reference": "Compte épargne seulement — référence libre (n° interne). Jamais utilisé pour matcher.",
+    "is_active": "Défaut true. false = compte dormant : encore visible, mais les imports ne le résolvent plus.",
+
+    "_regles": [
+      "iban OU contract_number est obligatoire : sans identité, un compte ne peut recevoir aucun relevé.",
+      "Une entrée sans identité est IGNORÉE (pas une erreur) — le fichier se remplit banque après banque.",
+      "Les clés commençant par _ sont des commentaires libres, ignorées par le seed.",
+      "Une clé inconnue fait ÉCHOUER le seed : une faute de frappe (« ibna ») ne doit pas passer en silence.",
+      "La commande est idempotente : rejouable autant de fois que voulu."
+    ]
+  },
+
+  "user_email": "toi@example.com",
+
+  "accounts": [
+    {
+      "_note": "Compte courant : identité = IBAN, BIC informatif.",
+      "institution": "ubs",
+      "name": "UBS Courant",
+      "type": "checking",
+      "currency": "CHF",
+      "iban": "CH0000000000000000000",
+      "bic": "AAAACHZZXXX",
+      "is_active": true
+    },
+    {
+      "_note": "Épargne : l'IBAN vit aussi sur Account (source unique) — UBS exporte un relevé d'épargne qui le porte.",
+      "institution": "ubs",
+      "name": "UBS Épargne",
+      "type": "savings",
+      "currency": "CHF",
+      "iban": "CH0000000000000000001",
+      "interest_rate": "0.25",
+      "account_reference": "0000 00000000.X0",
+      "is_active": true
+    },
+    {
+      "_note": "CIC : c'est le RIB (contract_number) que le parser matche, PAS l'IBAN.",
+      "institution": "cic",
+      "name": "CIC Compte courant",
+      "type": "checking",
+      "currency": "EUR",
+      "contract_number": "000000000000000000000",
+      "iban": "FR0000000000000000000000000",
+      "bic": "AAAAFR2A",
+      "is_active": true
+    },
+    {
+      "_note": "Compte dormant : conservé pour l'historique, mais écarté de la résolution à l'import.",
+      "institution": "cic",
+      "name": "CIC Livret A",
+      "type": "savings",
+      "currency": "EUR",
+      "contract_number": "000000000000000000001",
+      "interest_rate": "3.00",
+      "is_active": false
+    }
+  ]
+}

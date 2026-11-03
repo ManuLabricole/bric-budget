@@ -6,7 +6,7 @@ Retourné par budget_panel_transactions() quand ?page > 1.
 Remplace le sentinel div (hx-swap="outerHTML") avec les nouvelles lignes + un nouveau sentinel.
 
 Contexte attendu :
-    transactions  — list() annoté, .institution_icon_url résolu en Python
+    transactions  — list() annoté, .institution_icon_url et .merchant_logo_url résolus en Python
     page_obj      — Page Django
     q             — str recherche en cours (peut être vide)
 {% endcomment %}
@@ -16,11 +16,27 @@ Contexte attendu :
             <span class="text-[10px] font-medium text-text-muted">{{ tx.date|date:"j F Y" }}</span>
         </div>
     {% endifchanged %}
-    {% include "budget/_panel_tx_row.html" with institution_icon_url=tx.institution_icon_url %}
+    {% include "budget/_panel_tx_row.html" with institution_icon_url=tx.institution_icon_url merchant_logo_url=tx.merchant_logo_url %}
 {% endfor %}
 {% if page_obj.has_next %}
+    {% comment %}
+    hx-target="this" explicite — obligatoire : #tx-results (ancestor) porte
+    maintenant son propre hx-target/hx-swap (rulesApplied), qui s'hérite par
+    défaut aux descendants sans hx-target propre. Sans ce "this", la réponse
+    (juste les lignes, sans l'id tx-results) écrase le container ENTIER en
+    outerHTML → #tx-results disparaît du DOM après le 1er auto-load (bug réel :
+    liste qui flashe puis se vide, surtout visible en 3M/1A avec plusieurs pages).
+    {% endcomment %}
+    {% comment %}
+    root:#panel-content — cf. _panel_tx_list.html : #tx-scroll-container n'est
+    jamais réellement clippé (son parent n'est pas en flex), donc l'utiliser
+    comme root rendait le sentinel "visible" en permanence → cascade de N
+    pages chargées d'un coup au lieu du scroll réel. #panel-content est le
+    vrai conteneur scrollable.
+    {% endcomment %}
     <div hx-get="{% url 'budget:panel_transactions' %}?page={{ page_obj.next_page_number }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if amount_min %}&amount_min={{ amount_min }}{% endif %}{% if amount_max %}&amount_max={{ amount_max }}{% endif %}"
-         hx-trigger="intersect root:#tx-scroll-container once"
+         hx-trigger="intersect root:#panel-content once"
+         hx-target="this"
          hx-swap="outerHTML"
          class="py-4 flex justify-center">
         <span class="text-[10px] text-text-disabled">Chargement…</span>

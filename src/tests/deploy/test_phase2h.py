@@ -161,20 +161,20 @@ def test_icon_picker_js_handles_empty_icon_url(auth_client, rule_no_icon):
 # =============================================================================
 
 
-def test_seed_accounts_uses_admin_url_from_env(monkeypatch):
-    import accounts.management.commands.seed_accounts as cmd_module
-
-    monkeypatch.setattr(
-        cmd_module,
-        "config",
-        lambda key, default="": "gestion-secret" if key == "ADMIN_URL" else default,
-    )
-    admin_url = cmd_module.config("ADMIN_URL", default="admin")
-    result_line = (
-        f"   → Compléter dans l'admin : /{admin_url}/accounts/checkingaccount/"
-    )
-    assert "/admin/" not in result_line
-    assert "gestion-secret" in result_line
+# NOTE — test_seed_accounts_uses_admin_url_from_env a été SUPPRIMÉ.
+#
+# `seed_accounts` ne renvoie plus vers l'admin : le fichier de seed est devenu la
+# source de vérité des comptes, donc un compte incomplet se corrige DANS le
+# fichier (une retouche faite dans l'admin serait écrasée au run suivant). Il n'y
+# a plus d'URL d'admin construite par cette commande à protéger.
+#
+# Le test ne prouvait de toute façon rien : il posait un faux `config` sur le
+# module, appelait lui-même ce faux, et assertait sur une f-string qu'il venait
+# de composer — sans jamais exécuter la commande. Il serait resté vert même si
+# `seed_accounts` avait codé « /admin/ » en dur.
+#
+# Le test jumeau ci-dessous est conservé : `setup_accounts` existe toujours et
+# affiche bien une URL d'admin (même s'il mérite le même durcissement).
 
 
 def test_setup_accounts_uses_admin_url_from_env(monkeypatch):

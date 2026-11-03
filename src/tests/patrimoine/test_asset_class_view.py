@@ -13,6 +13,7 @@ Sécurité : les endpoints sont les vues budget (déjà scopées for_user — cf
 """
 
 import pytest
+from django.test import override_settings
 from django.urls import reverse
 
 from patrimoine.services.chart_data import _STACK_PALETTE
@@ -249,3 +250,30 @@ def test_toggle_from_list_row_patrimoine_returns_row_with_preserved_context(
     assert "Détails de la transaction" not in html
     assert 'hx-target="#ac-tx-detail"' in html
     assert "source=patrimoine" in html
+
+
+@override_settings(BRANDFETCH_CLIENT_ID="test-client-id")
+@pytest.mark.django_db
+def test_asset_class_transactions_tab_shows_merchant_logo(
+    client_logged, chf_account, make_tx
+):
+    """
+    Bug réel corrigé (#124) : le badge logo marchand n'apparaissait QUE dans le
+    panel "Tout voir" (budget.views.transactions) — absent ici car cette vue
+    résolvait institution_icon_url à la main sans jamais poser merchant_logo_url.
+    """
+    tx = make_tx(chf_account, "2026-06-08", amount=-30)
+    tx.display_name = "MIGROS LAUSANNE"
+    tx.save(update_fields=["display_name"])
+
+    client_logged.get(
+        reverse(
+            "patrimoine:set_asset_class_tab", args=["comptes-courants", "transactions"]
+        )
+    )
+    resp = client_logged.get(
+        reverse("patrimoine:asset_class", args=["comptes-courants"])
+    )
+    html = resp.content.decode()
+
+    assert "https://cdn.brandfetch.io/domain/migros.ch/" in html

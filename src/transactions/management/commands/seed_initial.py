@@ -7,7 +7,7 @@ Délègue à la commande canonique `sync_reference_data` (idempotente, atomique,
 référentiel (seed_categories, seed_institutions).
 
 ⛔ NE seede PAS les comptes/cartes personnels : ce sont des données de DEV
-personnelles, pas un référentiel. Leur commande dédiée est `setup_accounts`
+personnelles, pas un référentiel. Leur commande dédiée est `seed_accounts`
 (import des relevés CSV/XLSX réels, IBAN via .env — SR-008).
 
 Usage :
@@ -26,10 +26,10 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         self.stdout.write(self.style.SUCCESS("=== BricBudget seed_initial ==="))
-        # Référentiels uniquement. Comptes/cartes perso → `setup_accounts`.
+        # Référentiels uniquement. Comptes/cartes perso → `seed_accounts`.
         call_command("sync_reference_data", stdout=self.stdout)
         self.stdout.write(
             self.style.SUCCESS(
-                "=== Seed terminé — comptes perso : `python manage.py setup_accounts` ==="
+                "=== Seed terminé — comptes perso : `python manage.py seed_accounts` ==="
             )
         )

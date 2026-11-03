@@ -69,6 +69,24 @@ urlpatterns = [
         views.budget_toggle_reconcile,
         name="toggle_reconcile",
     ),
+    # /budget/transactions/<tx_id>/merchant-logo/ → GET formulaire ajout/modif logo marchand (HTMX)
+    path(
+        "transactions/<int:tx_id>/merchant-logo/",
+        views.budget_merchant_logo_form,
+        name="merchant_logo_form",
+    ),
+    # /budget/transactions/<tx_id>/merchant-logo/repair/ → POST installe le logo collé à la main
+    path(
+        "transactions/<int:tx_id>/merchant-logo/repair/",
+        views.budget_merchant_logo_repair,
+        name="merchant_logo_repair",
+    ),
+    # /budget/transactions/<tx_id>/merchant-logo/badge/ → GET re-rend le badge seul (Annuler)
+    path(
+        "transactions/<int:tx_id>/merchant-logo/badge/",
+        views.budget_merchant_logo_badge,
+        name="merchant_logo_badge",
+    ),
     # /budget/panel/rule-create/?tx_id=X&keyword=MIGROS → formulaire création règle (fragment HTMX)
     path(
         "panel/rule-create/",

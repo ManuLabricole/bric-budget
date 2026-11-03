@@ -312,6 +312,29 @@ def test_fetch_from_url_installs_png_and_invalidates_cache(
 
 
 @override_settings(STORAGES=_INMEM_STORAGES)
+def test_fetch_from_url_respects_custom_prefix_and_on_saved(monkeypatch):
+    """
+    Un appelant hors institutions (ex. services.merchant_logos) doit pouvoir choisir
+    son propre dossier MEDIA et sa propre invalidation de cache — fetch_from_url ne
+    doit pas connaître clear_institution_icon_cache par nécessité.
+    """
+    monkeypatch.setattr(
+        logos, "_download_url", lambda url: (b"\x89PNG-fake", "image/png")
+    )
+    called = {"n": 0}
+    name = logos.fetch_from_url(
+        "https://brand.example/logo.png",
+        "decathlon",
+        prefix="icons/merchants",
+        on_saved=lambda: called.__setitem__("n", called["n"] + 1),
+    )
+    assert name == "icons/merchants/decathlon.png"
+    assert called["n"] == 1
+    # Le dossier institutions par défaut n'a rien reçu.
+    assert logos.listdir_urls("icons/institutions") == {}
+
+
+@override_settings(STORAGES=_INMEM_STORAGES)
 @pytest.mark.parametrize(
     "url",
     [
@@ -446,3 +469,91 @@ def test_repaired_logo_priority_miniature_then_storage_then_svg(
     (base / "svg" / "zkb.svg").write_text("<svg/>")
     logos.clear_institution_icon_cache()
     assert logos.get_institution_icon_map()["zkb"].endswith("/svg/zkb.svg")
+
+
+# ── _is_likely_invisible_on_white — garde-fou contraste (logo blanc sur badge blanc) ──
+#
+# institution_logo.html ET _tx_merchant_badge.html posent TOUJOURS le logo sur un
+# cercle blanc — un logo (quasi) blanc y devient invisible. Les institutions sont
+# curatées à la main (le doc dit : renommer en .bak si problème constaté) ; les
+# marchands sont fetchés en masse par script, sans revue humaine par défaut →
+# ce garde-fou (WARNING loggé, jamais bloquant) comble l'écart.
+
+
+def _png_bytes(rgb: tuple[int, int, int], alpha: int = 255) -> bytes:
+    from io import BytesIO
+
+    from PIL import Image
+
+    img = Image.new("RGBA", (10, 10), (*rgb, alpha))
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def test_is_likely_invisible_on_white_true_for_near_white_logo():
+    assert logos._is_likely_invisible_on_white(_png_bytes((255, 255, 255))) is True
+
+
+def test_is_likely_invisible_on_white_false_for_dark_logo():
+    assert logos._is_likely_invisible_on_white(_png_bytes((20, 20, 20))) is False
+
+
+def test_is_likely_invisible_on_white_false_for_colored_logo():
+    """Rouge Coca-Cola-like — clairement visible sur blanc malgré une forte luminosité R."""
+    assert logos._is_likely_invisible_on_white(_png_bytes((220, 20, 20))) is False
+
+
+def test_is_likely_invisible_on_white_ignores_transparent_pixels():
+    """Fond transparent (alpha=0) + logo blanc dessiné dessus : seuls les pixels
+    OPAQUES comptent — un favicon avec un grand fond transparent ne doit pas
+    fausser le ratio à la baisse artificiellement."""
+    assert (
+        logos._is_likely_invisible_on_white(_png_bytes((255, 255, 255), alpha=0))
+        is False
+    )
+
+
+def test_is_likely_invisible_on_white_false_for_undecodable_content():
+    """SVG ou binaire cassé — Pillow ne sait pas l'ouvrir → pas de faux positif."""
+    assert logos._is_likely_invisible_on_white(b"<svg><path/></svg>") is False
+    assert logos._is_likely_invisible_on_white(b"not-an-image") is False
+
+
+def test_fetch_logo_warns_on_near_white_logo(tmp_path, monkeypatch, caplog):
+    def fake_download(url: str, dest):
+        dest.write_bytes(_png_bytes((255, 255, 255)))
+
+    monkeypatch.setattr(logos, "_download", fake_download)
+    dest = tmp_path / "whitebrand.png"
+
+    with caplog.at_level("WARNING"):
+        result = logos.fetch_logo("whitebrand.example", dest)
+
+    assert result == dest  # jamais bloquant — le logo est quand même installé
+    assert any("low_contrast" in r.message for r in caplog.records)
+
+
+def test_fetch_logo_no_warning_on_dark_logo(tmp_path, monkeypatch, caplog):
+    def fake_download(url: str, dest):
+        dest.write_bytes(_png_bytes((20, 20, 20)))
+
+    monkeypatch.setattr(logos, "_download", fake_download)
+
+    with caplog.at_level("WARNING"):
+        logos.fetch_logo("darkbrand.example", tmp_path / "darkbrand.png")
+
+    assert not any("low_contrast" in r.message for r in caplog.records)
+
+
+@override_settings(STORAGES=_INMEM_STORAGES)
+def test_fetch_from_url_warns_on_near_white_logo(monkeypatch, caplog):
+    monkeypatch.setattr(
+        logos, "_download_url", lambda url: (_png_bytes((255, 255, 255)), "image/png")
+    )
+
+    with caplog.at_level("WARNING"):
+        name = logos.fetch_from_url("https://brand.example/logo.png", "whitebrand")
+
+    assert name is not None  # jamais bloquant
+    assert any("low_contrast" in r.message for r in caplog.records)

@@ -24,6 +24,38 @@ window.BricCharts = window.BricCharts || {};
     return d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
   }
 
+  // data.manual_points : [{date, value}] — soldes saisis à la main (#124, page
+  // zoom compte). Marqueur visuellement distinct de la ligne (losange creux,
+  // pas un point plein comme un jour normal) pour qu'on se souvienne que CE
+  // point n'est pas une donnée banque. xAxis catégorielle → il faut l'INDEX de
+  // la date dans data.dates, pas la date elle-même.
+  function buildManualMarkPoint(data, T) {
+    if (!data.manual_points || !data.manual_points.length) return undefined;
+    var indexByDate = {};
+    data.dates.forEach(function (d, i) {
+      indexByDate[d] = i;
+    });
+    var points = data.manual_points
+      .filter(function (p) {
+        return indexByDate[p.date] !== undefined;
+      })
+      .map(function (p) {
+        return {
+          name: "Solde saisi à la main",
+          xAxis: indexByDate[p.date],
+          yAxis: p.value,
+        };
+      });
+    if (!points.length) return undefined;
+    return {
+      symbol: "diamond",
+      symbolSize: 9,
+      itemStyle: { color: T["surface-2"], borderColor: T["gold"], borderWidth: 2 },
+      label: { show: false },
+      data: points,
+    };
+  }
+
   BC.initBalance = function (el, data, options) {
     if (!el || !data) return null;
     options = options || {};
@@ -81,6 +113,7 @@ window.BricCharts = window.BricCharts || {};
           areaStyle: { color: fade(T["gold"]) },
           itemStyle: { color: T["gold"] },
           data: data.total,
+          markPoint: buildManualMarkPoint(data, T),
         },
       ];
     }

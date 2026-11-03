@@ -14,6 +14,7 @@ from patrimoine.services.chart_data import (
     account_class_series,
     chart_series,
     distribution,
+    single_account_series,
 )
 
 
@@ -106,3 +107,67 @@ def test_distribution_from_nodes(chf_account, savings_account, make_snapshot):
     assert segs["Comptes courants"]["itemStyle"]["color"]  # shape ECharts
     # Les classes à valeur nulle / SOON n'apparaissent pas dans le donut.
     assert "Crypto" not in segs
+
+
+# =============================================================================
+# single_account_series — courbe mono-compte + marqueurs "saisi à la main" (#124)
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_single_account_series_returns_total_not_series(chf_account, make_snapshot):
+    """Un seul compte → pas de stacking : `series` vide, `total` = sa courbe."""
+    make_snapshot(chf_account, "2026-03-10", balance=1000, balance_chf=1000)
+    data = single_account_series(chf_account, _d("2026-03-10"), _d("2026-03-10"))
+    assert data["total"] == [1000.0]
+    assert data["series"] == []
+
+
+@pytest.mark.django_db
+def test_single_account_series_manual_points_empty_when_no_manual_snapshot(
+    chf_account, make_snapshot
+):
+    """Snapshot IMPORT normal → aucun marqueur manuel."""
+    make_snapshot(chf_account, "2026-03-10", balance=1000, balance_chf=1000)
+    data = single_account_series(chf_account, _d("2026-03-10"), _d("2026-03-10"))
+    assert data["manual_points"] == []
+
+
+@pytest.mark.django_db
+def test_single_account_series_reports_manual_snapshot_as_marker(
+    chf_account, make_snapshot
+):
+    """
+    Un snapshot source=MANUAL dans la période doit apparaître dans manual_points
+    (date + valeur CHF) — consommé par balance.js pour dessiner un marqueur
+    distinct sur la courbe ("solde saisi à la main").
+    """
+    from accounts.models import BalanceSnapshot
+
+    make_snapshot(
+        chf_account,
+        "2026-03-12",
+        balance=4200,
+        balance_chf=4200,
+        source=BalanceSnapshot.Source.MANUAL,
+    )
+    data = single_account_series(chf_account, _d("2026-03-10"), _d("2026-03-14"))
+    assert data["manual_points"] == [{"date": "2026-03-12", "value": 4200.0}]
+
+
+@pytest.mark.django_db
+def test_single_account_series_manual_points_excludes_out_of_range_snapshot(
+    chf_account, make_snapshot
+):
+    """Un snapshot manuel HORS de [start, end] ne doit pas polluer le marqueur."""
+    from accounts.models import BalanceSnapshot
+
+    make_snapshot(
+        chf_account,
+        "2026-01-01",
+        balance=999,
+        balance_chf=999,
+        source=BalanceSnapshot.Source.MANUAL,
+    )
+    data = single_account_series(chf_account, _d("2026-03-10"), _d("2026-03-14"))
+    assert data["manual_points"] == []

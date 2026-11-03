@@ -426,7 +426,7 @@ def budget_rule_create_standalone_submit(request):
         request.user.id,
     )
 
-    return render(
+    response = render(
         request,
         "budget/_panel_rule_confirm.html",
         {
@@ -438,6 +438,12 @@ def budget_rule_create_standalone_submit(request):
             "subcategory": subcategory,
         },
     )
+    # Le bulk update tourne dans le modal (#modal-content) — la liste de
+    # transactions derrière (#panel-content) n'est jamais retouchée par cette
+    # réponse. Sans ce trigger elle reste affichée avec les anciennes
+    # catégories tant que la page n'est pas rechargée (cf. _panel_tx_list.html).
+    response["HX-Trigger"] = "rulesApplied"
+    return response
 
 
 # =============================================================================
@@ -686,7 +692,7 @@ def budget_rule_create_submit(request):
         )
     )
 
-    return render(
+    response = render(
         request,
         "budget/_panel_rule_confirm.html",
         {
@@ -698,6 +704,9 @@ def budget_rule_create_submit(request):
             "subcategory": subcategory,
         },
     )
+    # Cf. budget_rule_create_standalone_submit : rafraîchit la liste derrière le modal.
+    response["HX-Trigger"] = "rulesApplied"
+    return response
 
 
 # =============================================================================

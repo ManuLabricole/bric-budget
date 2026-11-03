@@ -5,7 +5,7 @@ Tests pour la création et la cohérence des BalanceSnapshots.
 
 Deux mécanismes créent des snapshots dans ImportService :
   1. Daily snapshots  : depuis balance_after par ligne (CIC uniquement)
-  2. Closing snapshot : depuis extract_balance() du connecteur (Yuh/UBS/CIC footer)
+  2. Closing snapshot : depuis extract_balance() du connecteur (UBS header/CIC footer — Yuh: toujours None)
 
 Comportements vérifiés :
   A. Daily snapshots créés depuis balance_after
@@ -333,7 +333,7 @@ def test_no_daily_snapshots_when_balance_after_is_none(chf_account, user):
 def test_closing_snapshot_created_from_balance_parameter(chf_account, user):
     """
     Le paramètre balance de ImportService.run() correspond au solde extrait du fichier
-    (ex: footer CIC, header UBS, nom de fichier Yuh).
+    (ex: footer CIC, header UBS — Yuh n'en fournit jamais).
     Il doit créer un snapshot sur la date max des transactions.
     """
     service = ImportService()
@@ -398,6 +398,69 @@ def test_closing_snapshot_with_none_balance_does_not_overwrite_daily_balance(
     assert snap.balance == Decimal("3456.78")
 
 
+@pytest.mark.django_db
+def test_closing_snapshot_prefers_existing_balance_over_computed_for_chf(
+    eur_account, user
+):
+    """
+    Ordre de priorité de la cascade : extracted → existing_balance → computed.
+
+    Le test F voisin NE prouve PAS cet ordre : il n'a aucun snapshot antérieur, donc
+    `computed` y vaut None et `existing_balance` gagnerait même sans la cascade. Il
+    assert par ailleurs sur `balance`, protégé par un `if extracted is not None`
+    séparé — pas par la cascade.
+
+    Ici les deux valeurs existent ET diffèrent, et on assert sur `balance_chf`, le
+    champ que lit réellement le moteur d'ancrage (balance_history, in_chf=True) :
+      - import 1 pose une baseline au 15 mars (5000) → donne un `computed` non-None
+      - import 2 a balance_after au 31 mars (3456.78 → écrit par _save_daily_snapshots)
+        ET balance=None (extraction footer échouée)
+      - computed = 5000 + (-100) = 4900 ≠ existing = 3456.78
+
+    Retomber sur `computed` ici écraserait un balance_chf déjà juste par une conversion
+    assise sur une base de calcul différente — c'est la régression #2 décrite dans
+    _save_closing_snapshot. Sans ce test, un refactor peut la réintroduire en silence.
+    """
+    from datetime import date
+
+    with patch(
+        "services.exchange_rates.get_exchange_rate",
+        return_value=Decimal("0.93"),
+    ):
+        service = ImportService()
+
+        # Import 1 — baseline : fixe le snapshot précédent dont dérivera `computed`.
+        service.run(
+            [make_tx_with_balance("prio_base", "2026-03-15")],
+            eur_account,
+            user,
+            "cic_base.xlsx",
+            make_file_hash("prio_base"),
+            balance=5000.0,
+        )
+
+        # Import 2 — balance_after renseigné (col F CIC) mais footer illisible.
+        service.run(
+            [
+                make_tx_with_balance(
+                    "prio_day", "2026-03-31", balance_after=3456.78, amount=-100.0
+                )
+            ],
+            eur_account,
+            user,
+            "cic_day.xlsx",
+            make_file_hash("prio_day"),
+            balance=None,
+        )
+
+    snap = BalanceSnapshot.objects.get(account=eur_account, date=date(2026, 3, 31))
+
+    assert snap.computed_balance == Decimal("4900.00")
+    assert snap.balance == Decimal("3456.78")
+    # 3456.78 * 0.93 — PAS 4900 * 0.93 (= 4557.00), qui serait la régression.
+    assert snap.balance_chf == Decimal("3214.81")
+
+
 # =============================================================================
 # G. computed_balance calculé depuis snapshot précédent
 # =============================================================================
@@ -443,6 +506,51 @@ def test_computed_balance_calculated_from_previous_snapshot(chf_account, user):
 
     snap = BalanceSnapshot.objects.get(account=chf_account, date=date(2026, 3, 22))
     assert snap.computed_balance == Decimal("10050.00")
+
+
+@pytest.mark.django_db
+def test_computed_balance_chf_set_when_extraction_fails_for_chf_account(
+    chf_account, user
+):
+    """
+    RÉGRESSION réelle (#124) : quand extract_balance() échoue (balance=None) MAIS
+    qu'un snapshot précédent permet de calculer computed_balance, balance_chf
+    doit AUSSI être posé (= computed_balance pour un compte CHF, identité).
+
+    Avant ce fix : balance_chf ne suivait QUE le solde extrait (balance), jamais
+    computed_balance — un compte CHF avec un import dont l'extraction échoue
+    (mais qui a une base de calcul) se retrouvait avec balance_chf=None, donc
+    "ancre indisponible" pour le moteur d'ancrage → solde affiché en "—" et
+    courbe qui retombe à 0 à cette date, alors que le solde EST connu (calculé).
+    """
+    service = ImportService()
+
+    tx_baseline = [{**make_tx("cbf_base"), "date": "2026-03-15"}]
+    service.run(
+        tx_baseline,  # type: ignore[arg-type]
+        chf_account,
+        user,
+        "file1.csv",
+        make_file_hash("cbf1"),
+        balance=10000.0,
+    )
+
+    txs_new = [make_tx("cbf_new", date="2026-03-20", amount=-100.0)]
+    service.run(
+        txs_new,
+        chf_account,
+        user,
+        "file2.csv",
+        make_file_hash("cbf2"),
+        balance=None,  # type: ignore[arg-type]
+    )
+
+    from datetime import date
+
+    snap = BalanceSnapshot.objects.get(account=chf_account, date=date(2026, 3, 20))
+    assert snap.balance is None
+    assert snap.computed_balance == Decimal("9900.00")
+    assert snap.balance_chf == Decimal("9900.00")
 
 
 # =============================================================================
@@ -517,3 +625,45 @@ def test_no_snapshot_has_balance_without_balance_chf_when_rate_available(
         f"{orphans.count()} snapshot(s) avec balance mais sans balance_chf alors "
         "qu'un taux est dispo — conversion CHF oubliée."
     )
+
+
+# =============================================================================
+# H. Une ancre MANUELLE n'est jamais écrasée par un import
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_import_never_overwrites_a_manual_anchor(eur_account, user):
+    """
+    Un solde saisi à la main est de l'information utilisateur. Les deux écritures de
+    snapshot font `update_or_create` sur (account, date) avec source=IMPORT : sans
+    garde-fou l'import remplaçait l'ancre en silence — certitude sur un compte à
+    snapshots quotidiens, et c'est justement sur un compte au solde extrait absent
+    (Yuh) qu'une ancre manuelle sert.
+    """
+    from datetime import date
+
+    BalanceSnapshot.objects.create(
+        account=eur_account,
+        date=date(2026, 3, 31),
+        balance=Decimal("1000.00"),
+        balance_chf=Decimal("930.00"),
+        currency="EUR",
+        source=BalanceSnapshot.Source.MANUAL,
+    )
+
+    with patch(
+        "services.exchange_rates.get_exchange_rate", return_value=Decimal("0.93")
+    ):
+        ImportService().run(
+            [make_tx_with_balance("anchor", "2026-03-31", balance_after=4242.42)],
+            eur_account,
+            user,
+            "cic.xlsx",
+            make_file_hash("anchor"),
+            balance=7777.77,
+        )
+
+    snap = BalanceSnapshot.objects.get(account=eur_account, date=date(2026, 3, 31))
+    assert snap.balance == Decimal("1000.00")
+    assert snap.source == BalanceSnapshot.Source.MANUAL

@@ -14,8 +14,13 @@ Couvre :
 Fixtures locales : savings_account, other_user (IDOR), make_checking.
 """
 
+import datetime
+from decimal import Decimal
+
 import pytest
+from django.test import override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from accounts.models import Account, CheckingAccount, SavingsAccount
 
@@ -128,12 +133,17 @@ def test_account_subroutes_idor_returns_404(client, other_user, chf_account):
         reverse("patrimoine:account_field_form", args=[chf_account.pk, "iban"]),
         reverse("patrimoine:account_field_save", args=[chf_account.pk, "iban"]),
         reverse("patrimoine:account_transactions", args=[chf_account.pk]),
+        reverse("patrimoine:account_balance_manual_save", args=[chf_account.pk]),
     ]
     # GET pour les GET-routes, POST pour les POST-routes.
     assert client.post(urls[0], {}).status_code == 404
     assert client.get(urls[1]).status_code == 404
     assert client.post(urls[2], {"value": "CH5604835012345678009"}).status_code == 404
     assert client.get(urls[3]).status_code == 404
+    assert (
+        client.post(urls[4], {"date": "2026-06-01", "amount": "1000"}).status_code
+        == 404
+    )
 
 
 # ── Période (session, PRG) ──────────────────────────────────────────────────────
@@ -442,3 +452,193 @@ def test_field_form_non_editable_field_returns_404(
         {"value": "3"},
     )
     assert resp.status_code == 404
+
+
+@override_settings(BRANDFETCH_CLIENT_ID="test-client-id")
+@pytest.mark.django_db
+def test_account_detail_shows_merchant_logo_in_tx_list(
+    client_logged, chf_account, checking_details, make_tx
+):
+    """
+    Bug réel corrigé (#124) : le badge logo marchand n'apparaissait QUE dans le
+    panel "Tout voir" (budget.views.transactions) — absent ici car cette vue
+    résolvait institution_icon_url à la main sans jamais poser merchant_logo_url.
+    """
+    tx = make_tx(chf_account, "2026-06-08", amount=-30)
+    tx.display_name = "MIGROS LAUSANNE"
+    tx.save(update_fields=["display_name"])
+
+    resp = client_logged.get(
+        reverse("patrimoine:account_detail", args=[chf_account.pk])
+    )
+    html = resp.content.decode()
+
+    assert "https://cdn.brandfetch.io/domain/migros.ch/" in html
+
+
+# ── Solde manuel (#124) ──────────────────────────────────────────────────────
+
+
+@pytest.mark.django_db
+def test_balance_manual_save_creates_snapshot_and_updates_current_value(
+    client_logged, chf_account, checking_details
+):
+    """POST valide → BalanceSnapshot(source=MANUAL) créé, current_value le reflète."""
+    from accounts.models import BalanceSnapshot
+
+    resp = client_logged.post(
+        reverse("patrimoine:account_balance_manual_save", args=[chf_account.pk]),
+        {"date": "2026-06-01", "amount": "4321.55"},
+        HTTP_HX_REQUEST="true",
+    )
+    assert resp.status_code == 200
+
+    snap = BalanceSnapshot.objects.get(
+        account=chf_account, date=datetime.date(2026, 6, 1)
+    )
+    assert snap.balance == Decimal("4321.55")
+    assert snap.source == BalanceSnapshot.Source.MANUAL
+    assert snap.balance_chf == Decimal("4321.55")  # compte CHF → identité
+
+    # HX-Retarget/HX-Reswap redirige le swap vers le corps entier (courbe incluse).
+    assert resp["HX-Retarget"] == "#account-detail-body"
+    assert resp["HX-Reswap"] == "outerHTML"
+    assert 'id="account-detail-body"' in resp.content.decode()
+
+
+@pytest.mark.django_db
+def test_balance_manual_save_overwrites_existing_snapshot_same_date(
+    client_logged, chf_account, checking_details, make_snapshot
+):
+    """Un solde manuel posé sur une date déjà ancrée (import) la remplace — gagne toujours."""
+    from accounts.models import BalanceSnapshot
+
+    make_snapshot(chf_account, "2026-06-01", balance=100, balance_chf=100)
+
+    client_logged.post(
+        reverse("patrimoine:account_balance_manual_save", args=[chf_account.pk]),
+        {"date": "2026-06-01", "amount": "999"},
+        HTTP_HX_REQUEST="true",
+    )
+
+    snap = BalanceSnapshot.objects.get(
+        account=chf_account, date=datetime.date(2026, 6, 1)
+    )
+    assert snap.balance == Decimal("999")
+    assert snap.source == BalanceSnapshot.Source.MANUAL
+
+
+@pytest.mark.django_db
+def test_balance_manual_save_rejects_invalid_date(
+    client_logged, chf_account, checking_details
+):
+    resp = client_logged.post(
+        reverse("patrimoine:account_balance_manual_save", args=[chf_account.pk]),
+        {"date": "not-a-date", "amount": "100"},
+        HTTP_HX_REQUEST="true",
+    )
+    assert resp.status_code == 422
+    assert "Date invalide" in resp.content.decode()
+    assert "HX-Retarget" not in resp
+
+
+@pytest.mark.django_db
+def test_balance_manual_save_rejects_future_date(
+    client_logged, chf_account, checking_details
+):
+    from datetime import timedelta
+
+    future = (timezone.localdate() + timedelta(days=1)).isoformat()
+    resp = client_logged.post(
+        reverse("patrimoine:account_balance_manual_save", args=[chf_account.pk]),
+        {"date": future, "amount": "100"},
+        HTTP_HX_REQUEST="true",
+    )
+    assert resp.status_code == 422
+    assert "futur" in resp.content.decode()
+
+
+@pytest.mark.django_db
+def test_balance_manual_save_rejects_invalid_amount(
+    client_logged, chf_account, checking_details
+):
+    resp = client_logged.post(
+        reverse("patrimoine:account_balance_manual_save", args=[chf_account.pk]),
+        {"date": "2026-06-01", "amount": "pas-un-montant"},
+        HTTP_HX_REQUEST="true",
+    )
+    assert resp.status_code == 422
+    assert "Montant invalide" in resp.content.decode()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("raw", ["NaN", "Infinity", "-Infinity"])
+def test_balance_manual_save_rejects_non_finite_amount(
+    client_logged, chf_account, checking_details, raw
+):
+    """
+    Decimal("NaN") / Decimal("Infinity") se construisent SANS lever InvalidOperation.
+    Sans garde `is_finite()`, ils traversaient la validation et explosaient en DataError
+    dans update_or_create (hors try, dans transaction.atomic()) → 500 au lieu de 422.
+    """
+    resp = client_logged.post(
+        reverse("patrimoine:account_balance_manual_save", args=[chf_account.pk]),
+        {"date": "2026-06-01", "amount": raw},
+        HTTP_HX_REQUEST="true",
+    )
+    assert resp.status_code == 422
+    assert "Montant invalide" in resp.content.decode()
+
+
+@pytest.mark.django_db
+def test_balance_manual_save_rejects_amount_beyond_column_capacity(
+    client_logged, chf_account, checking_details
+):
+    """
+    balance est DecimalField(max_digits=14, decimal_places=2) → 12 chiffres entiers max.
+    Un montant au-delà atteignait la DB et remontait en DataError non catchée (500).
+    """
+    resp = client_logged.post(
+        reverse("patrimoine:account_balance_manual_save", args=[chf_account.pk]),
+        {"date": "2026-06-01", "amount": "1000000000000"},  # 13 chiffres entiers
+        HTTP_HX_REQUEST="true",
+    )
+    assert resp.status_code == 422
+    assert "Montant invalide" in resp.content.decode()
+
+
+@pytest.mark.django_db
+def test_balance_manual_save_accepts_amount_at_column_capacity(
+    client_logged, chf_account, checking_details
+):
+    """La borne est bien le maximum de la colonne, pas une valeur arbitraire plus stricte."""
+    from accounts.models import BalanceSnapshot
+
+    resp = client_logged.post(
+        reverse("patrimoine:account_balance_manual_save", args=[chf_account.pk]),
+        {"date": "2026-06-01", "amount": "999999999999.99"},
+        HTTP_HX_REQUEST="true",
+    )
+    assert resp.status_code == 200
+    snap = BalanceSnapshot.objects.get(
+        account=chf_account, date=datetime.date(2026, 6, 1)
+    )
+    assert snap.balance == Decimal("999999999999.99")
+
+
+@pytest.mark.django_db
+def test_balance_manual_save_accepts_comma_decimal_separator(
+    client_logged, chf_account, checking_details
+):
+    """Montant saisi avec virgule (convention FR/CH) → accepté comme séparateur décimal."""
+    from accounts.models import BalanceSnapshot
+
+    client_logged.post(
+        reverse("patrimoine:account_balance_manual_save", args=[chf_account.pk]),
+        {"date": "2026-06-01", "amount": "1234,50"},
+        HTTP_HX_REQUEST="true",
+    )
+    snap = BalanceSnapshot.objects.get(
+        account=chf_account, date=datetime.date(2026, 6, 1)
+    )
+    assert snap.balance == Decimal("1234.50")
