@@ -6,6 +6,7 @@ Un module par service (même esprit que le package racine services/) :
     internal_transfer.py — sync_internal_transfer + INTERNAL_TRANSFER_SLUG
     file_hash.py         — compute_file_hash (déduplication fichier)
     tx_display.py        — annotate_tx_display_icons (icônes institution + marchand)
+    tx_overrides.py      — export/import de la couche manuelle (#346)
 
 Ré-exports pour compat : `from transactions.services import ImportService` continue
 de marcher après le découpage du fichier en package.
@@ -19,6 +20,7 @@ from .file_hash import compute_file_hash
 from .import_service import ImportResult, ImportService
 from .internal_transfer import INTERNAL_TRANSFER_SLUG, sync_internal_transfer
 from .tx_display import annotate_tx_display_icons
+from .tx_overrides import export_overrides, import_overrides
 
 __all__ = [
     "INTERNAL_TRANSFER_SLUG",
@@ -26,5 +28,7 @@ __all__ = [
     "ImportService",
     "annotate_tx_display_icons",
     "compute_file_hash",
+    "export_overrides",
+    "import_overrides",
     "sync_internal_transfer",
 ]
