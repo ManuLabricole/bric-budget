@@ -20,6 +20,7 @@ import hashlib
 import json
 
 import pytest
+from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
@@ -373,7 +374,9 @@ def test_category_resolution_is_scoped_to_the_calling_user(user, account, catego
     gagne l'écrasement — sans quoi le test passerait par chance.
     """
     _, _, _ = categories
-    other = UserFactory(email="other-ovr@t.ch")
+    # get_user_model() plutôt que UserFactory : factory_boy n'est pas typé, mypy voit
+    # un UserFactory et refuse owner=... (idiome déjà utilisé dans test_import_rule_scoping).
+    other = get_user_model().objects.create_user(email="other-ovr@t.ch", password="p")
     mine = Category.objects.create(
         name="Restaurants",
         slug="restaurants-ovr",
