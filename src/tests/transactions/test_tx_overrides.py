@@ -17,11 +17,20 @@ de libellé peut changer, et c'est même souvent ce qu'on vient de corriger.
 
 import datetime
 import hashlib
+import json
 
 import pytest
+from django.core.management import call_command
+from django.core.management.base import CommandError
 
-from accounts.models import Account, Institution
-from transactions.models import Category, SubCategory, Transaction
+from tests.factories import (
+    AccountFactory,
+    SubCategoryFactory,
+    SystemCategoryFactory,
+    TransactionFactory,
+    UserFactory,
+)
+from transactions.models import Category, Transaction
 from transactions.services import tx_overrides
 
 MANUAL = Transaction.CategorizationSource.MANUAL
@@ -33,34 +42,25 @@ MANUAL = Transaction.CategorizationSource.MANUAL
 
 @pytest.fixture
 def user(db):
-    from django.contrib.auth import get_user_model
-
-    return get_user_model().objects.create_user(email="ovr@t.ch", password="p")
+    return UserFactory(email="ovr@t.ch")
 
 
 @pytest.fixture
 def account(db, user):
-    bank = Institution.objects.create(
-        name="Ovr Bank", slug="ovr-bank", country="CH", default_currency="CHF"
-    )
-    acc = Account.objects.create(
-        institution=bank, name="Ovr Courant", account_type="checking", currency="CHF"
-    )
-    acc.members.add(user)
-    return acc
+    return AccountFactory(name="Ovr Courant", members=[user])
 
 
 @pytest.fixture
 def categories(db):
-    courses = Category.objects.create(
-        name="Courses", slug="courses-ovr", colour_hex="#5fae9f", order=10
-    )
-    sub = SubCategory.objects.create(
+    """
+    Catégories SYSTÈME (owner NULL) — le cas nominal issu du seed.
+    Le scope par utilisateur est couvert à part, avec des PERSO homonymes.
+    """
+    courses = SystemCategoryFactory(name="Courses", slug="courses-ovr", order=10)
+    sub = SubCategoryFactory(
         category=courses, name="Supermarché", slug="supermarche-ovr"
     )
-    autre = Category.objects.create(
-        name="Autre", slug="autre-ovr", colour_hex="#888888", order=20
-    )
+    autre = SystemCategoryFactory(name="Autre", slug="autre-ovr", order=20)
     return courses, sub, autre
 
 
@@ -74,11 +74,18 @@ def make_tx(
     display_name=None,
     **kwargs,
 ):
-    return Transaction.objects.create(
+    """
+    Transaction de test via TransactionFactory — seuls les champs que les tests font
+    varier sont passés, le reste vient des defaults de la factory.
+
+    `import_hash` reste dérivé de `seed` plutôt que de la Sequence de la factory :
+    plusieurs tests vérifient précisément qu'il ne sert PAS de clé de réappariement,
+    donc ils doivent pouvoir le contrôler.
+    """
+    return TransactionFactory(
         account=account,
         date=date,
         amount=amount,
-        currency="CHF",
         amount_chf=amount,
         description_raw=description_raw,
         display_name=display_name if display_name is not None else description_raw,
@@ -353,6 +360,49 @@ def test_system_and_personal_slugs_do_not_collide(user, account, categories):
 
 
 @pytest.mark.django_db
+def test_category_resolution_is_scoped_to_the_calling_user(user, account, categories):
+    """
+    SR-001 — deux PERSO homonymes appartenant à des users différents.
+
+    Un slug perso n'est unique QUE par owner, donc le même slug peut exister chez un
+    autre utilisateur. `_index` clé par (slug, système) : deux perso homonymes
+    produisent la MÊME clé (slug, False) et s'écrasent. Seul le scope `for_user`
+    garantit que celle d'un autre user n'entre jamais dans l'index.
+
+    L'autre catégorie trie APRÈS (order plus grand) pour qu'avec `unscoped()` elle
+    gagne l'écrasement — sans quoi le test passerait par chance.
+    """
+    _, _, _ = categories
+    other = UserFactory(email="other-ovr@t.ch")
+    mine = Category.objects.create(
+        name="Restaurants",
+        slug="restaurants-ovr",
+        colour_hex="#333333",
+        order=10,
+        owner=user,
+    )
+    theirs = Category.objects.create(
+        name="Restaurants",
+        slug="restaurants-ovr",
+        colour_hex="#444444",
+        order=20,
+        owner=other,
+    )
+    assert mine.pk != theirs.pk
+
+    make_tx(account, "scope", category=mine, categorization_source=MANUAL)
+    payload = tx_overrides.export_overrides(account)
+
+    Transaction.objects.filter(account=account).delete()
+    make_tx(account, "scope2")
+
+    report = tx_overrides.import_overrides(payload, user=user)
+
+    assert report.is_clean
+    assert Transaction.objects.get(account=account).category_id == mine.pk
+
+
+@pytest.mark.django_db
 def test_unresolvable_category_is_reported_and_field_left_untouched(
     user, account, categories
 ):
@@ -433,3 +483,45 @@ def test_manual_nature_override_survives(user, account, categories):
     tx_overrides.import_overrides(payload, user=user)
 
     assert Transaction.objects.get(account=account).nature == "fixed"
+
+
+# =============================================================================
+# Commande import_tx_overrides — entrées invalides
+# =============================================================================
+#
+# La commande est le garde-fou joué JUSTE AVANT une purge destructive. Une stack
+# trace brute y est inexploitable : l'opérateur doit lire une phrase et décider.
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        ("{ pas du json", "n'est pas un JSON valide"),
+        ('["une", "liste"]', "account_id"),
+        ('{"version": 1, "overrides": []}', "account_id"),
+    ],
+)
+def test_import_command_rejects_malformed_input(tmp_path, content, expected):
+    path = tmp_path / "overrides.json"
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(CommandError) as exc:
+        call_command("import_tx_overrides", f"--input={path}")
+
+    assert expected in str(exc.value)
+
+
+@pytest.mark.django_db
+def test_import_command_rejects_unsupported_format_version(tmp_path, account):
+    """Une version future ne doit pas remonter un ValueError nu."""
+    path = tmp_path / "overrides.json"
+    path.write_text(
+        json.dumps({"version": 99, "account_id": account.pk, "overrides": []}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(CommandError) as exc:
+        call_command("import_tx_overrides", f"--input={path}")
+
+    assert "v99" in str(exc.value)

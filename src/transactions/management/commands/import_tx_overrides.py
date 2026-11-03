@@ -37,9 +37,21 @@ class Command(BaseCommand):
         path = Path(options["input"])
         if not path.exists():
             raise CommandError(f"Fichier introuvable : {path}")
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        # Le fichier vient du disque : tout peut arriver (JSON tronqué, liste au lieu
+        # d'un objet, account_id absent). Sans ce filtre l'opérateur reçoit un
+        # JSONDecodeError/TypeError/KeyError brut, juste avant une purge — le pire
+        # moment pour devoir interpréter une stack trace.
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            account_id = payload["account_id"]
+        except json.JSONDecodeError as exc:
+            raise CommandError(f"{path} n'est pas un JSON valide : {exc}") from exc
+        except (KeyError, TypeError) as exc:
+            raise CommandError(
+                f"{path} : objet JSON avec une clé « account_id » attendu ({exc})."
+            ) from exc
 
-        account = Account.objects.filter(pk=payload["account_id"]).first()
+        account = Account.objects.filter(pk=account_id).first()
         if account is None:
             raise CommandError(
                 f"Compte {payload['account_id']} introuvable — l'export vient-il de cette base ?"
@@ -50,9 +62,14 @@ class Command(BaseCommand):
         if user is None:
             raise CommandError(f"Le compte « {account.name} » n'a aucun membre.")
 
-        report = tx_overrides.import_overrides(
-            payload, user=user, dry_run=options["dry_run"]
-        )
+        # import_overrides lève ValueError sur une version de format non supportée,
+        # KeyError/TypeError sur une entrée malformée : même raison qu'au-dessus.
+        try:
+            report = tx_overrides.import_overrides(
+                payload, user=user, dry_run=options["dry_run"]
+            )
+        except (ValueError, KeyError, TypeError) as exc:
+            raise CommandError(f"Overrides inexploitables : {exc}") from exc
 
         prefix = "[dry-run] " if report.dry_run else ""
         self.stdout.write(

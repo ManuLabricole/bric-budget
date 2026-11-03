@@ -8,7 +8,7 @@ réel de 481 transactions, d'après `categorization_source` :
     219 catégories posées par une RÈGLE    → se recréent seules au réimport
     181 catégories par DÉFAUT              → idem
      81 catégories MANUELLES               → perdues sans filet
-     15 `nature` surchargées à la main     → perdues
+     15 `nature` divergeant du défaut      → suivent la catégorie manuelle
     135 is_reconciled + 53 is_ignored      → perdus
 
 Ce qui compte comme « manuel »
@@ -21,6 +21,10 @@ figerait un ancien verdict par-dessus un meilleur.
 
 À l'inverse `is_reconciled`, `is_ignored`, `is_recurring` et `note` sont toujours
 manuels : aucun import ne les produit.
+
+`nature` n'existe pas comme édition autonome : aucune vue ne l'écrit (vérifié — seuls
+l'import et la propagation de `subcategory.default_nature` la posent). Elle n'est donc
+sauvegardée qu'avec une catégorie manuelle, dont elle est la conséquence.
 
 `merchant_name` n'est sauvegardé que s'il DIFFÈRE de `display_name` : les connecteurs le
 préremplissent avec le libellé nettoyé à l'import. Le sauvegarder systématiquement
