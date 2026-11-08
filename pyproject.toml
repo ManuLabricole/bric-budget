@@ -11,7 +11,7 @@ dependencies = [
     # Épinglé sur la ligne 6.0.x : le correctif de la CVE est le PATCH 6.0.7.
     # La mineure 6.1.x fera l'objet d'une montée de version à part, pour ne pas
     # mélanger un déblocage de CI avec un changement de version de framework.
-    "django (>=6.0.7,<6.1.0)",
+    "django (>=6.0.10,<6.1.0)",
     "psycopg2-binary (>=2.9.12,<3.0.0)",
     "python-decouple (>=3.8,<4.0)",
     "openpyxl (>=3.1.5,<4.0.0)",
